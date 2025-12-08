@@ -7,130 +7,215 @@
 
 import SwiftUI
 
-/// Vista principal del popup del menu bar
+/// Vista principal del popup del menu bar - Diseño limpio y moderno
 struct MenuBarView: View {
     @StateObject private var viewModel = SapoWhisperViewModel()
     @State private var showModelDownload = false
+    @State private var isHoveringRecord = false
+    @State private var pulseAnimation = false
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Header con estado
             headerSection
             
-            Divider()
+            // Botón principal de grabación
+            recordingSection
             
-            // Estado y botón principal
-            mainSection
-            
-            // Última transcripción (si existe)
+            // Última transcripción
             if !viewModel.lastTranscription.isEmpty {
-                Divider()
-                lastTranscriptionSection
+                transcriptionSection
             }
             
             Divider()
+                .padding(.horizontal)
             
-            // Acciones
+            // Configuraciones rápidas y acciones
             actionsSection
         }
-        .frame(width: 300)
+        .frame(width: Constants.Sizes.menuBarWidth)
+        .background(Color(NSColor.windowBackgroundColor))
         .sheet(isPresented: $showModelDownload) {
             ModelDownloadView(viewModel: viewModel)
         }
     }
     
-    // MARK: - Header
+    // MARK: - Header Section
     
     private var headerSection: some View {
-        HStack {
-            Image(systemName: viewModel.appState.iconName)
-                .font(.title2)
-                .foregroundColor(viewModel.appState.iconColor)
+        HStack(spacing: 12) {
+            // Icono animado del sapo
+            ZStack {
+                Circle()
+                    .fill(viewModel.appState.iconColor.opacity(0.2))
+                    .frame(width: 40, height: 40)
+                
+                if case .recording = viewModel.appState {
+                    Circle()
+                        .stroke(viewModel.appState.iconColor, lineWidth: 2)
+                        .frame(width: 40, height: 40)
+                        .scaleEffect(pulseAnimation ? 1.3 : 1.0)
+                        .opacity(pulseAnimation ? 0 : 1)
+                        .animation(.easeOut(duration: 1).repeatForever(autoreverses: false), value: pulseAnimation)
+                        .onAppear { pulseAnimation = true }
+                        .onDisappear { pulseAnimation = false }
+                }
+                
+                Image(systemName: viewModel.appState.iconName)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(viewModel.appState.iconColor)
+                    .symbolEffect(.pulse, isActive: viewModel.appState == .processing)
+            }
             
-            Text("SapoWhisper")
-                .font(.headline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SapoWhisper")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Text(viewModel.statusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
             
             Spacer()
             
-            Text(viewModel.hotkeyManager.hotkeyDescription)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.2))
-                .cornerRadius(4)
+            // Badge del hotkey
+            HotkeyBadge(text: viewModel.hotkeyManager.hotkeyDescription)
         }
         .padding()
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
     
-    // MARK: - Main Section
+    // MARK: - Recording Section
     
-    private var mainSection: some View {
-        VStack(spacing: 12) {
-            // Estado actual
-            HStack {
-                Circle()
-                    .fill(viewModel.appState.iconColor)
-                    .frame(width: 8, height: 8)
-                
-                Text(viewModel.statusText)
-                    .font(.subheadline)
-                
-                Spacer()
-                
-                if case .recording = viewModel.appState {
-                    Text(formatDuration(viewModel.audioRecorder.recordingDuration))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                }
+    private var recordingSection: some View {
+        VStack(spacing: 16) {
+            // Timer de grabación (si está grabando)
+            if case .recording = viewModel.appState {
+                RecordingTimer(duration: viewModel.recordingDuration)
+                    .transition(.scale.combined(with: .opacity))
             }
             
-            // Botón de grabar
-            Button(action: viewModel.toggleRecording) {
-                HStack {
+            // Botón principal
+            Button(action: {
+                withAnimation(Constants.Animation.spring) {
+                    viewModel.toggleRecording()
+                }
+            }) {
+                HStack(spacing: 12) {
                     if case .processing = viewModel.appState {
                         ProgressView()
-                            .scaleEffect(0.7)
-                            .padding(.trailing, 4)
+                            .scaleEffect(0.8)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: buttonIcon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .symbolEffect(.bounce, value: viewModel.audioRecorder.isRecording)
                     }
                     
-                    Text(viewModel.recordButtonText)
+                    Text(buttonText)
                         .font(.headline)
+                        .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .frame(height: Constants.Sizes.buttonHeight)
+                .background(buttonBackground)
+                .foregroundColor(.white)
+                .cornerRadius(Constants.Sizes.cornerRadius)
+                .scaleEffect(isHoveringRecord ? 1.02 : 1.0)
+                .shadow(color: buttonColor.opacity(0.3), radius: isHoveringRecord ? 8 : 4, y: 2)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(buttonColor)
+            .buttonStyle(.plain)
             .disabled(!viewModel.canRecord)
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isHoveringRecord = hovering
+                }
+            }
             
             // Mensaje si no hay modelo
             if case .noModel = viewModel.appState {
-                Button("📦 Descargar Modelo") {
-                    showModelDownload = true
+                Button(action: { showModelDownload = true }) {
+                    Label("Configurar reconocimiento de voz", systemImage: "arrow.down.circle.fill")
+                        .font(.subheadline)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.link)
             }
         }
         .padding()
+        .animation(.spring(response: 0.3), value: viewModel.appState)
+    }
+    
+    private var buttonIcon: String {
+        switch viewModel.appState {
+        case .recording:
+            return "stop.fill"
+        case .processing:
+            return "hourglass"
+        default:
+            return "mic.fill"
+        }
+    }
+    
+    private var buttonText: String {
+        switch viewModel.appState {
+        case .recording:
+            return "Detener Grabación"
+        case .processing:
+            return "Transcribiendo..."
+        case .noModel:
+            return "Configurar"
+        default:
+            return "Iniciar Grabación"
+        }
     }
     
     private var buttonColor: Color {
         switch viewModel.appState {
         case .recording:
-            return .red
+            return .recording
         case .processing:
-            return .orange
+            return .processing
+        case .noModel, .error:
+            return .disabled
         default:
-            return Color(red: 0.298, green: 0.686, blue: 0.314)
+            return .sapoGreen
         }
     }
     
-    // MARK: - Last Transcription
+    private var buttonBackground: some View {
+        Group {
+            if case .recording = viewModel.appState {
+                LinearGradient(
+                    colors: [Color.recording, Color.recording.opacity(0.8)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            } else if case .processing = viewModel.appState {
+                LinearGradient(
+                    colors: [Color.processing, Color.processing.opacity(0.8)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            } else {
+                LinearGradient(
+                    colors: [Color.sapoGreen, Color.sapoGreenDark],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+    }
     
-    private var lastTranscriptionSection: some View {
+    // MARK: - Transcription Section
+    
+    private var transcriptionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
+                Image(systemName: "text.quote")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+                
                 Text("Última transcripción")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -139,9 +224,11 @@ struct MenuBarView: View {
                 
                 Button(action: {
                     PasteManager.copyToClipboard(viewModel.lastTranscription)
+                    SoundManager.shared.play(.success)
                 }) {
                     Image(systemName: "doc.on.doc")
                         .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Copiar al portapapeles")
@@ -151,64 +238,197 @@ struct MenuBarView: View {
                 .font(.callout)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(Constants.Sizes.smallCornerRadius)
         }
-        .padding()
-        .background(Color.secondary.opacity(0.1))
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
     
-    // MARK: - Actions
+    // MARK: - Actions Section
     
     private var actionsSection: some View {
-        VStack(spacing: 4) {
-            HStack {
-                Toggle("Auto-pegar", isOn: $viewModel.autoPasteEnabled)
+        VStack(spacing: 0) {
+            // Toggle de auto-paste
+            SettingsRow(
+                icon: "doc.on.clipboard",
+                title: "Auto-pegar texto",
+                subtitle: "Pega automáticamente al terminar"
+            ) {
+                Toggle("", isOn: $viewModel.autoPasteEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
             
             Divider()
+                .padding(.horizontal)
             
-            Button(action: { showModelDownload = true }) {
-                HStack {
-                    Image(systemName: "arrow.down.circle")
-                    Text("Modelos")
-                    Spacer()
-                    if let model = viewModel.transcriber.loadedModelName {
-                        Text(model)
+            // Modelos
+            ActionRow(
+                icon: "cpu",
+                title: "Configuración",
+                subtitle: viewModel.transcriber.loadedModelName ?? "No configurado"
+            ) {
+                showModelDownload = true
+            }
+            
+            Divider()
+                .padding(.horizontal)
+            
+            // Salir
+            ActionRow(
+                icon: "power",
+                title: "Salir de SapoWhisper",
+                subtitle: nil,
+                isDestructive: true
+            ) {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Supporting Views
+
+/// Badge que muestra el atajo de teclado
+struct HotkeyBadge: View {
+    let text: String
+    
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(6)
+    }
+}
+
+/// Timer visual de la grabación
+struct RecordingTimer: View {
+    let duration: TimeInterval
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.recording)
+                .frame(width: 8, height: 8)
+            
+            Text(formattedDuration)
+                .font(.system(.title2, design: .monospaced))
+                .fontWeight(.medium)
+                .foregroundColor(.recording)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.recording.opacity(0.1))
+        .cornerRadius(Constants.Sizes.smallCornerRadius)
+    }
+    
+    private var formattedDuration: String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        let milliseconds = Int((duration.truncatingRemainder(dividingBy: 1)) * 10)
+        return String(format: "%d:%02d.%d", minutes, seconds, milliseconds)
+    }
+}
+
+/// Fila de configuración con toggle
+struct SettingsRow<Content: View>: View {
+    let icon: String
+    let title: String
+    let subtitle: String?
+    let content: () -> Content
+    
+    init(icon: String, title: String, subtitle: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.icon = icon
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+                .frame(width: 20)
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.subheadline)
+                
+                if let subtitle = subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            content()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+}
+
+/// Fila de acción clickeable
+struct ActionRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String?
+    var isDestructive: Bool = false
+    let action: () -> Void
+    
+    @State private var isHovering = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(isDestructive ? .red : .secondary)
+                    .frame(width: 20)
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.subheadline)
+                        .foregroundColor(isDestructive ? .red : .primary)
+                    
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 }
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            
-            Divider()
-            
-            Button(action: { NSApplication.shared.terminate(nil) }) {
-                HStack {
-                    Image(systemName: "power")
-                    Text("Salir")
-                    Spacer()
+                
+                Spacer()
+                
+                if !isDestructive {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
-            .buttonStyle(.plain)
             .padding(.horizontal)
-            .padding(.vertical, 6)
+            .padding(.vertical, 10)
+            .background(isHovering ? Color(NSColor.controlBackgroundColor) : Color.clear)
         }
-    }
-    
-    // MARK: - Helpers
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 
 #Preview {
     MenuBarView()
+        .frame(width: 320)
 }

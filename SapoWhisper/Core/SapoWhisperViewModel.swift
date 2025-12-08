@@ -121,17 +121,22 @@ class SapoWhisperViewModel: ObservableObject {
         do {
             try audioRecorder.startRecording()
             appState = .recording
+            SoundManager.shared.play(.startRecording)
             print("🎤 Grabación iniciada")
         } catch {
             appState = .error(error.localizedDescription)
+            SoundManager.shared.play(.error)
             print("❌ Error al iniciar grabación: \(error)")
         }
     }
     
     /// Detiene la grabación y transcribe
     func stopRecordingAndTranscribe() {
+        SoundManager.shared.play(.stopRecording)
+        
         guard let audioURL = audioRecorder.stopRecording() else {
             appState = .error("No se pudo obtener el audio")
+            SoundManager.shared.play(.error)
             return
         }
         
@@ -154,12 +159,14 @@ class SapoWhisperViewModel: ObservableObject {
                 }
                 
                 appState = .idle
+                SoundManager.shared.play(.success)
                 
                 // Limpiar archivo temporal
                 audioRecorder.deleteRecording(at: audioURL)
                 print("✅ Transcripción completada y copiada")
             } catch {
                 appState = .error(error.localizedDescription)
+                SoundManager.shared.play(.error)
                 print("❌ Error en transcripción: \(error)")
             }
         }
