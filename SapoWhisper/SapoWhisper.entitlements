@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox (requerido para distribución) -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    
+    <!-- Acceso al micrófono -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    
+    <!-- Acceso a archivos de usuario (para guardar modelos) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- Acceso a Application Support -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    
+    <!-- Acceso a red (para descargar modelos) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Permitir ejecución de Apple Events (para auto-paste) -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

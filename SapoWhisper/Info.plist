@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App como Menu Bar (sin icono en Dock) -->
+    <key>LSUIElement</key>
+    <true/>
+    
+    <!-- Info básica -->
+    <key>CFBundleName</key>
+    <string>SapoWhisper</string>
+    <key>CFBundleDisplayName</key>
+    <string>SapoWhisper</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    
+    <!-- Permisos de Micrófono -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.</string>
+    
+    <!-- Permisos de Speech Recognition -->
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>SapoWhisper necesita acceso al reconocimiento de voz para transcribir audio a texto.</string>
+    
+    <!-- Permisos de Accesibilidad (para hotkeys globales y auto-paste) -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>SapoWhisper necesita permisos para detectar atajos de teclado globales y pegar texto automáticamente.</string>
+    
+    <!-- Soporte para Mac Catalyst -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    
+    <!-- Categoría de la App -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    
+    <!-- Background modes -->
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+</dict>
+</plist>
