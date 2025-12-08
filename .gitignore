@@ -1,0 +1,146 @@
+# ==========================================
+# SapoWhisper - .gitignore
+# ==========================================
+
+# ------------------------------------------
+# DOCUMENTACIÓN PRIVADA (NO SUBIR AL REPO)
+# ------------------------------------------
+README.md
+CLAUDE.md
+
+# ------------------------------------------
+# macOS System Files
+# ------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ------------------------------------------
+# Xcode Build & Derived Data
+# ------------------------------------------
+## Build generated
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+
+## Xcodeproj specific
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+
+## Xcode Caches
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ------------------------------------------
+# Swift Package Manager
+# ------------------------------------------
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# ------------------------------------------
+# CocoaPods (si se usa)
+# ------------------------------------------
+Pods/
+*.xcworkspace
+!*.xcodeproj/project.xcworkspace
+
+# ------------------------------------------
+# Carthage (si se usa)
+# ------------------------------------------
+Carthage/Build/
+Carthage/Checkouts/
+
+# ------------------------------------------
+# Whisper.cpp Models (GRANDES - NO SUBIR)
+# ------------------------------------------
+# Los modelos pueden pesar hasta 3GB
+Models/*.bin
+Models/*.ggml
+*.ggml-*.bin
+ggml-*.bin
+
+# ------------------------------------------
+# Whisper.cpp Build Artifacts
+# ------------------------------------------
+whisper.cpp/build/
+whisper.cpp/*.o
+whisper.cpp/*.a
+whisper.cpp/main
+whisper.cpp/quantize
+whisper.cpp/server
+
+# ------------------------------------------
+# IDE & Editor Files
+# ------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ------------------------------------------
+# Sensitive Files (API Keys, Secrets)
+# ------------------------------------------
+*.pem
+*.key
+.env
+.env.*
+secrets/
+credentials/
+
+# ------------------------------------------
+# Crash Reports & Logs
+# ------------------------------------------
+*.crash
+*.log
+logs/
+
+# ------------------------------------------
+# Archives & Distributions
+# ------------------------------------------
+*.app
+*.ipa
+*.zip
+*.tar.gz
+*.dmg
+
+# ------------------------------------------
+# Temporary Files
+# ------------------------------------------
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ------------------------------------------
+# Audio Test Files (pueden ser grandes)
+# ------------------------------------------
+*.wav
+*.mp3
+*.m4a
+*.flac
+!Resources/sounds/*.wav
+
+# ------------------------------------------
+# AI Context Files (privados)
+# ------------------------------------------
+.agent/
+.cursor/
+.claude/
