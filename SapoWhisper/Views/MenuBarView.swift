@@ -58,11 +58,20 @@ struct MenuBarView: View {
                         .onDisappear { pulseAnimation = false }
                 }
                 
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                // Usar siempre el icono Idle para el header del popup
+                if let idleIcon = NSImage(named: "DockIconIdle") {
+                    Image(nsImage: idleIcon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
             }
             
             VStack(alignment: .leading, spacing: 2) {
