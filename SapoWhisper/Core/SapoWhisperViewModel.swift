@@ -160,6 +160,29 @@ class SapoWhisperViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        // Sincronizar estado con MenuBarIcon y DockIcon
+        $appState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.objectWillChange.send()
+                // Actualizar icono del Dock usando el manager
+                DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingWhisperKit ?? false)
+            }
+            .store(in: &cancellables)
+        
+        // Observar carga de modelos para el icono del Dock
+        whisperKitTranscriber.$isLoading
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isLoading in
+                guard let self = self else { return }
+                
+                // Solo actualizar si estamos usando WhisperKit
+                if self.currentEngine == .whisperLocal {
+                    DockIconManager.shared.updateIcon(for: self.appState, isModelLoading: isLoading)
+                }
+            }
+            .store(in: &cancellables)
+        
         // Observar cambios en modelos descargados (para actualizar UI al borrar)
         whisperKitTranscriber.$downloadedModels
             .receive(on: DispatchQueue.main)
