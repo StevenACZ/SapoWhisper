@@ -73,21 +73,21 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
 
     var fileSize: String {
         switch self {
-        case .tiny: return "~66 MB"
-        case .base: return "~145 MB"
-        case .small: return "~483 MB"
-        case .largev3: return "~3.1 GB"
-        case .largev3Turbo: return "~1.6 GB"
+        case .tiny: return "76.6 MB"
+        case .base: return "146.7 MB"
+        case .small: return "486.5 MB"
+        case .largev3: return "3.09 GB"
+        case .largev3Turbo: return "3.2 GB"
         }
     }
 
     var sizeInBytes: Int64 {
         switch self {
-        case .tiny: return 66 * 1024 * 1024
-        case .base: return 145 * 1024 * 1024
-        case .small: return 483 * 1024 * 1024
-        case .largev3: return 3100 * 1024 * 1024
-        case .largev3Turbo: return 1600 * 1024 * 1024
+        case .tiny: return Int64(76.6 * 1024 * 1024)
+        case .base: return Int64(146.7 * 1024 * 1024)
+        case .small: return Int64(486.5 * 1024 * 1024)
+        case .largev3: return Int64(3.09 * 1024 * 1024 * 1024)
+        case .largev3Turbo: return Int64(3.2 * 1024 * 1024 * 1024)
         }
     }
 

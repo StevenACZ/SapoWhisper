@@ -121,11 +121,14 @@ class AudioDeviceManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString = "" as CFString
-        var nameSize = UInt32(MemoryLayout<CFString>.size)
-        status = AudioObjectGetPropertyData(deviceID, &namePropertyAddress, 0, nil, &nameSize, &name)
+        var name: CFString? = nil
+        var nameSize = UInt32(MemoryLayout<CFString?>.size)
+        // Usamos withUnsafeMutablePointer y lo convertimos a RawPointer
+        status = withUnsafeMutablePointer(to: &name) { ptr in
+            AudioObjectGetPropertyData(deviceID, &namePropertyAddress, 0, nil, &nameSize, UnsafeMutableRawPointer(ptr))
+        }
 
-        guard status == noErr else { return nil }
+        guard status == noErr, let deviceName = name else { return nil }
 
         // Obtener UID del dispositivo
         var uidPropertyAddress = AudioObjectPropertyAddress(
@@ -134,13 +137,15 @@ class AudioDeviceManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var uid: CFString = "" as CFString
-        var uidSize = UInt32(MemoryLayout<CFString>.size)
-        status = AudioObjectGetPropertyData(deviceID, &uidPropertyAddress, 0, nil, &uidSize, &uid)
+        var uid: CFString? = nil
+        var uidSize = UInt32(MemoryLayout<CFString?>.size)
+        status = withUnsafeMutablePointer(to: &uid) { ptr in
+            AudioObjectGetPropertyData(deviceID, &uidPropertyAddress, 0, nil, &uidSize, UnsafeMutableRawPointer(ptr))
+        }
 
-        guard status == noErr else { return nil }
+        guard status == noErr, let deviceUID = uid else { return nil }
 
-        return AudioDevice(id: deviceID, name: name as String, uid: uid as String)
+        return AudioDevice(id: deviceID, name: deviceName as String, uid: deviceUID as String)
     }
 
     /// Configura un listener para cambios en dispositivos

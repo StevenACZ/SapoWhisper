@@ -128,44 +128,83 @@ class WhisperKitTranscriber: ObservableObject {
                 let monitoringTask = Task { @MainActor in
                     var lastProgress: Double = 0
                     
-                    // Obtener tamano inicial (antes de que empiece la descarga fuerte)
-                    // Si no existe el directorio, es 0
-                    let initialRepoSize = self.downloadedModelSize(model) ?? 0
+                    // Variables para velocidad y deteccion de fin de descarga
+                    var lastCheckDate = Date()
+                    var lastSessionBytes: Int64 = 0
+                    var sizeStableCount = 0 // Contador para detectar cuando el tamano deja de cambiar
+                    
+                    // Obtener tamano inicial del REPO COMPLETO
+                    let initialRepoSize = self.getTotalRepoSize() ?? 0
                     let expectedSize = Double(model.sizeInBytes)
                     
                     while !Task.isCancelled {
-                        // Intentar obtener el tamano actual del repo
-                        if let currentRepoSize = self.downloadedModelSize(model) {
+                        // 1. Obtener tamano actual
+                        if let currentRepoSize = self.getTotalRepoSize() {
                             
-                            // Lo que se ha descargado en esta sesion
                             let downloadedSessionBytes = max(0, currentRepoSize - initialRepoSize)
                             let currentProgress = min(Double(downloadedSessionBytes) / expectedSize, 0.99)
                             
-                            // Actualizar mensaje con detalles
-                            let downloadedMB = Int(downloadedSessionBytes / 1024 / 1024)
-                            let totalMB = Int(expectedSize / 1024 / 1024)
+                            // 2. Calcular velocidad (bytes por segundo)
+                            let now = Date()
+                            let timeDelta = now.timeIntervalSince(lastCheckDate)
                             
-                            // Solo actualizar state si avanzo o es la primera vez
-                            if currentProgress > lastProgress || lastProgress == 0 {
-                                lastProgress = currentProgress
-                                self.loadingProgress = currentProgress
+                            // Solo actualizar velocidad y logica de stabling cada 0.5s
+                            if timeDelta >= 0.5 {
+                                let bytesDelta = downloadedSessionBytes - lastSessionBytes
+                                let speedBps = Double(bytesDelta) / timeDelta
+                                let speedMBps = speedBps / 1024 / 1024
                                 
-                                // Si ya casi esta (95%), asumir prewarming
-                                if currentProgress >= 0.95 {
+                                // Deteccion de estabilidad (Prewarming detectado)
+                                // Si los bytes no cambian y ya tenemos un buen progreso (>85%), asumimos que la descarga termino
+                                // y WhisperKit esta descomprimiendo/preparando.
+                                if bytesDelta == 0 && currentProgress > 0.85 {
+                                    sizeStableCount += 1
+                                } else {
+                                    sizeStableCount = 0
+                                }
+                                
+                                // Actualizar referencias para siguiente ciclo
+                                lastCheckDate = now
+                                lastSessionBytes = downloadedSessionBytes
+                                
+                                // Formatear valores
+                                let downloadedMB = Int(downloadedSessionBytes / 1024 / 1024)
+                                let totalMB = Int(expectedSize / 1024 / 1024)
+                                let speedString = String(format: "%.1f MB/s", max(0, speedMBps))
+                                
+                                // 3. Actualizar UI
+                                
+                                // Caso A: Detectamos que la descarga "termino" (size estable por 2+ ciclos de 0.5s = 1s)
+                                if sizeStableCount >= 2 {
                                     self.loadingState = .prewarming
                                     self.loadingMessage = "Finalizando descarga y preparando..."
-                                } else {
-                                    self.loadingState = .downloading
-                                    let percent = Int(currentProgress * 100)
-                                    let msg = "Descargando... \(percent)% (\(downloadedMB) MB / \(totalMB) MB)"
-                                    self.loadingMessage = msg
-                                    print("⬇️ \(msg)") // Log para verificar progreso
+                                    // Forzar progreso a 100% visualmente
+                                    self.loadingProgress = 1.0
+                                    
+                                // Caso B: Progreso normal
+                                } else if currentProgress >= lastProgress || lastProgress == 0 {
+                                    lastProgress = currentProgress
+                                    self.loadingProgress = currentProgress
+                                    
+                                    // Threshold seguro (93%)
+                                    if currentProgress >= 0.93 {
+                                        self.loadingState = .prewarming
+                                        self.loadingMessage = "Verificando archivos..."
+                                    } else {
+                                        self.loadingState = .downloading
+                                        let percent = Int(currentProgress * 100)
+                                        let msg = "Descargando... \(percent)% (\(downloadedMB)/\(totalMB) MB) • \(speedString)"
+                                        self.loadingMessage = msg
+                                        
+                                        if Int(currentProgress * 100) % 5 == 0 {
+                                            print("⬇️ \(msg)")
+                                        }
+                                    }
                                 }
                             }
                         }
                         
-                        // Verificar cada 0.2s
-                        try? await Task.sleep(nanoseconds: 200_000_000)
+                        try? await Task.sleep(nanoseconds: 100_000_000)
                     }
                 }
                 
@@ -433,12 +472,36 @@ class WhisperKitTranscriber: ObservableObject {
         return nil
     }
 
-    /// Obtiene el tamano de un modelo descargado en bytes
-    func downloadedModelSize(_ model: WhisperKitModel) -> Int64? {
-        // En lugar de buscar un modelo especifico, buscamos el repo general
-        // Esto es porque WhisperKit usa un solo repo para todos los modelos
+    /// Obtiene el tamano total del repo de WhisperKit (para monitorear descargas)
+    func getTotalRepoSize() -> Int64? {
         guard let repoURL = getWhisperKitRepoDirectory() else { return nil }
         return directorySize(at: repoURL)
+    }
+
+    /// Obtiene el tamano de un modelo especifico descargado en bytes
+    func downloadedModelSize(_ model: WhisperKitModel) -> Int64? {
+        guard let repoURL = getWhisperKitRepoDirectory() else { return nil }
+        
+        // 1. Intentar busqueda exacta por nombre de modelo (ej: openai_whisper-tiny)
+        let exactPath = repoURL.appendingPathComponent(model.rawValue)
+        if FileManager.default.fileExists(atPath: exactPath.path) {
+            return directorySize(at: exactPath)
+        }
+        
+        // 2. Intentar busqueda flexible si el exacto falla (por si la estructura es distinta)
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
+        
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(at: repoURL, includingPropertiesForKeys: nil)
+            for url in contents {
+                let name = url.lastPathComponent.lowercased()
+                if name.contains("whisper") && name.contains(modelName) {
+                    return directorySize(at: url)
+                }
+            }
+        } catch { return nil }
+        
+        return nil
     }
 
     /// Calcula el tamano de un directorio recursivamente
