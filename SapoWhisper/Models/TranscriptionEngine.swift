@@ -26,9 +26,9 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .appleOnline:
-            return "Gratis, requiere internet. Usa los servidores de Apple."
+            return "engine.apple.description".localized
         case .whisperLocal:
-            return "100% privado, sin internet. Procesa todo en tu Mac."
+            return "engine.whisper.description".localized
         }
     }
 
@@ -93,11 +93,11 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
 
     var speed: String {
         switch self {
-        case .tiny: return "Muy rapido"
-        case .base: return "Rapido"
-        case .small: return "Moderado"
-        case .largev3: return "Lento"
-        case .largev3Turbo: return "Rapido"
+        case .tiny: return "model.speed.very_fast".localized
+        case .base: return "model.speed.fast".localized
+        case .small: return "model.speed.moderate".localized
+        case .largev3: return "model.speed.slow".localized
+        case .largev3Turbo: return "model.speed.fast".localized
         }
     }
 

@@ -167,6 +167,14 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        // Observar cambios de idioma
+        LocalizationManager.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Initial State
@@ -392,7 +400,7 @@ class SapoWhisperViewModel: ObservableObject {
         switch appState {
         case .recording:
             let duration = Int(recordingDuration)
-            return "Grabando... \(duration)s"
+            return "menu.recording".localized(String(duration))
         default:
             return appState.statusText
         }
@@ -400,7 +408,7 @@ class SapoWhisperViewModel: ObservableObject {
     
     /// Texto del botón de grabación
     var recordButtonText: String {
-        audioRecorder.isRecording ? "⏹ Detener" : "🎤 Grabar"
+        audioRecorder.isRecording ? "menu.stop_recording".localized : "menu.start_recording".localized
     }
     
     /// Si el boton de grabar esta habilitado

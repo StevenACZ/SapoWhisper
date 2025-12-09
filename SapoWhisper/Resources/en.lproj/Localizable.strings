@@ -1,0 +1,102 @@
+/* General */
+"app_name" = "SapoWhisper";
+"version" = "Version %@";
+"made_by" = "Created with 💚 by Steven";
+"close" = "Close";
+"quit" = "Quit SapoWhisper";
+"about" = "About";
+
+/* Menu Bar */
+"menu.ready" = "Ready to record";
+"menu.recording" = "Recording... %@s";
+"menu.transcribing" = "Transcribing...";
+"menu.no_model" = "Configure";
+"menu.start_recording" = "Start Recording";
+"menu.stop_recording" = "Stop Recording";
+"menu.configure_details" = "Configure voice recognition";
+"menu.last_transcription" = "Last transcription";
+"menu.auto_paste" = "Auto-paste text";
+"menu.auto_paste_sub" = "Pastes automatically when finished";
+"menu.settings" = "Settings";
+
+/* Settings */
+"settings.general" = "General";
+"settings.hotkeys" = "Hotkeys";
+"settings.about" = "About";
+"settings.audio" = "Audio";
+"settings.microphone" = "Microphone";
+"settings.microphone_desc" = "Audio input device";
+"settings.input_language" = "Transcription Language";
+"settings.input_language_desc" = "The language you will speak";
+"settings.behavior" = "Behavior";
+"settings.auto_paste" = "Auto-paste";
+"settings.auto_paste_desc" = "Text will be pasted at cursor position";
+"settings.feedback_sounds" = "Feedback Sounds";
+"settings.feedback_sounds_desc" = "Play sounds when recording and transcribing";
+"settings.hotkey_global" = "Global Hotkey";
+"settings.current_hotkey" = "Current Hotkey";
+"settings.current_hotkey_desc" = "Press to record/stop from any app";
+"settings.change_hotkey" = "Change Hotkey";
+"settings.presets" = "Presets";
+"settings.permissions" = "Permissions";
+"settings.permissions_title" = "Accessibility Permissions";
+"settings.permissions_desc" = "For the hotkey to work in all apps, SapoWhisper needs Accessibility permissions.";
+"settings.open_preferences" = "Open System Preferences";
+"settings.view_github" = "View on GitHub";
+
+/* Model Download / Config View */
+"config.title" = "Voice Configuration";
+"config.subtitle" = "SapoWhisper uses Apple's speech recognition or WhisperKit to transcribe your audio.";
+"config.tab_settings" = "Settings";
+"config.tab_info" = "Info";
+"config.engine" = "Transcription Engine";
+"config.whisper_model" = "Whisper Model";
+"config.downloading" = "Downloading";
+"config.space_used" = "Space used: %@";
+"config.models_download_auto" = "Models are downloaded automatically the first time";
+"config.hotkey_instruction" = "Click and press your key combination (min 2 keys)";
+"config.app_language" = "App Language";
+"config.app_language_desc" = "User interface language";
+
+/* Info Tab */
+"info.how_to_title" = "How does it work?";
+"info.how_to_body" = "1. Press the hotkey to start\n2. Speak clearly into the microphone\n3. Press the hotkey again to stop\n4. Text is automatically copied\n5. With \"Auto-paste\" enabled, it pastes where your cursor is";
+"info.privacy_title" = "Privacy";
+"info.privacy_body" = "Whisper (Local): Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.\n\nApple (Online): Audio is processed on Apple's servers. Your voice is not stored permanently.";
+"info.permissions_title" = "Required Permissions";
+"info.permissions_body" = "• Microphone: To capture your voice\n• Speech Recognition: To transcribe audio\n• Accessibility: For global hotkey support";
+
+/* Languages */
+"lang.spanish" = "Spanish";
+"lang.english" = "English";
+"lang.auto" = "Auto";
+
+/* Common */
+"status.ready" = "Ready";
+"status.active" = "Active";
+"status.configuring" = "Configuring...";
+"status.error" = "Error: %@";
+"status.no_model" = "Download a model first";
+"status.recording_generic" = "Recording...";
+"config.subtitle_info" = "Speech-to-Text with WhisperKit and Apple Speech";
+"app.description" = "Speech-to-Text 100% local";
+"config.coming_soon" = "Coming Soon";
+"config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
+"menu.copy_clipboard" = "Copy to clipboard";
+
+/* Engine Descriptions */
+"engine.apple.description" = "Free, requires internet. Uses Apple servers.";
+"engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
+
+/* Badges & Labels */
+"badge.recommended" = "Recommended";
+"badge.balance" = "Balanced";
+"badge.pro" = "Pro";
+
+/* Model Speeds */
+"model.speed.very_fast" = "Very fast";
+"model.speed.fast" = "Fast";
+"model.speed.moderate" = "Moderate";
+"model.speed.slow" = "Slow";
+"model.delete_tooltip" = "Delete model to free up space";
+

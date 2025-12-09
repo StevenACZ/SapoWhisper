@@ -18,15 +18,15 @@ enum AppState: Equatable {
     var statusText: String {
         switch self {
         case .idle:
-            return "Listo para grabar"
+            return "menu.ready".localized
         case .recording:
-            return "Grabando..."
+            return "status.recording_generic".localized
         case .processing:
-            return "Transcribiendo..."
+            return "menu.transcribing".localized
         case .error(let message):
-            return "Error: \(message)"
+            return "status.error".localized(message)
         case .noModel:
-            return "Descarga un modelo primero"
+            return "status.no_model".localized
         }
     }
     

@@ -57,8 +57,8 @@ struct ModelDownloadView: View {
             // Picker en el centro de la barra de título
             ToolbarItem(placement: .principal) {
                 Picker("", selection: $selectedTab) {
-                    Text("Ajustes").tag(0)
-                    Text("Info").tag(1)
+                    Text("config.tab_settings".localized).tag(0)
+                    Text("config.tab_info".localized).tag(1)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 140)
@@ -66,7 +66,7 @@ struct ModelDownloadView: View {
 
             // Botón cerrar a la derecha
             ToolbarItem(placement: .confirmationAction) {
-                Button("Cerrar") {
+                Button("close".localized) {
                     dismiss()
                 }
             }
@@ -96,11 +96,11 @@ struct ModelDownloadView: View {
             
             // Título y descripción
             VStack(spacing: 4) {
-                Text("Configuración de Voz")
+                Text("config.title".localized)
                     .font(.title2)
                     .fontWeight(.bold)
                 
-                Text("SapoWhisper usa el reconocimiento de voz de Apple para transcribir tu audio.")
+                Text("config.subtitle".localized)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -189,7 +189,7 @@ struct ModelDownloadView: View {
                 
                 Spacer()
                 
-                Text("Próximamente")
+                Text("config.coming_soon".localized)
                     .font(.caption)
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
@@ -198,7 +198,7 @@ struct ModelDownloadView: View {
                     .cornerRadius(4)
             }
             
-            Text("En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.")
+            Text("config.whisper_coming_soon_desc".localized)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
@@ -221,6 +221,9 @@ struct ModelDownloadView: View {
     private var settingsTab: some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Idioma de la App
+                appLanguageCard
+
                 // Motor de transcripcion
                 transcriptionEngineCard
 
@@ -252,7 +255,7 @@ struct ModelDownloadView: View {
 
     private var transcriptionEngineCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Motor de Transcripcion", systemImage: "cpu")
+            Label("config.engine".localized, systemImage: "cpu")
                 .font(.headline)
 
             VStack(spacing: 8) {
@@ -283,7 +286,7 @@ struct ModelDownloadView: View {
     private var whisperKitModelCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Modelo de Whisper", systemImage: "square.stack.3d.up")
+                Label("config.whisper_model".localized, systemImage: "square.stack.3d.up")
                     .font(.headline)
 
                 Spacer()
@@ -354,7 +357,7 @@ struct ModelDownloadView: View {
                 HStack {
                     Image(systemName: "internaldrive")
                         .foregroundColor(.secondary)
-                    Text("Espacio usado: \(WhisperKitTranscriber.formatBytes(totalSize))")
+                    Text("config.space_used".localized(WhisperKitTranscriber.formatBytes(totalSize)))
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -362,7 +365,7 @@ struct ModelDownloadView: View {
                 .padding(.top, 4)
             }
 
-            Text("Los modelos se descargan automaticamente la primera vez")
+            Text("config.models_download_auto".localized)
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -374,10 +377,10 @@ struct ModelDownloadView: View {
 
     private var microphoneCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Micrófono", systemImage: "mic.fill")
+            Label("settings.microphone".localized, systemImage: "mic.fill")
                 .font(.headline)
 
-            Picker("Dispositivo de entrada", selection: $selectedMicrophone) {
+            Picker("settings.microphone_desc".localized, selection: $selectedMicrophone) {
                 ForEach(audioDeviceManager.availableDevices) { device in
                     Text(device.name).tag(device.uid)
                 }
@@ -392,16 +395,43 @@ struct ModelDownloadView: View {
 
     private var languageSelectionCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Idioma de Transcripción", systemImage: "globe")
+            Label("settings.input_language".localized, systemImage: "globe")
                 .font(.headline)
 
             HStack(spacing: 12) {
-                LanguageButton(name: "Español", flag: "🇪🇸", languageCode: "es", selectedLanguage: $selectedLanguage)
-                LanguageButton(name: "English", flag: "🇺🇸", languageCode: "en", selectedLanguage: $selectedLanguage)
-                LanguageButton(name: "Auto", flag: "🌐", languageCode: "auto", selectedLanguage: $selectedLanguage)
+                LanguageButton(name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: $selectedLanguage)
+                LanguageButton(name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: $selectedLanguage)
+                LanguageButton(name: "lang.auto".localized, flag: "🌐", languageCode: "auto", selectedLanguage: $selectedLanguage)
             }
 
-            Text("Selecciona el idioma en el que hablarás")
+            Text("settings.input_language_desc".localized)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(Constants.Sizes.cornerRadius)
+    }
+
+    private var appBinding: Binding<String> {
+        Binding(
+            get: { LocalizationManager.shared.language },
+            set: { LocalizationManager.shared.language = $0 }
+        )
+    }
+
+    private var appLanguageCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("config.app_language".localized, systemImage: "gearshape.2")
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                LanguageButton(name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: appBinding)
+                LanguageButton(name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: appBinding)
+            }
+
+            Text("config.app_language_desc".localized)
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -415,7 +445,7 @@ struct ModelDownloadView: View {
 
     private var hotkeyCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Atajo de Teclado", systemImage: "keyboard")
+            Label("settings.hotkeys".localized, systemImage: "keyboard")
                 .font(.headline)
 
             HotkeyRecorderView(
@@ -428,7 +458,7 @@ struct ModelDownloadView: View {
             )
             .frame(height: 36)
 
-            Text("Haz clic y presiona tu combinación de teclas (mínimo 2 teclas)")
+            Text("config.hotkey_instruction".localized)
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -440,13 +470,13 @@ struct ModelDownloadView: View {
 
     private var behaviorCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Comportamiento", systemImage: "gearshape")
+            Label("settings.behavior".localized, systemImage: "gearshape")
                 .font(.headline)
 
             Toggle(isOn: $autoPaste) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Pegar automáticamente")
-                    Text("El texto se pegará donde tengas el cursor")
+                    Text("settings.auto_paste".localized)
+                    Text("settings.auto_paste_desc".localized)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -456,8 +486,8 @@ struct ModelDownloadView: View {
 
             Toggle(isOn: $playSound) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sonidos de feedback")
-                    Text("Reproduce sonidos al grabar y transcribir")
+                    Text("settings.feedback_sounds".localized)
+                    Text("settings.feedback_sounds_desc".localized)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -542,11 +572,11 @@ struct ModelDownloadView: View {
                     }
 
                     VStack(spacing: 4) {
-                        Text("SapoWhisper")
+                        Text("app_name".localized)
                             .font(.title2)
                             .fontWeight(.bold)
 
-                        Text("Speech-to-Text con WhisperKit y Apple Speech")
+                        Text("config.subtitle_info".localized)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -557,36 +587,22 @@ struct ModelDownloadView: View {
                 // Cómo funciona
                 InfoSection(
                     icon: "questionmark.circle.fill",
-                    title: "¿Cómo funciona?",
-                    content: """
-                    1. Presiona el atajo de teclado para iniciar
-                    2. Habla claramente al micrófono
-                    3. Presiona el atajo otra vez para detener
-                    4. El texto se copia automáticamente
-                    5. Con "Auto-pegar" activado, se pega donde tengas el cursor
-                    """
+                    title: "info.how_to_title".localized,
+                    content: "info.how_to_body".localized
                 )
 
                 // Privacidad
                 InfoSection(
                     icon: "lock.shield.fill",
-                    title: "Privacidad",
-                    content: """
-                    Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.
-
-                    Apple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.
-                    """
+                    title: "info.privacy_title".localized,
+                    content: "info.privacy_body".localized
                 )
 
                 // Permisos
                 InfoSection(
                     icon: "hand.raised.fill",
-                    title: "Permisos necesarios",
-                    content: """
-                    • Micrófono: Para capturar tu voz
-                    • Reconocimiento de voz: Para transcribir el audio
-                    • Accesibilidad: Para el atajo de teclado global
-                    """
+                    title: "info.permissions_title".localized,
+                    content: "info.permissions_body".localized
                 )
             }
             .padding()
@@ -604,7 +620,7 @@ struct ModelDownloadView: View {
             
             Spacer()
             
-            Button("Cerrar") {
+            Button("close".localized) {
                 dismiss()
             }
             .keyboardShortcut(.escape)
@@ -1013,7 +1029,7 @@ struct EngineButton: View {
                             .foregroundColor(.primary)
 
                         if engine == .whisperLocal {
-                            Text("Recomendado")
+                            Text("badge.recommended".localized)
                                 .font(.caption2)
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 6)
@@ -1111,7 +1127,7 @@ struct WhisperModelButton: View {
                                 .foregroundColor(.primary)
 
                             if model.isRecommended {
-                                Text(model == .small ? "Balance" : "Pro")
+                                Text(model == .small ? "badge.balance".localized : "badge.pro".localized)
                                     .font(.caption2)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 5)
@@ -1186,7 +1202,7 @@ struct WhisperModelButton: View {
                         .foregroundColor(.red.opacity(0.7))
                 }
                 .buttonStyle(.plain)
-                .help("Borrar modelo para liberar espacio")
+                .help("model.delete_tooltip".localized)
             }
         }
         .padding(10)
