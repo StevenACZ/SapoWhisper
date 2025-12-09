@@ -58,7 +58,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     // MARK: - Private Properties
-
+    
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
@@ -68,6 +68,13 @@ class SapoWhisperViewModel: ObservableObject {
         checkInitialState()
         setupHotkey()
         loadSavedSettings()
+        
+        // Cargar modelo automaticamente si el motor es WhisperLocal
+        if currentEngine == .whisperLocal {
+            Task {
+                await loadWhisperKitModel()
+            }
+        }
     }
 
     /// Carga las configuraciones guardadas

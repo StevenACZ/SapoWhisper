@@ -78,6 +78,8 @@ class WhisperKitTranscriber: ObservableObject {
         UserDefaults.standard.set(modelNames, forKey: downloadedModelsKey)
     }
 
+    private var loadTask: Task<Void, Error>?
+
     // MARK: - Model Management
 
     /// Carga un modelo de WhisperKit
@@ -85,8 +87,36 @@ class WhisperKitTranscriber: ObservableObject {
     /// Incluye reintentos automaticos para manejar errores de red
     func loadModel(_ model: WhisperKitModel, language: String = "es") async throws {
         #if canImport(WhisperKit)
+        
+        // Cancelar tarea anterior si existe
+        if let existingTask = loadTask {
+            print("🛑 Cancelando carga anterior de WhisperKit...")
+            existingTask.cancel()
+            loadTask = nil
+            // Esperar un momento a que limpie
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        
+        // Crear nueva tarea de carga
+        let task = Task {
+            try await performLoadModel(model, language: language)
+        }
+        
+        loadTask = task
+        
+        // Esperar a que termine (si lanza error, se propaga)
+        try await task.value
+        loadTask = nil
+        
+        #else
+        throw WhisperKitError.notAvailable
+        #endif
+    }
+    
+    private func performLoadModel(_ model: WhisperKitModel, language: String) async throws {
         guard !isLoading else {
-            print("Ya hay un modelo cargandose")
+            // Esto solo pasa si se llamo internamente fuera del wrapper, por seguridad reseteamos
+            isLoading = false
             return
         }
 
@@ -272,10 +302,6 @@ class WhisperKitTranscriber: ObservableObject {
         errorMessage = "Error cargando modelo: \(errorMsg)"
         print("Error cargando WhisperKit despues de \(maxRetries) intentos: \(errorMsg)")
         throw WhisperKitError.modelLoadFailed(errorMsg)
-        
-        #else
-        throw WhisperKitError.notAvailable
-        #endif
     }
 
     /// Descarga el modelo actual de memoria
