@@ -22,11 +22,11 @@ struct SapoWhisperApp: App {
         .menuBarExtraStyle(.window)
         
         // Ventana de Configuración (se abre desde el menu)
-        Window("Configuración", id: "settings") {
+        Window("", id: "settings") {
             ModelDownloadView(viewModel: viewModel)
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .defaultPosition(.center)
         
         // Preferencias del sistema (⌘,)

@@ -20,27 +20,37 @@ struct ModelDownloadView: View {
             
             Divider()
             
-            // Contenido
-            TabView(selection: $selectedTab) {
-                // Tab de modelos
-                modelsTab
-                    .tag(0)
-                
-                // Tab de información
-                infoTab
-                    .tag(1)
+            // Contenido - Sin TabView para evitar botones duplicados
+            Group {
+                if selectedTab == 0 {
+                    modelsTab
+                } else {
+                    infoTab
+                }
             }
-            .tabViewStyle(.automatic)
             
             Divider()
             
             // Footer
             footerSection
         }
-        .frame(width: 500, height: 580)
+        .frame(width: 500, height: 520)
         .background(Color(NSColor.windowBackgroundColor))
+        .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
+            // Picker en el centro de la barra de título
+            ToolbarItem(placement: .principal) {
+                Picker("", selection: $selectedTab) {
+                    Text("Estado").tag(0)
+                    Text("Información").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+            
+            // Botón cerrar a la derecha
+            ToolbarItem(placement: .confirmationAction) {
                 Button("Cerrar") {
                     dismiss()
                 }
@@ -52,14 +62,6 @@ struct ModelDownloadView: View {
     
     private var headerSection: some View {
         VStack(spacing: 16) {
-            // Tabs - Arriba del todo
-            Picker("", selection: $selectedTab) {
-                Text("Estado").tag(0)
-                Text("Información").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 200)
-            
             // Icono animado
             ZStack {
                 Circle()
