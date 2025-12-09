@@ -13,7 +13,12 @@ struct SettingsView: View {
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
     @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
     @AppStorage(Constants.StorageKeys.language) private var language = "es"
-    
+    @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.hotkeyKeyCode) private var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
+    @AppStorage(Constants.StorageKeys.hotkeyModifiers) private var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
+
+    @StateObject private var audioDeviceManager = AudioDeviceManager.shared
+
     var body: some View {
         TabView {
             generalTab
@@ -39,28 +44,19 @@ struct SettingsView: View {
     private var generalTab: some View {
         Form {
             Section {
-                Toggle(isOn: $autoPaste) {
+                Picker(selection: $selectedMicrophone) {
+                    ForEach(audioDeviceManager.availableDevices) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Pegar automáticamente")
-                        Text("El texto se pegará donde tengas el cursor")
+                        Text("Micrófono")
+                        Text("Dispositivo de entrada de audio")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
-                
-                Toggle(isOn: $playSound) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sonidos de feedback")
-                        Text("Reproduce sonidos al grabar y transcribir")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } header: {
-                Text("Comportamiento")
-            }
-            
-            Section {
+
                 Picker(selection: $language) {
                     Label("Español", systemImage: "globe.europe.africa").tag("es")
                     Label("English", systemImage: "globe.americas").tag("en")
@@ -75,11 +71,36 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Idioma")
+                Text("Audio")
+            }
+
+            Section {
+                Toggle(isOn: $autoPaste) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pegar automáticamente")
+                        Text("El texto se pegará donde tengas el cursor")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Toggle(isOn: $playSound) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sonidos de feedback")
+                        Text("Reproduce sonidos al grabar y transcribir")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("Comportamiento")
             }
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            audioDeviceManager.refreshDevices()
+        }
     }
     
     // MARK: - Hotkey Tab
@@ -94,49 +115,49 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     Spacer()
-                    
-                    HotkeyDisplay(text: HotkeyManager.shared.hotkeyDescription)
+
+                    HotkeyDisplay(text: currentHotkeyDescription)
                 }
             } header: {
                 Text("Atajo de Teclado Global")
             }
-            
+
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Atajos predefinidos")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
+
                     HStack(spacing: 10) {
-                        HotkeyButton("⌥ Space", isSelected: true) {
-                            updateHotkey(keyCode: 49, modifiers: UInt32(optionKey))
+                        HotkeyButton("⌥ Space", isSelected: isHotkeySelected(keyCode: 49, modifiers: optionKey)) {
+                            updateHotkey(keyCode: 49, modifiers: optionKey)
                         }
-                        
-                        HotkeyButton("⌘⇧ Space", isSelected: false) {
-                            updateHotkey(keyCode: 49, modifiers: UInt32(cmdKey | shiftKey))
+
+                        HotkeyButton("⌘⇧ Space", isSelected: isHotkeySelected(keyCode: 49, modifiers: cmdKey | shiftKey)) {
+                            updateHotkey(keyCode: 49, modifiers: cmdKey | shiftKey)
                         }
-                        
-                        HotkeyButton("⌃⌥ Space", isSelected: false) {
-                            updateHotkey(keyCode: 49, modifiers: UInt32(controlKey | optionKey))
+
+                        HotkeyButton("⌃⌥ Space", isSelected: isHotkeySelected(keyCode: 49, modifiers: controlKey | optionKey)) {
+                            updateHotkey(keyCode: 49, modifiers: controlKey | optionKey)
                         }
                     }
                 }
             } header: {
                 Text("Cambiar Atajo")
             }
-            
+
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Permisos de Accesibilidad", systemImage: "hand.raised")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    
+
                     Text("Para que el atajo funcione en todas las aplicaciones, SapoWhisper necesita permisos de Accesibilidad.")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     Button("Abrir Preferencias del Sistema") {
                         openAccessibilityPreferences()
                     }
@@ -149,9 +170,32 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .padding()
     }
-    
-    private func updateHotkey(keyCode: UInt32, modifiers: UInt32) {
-        HotkeyManager.shared.updateHotkey(keyCode: keyCode, modifiers: modifiers) {
+
+    private func isHotkeySelected(keyCode: Int, modifiers: Int) -> Bool {
+        hotkeyKeyCode == keyCode && hotkeyModifiers == modifiers
+    }
+
+    private var currentHotkeyDescription: String {
+        var parts: [String] = []
+
+        if hotkeyModifiers & controlKey != 0 { parts.append("⌃") }
+        if hotkeyModifiers & optionKey != 0 { parts.append("⌥") }
+        if hotkeyModifiers & shiftKey != 0 { parts.append("⇧") }
+        if hotkeyModifiers & cmdKey != 0 { parts.append("⌘") }
+
+        switch hotkeyKeyCode {
+        case 49: parts.append("Space")
+        case 36: parts.append("Return")
+        default: parts.append("Key\(hotkeyKeyCode)")
+        }
+
+        return parts.joined(separator: " + ")
+    }
+
+    private func updateHotkey(keyCode: Int, modifiers: Int) {
+        hotkeyKeyCode = keyCode
+        hotkeyModifiers = modifiers
+        HotkeyManager.shared.updateHotkey(keyCode: UInt32(keyCode), modifiers: UInt32(modifiers)) {
             // Callback vacío - se maneja desde el ViewModel
         }
     }

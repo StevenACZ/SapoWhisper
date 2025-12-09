@@ -72,19 +72,32 @@ class WhisperTranscriber: ObservableObject {
         guard isModelLoaded else {
             throw TranscriberError.modelNotLoaded
         }
-        
+
         isTranscribing = true
         progress = 0.1
         errorMessage = nil
-        
+
         defer {
             isTranscribing = false
             progress = 1.0
         }
-        
+
         // Configurar el reconocedor con el idioma correcto
-        let locale = Locale(identifier: language == "es" ? "es-ES" : "en-US")
-        guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
+        let recognizer: SFSpeechRecognizer?
+
+        switch language {
+        case "es":
+            recognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES"))
+        case "en":
+            recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        case "auto":
+            // Usar el idioma del sistema para auto-detección
+            recognizer = SFSpeechRecognizer()
+        default:
+            recognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES"))
+        }
+
+        guard let recognizer = recognizer, recognizer.isAvailable else {
             throw TranscriberError.transcriptionFailed("Speech Recognition no disponible para \(language)")
         }
         

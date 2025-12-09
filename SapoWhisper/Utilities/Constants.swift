@@ -90,6 +90,7 @@ enum Constants {
         static let onboardingComplete = "onboardingComplete"
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
+        static let selectedMicrophone = "selectedMicrophone"
     }
 }
 
