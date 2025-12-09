@@ -303,11 +303,24 @@ struct ModelDownloadView: View {
                 VStack(spacing: 8) {
                     ProgressView(value: viewModel.whisperKitLoadingProgress)
                         .progressViewStyle(.linear)
-                        .tint(.sapoGreen)
+                        .tint(viewModel.whisperKitTranscriber.loadingState == .downloading ? .blue : .sapoGreen)
 
-                    Text(viewModel.whisperKitLoadingMessage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        // Icono segun estado
+                        if viewModel.whisperKitTranscriber.loadingState == .downloading {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                        } else if viewModel.whisperKitTranscriber.loadingState == .prewarming {
+                            Image(systemName: "cpu.fill")
+                                .foregroundColor(.sapoGreen)
+                                .font(.caption)
+                        }
+                        
+                        Text(viewModel.whisperKitLoadingMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding(.vertical, 8)
             }

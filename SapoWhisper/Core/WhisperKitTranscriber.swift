@@ -18,6 +18,17 @@ import WhisperKit
 @MainActor
 class WhisperKitTranscriber: ObservableObject {
 
+    // MARK: - Loading State Enum
+    
+    enum LoadingState: String {
+        case idle = "Listo"
+        case downloading = "Descargando modelo..."
+        case prewarming = "Preparando modelo..."
+        case loading = "Cargando modelo..."
+        case ready = "Modelo listo ✓"
+        case error = "Error"
+    }
+
     // MARK: - Published Properties
 
     @Published var isModelLoaded = false
@@ -26,6 +37,7 @@ class WhisperKitTranscriber: ObservableObject {
     @Published var progress: Double = 0
     @Published var loadingProgress: Double = 0
     @Published var loadingMessage: String = ""
+    @Published var loadingState: LoadingState = .idle
     @Published var lastTranscription: String = ""
     @Published var errorMessage: String?
     @Published var currentModelName: String?
@@ -59,8 +71,10 @@ class WhisperKitTranscriber: ObservableObject {
         isLoading = true
         isModelLoaded = false
         loadingProgress = 0
-        loadingMessage = "Preparando \(model.displayName)..."
         errorMessage = nil
+        
+        // Verificar si el modelo ya esta descargado
+        let alreadyDownloaded = isModelDownloaded(model)
 
         defer {
             isLoading = false
@@ -74,11 +88,18 @@ class WhisperKitTranscriber: ObservableObject {
                 print("Cargando modelo WhisperKit: \(model.rawValue) (intento \(attempt)/\(maxRetries))")
                 
                 if attempt > 1 {
+                    loadingState = .downloading
                     loadingMessage = "Reintentando descarga (\(attempt)/\(maxRetries))..."
                     // Esperar antes de reintentar (delay incremental)
                     try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) // 2s, 4s, 6s
+                } else if alreadyDownloaded {
+                    // Modelo ya descargado, solo prewarming
+                    loadingState = .prewarming
+                    loadingMessage = "Preparando \(model.displayName)..."
                 } else {
-                    loadingMessage = "Descargando modelo..."
+                    // Modelo nuevo, necesita descarga
+                    loadingState = .downloading
+                    loadingMessage = "Descargando \(model.displayName)..."
                 }
                 loadingProgress = 0.2
 
@@ -89,12 +110,20 @@ class WhisperKitTranscriber: ObservableObject {
                     prewarm: true
                 )
 
-                loadingMessage = "Inicializando WhisperKit..."
-                loadingProgress = 0.5
+                // Actualizar estado a prewarming cuando empieza la inicializacion
+                if !alreadyDownloaded {
+                    loadingProgress = 0.5
+                    loadingState = .prewarming
+                    loadingMessage = "Preparando modelo..."
+                } else {
+                    loadingProgress = 0.5
+                    loadingMessage = "Cargando en memoria..."
+                }
 
                 // Inicializar WhisperKit (descarga automaticamente si no existe)
                 whisperKit = try await WhisperKit(config)
 
+                loadingState = .ready
                 loadingMessage = "Modelo listo ✓"
                 loadingProgress = 1.0
 
