@@ -95,6 +95,9 @@ enum Constants {
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
         static let whisperKitModel = "whisperKitModel"
+        
+        // Launch at Login
+        static let launchAtLogin = "launchAtLogin"
     }
 }
 

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Carbon
+import ServiceManagement
 
 /// Vista de configuración de la aplicación - Diseño moderno y limpio
 struct SettingsView: View {
@@ -18,6 +19,9 @@ struct SettingsView: View {
     @AppStorage(Constants.StorageKeys.hotkeyModifiers) private var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
+    
+    // Launch at Login state
+    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         TabView {
@@ -104,6 +108,18 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                }
+                
+                Toggle(isOn: $launchAtLogin) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.launch_at_login".localized)
+                        Text("settings.launch_at_login_desc".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .onChange(of: launchAtLogin) { _, newValue in
+                    setLaunchAtLogin(enabled: newValue)
                 }
             } header: {
                 Text("settings.behavior".localized)
@@ -216,6 +232,24 @@ struct SettingsView: View {
     private func openAccessibilityPreferences() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         NSWorkspace.shared.open(url)
+    }
+    
+    // MARK: - Launch at Login
+    
+    private func setLaunchAtLogin(enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+                print("✅ SapoWhisper registrado para iniciar al arrancar")
+            } else {
+                try SMAppService.mainApp.unregister()
+                print("✅ SapoWhisper des-registrado del arranque")
+            }
+        } catch {
+            print("❌ Error al configurar Launch at Login: \(error.localizedDescription)")
+            // Revertir el estado del toggle si hay error
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
     
     // MARK: - About Tab
