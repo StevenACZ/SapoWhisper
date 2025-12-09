@@ -121,14 +121,12 @@ class AudioDeviceManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString? = nil
-        var nameSize = UInt32(MemoryLayout<CFString?>.size)
-        // Usamos withUnsafeMutablePointer y lo convertimos a RawPointer
-        status = withUnsafeMutablePointer(to: &name) { ptr in
-            AudioObjectGetPropertyData(deviceID, &namePropertyAddress, 0, nil, &nameSize, UnsafeMutableRawPointer(ptr))
-        }
+        var name: Unmanaged<CFString>?
+        var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        // Usamos &name y dejamos que Swift maneje el pointer, casteando a RawPointer
+        status = AudioObjectGetPropertyData(deviceID, &namePropertyAddress, 0, nil, &nameSize, &name)
 
-        guard status == noErr, let deviceName = name else { return nil }
+        guard status == noErr, let deviceName = name?.takeRetainedValue() as String? else { return nil }
 
         // Obtener UID del dispositivo
         var uidPropertyAddress = AudioObjectPropertyAddress(
@@ -137,15 +135,13 @@ class AudioDeviceManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var uid: CFString? = nil
-        var uidSize = UInt32(MemoryLayout<CFString?>.size)
-        status = withUnsafeMutablePointer(to: &uid) { ptr in
-            AudioObjectGetPropertyData(deviceID, &uidPropertyAddress, 0, nil, &uidSize, UnsafeMutableRawPointer(ptr))
-        }
+        var uid: Unmanaged<CFString>?
+        var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        status = AudioObjectGetPropertyData(deviceID, &uidPropertyAddress, 0, nil, &uidSize, &uid)
 
-        guard status == noErr, let deviceUID = uid else { return nil }
+        guard status == noErr, let deviceUID = uid?.takeRetainedValue() as String? else { return nil }
 
-        return AudioDevice(id: deviceID, name: deviceName as String, uid: deviceUID as String)
+        return AudioDevice(id: deviceID, name: deviceName, uid: deviceUID)
     }
 
     /// Configura un listener para cambios en dispositivos
