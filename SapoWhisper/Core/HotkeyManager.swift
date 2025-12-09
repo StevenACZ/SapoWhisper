@@ -61,7 +61,7 @@ class HotkeyManager: ObservableObject {
         }
         
         // Registrar el hotkey
-        var hotkeyID = EventHotKeyID(signature: OSType(0x53575049), id: 1) // "SWPI"
+        let hotkeyID = EventHotKeyID(signature: OSType(0x53575049), id: 1) // "SWPI"
         
         let registerStatus = RegisterEventHotKey(
             currentKeyCode,
