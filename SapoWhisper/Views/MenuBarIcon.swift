@@ -24,7 +24,7 @@ struct MenuBarIcon: View {
         // Intentar cargar la imagen del asset catalog
         if let image = NSImage(named: imageName) {
             // Configurar el tamaño correcto para el menu bar
-            image.size = NSSize(width: 18, height: 18)
+            image.size = NSSize(width: 22, height: 22)
             return image
         }
         
