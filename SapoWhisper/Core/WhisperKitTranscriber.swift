@@ -276,14 +276,15 @@ class WhisperKitTranscriber: ObservableObject {
                 let errorDesc = error.localizedDescription
                 
                 // Verificar si es error de red para reintentar
-                let isNetworkError = errorDesc.contains("network") ||
-                                    errorDesc.contains("-1005") ||
-                                    errorDesc.contains("connection") ||
-                                    errorDesc.contains("NSURLErrorDomain")
+                let isNetworkError = errorDesc.contains("network") || 
+                                    errorDesc.contains("-1005") || 
+                                    errorDesc.contains("connection") || 
+                                    errorDesc.contains("NSURLErrorDomain") ||
+                                    errorDesc.contains("offline")
                 
                 if isNetworkError && attempt < maxRetries {
                     print("Error de red, reintentando... (intento \(attempt)/\(maxRetries))")
-                    loadingMessage = "Error de conexion. Reintentando..."
+                    loadingMessage = "Problema de conexión. Reintentando (\(attempt)/\(maxRetries))..."
                     continue // Reintentar
                 } else {
                     // Error no recuperable o ultimo intento
@@ -294,9 +295,18 @@ class WhisperKitTranscriber: ObservableObject {
         
         // Si llegamos aqui, todos los intentos fallaron
         let errorMsg = lastError?.localizedDescription ?? "Error desconocido"
-        errorMessage = "Error cargando modelo: \(errorMsg)"
+        
+        // Traducir errores comunes de inglés a español para el usuario
+        var userFriendlyError = errorMsg
+        if errorMsg.contains("network") || errorMsg.contains("connection") || errorMsg.contains("offline") {
+            userFriendlyError = "No se pudo conectar a internet para descargar el modelo."
+        } else if errorMsg.contains("space") || errorMsg.contains("disk") {
+            userFriendlyError = "No hay suficiente espacio en disco."
+        }
+        
+        errorMessage = "Error cargando modelo: \(userFriendlyError)"
         print("Error cargando WhisperKit despues de \(maxRetries) intentos: \(errorMsg)")
-        throw WhisperKitError.modelLoadFailed(errorMsg)
+        throw WhisperKitError.modelLoadFailed(userFriendlyError)
     }
 
     /// Descarga el modelo actual de memoria

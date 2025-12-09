@@ -226,7 +226,7 @@ class SapoWhisperViewModel: ObservableObject {
                 // Fallback a Apple Speech
                 print("🔄 Haciendo fallback a Apple Speech por error de red...")
                 selectedEngine = TranscriptionEngine.appleOnline.rawValue
-                appState = .error("Error de red descargando modelo. Usando Apple Speech temporalmente.")
+                appState = .error("Error de conexión. Usando Apple Speech temporalmente.")
                 
                 // Pequeno delay para mostrar el error, luego limpiar
                 Task {
