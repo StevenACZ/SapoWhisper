@@ -49,11 +49,33 @@ class WhisperKitTranscriber: ObservableObject {
     #endif
 
     private var currentModel: WhisperKitModel?
+    
+    /// Key para guardar modelos descargados en UserDefaults
+    private let downloadedModelsKey = "whisperkit_downloaded_models"
 
     // MARK: - Initialization
 
     init() {
         print("WhisperKitTranscriber inicializado")
+        loadDownloadedModelsFromStorage()
+    }
+    
+    /// Carga los modelos descargados desde UserDefaults
+    private func loadDownloadedModelsFromStorage() {
+        if let savedModels = UserDefaults.standard.stringArray(forKey: downloadedModelsKey) {
+            for modelName in savedModels {
+                if let model = WhisperKitModel(rawValue: modelName) {
+                    downloadedModels.insert(model)
+                }
+            }
+            print("📦 Modelos descargados cargados: \(downloadedModels.map { $0.displayName })")
+        }
+    }
+    
+    /// Guarda los modelos descargados en UserDefaults
+    private func saveDownloadedModelsToStorage() {
+        let modelNames = downloadedModels.map { $0.rawValue }
+        UserDefaults.standard.set(modelNames, forKey: downloadedModelsKey)
     }
 
     // MARK: - Model Management
@@ -319,6 +341,8 @@ class WhisperKitTranscriber: ObservableObject {
     /// Marca un modelo como descargado (llamar despues de cargar exitosamente)
     func markAsDownloaded(_ model: WhisperKitModel) {
         downloadedModels.insert(model)
+        saveDownloadedModelsToStorage()
+        print("📦 Modelo marcado como descargado: \(model.displayName)")
     }
     
     /// Actualiza la lista de modelos descargados
@@ -375,40 +399,23 @@ class WhisperKitTranscriber: ObservableObject {
     }
 
     /// Borra un modelo descargado para liberar espacio
+    /// Nota: Los modelos de WhisperKit usan el cache de CoreML de Apple
+    /// que se gestiona automaticamente. Esta funcion solo desmarca el modelo
+    /// y lo descarga de memoria.
     func deleteDownloadedModel(_ model: WhisperKitModel) -> Bool {
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-        var deleted = false
-        
-        for modelsDir in possibleModelDirectories {
-            guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
-            
-            do {
-                let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
-                
-                for url in contents {
-                    let name = url.lastPathComponent.lowercased()
-                    if name.contains("whisperkit") && name.contains(modelName) {
-                        try FileManager.default.removeItem(at: url)
-                        print("✅ Modelo borrado: \(model.displayName) en \(url.path)")
-                        deleted = true
-                    }
-                }
-            } catch {
-                print("❌ Error borrando modelo: \(error)")
-            }
+        // Si el modelo esta cargado actualmente, descargarlo de memoria
+        if currentModel == model {
+            unloadModel()
         }
         
-        if deleted {
-            // Remover del cache de descargados
-            downloadedModels.remove(model)
-            
-            // Si el modelo borrado era el actual, descargar de memoria
-            if currentModel == model {
-                unloadModel()
-            }
-        }
+        // Remover del cache de descargados
+        downloadedModels.remove(model)
+        saveDownloadedModelsToStorage()
         
-        return deleted
+        print("🗑️ Modelo desmarcado como descargado: \(model.displayName)")
+        print("   (El cache de CoreML se gestiona automaticamente por el sistema)")
+        
+        return true
     }
 
     /// Obtiene informacion de todos los modelos descargados
