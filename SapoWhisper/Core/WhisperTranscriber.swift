@@ -19,6 +19,8 @@ import Combine
 class WhisperTranscriber: ObservableObject {
     
     @Published var isModelLoaded = false
+    // Propiedad simulada para compatibilidad con WhisperKitTranscriber
+    @Published var isModelLoading = false 
     @Published var isTranscribing = false
     @Published var progress: Double = 0
     @Published var lastTranscription: String = ""
