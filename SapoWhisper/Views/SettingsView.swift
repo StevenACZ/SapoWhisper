@@ -23,17 +23,17 @@ struct SettingsView: View {
         TabView {
             generalTab
                 .tabItem {
-                    Label("General", systemImage: "gear")
+                    Label("settings.general".localized, systemImage: "gear")
                 }
             
             hotkeyTab
                 .tabItem {
-                    Label("Atajos", systemImage: "keyboard")
+                    Label("settings.hotkeys".localized, systemImage: "keyboard")
                 }
             
             aboutTab
                 .tabItem {
-                    Label("Acerca de", systemImage: "info.circle")
+                    Label("settings.about".localized, systemImage: "info.circle")
                 }
         }
         .frame(width: 480, height: 360)
@@ -50,35 +50,48 @@ struct SettingsView: View {
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Micrófono")
-                        Text("Dispositivo de entrada de audio")
+                        Text("settings.microphone".localized)
+                        Text("settings.microphone_desc".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // Selector de idioma de la App
+                Picker(selection: LocalizationManager.shared.$language) {
+                    Text("lang.spanish".localized).tag("es")
+                    Text("lang.english".localized).tag("en")
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("config.app_language".localized)
+                        Text("config.app_language_desc".localized)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
 
                 Picker(selection: $language) {
-                    Label("Español", systemImage: "globe.europe.africa").tag("es")
-                    Label("English", systemImage: "globe.americas").tag("en")
+                    Label("lang.spanish".localized, systemImage: "globe.europe.africa").tag("es")
+                    Label("lang.english".localized, systemImage: "globe.americas").tag("en")
                     Divider()
-                    Label("Detectar automáticamente", systemImage: "wand.and.stars").tag("auto")
+                    Label("lang.auto".localized, systemImage: "wand.and.stars").tag("auto")
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Idioma de transcripción")
-                        Text("El idioma que usarás para hablar")
+                        Text("settings.input_language".localized)
+                        Text("settings.input_language_desc".localized)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             } header: {
-                Text("Audio")
+                Text("settings.audio".localized)
             }
 
             Section {
                 Toggle(isOn: $autoPaste) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Pegar automáticamente")
-                        Text("El texto se pegará donde tengas el cursor")
+                        Text("settings.auto_paste".localized)
+                        Text("settings.auto_paste_desc".localized)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -86,14 +99,14 @@ struct SettingsView: View {
 
                 Toggle(isOn: $playSound) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Sonidos de feedback")
-                        Text("Reproduce sonidos al grabar y transcribir")
+                        Text("settings.feedback_sounds".localized)
+                        Text("settings.feedback_sounds_desc".localized)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             } header: {
-                Text("Comportamiento")
+                Text("settings.behavior".localized)
             }
         }
         .formStyle(.grouped)
@@ -110,8 +123,8 @@ struct SettingsView: View {
             Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Atajo actual")
-                        Text("Presiona para grabar/detener desde cualquier app")
+                        Text("settings.current_hotkey".localized)
+                        Text("settings.current_hotkey_desc".localized)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -121,12 +134,12 @@ struct SettingsView: View {
                     HotkeyDisplay(text: currentHotkeyDescription)
                 }
             } header: {
-                Text("Atajo de Teclado Global")
+                Text("settings.hotkey_global".localized)
             }
 
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Atajos predefinidos")
+                    Text("settings.presets".localized)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
@@ -145,26 +158,26 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Cambiar Atajo")
+                Text("settings.change_hotkey".localized)
             }
 
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Permisos de Accesibilidad", systemImage: "hand.raised")
+                    Label("settings.permissions_title".localized, systemImage: "hand.raised")
                         .font(.subheadline)
                         .fontWeight(.medium)
 
-                    Text("Para que el atajo funcione en todas las aplicaciones, SapoWhisper necesita permisos de Accesibilidad.")
+                    Text("settings.permissions_desc".localized)
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Button("Abrir Preferencias del Sistema") {
+                    Button("settings.open_preferences".localized) {
                         openAccessibilityPreferences()
                     }
                     .buttonStyle(.link)
                 }
             } header: {
-                Text("Permisos")
+                Text("settings.permissions".localized)
             }
         }
         .formStyle(.grouped)
@@ -233,11 +246,11 @@ struct SettingsView: View {
                     .font(.title)
                     .fontWeight(.bold)
                 
-                Text("Versión \(Constants.appVersion)")
+                Text("version".localized(Constants.appVersion))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
-                Text(Constants.appDescription)
+                Text("app.description".localized)
                     .font(.callout)
                     .foregroundColor(.secondary)
             }
@@ -246,7 +259,7 @@ struct SettingsView: View {
                 .frame(width: 200)
             
             VStack(spacing: 8) {
-                Text("Creado con 💚 por Steven")
+                Text("made_by".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
@@ -255,7 +268,7 @@ struct SettingsView: View {
                         NSWorkspace.shared.open(url)
                     }
                 } label: {
-                    Label("Ver en GitHub", systemImage: "link")
+                    Label("settings.view_github".localized, systemImage: "link")
                         .font(.caption)
                 }
                 .buttonStyle(.link)

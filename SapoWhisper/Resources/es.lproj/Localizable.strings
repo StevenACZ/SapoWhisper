@@ -1,0 +1,102 @@
+/* General */
+"app_name" = "SapoWhisper";
+"version" = "Versión %@";
+"made_by" = "Creado con 💚 por Steven";
+"close" = "Cerrar";
+"quit" = "Salir de SapoWhisper";
+"about" = "Acerca de";
+
+/* Menu Bar */
+"menu.ready" = "Listo para grabar";
+"menu.recording" = "Grabando... %@s";
+"menu.transcribing" = "Transcribiendo...";
+"menu.no_model" = "Configurar";
+"menu.start_recording" = "Iniciar Grabación";
+"menu.stop_recording" = "Detener Grabación";
+"menu.configure_details" = "Configurar reconocimiento de voz";
+"menu.last_transcription" = "Última transcripción";
+"menu.auto_paste" = "Auto-pegar texto";
+"menu.auto_paste_sub" = "Pega automáticamente al terminar";
+"menu.settings" = "Configuración";
+
+/* Settings */
+"settings.general" = "General";
+"settings.hotkeys" = "Atajos";
+"settings.about" = "Acerca de";
+"settings.audio" = "Audio";
+"settings.microphone" = "Micrófono";
+"settings.microphone_desc" = "Dispositivo de entrada de audio";
+"settings.input_language" = "Idioma de transcripción";
+"settings.input_language_desc" = "El idioma que usarás para hablar";
+"settings.behavior" = "Comportamiento";
+"settings.auto_paste" = "Pegar automáticamente";
+"settings.auto_paste_desc" = "El texto se pegará donde tengas el cursor";
+"settings.feedback_sounds" = "Sonidos de feedback";
+"settings.feedback_sounds_desc" = "Reproduce sonidos al grabar y transcribir";
+"settings.hotkey_global" = "Atajo de Teclado Global";
+"settings.current_hotkey" = "Atajo actual";
+"settings.current_hotkey_desc" = "Presiona para grabar/detener desde cualquier app";
+"settings.change_hotkey" = "Cambiar Atajo";
+"settings.presets" = "Atajos predefinidos";
+"settings.permissions" = "Permisos";
+"settings.permissions_title" = "Permisos de Accesibilidad";
+"settings.permissions_desc" = "Para que el atajo funcione en todas las aplicaciones, SapoWhisper necesita permisos de Accesibilidad.";
+"settings.open_preferences" = "Abrir Preferencias del Sistema";
+"settings.view_github" = "Ver en GitHub";
+
+/* Model Download / Config View */
+"config.title" = "Configuración de Voz";
+"config.subtitle" = "SapoWhisper usa el reconocimiento de voz de Apple o WhisperKit para transcribir tu audio.";
+"config.tab_settings" = "Ajustes";
+"config.tab_info" = "Info";
+"config.engine" = "Motor de Transcripción";
+"config.whisper_model" = "Modelo de Whisper";
+"config.downloading" = "Descargando";
+"config.space_used" = "Espacio usado: %@";
+"config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
+"config.hotkey_instruction" = "Haz clic y presiona tu combinación de teclas (mínimo 2 teclas)";
+"config.app_language" = "Idioma de la App";
+"config.app_language_desc" = "Idioma de la interfaz de usuario";
+
+/* Info Tab */
+"info.how_to_title" = "¿Cómo funciona?";
+"info.how_to_body" = "1. Presiona el atajo de teclado para iniciar\n2. Habla claramente al micrófono\n3. Presiona el atajo otra vez para detener\n4. El texto se copia automáticamente\n5. Con \"Auto-pegar\" activado, se pega donde tengas el cursor";
+"info.privacy_title" = "Privacidad";
+"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.";
+"info.permissions_title" = "Permisos necesarios";
+"info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Reconocimiento de voz: Para transcribir el audio\n• Accesibilidad: Para el atajo de teclado global";
+
+/* Languages */
+"lang.spanish" = "Español";
+"lang.english" = "English";
+"lang.auto" = "Auto";
+
+/* Common */
+"status.ready" = "Listo";
+"status.active" = "Activo";
+"status.configuring" = "Configurando...";
+"status.error" = "Error: %@";
+"status.no_model" = "Descarga un modelo primero";
+"status.recording_generic" = "Grabando...";
+"config.subtitle_info" = "Speech-to-Text con WhisperKit y Apple Speech";
+"app.description" = "Speech-to-Text 100% local";
+"config.coming_soon" = "Próximamente";
+"config.whisper_coming_soon_desc" = "En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.";
+"menu.copy_clipboard" = "Copiar al portapapeles";
+
+/* Engine Descriptions */
+"engine.apple.description" = "Gratis, requiere internet. Usa los servidores de Apple.";
+"engine.whisper.description" = "100% privado, sin internet. Procesa todo en tu Mac.";
+
+/* Badges & Labels */
+"badge.recommended" = "Recomendado";
+"badge.balance" = "Balance";
+"badge.pro" = "Pro";
+
+/* Model Speeds */
+"model.speed.very_fast" = "Muy rápido";
+"model.speed.fast" = "Rápido";
+"model.speed.moderate" = "Moderado";
+"model.speed.slow" = "Lento";
+"model.delete_tooltip" = "Borrar modelo para liberar espacio";
+

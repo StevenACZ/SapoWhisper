@@ -66,7 +66,7 @@ struct MenuBarView: View {
             }
             
             VStack(alignment: .leading, spacing: 2) {
-                Text("SapoWhisper")
+                Text("app_name".localized)
                     .font(.headline)
                     .fontWeight(.semibold)
                 
@@ -134,7 +134,7 @@ struct MenuBarView: View {
             // Mensaje si no hay modelo
             if case .noModel = viewModel.appState {
                 Button(action: { openSettingsWindow() }) {
-                    Label("Configurar reconocimiento de voz", systemImage: "arrow.down.circle.fill")
+                    Label("menu.configure_details".localized, systemImage: "arrow.down.circle.fill")
                         .font(.subheadline)
                 }
                 .buttonStyle(.link)
@@ -158,13 +158,13 @@ struct MenuBarView: View {
     private var buttonText: String {
         switch viewModel.appState {
         case .recording:
-            return "Detener Grabación"
+            return "menu.stop_recording".localized
         case .processing:
-            return "Transcribiendo..."
+            return "menu.transcribing".localized
         case .noModel:
-            return "Configurar"
+            return "menu.no_model".localized
         default:
-            return "Iniciar Grabación"
+            return "menu.start_recording".localized
         }
     }
     
@@ -214,7 +214,7 @@ struct MenuBarView: View {
                     .foregroundColor(.secondary)
                     .font(.caption)
                 
-                Text("Última transcripción")
+                Text("menu.last_transcription".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
@@ -229,7 +229,7 @@ struct MenuBarView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Copiar al portapapeles")
+                .help("menu.copy_clipboard".localized)
             }
             
             Text(viewModel.lastTranscription)
@@ -252,8 +252,8 @@ struct MenuBarView: View {
             // Toggle de auto-paste
             SettingsRow(
                 icon: "doc.on.clipboard",
-                title: "Auto-pegar texto",
-                subtitle: "Pega automáticamente al terminar"
+                title: "menu.auto_paste".localized,
+                subtitle: "menu.auto_paste_sub".localized
             ) {
                 Toggle("", isOn: $viewModel.autoPasteEnabled)
                     .toggleStyle(.switch)
@@ -266,7 +266,7 @@ struct MenuBarView: View {
             // Configuración - Abre ventana separada
             ActionRow(
                 icon: "gearshape",
-                title: "Configuración",
+                title: "menu.settings".localized,
                 subtitle: viewModel.transcriber.loadedModelName ?? "Speech Recognition"
             ) {
                 openSettingsWindow()
@@ -278,7 +278,7 @@ struct MenuBarView: View {
             // Salir
             ActionRow(
                 icon: "power",
-                title: "Salir de SapoWhisper",
+                title: "quit".localized,
                 subtitle: nil,
                 isDestructive: true
             ) {
