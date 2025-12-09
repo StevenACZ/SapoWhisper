@@ -167,7 +167,7 @@ struct SettingsView: View {
         VStack(spacing: 24) {
             Spacer()
             
-            // Logo animado
+            // Logo del sapo
             ZStack {
                 Circle()
                     .fill(LinearGradient(
@@ -175,17 +175,13 @@ struct SettingsView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
-                    .frame(width: 100, height: 100)
+                    .frame(width: 110, height: 110)
                 
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 50))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.sapoGreen, Color.sapoGreenDark],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             
             VStack(spacing: 6) {

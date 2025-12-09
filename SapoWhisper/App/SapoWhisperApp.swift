@@ -17,7 +17,7 @@ struct SapoWhisperApp: App {
         MenuBarExtra {
             MenuBarView(viewModel: viewModel)
         } label: {
-            Image(systemName: "waveform.circle.fill")
+            MenuBarIcon(viewModel: viewModel)
         }
         .menuBarExtraStyle(.window)
         

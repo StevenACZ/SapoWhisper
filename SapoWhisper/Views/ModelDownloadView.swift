@@ -62,7 +62,7 @@ struct ModelDownloadView: View {
     
     private var headerSection: some View {
         VStack(spacing: 16) {
-            // Icono animado
+            // Icono del sapo
             ZStack {
                 Circle()
                     .fill(LinearGradient(
@@ -70,17 +70,13 @@ struct ModelDownloadView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
-                    .frame(width: 80, height: 80)
+                    .frame(width: 90, height: 90)
                 
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.sapoGreen, Color.sapoGreenDark],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             
             // Título y descripción
