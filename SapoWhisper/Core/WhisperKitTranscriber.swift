@@ -412,6 +412,9 @@ class WhisperKitTranscriber: ObservableObject {
         downloadedModels.remove(model)
         saveDownloadedModelsToStorage()
         
+        // Forzar actualizacion de la UI
+        objectWillChange.send()
+        
         print("🗑️ Modelo desmarcado como descargado: \(model.displayName)")
         print("   (El cache de CoreML se gestiona automaticamente por el sistema)")
         
