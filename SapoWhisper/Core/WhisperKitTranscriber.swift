@@ -408,15 +408,14 @@ class WhisperKitTranscriber: ObservableObject {
             unloadModel()
         }
         
-        // Remover del cache de descargados
-        downloadedModels.remove(model)
+        // Crear nuevo Set sin el modelo (fuerza actualizacion de SwiftUI)
+        var newSet = downloadedModels
+        newSet.remove(model)
+        downloadedModels = newSet
+        
         saveDownloadedModelsToStorage()
         
-        // Forzar actualizacion de la UI
-        objectWillChange.send()
-        
         print("🗑️ Modelo desmarcado como descargado: \(model.displayName)")
-        print("   (El cache de CoreML se gestiona automaticamente por el sistema)")
         
         return true
     }
