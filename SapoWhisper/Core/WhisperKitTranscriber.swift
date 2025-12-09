@@ -154,93 +154,88 @@ class WhisperKitTranscriber: ObservableObject {
                     loadingMessage = "Descargando \(model.displayName)..."
                 }
 
-                // Tarea de monitoreo de progreso
-                let monitoringTask = Task { @MainActor in
-                    var lastProgress: Double = 0
-                    
-                    // Variables para velocidad y deteccion de fin de descarga
-                    var lastCheckDate = Date()
-                    var lastSessionBytes: Int64 = 0
-                    var sizeStableCount = 0 // Contador para detectar cuando el tamano deja de cambiar
-                    
-                    // Obtener tamano inicial del REPO COMPLETO
-                    let initialRepoSize = self.getTotalRepoSize() ?? 0
-                    let expectedSize = Double(model.sizeInBytes)
-                    
-                    while !Task.isCancelled {
-                        // 1. Obtener tamano actual
-                        if let currentRepoSize = self.getTotalRepoSize() {
-                            
-                            let downloadedSessionBytes = max(0, currentRepoSize - initialRepoSize)
-                            let currentProgress = min(Double(downloadedSessionBytes) / expectedSize, 0.99)
-                            
-                            // 2. Calcular velocidad (bytes por segundo)
-                            let now = Date()
-                            let timeDelta = now.timeIntervalSince(lastCheckDate)
-                            
-                            // Solo actualizar velocidad y logica de stabling cada 0.5s
-                            if timeDelta >= 0.5 {
-                                let bytesDelta = downloadedSessionBytes - lastSessionBytes
-                                let speedBps = Double(bytesDelta) / timeDelta
-                                let speedMBps = speedBps / 1024 / 1024
+                // Tarea de monitoreo de progreso (SOLO SI NO ESTA DESCARGADO)
+                var monitoringTask: Task<Void, Never>? = nil
+                
+                if !alreadyDownloaded {
+                    monitoringTask = Task { @MainActor in
+                        var lastProgress: Double = 0
+                        
+                        // Variables para velocidad y deteccion de fin de descarga
+                        var lastCheckDate = Date()
+                        var lastSessionBytes: Int64 = 0
+                        var sizeStableCount = 0 // Contador para detectar cuando el tamano deja de cambiar
+                        
+                        // Obtener tamano inicial del REPO COMPLETO
+                        let initialRepoSize = self.getTotalRepoSize() ?? 0
+                        let expectedSize = Double(model.sizeInBytes)
+                        
+                        while !Task.isCancelled {
+                            // 1. Obtener tamano actual
+                            if let currentRepoSize = self.getTotalRepoSize() {
                                 
-                                // Deteccion de estabilidad (Prewarming detectado)
-                                // Si los bytes no cambian y ya tenemos un buen progreso (>85%), asumimos que la descarga termino
-                                // y WhisperKit esta descomprimiendo/preparando.
-                                if bytesDelta == 0 && currentProgress > 0.85 {
-                                    sizeStableCount += 1
-                                } else {
-                                    sizeStableCount = 0
-                                }
+                                let downloadedSessionBytes = max(0, currentRepoSize - initialRepoSize)
+                                let currentProgress = min(Double(downloadedSessionBytes) / expectedSize, 0.99)
                                 
-                                // Actualizar referencias para siguiente ciclo
-                                lastCheckDate = now
-                                lastSessionBytes = downloadedSessionBytes
+                                // 2. Calcular velocidad (bytes por segundo)
+                                let now = Date()
+                                let timeDelta = now.timeIntervalSince(lastCheckDate)
                                 
-                                // Formatear valores
-                                let downloadedMB = Int(downloadedSessionBytes / 1024 / 1024)
-                                let totalMB = Int(expectedSize / 1024 / 1024)
-                                let speedString = String(format: "%.1f MB/s", max(0, speedMBps))
-                                
-                                // 3. Actualizar UI
-                                
-                                // Caso A: Detectamos que la descarga "termino" (size estable por 2+ ciclos de 0.5s = 1s)
-                                if sizeStableCount >= 2 {
-                                    self.loadingState = .prewarming
-                                    self.loadingMessage = "Finalizando descarga y preparando..."
-                                    // Forzar progreso a 100% visualmente
-                                    self.loadingProgress = 1.0
+                                // Solo actualizar velocidad y logica de stabling cada 0.5s
+                                if timeDelta >= 0.5 {
+                                    let bytesDelta = downloadedSessionBytes - lastSessionBytes
+                                    let speedBps = Double(bytesDelta) / timeDelta
+                                    let speedMBps = speedBps / 1024 / 1024
                                     
-                                // Caso B: Progreso normal
-                                } else if currentProgress >= lastProgress || lastProgress == 0 {
-                                    lastProgress = currentProgress
-                                    self.loadingProgress = currentProgress
-                                    
-                                    // Threshold seguro (93%)
-                                    if currentProgress >= 0.93 {
-                                        self.loadingState = .prewarming
-                                        self.loadingMessage = "Verificando archivos..."
+                                    // Deteccion de estabilidad (Prewarming detectado)
+                                    if bytesDelta == 0 && currentProgress > 0.85 {
+                                        sizeStableCount += 1
                                     } else {
-                                        self.loadingState = .downloading
-                                        let percent = Int(currentProgress * 100)
-                                        let msg = "Descargando... \(percent)% (\(downloadedMB)/\(totalMB) MB) • \(speedString)"
-                                        self.loadingMessage = msg
+                                        sizeStableCount = 0
+                                    }
+                                    
+                                    // Actualizar referencias para siguiente ciclo
+                                    lastCheckDate = now
+                                    lastSessionBytes = downloadedSessionBytes
+                                    
+                                    let downloadedMB = Int(downloadedSessionBytes / 1024 / 1024)
+                                    let totalMB = Int(expectedSize / 1024 / 1024)
+                                    let speedString = String(format: "%.1f MB/s", max(0, speedMBps))
+                                    
+                                    // 3. Actualizar UI
+                                    if sizeStableCount >= 2 {
+                                        self.loadingState = .prewarming
+                                        self.loadingMessage = "Finalizando descarga y preparando..."
+                                        self.loadingProgress = 1.0
+                                    } else if currentProgress >= lastProgress || lastProgress == 0 {
+                                        lastProgress = currentProgress
+                                        self.loadingProgress = currentProgress
                                         
-                                        if Int(currentProgress * 100) % 5 == 0 {
-                                            print("⬇️ \(msg)")
+                                        if currentProgress >= 0.93 {
+                                            self.loadingState = .prewarming
+                                            self.loadingMessage = "Verificando archivos..."
+                                        } else {
+                                            self.loadingState = .downloading
+                                            let percent = Int(currentProgress * 100)
+                                            let msg = "Descargando... \(percent)% (\(downloadedMB)/\(totalMB) MB) • \(speedString)"
+                                            self.loadingMessage = msg
+                                            
+                                            if Int(currentProgress * 100) % 5 == 0 {
+                                                print("⬇️ \(msg)")
+                                            }
                                         }
                                     }
                                 }
                             }
+                            
+                            try? await Task.sleep(nanoseconds: 100_000_000)
                         }
-                        
-                        try? await Task.sleep(nanoseconds: 100_000_000)
                     }
                 }
                 
                 // Asegurar cancelar monitoreo al terminar
                 defer {
-                    monitoringTask.cancel()
+                    monitoringTask?.cancel()
                 }
 
                 // Configuracion de WhisperKit
