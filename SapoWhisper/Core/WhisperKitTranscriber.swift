@@ -130,6 +130,9 @@ class WhisperKitTranscriber: ObservableObject {
                 currentModel = model
                 currentModelName = model.displayName
                 isModelLoaded = true
+                
+                // Marcar como descargado para actualizar la UI
+                markAsDownloaded(model)
 
                 print("Modelo WhisperKit cargado exitosamente: \(model.displayName)")
                 return // Exito, salir del bucle
@@ -250,49 +253,101 @@ class WhisperKitTranscriber: ObservableObject {
 
     // MARK: - Model Storage Management
 
-    /// Obtiene el directorio donde WhisperKit guarda los modelos
-    private var modelsDirectory: URL? {
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-        return cacheDir?.appendingPathComponent("huggingface/hub")
+    /// Set de modelos que sabemos que estan descargados
+    @Published var downloadedModels: Set<WhisperKitModel> = []
+
+    /// Obtiene los posibles directorios donde WhisperKit guarda los modelos
+    private var possibleModelDirectories: [URL] {
+        var dirs: [URL] = []
+        
+        // Directorio de cache de HuggingFace
+        if let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            dirs.append(cacheDir.appendingPathComponent("huggingface/hub"))
+        }
+        
+        // Directorio de Application Support
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            dirs.append(appSupport.appendingPathComponent("huggingface/hub"))
+        }
+        
+        // Home directory
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        dirs.append(homeDir.appendingPathComponent(".cache/huggingface/hub"))
+        
+        return dirs
     }
 
     /// Verifica si un modelo esta descargado localmente
     func isModelDownloaded(_ model: WhisperKitModel) -> Bool {
-        guard let modelsDir = modelsDirectory else { return false }
+        // Primero revisar el cache
+        if downloadedModels.contains(model) {
+            return true
+        }
         
-        // WhisperKit guarda los modelos en un formato especifico
-        // Buscar carpetas que contengan el nombre del modelo
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
+        // El modelo que esta cargado siempre esta descargado
+        if currentModel == model && isModelLoaded {
+            downloadedModels.insert(model)
+            return true
+        }
         
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
-            // Buscar carpeta que contenga whisperkit y el nombre del modelo
-            return contents.contains { url in
-                let name = url.lastPathComponent.lowercased()
-                return name.contains("whisperkit") && name.contains(modelName)
+        // Buscar en todos los directorios posibles
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
+        
+        for modelsDir in possibleModelDirectories {
+            guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
+            
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+                // Buscar carpeta que contenga whisperkit y el nombre del modelo
+                let found = contents.contains { url in
+                    let name = url.lastPathComponent.lowercased()
+                    return name.contains("whisperkit") && name.contains(modelName)
+                }
+                
+                if found {
+                    downloadedModels.insert(model)
+                    return true
+                }
+            } catch {
+                continue
             }
-        } catch {
-            return false
+        }
+        
+        return false
+    }
+    
+    /// Marca un modelo como descargado (llamar despues de cargar exitosamente)
+    func markAsDownloaded(_ model: WhisperKitModel) {
+        downloadedModels.insert(model)
+    }
+    
+    /// Actualiza la lista de modelos descargados
+    func refreshDownloadedModels() {
+        downloadedModels.removeAll()
+        for model in WhisperKitModel.allCases {
+            _ = isModelDownloaded(model)
         }
     }
 
     /// Obtiene el tamano de un modelo descargado en bytes
     func downloadedModelSize(_ model: WhisperKitModel) -> Int64? {
-        guard let modelsDir = modelsDirectory else { return nil }
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
         
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
-        
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+        for modelsDir in possibleModelDirectories {
+            guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
             
-            for url in contents {
-                let name = url.lastPathComponent.lowercased()
-                if name.contains("whisperkit") && name.contains(modelName) {
-                    return directorySize(at: url)
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+                
+                for url in contents {
+                    let name = url.lastPathComponent.lowercased()
+                    if name.contains("whisperkit") && name.contains(modelName) {
+                        return directorySize(at: url)
+                    }
                 }
+            } catch {
+                continue
             }
-        } catch {
-            return nil
         }
         
         return nil
@@ -321,33 +376,39 @@ class WhisperKitTranscriber: ObservableObject {
 
     /// Borra un modelo descargado para liberar espacio
     func deleteDownloadedModel(_ model: WhisperKitModel) -> Bool {
-        guard let modelsDir = modelsDirectory else { return false }
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
+        var deleted = false
         
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
-        
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+        for modelsDir in possibleModelDirectories {
+            guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
             
-            for url in contents {
-                let name = url.lastPathComponent.lowercased()
-                if name.contains("whisperkit") && name.contains(modelName) {
-                    try FileManager.default.removeItem(at: url)
-                    print("✅ Modelo borrado: \(model.displayName)")
-                    
-                    // Si el modelo borrado era el actual, descargar de memoria
-                    if currentModel == model {
-                        unloadModel()
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+                
+                for url in contents {
+                    let name = url.lastPathComponent.lowercased()
+                    if name.contains("whisperkit") && name.contains(modelName) {
+                        try FileManager.default.removeItem(at: url)
+                        print("✅ Modelo borrado: \(model.displayName) en \(url.path)")
+                        deleted = true
                     }
-                    
-                    return true
                 }
+            } catch {
+                print("❌ Error borrando modelo: \(error)")
             }
-        } catch {
-            print("❌ Error borrando modelo: \(error)")
-            return false
         }
         
-        return false
+        if deleted {
+            // Remover del cache de descargados
+            downloadedModels.remove(model)
+            
+            // Si el modelo borrado era el actual, descargar de memoria
+            if currentModel == model {
+                unloadModel()
+            }
+        }
+        
+        return deleted
     }
 
     /// Obtiene informacion de todos los modelos descargados
