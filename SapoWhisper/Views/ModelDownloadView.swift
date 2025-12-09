@@ -51,7 +51,15 @@ struct ModelDownloadView: View {
     // MARK: - Header
     
     private var headerSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
+            // Tabs - Arriba del todo
+            Picker("", selection: $selectedTab) {
+                Text("Estado").tag(0)
+                Text("Información").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+            
             // Icono animado
             ZStack {
                 Circle()
@@ -73,6 +81,7 @@ struct ModelDownloadView: View {
                     )
             }
             
+            // Título y descripción
             VStack(spacing: 4) {
                 Text("Configuración de Voz")
                     .font(.title2)
@@ -84,14 +93,6 @@ struct ModelDownloadView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }
-            
-            // Tabs
-            Picker("", selection: $selectedTab) {
-                Text("Estado").tag(0)
-                Text("Información").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 32)
         }
         .padding(.vertical, 20)
     }
