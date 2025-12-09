@@ -9,8 +9,8 @@ import SwiftUI
 
 /// Vista principal del popup del menu bar - Diseño limpio y moderno
 struct MenuBarView: View {
-    @StateObject private var viewModel = SapoWhisperViewModel()
-    @State private var showModelDownload = false
+    @ObservedObject var viewModel: SapoWhisperViewModel
+    @Environment(\.openWindow) private var openWindow
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
     
@@ -35,9 +35,6 @@ struct MenuBarView: View {
         }
         .frame(width: Constants.Sizes.menuBarWidth)
         .background(Color(NSColor.windowBackgroundColor))
-        .sheet(isPresented: $showModelDownload) {
-            ModelDownloadView(viewModel: viewModel)
-        }
     }
     
     // MARK: - Header Section
@@ -135,7 +132,7 @@ struct MenuBarView: View {
             
             // Mensaje si no hay modelo
             if case .noModel = viewModel.appState {
-                Button(action: { showModelDownload = true }) {
+                Button(action: { openSettingsWindow() }) {
                     Label("Configurar reconocimiento de voz", systemImage: "arrow.down.circle.fill")
                         .font(.subheadline)
                 }
@@ -265,13 +262,13 @@ struct MenuBarView: View {
             Divider()
                 .padding(.horizontal)
             
-            // Modelos
+            // Configuración - Abre ventana separada
             ActionRow(
-                icon: "cpu",
+                icon: "gearshape",
                 title: "Configuración",
-                subtitle: viewModel.transcriber.loadedModelName ?? "No configurado"
+                subtitle: viewModel.transcriber.loadedModelName ?? "Speech Recognition"
             ) {
-                showModelDownload = true
+                openSettingsWindow()
             }
             
             Divider()
@@ -288,6 +285,14 @@ struct MenuBarView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+    
+    // MARK: - Helpers
+    
+    private func openSettingsWindow() {
+        openWindow(id: "settings")
+        // Activar la app para que la ventana aparezca al frente
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }
 
@@ -429,6 +434,6 @@ struct ActionRow: View {
 }
 
 #Preview {
-    MenuBarView()
+    MenuBarView(viewModel: SapoWhisperViewModel())
         .frame(width: 320)
 }

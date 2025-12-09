@@ -37,7 +37,15 @@ struct ModelDownloadView: View {
             // Footer
             footerSection
         }
-        .frame(width: 480, height: 560)
+        .frame(width: 500, height: 580)
+        .background(Color(NSColor.windowBackgroundColor))
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cerrar") {
+                    dismiss()
+                }
+            }
+        }
     }
     
     // MARK: - Header
