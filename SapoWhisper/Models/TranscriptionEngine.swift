@@ -1,0 +1,117 @@
+//
+//  TranscriptionEngine.swift
+//  SapoWhisper
+//
+//  Created by Steven on 8/12/24.
+//
+
+import Foundation
+
+/// Motor de transcripción disponible
+enum TranscriptionEngine: String, CaseIterable, Identifiable {
+    case appleOnline = "apple"
+    case whisperLocal = "whisper"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .appleOnline:
+            return "Apple (Online)"
+        case .whisperLocal:
+            return "Whisper (Local)"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .appleOnline:
+            return "Gratis, requiere internet. Usa los servidores de Apple."
+        case .whisperLocal:
+            return "100% privado, sin internet. Procesa todo en tu Mac."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .appleOnline:
+            return "icloud"
+        case .whisperLocal:
+            return "desktopcomputer"
+        }
+    }
+
+    var requiresInternet: Bool {
+        switch self {
+        case .appleOnline:
+            return true
+        case .whisperLocal:
+            return false
+        }
+    }
+}
+
+/// Modelos de WhisperKit optimizados para Apple Silicon
+enum WhisperKitModel: String, CaseIterable, Identifiable {
+    case tiny = "openai_whisper-tiny"
+    case base = "openai_whisper-base"
+    case small = "openai_whisper-small"
+    case largev3 = "openai_whisper-large-v3"
+    case largev3Turbo = "openai_whisper-large-v3_turbo"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .tiny: return "Tiny"
+        case .base: return "Base"
+        case .small: return "Small"
+        case .largev3: return "Large V3"
+        case .largev3Turbo: return "Large V3 Turbo"
+        }
+    }
+
+    var fileSize: String {
+        switch self {
+        case .tiny: return "~66 MB"
+        case .base: return "~145 MB"
+        case .small: return "~483 MB"
+        case .largev3: return "~3.1 GB"
+        case .largev3Turbo: return "~1.6 GB"
+        }
+    }
+
+    var speed: String {
+        switch self {
+        case .tiny: return "Muy rapido"
+        case .base: return "Rapido"
+        case .small: return "Moderado"
+        case .largev3: return "Lento"
+        case .largev3Turbo: return "Rapido"
+        }
+    }
+
+    var accuracy: Int {
+        switch self {
+        case .tiny: return 2
+        case .base: return 3
+        case .small: return 4
+        case .largev3: return 5
+        case .largev3Turbo: return 5
+        }
+    }
+
+    var isRecommended: Bool {
+        self == .small || self == .largev3Turbo
+    }
+
+    var recommendedFor: String {
+        switch self {
+        case .tiny: return "Pruebas rapidas"
+        case .base: return "Uso diario basico"
+        case .small: return "Mejor balance"
+        case .largev3: return "Maxima precision"
+        case .largev3Turbo: return "Precision + Velocidad"
+        }
+    }
+}

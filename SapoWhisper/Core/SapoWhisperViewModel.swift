@@ -20,6 +20,11 @@ class SapoWhisperViewModel: ObservableObject {
     @Published var autoPasteEnabled = true
     @Published var recordingDuration: TimeInterval = 0
 
+    // Motor de transcripcion
+    @Published var isLoadingWhisperKit = false
+    @Published var whisperKitLoadingProgress: Double = 0
+    @Published var whisperKitLoadingMessage: String = ""
+
     // MARK: - AppStorage Properties
 
     @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "es"
@@ -27,13 +32,30 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.hotkeyKeyCode) var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
     @AppStorage(Constants.StorageKeys.hotkeyModifiers) var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
     @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.appleOnline.rawValue
+    @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
 
     // MARK: - Managers
 
     let audioRecorder = AudioRecorder()
     let transcriber = WhisperTranscriber()
+    let whisperKitTranscriber = WhisperKitTranscriber()
     let downloadManager = DownloadManager()
     let hotkeyManager = HotkeyManager.shared
+
+    // MARK: - Computed Properties
+
+    var currentEngine: TranscriptionEngine {
+        TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
+    }
+
+    var currentWhisperKitModel: WhisperKitModel {
+        WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
+    }
+
+    var isWhisperKitReady: Bool {
+        whisperKitTranscriber.isModelLoaded
+    }
 
     // MARK: - Private Properties
 
@@ -59,7 +81,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
     
     private func setupBindings() {
-        // Observar estado de grabación
+        // Observar estado de grabacion
         audioRecorder.$isRecording
             .sink { [weak self] isRecording in
                 if isRecording {
@@ -67,15 +89,15 @@ class SapoWhisperViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-        
-        // Observar duración de grabación
+
+        // Observar duracion de grabacion
         audioRecorder.$recordingDuration
             .sink { [weak self] duration in
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
-        
-        // Observar estado de transcripción
+
+        // Observar estado de transcripcion (Apple)
         transcriber.$isTranscribing
             .sink { [weak self] isTranscribing in
                 if isTranscribing {
@@ -83,39 +105,124 @@ class SapoWhisperViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-        
-        // Observar cuando el modelo está listo
+
+        // Observar estado de transcripcion (WhisperKit)
+        whisperKitTranscriber.$isTranscribing
+            .sink { [weak self] isTranscribing in
+                if isTranscribing {
+                    self?.appState = .processing
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observar carga de WhisperKit
+        whisperKitTranscriber.$isLoading
+            .sink { [weak self] isLoading in
+                self?.isLoadingWhisperKit = isLoading
+            }
+            .store(in: &cancellables)
+
+        whisperKitTranscriber.$loadingProgress
+            .sink { [weak self] progress in
+                self?.whisperKitLoadingProgress = progress
+            }
+            .store(in: &cancellables)
+
+        whisperKitTranscriber.$loadingMessage
+            .sink { [weak self] message in
+                self?.whisperKitLoadingMessage = message
+            }
+            .store(in: &cancellables)
+
+        // Observar cuando el modelo esta listo (Apple)
         transcriber.$isModelLoaded
             .sink { [weak self] isLoaded in
-                if isLoaded && self?.audioRecorder.isRecording == false && self?.transcriber.isTranscribing == false {
-                    self?.appState = .idle
+                guard let self = self else { return }
+                if isLoaded && !self.audioRecorder.isRecording && !self.transcriber.isTranscribing {
+                    self.appState = .idle
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observar cuando el modelo esta listo (WhisperKit)
+        whisperKitTranscriber.$isModelLoaded
+            .sink { [weak self] isLoaded in
+                guard let self = self else { return }
+                if self.currentEngine == .whisperLocal && isLoaded {
+                    self.appState = .idle
                 }
             }
             .store(in: &cancellables)
     }
     
     // MARK: - Initial State
-    
+
     private func checkInitialState() {
-        if transcriber.isModelLoaded {
-            appState = .idle
-        } else {
-            appState = .noModel
+        switch currentEngine {
+        case .appleOnline:
+            if transcriber.isModelLoaded {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
+        case .whisperLocal:
+            if whisperKitTranscriber.isModelLoaded {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
         }
     }
-    
-    /// Descarga un modelo de Whisper
+
+    /// Descarga un modelo de Whisper (legacy)
     func downloadModel(_ model: WhisperModel) {
         downloadManager.downloadModel(model)
     }
-    
-    /// Carga un modelo después de configurarlo
+
+    /// Carga un modelo despues de configurarlo (legacy)
     func loadModel(_ model: WhisperModel) async {
         do {
             try await transcriber.loadModel(model)
             appState = .idle
         } catch {
             appState = .error(error.localizedDescription)
+        }
+    }
+
+    // MARK: - WhisperKit Methods
+
+    /// Carga el modelo de WhisperKit seleccionado
+    func loadWhisperKitModel() async {
+        do {
+            try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: selectedLanguage)
+            appState = .idle
+        } catch {
+            appState = .error(error.localizedDescription)
+        }
+    }
+
+    /// Cambia el motor de transcripcion
+    func setEngine(_ engine: TranscriptionEngine) {
+        selectedEngine = engine.rawValue
+
+        // Si cambia a WhisperKit y no hay modelo cargado, intentar cargarlo
+        if engine == .whisperLocal && !whisperKitTranscriber.isModelLoaded {
+            Task {
+                await loadWhisperKitModel()
+            }
+        }
+    }
+
+    /// Cambia el modelo de WhisperKit
+    func setWhisperKitModel(_ model: WhisperKitModel) {
+        selectedWhisperModel = model.rawValue
+
+        // Si el motor actual es WhisperKit, recargar el modelo
+        if currentEngine == .whisperLocal {
+            whisperKitTranscriber.unloadModel()
+            Task {
+                await loadWhisperKitModel()
+            }
         }
     }
     
@@ -130,35 +237,44 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
     
-    /// Inicia la grabación
+    /// Inicia la grabacion
     func startRecording() {
-        guard transcriber.isModelLoaded else {
+        // Verificar que el motor actual tiene modelo cargado
+        let isReady: Bool
+        switch currentEngine {
+        case .appleOnline:
+            isReady = transcriber.isModelLoaded
+        case .whisperLocal:
+            isReady = whisperKitTranscriber.isModelLoaded
+        }
+
+        guard isReady else {
             appState = .noModel
             return
         }
 
-        // Guardar la app activa para volver a ella después de pegar
+        // Guardar la app activa para volver a ella despues de pegar
         PasteManager.savePreviousApp()
 
         do {
-            // Actualizar micrófono seleccionado antes de grabar
+            // Actualizar microfono seleccionado antes de grabar
             audioRecorder.selectedDeviceUID = selectedMicrophone
             try audioRecorder.startRecording()
             appState = .recording
             if playSoundEnabled {
                 SoundManager.shared.play(.startRecording)
             }
-            print("🎤 Grabación iniciada")
+            print("Grabacion iniciada (Motor: \(currentEngine.displayName))")
         } catch {
             appState = .error(error.localizedDescription)
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
-            print("❌ Error al iniciar grabación: \(error)")
+            print("Error al iniciar grabacion: \(error)")
         }
     }
     
-    /// Detiene la grabación y transcribe
+    /// Detiene la grabacion y transcribe
     func stopRecordingAndTranscribe() {
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
@@ -172,23 +288,33 @@ class SapoWhisperViewModel: ObservableObject {
             return
         }
 
-        print("🎤 Grabación detenida, iniciando transcripción...")
+        print("Grabacion detenida, iniciando transcripcion con \(currentEngine.displayName)...")
         appState = .processing
 
-        // Capturar el idioma seleccionado para usar en el Task
+        // Capturar valores para usar en el Task
         let language = selectedLanguage
+        let engine = currentEngine
 
         Task {
             do {
-                let transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
+                let transcription: String
+
+                // Usar el motor correspondiente
+                switch engine {
+                case .appleOnline:
+                    transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
+                case .whisperLocal:
+                    transcription = try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
+                }
+
                 lastTranscription = transcription
 
                 // Copiar al portapapeles
                 PasteManager.copyToClipboard(transcription)
 
-                // Auto-paste si está habilitado
+                // Auto-paste si esta habilitado
                 if autoPasteEnabled {
-                    // Pequeño delay para asegurar que el clipboard esté listo
+                    // Pequeno delay para asegurar que el clipboard este listo
                     try? await Task.sleep(nanoseconds: 100_000_000)
                     PasteManager.simulatePaste()
                 }
@@ -200,13 +326,13 @@ class SapoWhisperViewModel: ObservableObject {
 
                 // Limpiar archivo temporal
                 audioRecorder.deleteRecording(at: audioURL)
-                print("✅ Transcripción completada y copiada")
+                print("Transcripcion completada (\(engine.displayName)): \(transcription.prefix(50))...")
             } catch {
                 appState = .error(error.localizedDescription)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
-                print("❌ Error en transcripción: \(error)")
+                print("Error en transcripcion: \(error)")
             }
         }
     }
@@ -237,9 +363,14 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.isRecording ? "⏹ Detener" : "🎤 Grabar"
     }
     
-    /// Si el botón de grabar está habilitado
+    /// Si el boton de grabar esta habilitado
     var canRecord: Bool {
-        transcriber.isModelLoaded && !transcriber.isTranscribing
+        switch currentEngine {
+        case .appleOnline:
+            return transcriber.isModelLoaded && !transcriber.isTranscribing
+        case .whisperLocal:
+            return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
+        }
     }
     
     /// Formatea la duración de grabación

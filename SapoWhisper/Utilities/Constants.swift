@@ -81,7 +81,7 @@ enum Constants {
     }
     
     // MARK: - Storage Keys
-    
+
     enum StorageKeys {
         static let autoPaste = "autoPaste"
         static let playSound = "playSound"
@@ -91,6 +91,10 @@ enum Constants {
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
         static let selectedMicrophone = "selectedMicrophone"
+
+        // Motor de transcripcion
+        static let transcriptionEngine = "transcriptionEngine"
+        static let whisperKitModel = "whisperKitModel"
     }
 }
 

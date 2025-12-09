@@ -20,8 +20,18 @@ struct ModelDownloadView: View {
     @AppStorage(Constants.StorageKeys.hotkeyModifiers) private var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
     @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
+    @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
+
+    private var currentEngine: TranscriptionEngine {
+        TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
+    }
+
+    private var currentWhisperKitModel: WhisperKitModel {
+        WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -211,7 +221,15 @@ struct ModelDownloadView: View {
     private var settingsTab: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Micrófono
+                // Motor de transcripcion
+                transcriptionEngineCard
+
+                // Modelo de WhisperKit (solo si esta en modo local)
+                if currentEngine == .whisperLocal {
+                    whisperKitModelCard
+                }
+
+                // Microfono
                 microphoneCard
 
                 // Idioma
@@ -228,6 +246,93 @@ struct ModelDownloadView: View {
         .onAppear {
             audioDeviceManager.refreshDevices()
         }
+    }
+
+    // MARK: - Transcription Engine Card
+
+    private var transcriptionEngineCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Motor de Transcripcion", systemImage: "cpu")
+                .font(.headline)
+
+            VStack(spacing: 8) {
+                ForEach(TranscriptionEngine.allCases) { engine in
+                    EngineButton(
+                        engine: engine,
+                        isSelected: currentEngine == engine,
+                        isLoading: engine == .whisperLocal && viewModel.isLoadingWhisperKit,
+                        loadingProgress: viewModel.whisperKitLoadingProgress,
+                        loadingMessage: viewModel.whisperKitLoadingMessage
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedEngine = engine.rawValue
+                            viewModel.setEngine(engine)
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(Constants.Sizes.cornerRadius)
+    }
+
+    // MARK: - WhisperKit Model Card
+
+    private var whisperKitModelCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Modelo de Whisper", systemImage: "square.stack.3d.up")
+                    .font(.headline)
+
+                Spacer()
+
+                if viewModel.whisperKitTranscriber.isModelLoaded {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.sapoGreen)
+                        Text(viewModel.whisperKitTranscriber.loadedModelName ?? "")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            if viewModel.isLoadingWhisperKit {
+                VStack(spacing: 8) {
+                    ProgressView(value: viewModel.whisperKitLoadingProgress)
+                        .progressViewStyle(.linear)
+                        .tint(.sapoGreen)
+
+                    Text(viewModel.whisperKitLoadingMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 8)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(WhisperKitModel.allCases) { model in
+                    WhisperModelButton(
+                        model: model,
+                        isSelected: currentWhisperKitModel == model,
+                        isLoading: viewModel.isLoadingWhisperKit && currentWhisperKitModel == model
+                    ) {
+                        selectedWhisperModel = model.rawValue
+                        viewModel.setWhisperKitModel(model)
+                    }
+                }
+            }
+
+            Text("Los modelos se descargan automaticamente la primera vez")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(Constants.Sizes.cornerRadius)
     }
 
     private var microphoneCard: some View {
@@ -385,7 +490,7 @@ struct ModelDownloadView: View {
                             .font(.title2)
                             .fontWeight(.bold)
 
-                        Text("Speech-to-Text usando Apple Speech Recognition")
+                        Text("Speech-to-Text con WhisperKit y Apple Speech")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -411,9 +516,9 @@ struct ModelDownloadView: View {
                     icon: "lock.shield.fill",
                     title: "Privacidad",
                     content: """
-                    El audio se procesa usando el reconocimiento de voz de Apple. Tu voz no se almacena permanentemente.
+                    Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.
 
-                    En futuras versiones, podrás usar modelos de Whisper para transcripción 100% local.
+                    Apple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.
                     """
                 )
 
@@ -816,6 +921,173 @@ struct InfoSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(Constants.Sizes.cornerRadius)
+    }
+}
+
+// MARK: - Engine Button
+
+struct EngineButton: View {
+    let engine: TranscriptionEngine
+    let isSelected: Bool
+    let isLoading: Bool
+    let loadingProgress: Double
+    let loadingMessage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                // Icono
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? Color.sapoGreen.opacity(0.2) : Color(NSColor.controlBackgroundColor))
+                        .frame(width: 40, height: 40)
+
+                    Image(systemName: engine.icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(isSelected ? .sapoGreen : .secondary)
+                }
+
+                // Texto
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(engine.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+
+                        if engine == .whisperLocal {
+                            Text("Recomendado")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.sapoGreen)
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    Text(engine.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Indicador de seleccion o carga
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                } else if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.sapoGreen)
+                        .font(.system(size: 20))
+                } else {
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1.5)
+                        .frame(width: 20, height: 20)
+                }
+            }
+            .padding(12)
+            .background(isSelected ? Color.sapoGreen.opacity(0.1) : Color(NSColor.windowBackgroundColor))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? Color.sapoGreen.opacity(0.5) : Color.secondary.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - WhisperKit Model Button
+
+struct WhisperModelButton: View {
+    let model: WhisperKitModel
+    let isSelected: Bool
+    let isLoading: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                // Radio button
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? Color.sapoGreen : Color.secondary.opacity(0.3), lineWidth: 2)
+                        .frame(width: 20, height: 20)
+
+                    if isSelected {
+                        Circle()
+                            .fill(Color.sapoGreen)
+                            .frame(width: 12, height: 12)
+                    }
+                }
+
+                // Info del modelo
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+
+                        if model.isRecommended {
+                            Text(model == .small ? "Balance" : "Pro")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(model == .small ? Color.blue : Color.purple)
+                                .cornerRadius(3)
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        Text(model.fileSize)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text("•")
+                            .foregroundColor(.secondary)
+
+                        Text(model.speed)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text("•")
+                            .foregroundColor(.secondary)
+
+                        // Estrellas de precision
+                        HStack(spacing: 1) {
+                            ForEach(0..<5) { i in
+                                Image(systemName: i < model.accuracy ? "star.fill" : "star")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(i < model.accuracy ? .yellow : .secondary.opacity(0.3))
+                            }
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Indicador de carga
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                }
+            }
+            .padding(10)
+            .background(isSelected ? Color.sapoGreen.opacity(0.08) : Color(NSColor.windowBackgroundColor))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.sapoGreen.opacity(0.4) : Color.secondary.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
     }
 }
 
