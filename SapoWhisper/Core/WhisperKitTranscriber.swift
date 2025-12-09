@@ -123,7 +123,56 @@ class WhisperKitTranscriber: ObservableObject {
                     loadingState = .downloading
                     loadingMessage = "Descargando \(model.displayName)..."
                 }
-                loadingProgress = 0.2
+
+                // Tarea de monitoreo de progreso
+                let monitoringTask = Task { @MainActor in
+                    var lastProgress: Double = 0
+                    
+                    // Obtener tamano inicial (antes de que empiece la descarga fuerte)
+                    // Si no existe el directorio, es 0
+                    let initialRepoSize = self.downloadedModelSize(model) ?? 0
+                    let expectedSize = Double(model.sizeInBytes)
+                    
+                    while !Task.isCancelled {
+                        // Intentar obtener el tamano actual del repo
+                        if let currentRepoSize = self.downloadedModelSize(model) {
+                            
+                            // Lo que se ha descargado en esta sesion
+                            let downloadedSessionBytes = max(0, currentRepoSize - initialRepoSize)
+                            let currentProgress = min(Double(downloadedSessionBytes) / expectedSize, 0.99)
+                            
+                            // Actualizar mensaje con detalles
+                            let downloadedMB = Int(downloadedSessionBytes / 1024 / 1024)
+                            let totalMB = Int(expectedSize / 1024 / 1024)
+                            
+                            // Solo actualizar state si avanzo o es la primera vez
+                            if currentProgress > lastProgress || lastProgress == 0 {
+                                lastProgress = currentProgress
+                                self.loadingProgress = currentProgress
+                                
+                                // Si ya casi esta (95%), asumir prewarming
+                                if currentProgress >= 0.95 {
+                                    self.loadingState = .prewarming
+                                    self.loadingMessage = "Finalizando descarga y preparando..."
+                                } else {
+                                    self.loadingState = .downloading
+                                    let percent = Int(currentProgress * 100)
+                                    let msg = "Descargando... \(percent)% (\(downloadedMB) MB / \(totalMB) MB)"
+                                    self.loadingMessage = msg
+                                    print("⬇️ \(msg)") // Log para verificar progreso
+                                }
+                            }
+                        }
+                        
+                        // Verificar cada 0.2s
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    }
+                }
+                
+                // Asegurar cancelar monitoreo al terminar
+                defer {
+                    monitoringTask.cancel()
+                }
 
                 // Configuracion de WhisperKit
                 let config = WhisperKitConfig(
@@ -132,17 +181,16 @@ class WhisperKitTranscriber: ObservableObject {
                     prewarm: true
                 )
 
-                // Actualizar estado a prewarming cuando empieza la inicializacion
                 if !alreadyDownloaded {
-                    loadingProgress = 0.5
-                    loadingState = .prewarming
-                    loadingMessage = "Preparando modelo..."
+                    loadingState = .downloading
+                    loadingMessage = "Iniciando descarga..."
                 } else {
-                    loadingProgress = 0.5
+                    loadingState = .prewarming
                     loadingMessage = "Cargando en memoria..."
+                    loadingProgress = 0.5
                 }
 
-                // Inicializar WhisperKit (descarga automaticamente si no existe)
+                // Inicializar WhisperKit (bloqueante hasta que descarga y carga)
                 whisperKit = try await WhisperKit(config)
 
                 loadingState = .ready
@@ -295,6 +343,13 @@ class WhisperKitTranscriber: ObservableObject {
         // Home directory
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         dirs.append(homeDir.appendingPathComponent(".cache/huggingface/hub"))
+
+        // Documents directory (Default WhisperKit location)
+        if let docDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            dirs.append(docDir.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml"))
+            // Tambien agregar la ruta raiz por si acaso
+            dirs.append(docDir.appendingPathComponent("huggingface/models"))
+        }
         
         return dirs
     }
@@ -320,15 +375,17 @@ class WhisperKitTranscriber: ObservableObject {
             
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
-                // Buscar carpeta que contenga whisperkit y el nombre del modelo
-                let found = contents.contains { url in
-                    let name = url.lastPathComponent.lowercased()
-                    return name.contains("whisperkit") && name.contains(modelName)
-                }
                 
-                if found {
-                    downloadedModels.insert(model)
-                    return true
+                for url in contents {
+                    let name = url.lastPathComponent.lowercased()
+                    
+                    // Estrategia de coincidencia flexible
+                    let matches = name.contains("whisper") && name.contains(modelName)
+                    
+                    if matches {
+                        downloadedModels.insert(model)
+                        return true
+                    }
                 }
             } catch {
                 continue
@@ -353,28 +410,35 @@ class WhisperKitTranscriber: ObservableObject {
         }
     }
 
-    /// Obtiene el tamano de un modelo descargado en bytes
-    func downloadedModelSize(_ model: WhisperKitModel) -> Int64? {
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-        
+    /// Obtiene el directorio del repo de WhisperKit
+    func getWhisperKitRepoDirectory() -> URL? {
         for modelsDir in possibleModelDirectories {
             guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
             
+            // Caso 1: El directorio mismo es el repo (ej: .../whisperkit-coreml)
+            if modelsDir.lastPathComponent.lowercased().contains("whisperkit") {
+                return modelsDir
+            }
+            
+            // Caso 2: El directorio contiene el repo como subcarpeta
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
-                
-                for url in contents {
-                    let name = url.lastPathComponent.lowercased()
-                    if name.contains("whisperkit") && name.contains(modelName) {
-                        return directorySize(at: url)
-                    }
+                if let repoURL = contents.first(where: { $0.lastPathComponent.lowercased().contains("whisperkit") }) {
+                    return repoURL
                 }
             } catch {
                 continue
             }
         }
-        
         return nil
+    }
+
+    /// Obtiene el tamano de un modelo descargado en bytes
+    func downloadedModelSize(_ model: WhisperKitModel) -> Int64? {
+        // En lugar de buscar un modelo especifico, buscamos el repo general
+        // Esto es porque WhisperKit usa un solo repo para todos los modelos
+        guard let repoURL = getWhisperKitRepoDirectory() else { return nil }
+        return directorySize(at: repoURL)
     }
 
     /// Calcula el tamano de un directorio recursivamente
@@ -382,13 +446,20 @@ class WhisperKitTranscriber: ObservableObject {
         let fileManager = FileManager.default
         var totalSize: Int64 = 0
         
-        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {
+        // Usar enumerator con opciones para incluir archivos ocultos (.blobs, etc)
+        guard let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
+            options: [], // No skippear hidden files
+            errorHandler: nil
+        ) else {
             return 0
         }
         
         for case let fileURL as URL in enumerator {
             do {
-                let resourceValues = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+                let resourceValues = try fileURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+                if resourceValues.isDirectory == true { continue }
                 totalSize += Int64(resourceValues.fileSize ?? 0)
             } catch {
                 continue
@@ -408,6 +479,55 @@ class WhisperKitTranscriber: ObservableObject {
             unloadModel()
         }
         
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
+        // Buscamos algo que coincida con "whisperkit" y el nombre del modelo (ej: "small")
+        // Los folders de HF son tipo: models--argmaxinc--whisperkit-coreml-openai-whisper-small
+        
+        print("🔍 Intentando borrar modelo: \(model.displayName) (buscando keywords: 'whisperkit' + '\(modelName)')")
+        
+        var foundAndDeleted = false
+        
+        for modelsDir in possibleModelDirectories {
+            // Check if dir exists
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: modelsDir.path, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
+            
+            print("📁 Escaneando directorio: \(modelsDir.path)")
+            
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+                
+                for url in contents {
+                    let name = url.lastPathComponent.lowercased()
+                    // Debug log
+                    // print("   - Encontrado: \(name)")
+                    
+                    // La coincidencia debe ser mas flexible
+                    // Si contiene "models--" y ("whisper" + modelName)
+                    let matches = name.contains("whisper") && name.contains(modelName)
+                    
+                    if matches {
+                        do {
+                            try FileManager.default.removeItem(at: url)
+                            print("✅ BORRADO: \(url.lastPathComponent)")
+                            foundAndDeleted = true
+                        } catch {
+                            print("❌ Error borrando \(url.lastPathComponent): \(error.localizedDescription)")
+                        }
+                    }
+                }
+            } catch {
+                print("⚠️ Error leyendo directorio \(modelsDir.path): \(error.localizedDescription)")
+            }
+        }
+        
+        if !foundAndDeleted {
+            print("⚠️ No se encontraron archivos para borrar del modelo \(model.displayName)")
+            print("   Rutas chequeadas: \(possibleModelDirectories.map { $0.path })")
+        }
+        
         // Crear nuevo Set sin el modelo (fuerza actualizacion de SwiftUI)
         var newSet = downloadedModels
         newSet.remove(model)
@@ -415,7 +535,7 @@ class WhisperKitTranscriber: ObservableObject {
         
         saveDownloadedModelsToStorage()
         
-        print("🗑️ Modelo desmarcado como descargado: \(model.displayName)")
+        print("🗑️ Modelo desmarcado de la lista interna: \(model.displayName)")
         
         return true
     }

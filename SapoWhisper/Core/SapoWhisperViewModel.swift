@@ -153,6 +153,13 @@ class SapoWhisperViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        // Observar cambios en modelos descargados (para actualizar UI al borrar)
+        whisperKitTranscriber.$downloadedModels
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Initial State

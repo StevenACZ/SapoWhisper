@@ -81,6 +81,16 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         }
     }
 
+    var sizeInBytes: Int64 {
+        switch self {
+        case .tiny: return 66 * 1024 * 1024
+        case .base: return 145 * 1024 * 1024
+        case .small: return 483 * 1024 * 1024
+        case .largev3: return 3100 * 1024 * 1024
+        case .largev3Turbo: return 1600 * 1024 * 1024
+        }
+    }
+
     var speed: String {
         switch self {
         case .tiny: return "Muy rapido"
