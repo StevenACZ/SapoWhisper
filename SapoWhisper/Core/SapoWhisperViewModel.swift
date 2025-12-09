@@ -192,12 +192,38 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - WhisperKit Methods
 
     /// Carga el modelo de WhisperKit seleccionado
+    /// Si falla, hace fallback automatico a Apple Speech
     func loadWhisperKitModel() async {
         do {
             try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: selectedLanguage)
             appState = .idle
         } catch {
-            appState = .error(error.localizedDescription)
+            let errorMsg = error.localizedDescription
+            print("❌ Error cargando WhisperKit: \(errorMsg)")
+            
+            // Verificar si es error de red
+            let isNetworkError = errorMsg.contains("network") ||
+                                errorMsg.contains("-1005") ||
+                                errorMsg.contains("connection") ||
+                                errorMsg.contains("NSURLErrorDomain") ||
+                                errorMsg.contains("lost")
+            
+            if isNetworkError {
+                // Fallback a Apple Speech
+                print("🔄 Haciendo fallback a Apple Speech por error de red...")
+                selectedEngine = TranscriptionEngine.appleOnline.rawValue
+                appState = .error("Error de red descargando modelo. Usando Apple Speech temporalmente.")
+                
+                // Pequeno delay para mostrar el error, luego limpiar
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 segundos
+                    if case .error(_) = self.appState {
+                        self.appState = .idle
+                    }
+                }
+            } else {
+                appState = .error("Error cargando modelo: \(errorMsg)")
+            }
         }
     }
 

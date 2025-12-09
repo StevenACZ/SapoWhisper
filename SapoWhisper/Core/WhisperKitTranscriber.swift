@@ -48,6 +48,7 @@ class WhisperKitTranscriber: ObservableObject {
 
     /// Carga un modelo de WhisperKit
     /// WhisperKit descarga automaticamente el modelo si no existe localmente
+    /// Incluye reintentos automaticos para manejar errores de red
     func loadModel(_ model: WhisperKitModel, language: String = "es") async throws {
         #if canImport(WhisperKit)
         guard !isLoading else {
@@ -65,38 +66,72 @@ class WhisperKitTranscriber: ObservableObject {
             isLoading = false
         }
 
-        do {
-            print("Cargando modelo WhisperKit: \(model.rawValue)")
-            loadingMessage = "Descargando modelo (si es necesario)..."
-            loadingProgress = 0.2
+        let maxRetries = 3
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("Cargando modelo WhisperKit: \(model.rawValue) (intento \(attempt)/\(maxRetries))")
+                
+                if attempt > 1 {
+                    loadingMessage = "Reintentando descarga (\(attempt)/\(maxRetries))..."
+                    // Esperar antes de reintentar (delay incremental)
+                    try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) // 2s, 4s, 6s
+                } else {
+                    loadingMessage = "Descargando modelo..."
+                }
+                loadingProgress = 0.2
 
-            // Configuracion de WhisperKit
-            let config = WhisperKitConfig(
-                model: model.rawValue,
-                verbose: true,
-                prewarm: true
-            )
+                // Configuracion de WhisperKit
+                let config = WhisperKitConfig(
+                    model: model.rawValue,
+                    verbose: true,
+                    prewarm: true
+                )
 
-            loadingMessage = "Inicializando WhisperKit..."
-            loadingProgress = 0.5
+                loadingMessage = "Inicializando WhisperKit..."
+                loadingProgress = 0.5
 
-            // Inicializar WhisperKit (descarga automaticamente si no existe)
-            whisperKit = try await WhisperKit(config)
+                // Inicializar WhisperKit (descarga automaticamente si no existe)
+                whisperKit = try await WhisperKit(config)
 
-            loadingMessage = "Modelo listo"
-            loadingProgress = 1.0
+                loadingMessage = "Modelo listo ✓"
+                loadingProgress = 1.0
 
-            currentModel = model
-            currentModelName = model.displayName
-            isModelLoaded = true
+                currentModel = model
+                currentModelName = model.displayName
+                isModelLoaded = true
 
-            print("Modelo WhisperKit cargado exitosamente: \(model.displayName)")
-
-        } catch {
-            errorMessage = "Error cargando modelo: \(error.localizedDescription)"
-            print("Error cargando WhisperKit: \(error)")
-            throw WhisperKitError.modelLoadFailed(error.localizedDescription)
+                print("Modelo WhisperKit cargado exitosamente: \(model.displayName)")
+                return // Exito, salir del bucle
+                
+            } catch {
+                lastError = error
+                let errorDesc = error.localizedDescription
+                
+                // Verificar si es error de red para reintentar
+                let isNetworkError = errorDesc.contains("network") ||
+                                    errorDesc.contains("-1005") ||
+                                    errorDesc.contains("connection") ||
+                                    errorDesc.contains("NSURLErrorDomain")
+                
+                if isNetworkError && attempt < maxRetries {
+                    print("Error de red, reintentando... (intento \(attempt)/\(maxRetries))")
+                    loadingMessage = "Error de conexion. Reintentando..."
+                    continue // Reintentar
+                } else {
+                    // Error no recuperable o ultimo intento
+                    break
+                }
+            }
         }
+        
+        // Si llegamos aqui, todos los intentos fallaron
+        let errorMsg = lastError?.localizedDescription ?? "Error desconocido"
+        errorMessage = "Error cargando modelo: \(errorMsg)"
+        print("Error cargando WhisperKit despues de \(maxRetries) intentos: \(errorMsg)")
+        throw WhisperKitError.modelLoadFailed(errorMsg)
+        
         #else
         throw WhisperKitError.notAvailable
         #endif
@@ -182,6 +217,129 @@ class WhisperKitTranscriber: ObservableObject {
     /// Nombre del modelo cargado o nil si no hay modelo
     var loadedModelName: String? {
         currentModelName
+    }
+
+    // MARK: - Model Storage Management
+
+    /// Obtiene el directorio donde WhisperKit guarda los modelos
+    private var modelsDirectory: URL? {
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        return cacheDir?.appendingPathComponent("huggingface/hub")
+    }
+
+    /// Verifica si un modelo esta descargado localmente
+    func isModelDownloaded(_ model: WhisperKitModel) -> Bool {
+        guard let modelsDir = modelsDirectory else { return false }
+        
+        // WhisperKit guarda los modelos en un formato especifico
+        // Buscar carpetas que contengan el nombre del modelo
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
+        
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+            // Buscar carpeta que contenga whisperkit y el nombre del modelo
+            return contents.contains { url in
+                let name = url.lastPathComponent.lowercased()
+                return name.contains("whisperkit") && name.contains(modelName)
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Obtiene el tamano de un modelo descargado en bytes
+    func downloadedModelSize(_ model: WhisperKitModel) -> Int64? {
+        guard let modelsDir = modelsDirectory else { return nil }
+        
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
+        
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+            
+            for url in contents {
+                let name = url.lastPathComponent.lowercased()
+                if name.contains("whisperkit") && name.contains(modelName) {
+                    return directorySize(at: url)
+                }
+            }
+        } catch {
+            return nil
+        }
+        
+        return nil
+    }
+
+    /// Calcula el tamano de un directorio recursivamente
+    private func directorySize(at url: URL) -> Int64 {
+        let fileManager = FileManager.default
+        var totalSize: Int64 = 0
+        
+        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return 0
+        }
+        
+        for case let fileURL as URL in enumerator {
+            do {
+                let resourceValues = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+                totalSize += Int64(resourceValues.fileSize ?? 0)
+            } catch {
+                continue
+            }
+        }
+        
+        return totalSize
+    }
+
+    /// Borra un modelo descargado para liberar espacio
+    func deleteDownloadedModel(_ model: WhisperKitModel) -> Bool {
+        guard let modelsDir = modelsDirectory else { return false }
+        
+        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "")
+        
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
+            
+            for url in contents {
+                let name = url.lastPathComponent.lowercased()
+                if name.contains("whisperkit") && name.contains(modelName) {
+                    try FileManager.default.removeItem(at: url)
+                    print("✅ Modelo borrado: \(model.displayName)")
+                    
+                    // Si el modelo borrado era el actual, descargar de memoria
+                    if currentModel == model {
+                        unloadModel()
+                    }
+                    
+                    return true
+                }
+            }
+        } catch {
+            print("❌ Error borrando modelo: \(error)")
+            return false
+        }
+        
+        return false
+    }
+
+    /// Obtiene informacion de todos los modelos descargados
+    func getDownloadedModelsInfo() -> [(model: WhisperKitModel, size: Int64)] {
+        var result: [(WhisperKitModel, Int64)] = []
+        
+        for model in WhisperKitModel.allCases {
+            if isModelDownloaded(model), let size = downloadedModelSize(model) {
+                result.append((model, size))
+            }
+        }
+        
+        return result
+    }
+
+    /// Formatea bytes a string legible (MB/GB)
+    static func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 }
 

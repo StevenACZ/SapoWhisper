@@ -314,15 +314,39 @@ struct ModelDownloadView: View {
 
             VStack(spacing: 8) {
                 ForEach(WhisperKitModel.allCases) { model in
+                    let isDownloaded = viewModel.whisperKitTranscriber.isModelDownloaded(model)
+                    let downloadedSize = viewModel.whisperKitTranscriber.downloadedModelSize(model)
+                    
                     WhisperModelButton(
                         model: model,
                         isSelected: currentWhisperKitModel == model,
-                        isLoading: viewModel.isLoadingWhisperKit && currentWhisperKitModel == model
-                    ) {
-                        selectedWhisperModel = model.rawValue
-                        viewModel.setWhisperKitModel(model)
-                    }
+                        isLoading: viewModel.isLoadingWhisperKit && currentWhisperKitModel == model,
+                        isDownloaded: isDownloaded,
+                        downloadedSize: downloadedSize,
+                        action: {
+                            selectedWhisperModel = model.rawValue
+                            viewModel.setWhisperKitModel(model)
+                        },
+                        onDelete: isDownloaded ? {
+                            deleteModel(model)
+                        } : nil
+                    )
                 }
+            }
+
+            // Mostrar espacio total usado por modelos
+            let downloadedModels = viewModel.whisperKitTranscriber.getDownloadedModelsInfo()
+            if !downloadedModels.isEmpty {
+                let totalSize = downloadedModels.reduce(0) { $0 + $1.size }
+                HStack {
+                    Image(systemName: "internaldrive")
+                        .foregroundColor(.secondary)
+                    Text("Espacio usado: \(WhisperKitTranscriber.formatBytes(totalSize))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.top, 4)
             }
 
             Text("Los modelos se descargan automaticamente la primera vez")
@@ -460,6 +484,25 @@ struct ModelDownloadView: View {
         hotkeyModifiers = modifiers
         // Usa la versión que mantiene el callback existente
         HotkeyManager.shared.updateHotkey(keyCode: UInt32(keyCode), modifiers: UInt32(modifiers))
+    }
+
+    // MARK: - Model Management
+
+    @State private var showDeleteConfirmation = false
+    @State private var modelToDelete: WhisperKitModel?
+
+    private func deleteModel(_ model: WhisperKitModel) {
+        // Si el modelo a borrar es el actualmente seleccionado, primero cambiar a Apple Speech
+        if currentWhisperKitModel == model && viewModel.whisperKitTranscriber.isModelLoaded {
+            viewModel.setEngine(.appleOnline)
+        }
+        
+        let success = viewModel.whisperKitTranscriber.deleteDownloadedModel(model)
+        if success {
+            print("✅ Modelo \(model.displayName) borrado exitosamente")
+        } else {
+            print("❌ Error al borrar modelo \(model.displayName)")
+        }
     }
 
     // MARK: - Info Tab
@@ -1007,87 +1050,139 @@ struct WhisperModelButton: View {
     let model: WhisperKitModel
     let isSelected: Bool
     let isLoading: Bool
-    let action: () -> Void
+    let isDownloaded: Bool
+    let downloadedSize: Int64?
+    let onSelect: () -> Void
+    let onDelete: (() -> Void)?
+
+    init(model: WhisperKitModel,
+         isSelected: Bool,
+         isLoading: Bool,
+         isDownloaded: Bool = false,
+         downloadedSize: Int64? = nil,
+         action: @escaping () -> Void,
+         onDelete: (() -> Void)? = nil) {
+        self.model = model
+        self.isSelected = isSelected
+        self.isLoading = isLoading
+        self.isDownloaded = isDownloaded
+        self.downloadedSize = downloadedSize
+        self.onSelect = action
+        self.onDelete = onDelete
+    }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                // Radio button
-                ZStack {
-                    Circle()
-                        .stroke(isSelected ? Color.sapoGreen : Color.secondary.opacity(0.3), lineWidth: 2)
-                        .frame(width: 20, height: 20)
-
-                    if isSelected {
+        HStack(spacing: 12) {
+            // Boton principal (seleccionar modelo)
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    // Radio button
+                    ZStack {
                         Circle()
-                            .fill(Color.sapoGreen)
-                            .frame(width: 12, height: 12)
-                    }
-                }
+                            .stroke(isSelected ? Color.sapoGreen : Color.secondary.opacity(0.3), lineWidth: 2)
+                            .frame(width: 20, height: 20)
 
-                // Info del modelo
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(model.displayName)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-
-                        if model.isRecommended {
-                            Text(model == .small ? "Balance" : "Pro")
-                                .font(.caption2)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(model == .small ? Color.blue : Color.purple)
-                                .cornerRadius(3)
+                        if isSelected {
+                            Circle()
+                                .fill(Color.sapoGreen)
+                                .frame(width: 12, height: 12)
                         }
                     }
 
-                    HStack(spacing: 8) {
-                        Text(model.fileSize)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    // Info del modelo
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(model.displayName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
 
-                        Text("•")
-                            .foregroundColor(.secondary)
+                            if model.isRecommended {
+                                Text(model == .small ? "Balance" : "Pro")
+                                    .font(.caption2)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(model == .small ? Color.blue : Color.purple)
+                                    .cornerRadius(3)
+                            }
 
-                        Text(model.speed)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            // Indicador de descargado
+                            if isDownloaded {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.sapoGreen)
+                            }
+                        }
 
-                        Text("•")
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 8) {
+                            // Mostrar tamano real si esta descargado, sino el estimado
+                            if isDownloaded, let size = downloadedSize {
+                                Text(WhisperKitTranscriber.formatBytes(size))
+                                    .font(.caption)
+                                    .foregroundColor(.sapoGreen)
+                            } else {
+                                Text(model.fileSize)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
 
-                        // Estrellas de precision
-                        HStack(spacing: 1) {
-                            ForEach(0..<5) { i in
-                                Image(systemName: i < model.accuracy ? "star.fill" : "star")
-                                    .font(.system(size: 8))
-                                    .foregroundColor(i < model.accuracy ? .yellow : .secondary.opacity(0.3))
+                            Text("•")
+                                .foregroundColor(.secondary)
+
+                            Text(model.speed)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Text("•")
+                                .foregroundColor(.secondary)
+
+                            // Estrellas de precision
+                            HStack(spacing: 1) {
+                                ForEach(0..<5) { i in
+                                    Image(systemName: i < model.accuracy ? "star.fill" : "star")
+                                        .font(.system(size: 8))
+                                        .foregroundColor(i < model.accuracy ? .yellow : .secondary.opacity(0.3))
+                                }
                             }
                         }
                     }
-                }
 
-                Spacer()
+                    Spacer()
 
-                // Indicador de carga
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.6)
+                    // Indicador de estado
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                    } else if !isDownloaded {
+                        // Mostrar icono de descarga si no esta descargado
+                        Image(systemName: "arrow.down.circle")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary.opacity(0.5))
+                    }
                 }
             }
-            .padding(10)
-            .background(isSelected ? Color.sapoGreen.opacity(0.08) : Color(NSColor.windowBackgroundColor))
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.sapoGreen.opacity(0.4) : Color.secondary.opacity(0.15), lineWidth: 1)
-            )
+            .buttonStyle(.plain)
+            .disabled(isLoading)
+
+            // Boton de borrar (solo si esta descargado)
+            if isDownloaded, let deleteAction = onDelete {
+                Button(action: deleteAction) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
+                        .foregroundColor(.red.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .help("Borrar modelo para liberar espacio")
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(isLoading)
+        .padding(10)
+        .background(isSelected ? Color.sapoGreen.opacity(0.08) : Color(NSColor.windowBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.sapoGreen.opacity(0.4) : Color.secondary.opacity(0.15), lineWidth: 1)
+        )
     }
 }
 
