@@ -11,32 +11,51 @@ import Combine
 /// ViewModel principal que coordina toda la funcionalidad de la app
 @MainActor
 class SapoWhisperViewModel: ObservableObject {
-    
+
     // MARK: - Published Properties
-    
+
     @Published private(set) var appState: AppState = .idle
     @Published private(set) var lastTranscription: String = ""
     @Published var showSettings = false
     @Published var autoPasteEnabled = true
     @Published var recordingDuration: TimeInterval = 0
-    
+
+    // MARK: - AppStorage Properties
+
+    @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "es"
+    @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.hotkeyKeyCode) var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
+    @AppStorage(Constants.StorageKeys.hotkeyModifiers) var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
+    @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
+
     // MARK: - Managers
-    
+
     let audioRecorder = AudioRecorder()
     let transcriber = WhisperTranscriber()
     let downloadManager = DownloadManager()
     let hotkeyManager = HotkeyManager.shared
-    
+
     // MARK: - Private Properties
-    
+
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
-    
+
     init() {
         setupBindings()
         checkInitialState()
         setupHotkey()
+        loadSavedSettings()
+    }
+
+    /// Carga las configuraciones guardadas
+    private func loadSavedSettings() {
+        // Aplicar micrófono guardado
+        audioRecorder.selectedDeviceUID = selectedMicrophone
+
+        // Aplicar hotkey guardado
+        hotkeyManager.currentKeyCode = UInt32(hotkeyKeyCode)
+        hotkeyManager.currentModifiers = UInt32(hotkeyModifiers)
     }
     
     private func setupBindings() {
@@ -117,56 +136,76 @@ class SapoWhisperViewModel: ObservableObject {
             appState = .noModel
             return
         }
-        
+
+        // Guardar la app activa para volver a ella después de pegar
+        PasteManager.savePreviousApp()
+
         do {
+            // Actualizar micrófono seleccionado antes de grabar
+            audioRecorder.selectedDeviceUID = selectedMicrophone
             try audioRecorder.startRecording()
             appState = .recording
-            SoundManager.shared.play(.startRecording)
+            if playSoundEnabled {
+                SoundManager.shared.play(.startRecording)
+            }
             print("🎤 Grabación iniciada")
         } catch {
             appState = .error(error.localizedDescription)
-            SoundManager.shared.play(.error)
+            if playSoundEnabled {
+                SoundManager.shared.play(.error)
+            }
             print("❌ Error al iniciar grabación: \(error)")
         }
     }
     
     /// Detiene la grabación y transcribe
     func stopRecordingAndTranscribe() {
-        SoundManager.shared.play(.stopRecording)
-        
+        if playSoundEnabled {
+            SoundManager.shared.play(.stopRecording)
+        }
+
         guard let audioURL = audioRecorder.stopRecording() else {
             appState = .error("No se pudo obtener el audio")
-            SoundManager.shared.play(.error)
+            if playSoundEnabled {
+                SoundManager.shared.play(.error)
+            }
             return
         }
-        
+
         print("🎤 Grabación detenida, iniciando transcripción...")
         appState = .processing
-        
+
+        // Capturar el idioma seleccionado para usar en el Task
+        let language = selectedLanguage
+
         Task {
             do {
-                let transcription = try await transcriber.transcribe(audioURL: audioURL)
+                let transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
                 lastTranscription = transcription
-                
+
                 // Copiar al portapapeles
                 PasteManager.copyToClipboard(transcription)
-                
+
                 // Auto-paste si está habilitado
                 if autoPasteEnabled {
                     // Pequeño delay para asegurar que el clipboard esté listo
                     try? await Task.sleep(nanoseconds: 100_000_000)
                     PasteManager.simulatePaste()
                 }
-                
+
                 appState = .idle
-                SoundManager.shared.play(.success)
-                
+                if playSoundEnabled {
+                    SoundManager.shared.play(.success)
+                }
+
                 // Limpiar archivo temporal
                 audioRecorder.deleteRecording(at: audioURL)
                 print("✅ Transcripción completada y copiada")
             } catch {
                 appState = .error(error.localizedDescription)
-                SoundManager.shared.play(.error)
+                if playSoundEnabled {
+                    SoundManager.shared.play(.error)
+                }
                 print("❌ Error en transcripción: \(error)")
             }
         }

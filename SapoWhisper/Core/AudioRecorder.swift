@@ -7,35 +7,74 @@
 
 import Foundation
 import AVFoundation
+import CoreAudio
 import Combine
 
 /// Maneja la grabación de audio usando AVAudioEngine
 class AudioRecorder: ObservableObject {
-    
+
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
-    
+
     @Published var isRecording = false
     @Published var recordingDuration: TimeInterval = 0
-    
+
     private var timer: Timer?
     private var startTime: Date?
-    
+
+    /// UID del dispositivo de audio seleccionado
+    var selectedDeviceUID: String = "default"
+
     /// Formato de audio requerido por Whisper: 16kHz, mono, float32
     private var recordingFormat: AVAudioFormat {
         AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
     }
     
+    /// Configura el dispositivo de entrada de audio
+    private func configureInputDevice() {
+        guard selectedDeviceUID != "default" else { return }
+
+        guard let deviceID = AudioDeviceManager.shared.getDeviceID(for: selectedDeviceUID) else {
+            print("⚠️ Dispositivo no encontrado, usando default")
+            return
+        }
+
+        var deviceIDValue = deviceID
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            UInt32(MemoryLayout<AudioDeviceID>.size),
+            &deviceIDValue
+        )
+
+        if status == noErr {
+            print("✅ Dispositivo de entrada configurado: \(selectedDeviceUID)")
+        } else {
+            print("❌ Error configurando dispositivo: \(status)")
+        }
+    }
+
     /// Inicia la grabación de audio
     func startRecording() throws {
+        // Configurar dispositivo de entrada si no es default
+        configureInputDevice()
+
         // Crear nuevo audio engine
         audioEngine = AVAudioEngine()
-        
+
         guard let audioEngine = audioEngine else {
             throw RecordingError.engineCreationFailed
         }
-        
+
         let inputNode = audioEngine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         

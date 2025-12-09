@@ -19,10 +19,17 @@ class HotkeyManager: ObservableObject {
     private var hotkeyCallback: (() -> Void)?
     
     // Hotkey por defecto: Option + Space
-    @Published var currentKeyCode: UInt32 = UInt32(kVK_Space)
-    @Published var currentModifiers: UInt32 = UInt32(optionKey)
-    
-    private init() {}
+    @Published var currentKeyCode: UInt32
+    @Published var currentModifiers: UInt32
+
+    private init() {
+        // Cargar valores guardados o usar defaults
+        let savedKeyCode = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyKeyCode)
+        let savedModifiers = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyModifiers)
+
+        self.currentKeyCode = savedKeyCode > 0 ? UInt32(savedKeyCode) : UInt32(kVK_Space)
+        self.currentModifiers = savedModifiers > 0 ? UInt32(savedModifiers) : UInt32(optionKey)
+    }
     
     /// Registra el hotkey global
     func registerHotkey(callback: @escaping () -> Void) {
@@ -68,7 +75,7 @@ class HotkeyManager: ObservableObject {
         if registerStatus != noErr {
             print("❌ Error registrando hotkey: \(registerStatus)")
         } else {
-            print("✅ Hotkey registrado: Option + Space")
+            print("✅ Hotkey registrado: \(hotkeyDescription)")
         }
     }
     
@@ -85,7 +92,22 @@ class HotkeyManager: ObservableObject {
         }
     }
     
-    /// Cambia el hotkey
+    /// Cambia el hotkey manteniendo el callback existente
+    func updateHotkey(keyCode: UInt32, modifiers: UInt32) {
+        currentKeyCode = keyCode
+        currentModifiers = modifiers
+
+        // Guardar en UserDefaults
+        UserDefaults.standard.set(Int(keyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
+        UserDefaults.standard.set(Int(modifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
+
+        // Re-registrar con el callback existente
+        if let callback = hotkeyCallback {
+            registerHotkey(callback: callback)
+        }
+    }
+
+    /// Cambia el hotkey con un nuevo callback
     func updateHotkey(keyCode: UInt32, modifiers: UInt32, callback: @escaping () -> Void) {
         currentKeyCode = keyCode
         currentModifiers = modifiers
