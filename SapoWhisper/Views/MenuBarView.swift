@@ -41,16 +41,16 @@ struct MenuBarView: View {
     
     private var headerSection: some View {
         HStack(spacing: 12) {
-            // Icono animado del sapo
+            // Icono del sapo
             ZStack {
                 Circle()
                     .fill(viewModel.appState.iconColor.opacity(0.2))
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                 
                 if case .recording = viewModel.appState {
                     Circle()
                         .stroke(viewModel.appState.iconColor, lineWidth: 2)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .scaleEffect(pulseAnimation ? 1.3 : 1.0)
                         .opacity(pulseAnimation ? 0 : 1)
                         .animation(.easeOut(duration: 1).repeatForever(autoreverses: false), value: pulseAnimation)
@@ -58,10 +58,11 @@ struct MenuBarView: View {
                         .onDisappear { pulseAnimation = false }
                 }
                 
-                Image(systemName: viewModel.appState.iconName)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(viewModel.appState.iconColor)
-                    .symbolEffect(.pulse, isActive: viewModel.appState == .processing)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             
             VStack(alignment: .leading, spacing: 2) {
@@ -290,7 +291,12 @@ struct MenuBarView: View {
     // MARK: - Helpers
     
     private func openSettingsWindow() {
+        // Cerrar el popup del menu bar
+        NSApp.keyWindow?.close()
+        
+        // Abrir la ventana de configuración
         openWindow(id: "settings")
+        
         // Activar la app para que la ventana aparezca al frente
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
