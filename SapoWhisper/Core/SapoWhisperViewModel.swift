@@ -42,6 +42,8 @@ class SapoWhisperViewModel: ObservableObject {
     let whisperKitTranscriber = WhisperKitTranscriber()
     let downloadManager = DownloadManager()
     let hotkeyManager = HotkeyManager.shared
+    let overlayManager = OverlayWindowManager.shared
+    let audioLevelMonitor = AudioLevelMonitor.shared
 
     // MARK: - Computed Properties
 
@@ -198,6 +200,22 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        // Observar nivel de audio para el overlay
+        audioLevelMonitor.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                self?.overlayManager.updateAudioLevel(level)
+            }
+            .store(in: &cancellables)
+
+        // Observar duracion de grabacion para el overlay
+        audioRecorder.$recordingDuration
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] duration in
+                self?.overlayManager.updateRecordingDuration(duration)
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Initial State
@@ -332,12 +350,19 @@ class SapoWhisperViewModel: ObservableObject {
             audioRecorder.selectedDeviceUID = selectedMicrophone
             try audioRecorder.startRecording()
             appState = .recording
+
+            // Mostrar overlay y empezar monitoreo de audio
+            overlayManager.show()
+            overlayManager.updateState(.recording(duration: 0))
+            audioLevelMonitor.startMonitoring(deviceUID: selectedMicrophone)
+
             if playSoundEnabled {
                 SoundManager.shared.play(.startRecording)
             }
             print("Grabacion iniciada (Motor: \(currentEngine.displayName))")
         } catch {
             appState = .error(error.localizedDescription)
+            overlayManager.showError(message: error.localizedDescription)
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -347,12 +372,16 @@ class SapoWhisperViewModel: ObservableObject {
     
     /// Detiene la grabacion y transcribe
     func stopRecordingAndTranscribe() {
+        // Detener monitoreo de audio
+        audioLevelMonitor.stopMonitoring()
+
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
         }
 
         guard let audioURL = audioRecorder.stopRecording() else {
             appState = .error("No se pudo obtener el audio")
+            overlayManager.showError(message: "No se pudo obtener el audio")
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -361,6 +390,9 @@ class SapoWhisperViewModel: ObservableObject {
 
         print("Grabacion detenida, iniciando transcripcion con \(currentEngine.displayName)...")
         appState = .processing
+
+        // Actualizar overlay a transcribing
+        overlayManager.updateState(.transcribing)
 
         // Capturar valores para usar en el Task
         let language = selectedLanguage
@@ -383,6 +415,9 @@ class SapoWhisperViewModel: ObservableObject {
                 // Copiar al portapapeles
                 PasteManager.copyToClipboard(transcription)
 
+                // Mostrar overlay con resultado (se oculta automaticamente)
+                overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
+
                 // Auto-paste si esta habilitado
                 if autoPasteEnabled {
                     // Pequeno delay para asegurar que el clipboard este listo
@@ -400,6 +435,7 @@ class SapoWhisperViewModel: ObservableObject {
                 print("Transcripcion completada (\(engine.displayName)): \(transcription.prefix(50))...")
             } catch {
                 appState = .error(error.localizedDescription)
+                overlayManager.showError(message: error.localizedDescription)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
