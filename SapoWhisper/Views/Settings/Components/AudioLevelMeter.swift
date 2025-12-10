@@ -17,7 +17,7 @@ struct AudioLevelMeter: View {
     /// Altura del medidor
     let height: CGFloat
     
-    init(monitor: AudioLevelMonitor = .shared, barCount: Int = 20, height: CGFloat = 24) {
+    init(monitor: AudioLevelMonitor = .shared, barCount: Int = 20, height: CGFloat = 20) {
         self.monitor = monitor
         self.barCount = barCount
         self.height = height
@@ -94,19 +94,11 @@ struct AudioLevelMeterView: View {
     let deviceUID: String
     
     @State private var isEnabled = false
+    @State private var gain: Double = 1.0
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                AudioLevelMeter(monitor: monitor)
-                
-                // Indicador de porcentaje
-                Text("\(Int(monitor.audioLevel * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 35, alignment: .trailing)
-            }
-            
+        VStack(alignment: .leading, spacing: 10) {
+            // Toggle para activar/desactivar
             HStack {
                 Toggle(isOn: $isEnabled) {
                     Text("settings.test_microphone".localized)
@@ -117,7 +109,7 @@ struct AudioLevelMeterView: View {
                 
                 Spacer()
                 
-                if isEnabled {
+                if isEnabled && monitor.isActive {
                     HStack(spacing: 4) {
                         Circle()
                             .fill(Color.red)
@@ -128,9 +120,71 @@ struct AudioLevelMeterView: View {
                     }
                 }
             }
+            
+            // Mostrar meter y controles solo cuando está habilitado
+            if isEnabled {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Error message si hay error
+                    if monitor.hasError, let error = monitor.errorMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                        .padding(8)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    
+                    // Meter con porcentaje
+                    HStack(spacing: 8) {
+                        AudioLevelMeter(monitor: monitor)
+                        
+                        Text("\(Int(monitor.audioLevel * 100))%")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(width: 35, alignment: .trailing)
+                    }
+                    
+                    // Gain slider
+                    HStack(spacing: 8) {
+                        Image(systemName: "speaker.wave.1")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Slider(value: $gain, in: 0.5...3.0, step: 0.1)
+                            .controlSize(.small)
+                            .onChange(of: gain) { _, newValue in
+                                monitor.gain = Float(newValue)
+                            }
+                        
+                        Image(systemName: "speaker.wave.3")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("\(String(format: "%.1f", gain))x")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(width: 35, alignment: .trailing)
+                    }
+                    
+                    Text("settings.gain_desc".localized)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(10)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                .cornerRadius(8)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: isEnabled)
         .onChange(of: isEnabled) { _, newValue in
             if newValue {
+                monitor.gain = Float(gain)
                 monitor.restartMonitoring(deviceUID: deviceUID)
             } else {
                 monitor.stopMonitoring()

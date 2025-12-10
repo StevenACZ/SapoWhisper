@@ -27,6 +27,13 @@ class AudioLevelMonitor: ObservableObject {
     /// Si el monitor está activo
     @Published var isActive = false
     
+    /// Gain/boost de audio (1.0 = normal, 2.0 = 2x amplificación)
+    @Published var gain: Float = 1.0
+    
+    /// Si hubo un error al iniciar el monitoreo
+    @Published var hasError = false
+    @Published var errorMessage: String?
+    
     private var peakDecayTimer: Timer?
     
     private init() {}
@@ -35,27 +42,42 @@ class AudioLevelMonitor: ObservableObject {
     func startMonitoring(deviceUID: String = "default") {
         guard !isMonitoring else { return }
         
+        // Reset error state
+        hasError = false
+        errorMessage = nil
+        
         // Configurar dispositivo si no es default
         if deviceUID != "default" {
-            configureInputDevice(deviceUID: deviceUID)
+            let configSuccess = configureInputDevice(deviceUID: deviceUID)
+            if !configSuccess {
+                // Si falla la configuración, intentar con default
+                print("⚠️ No se pudo configurar dispositivo, usando default")
+            }
         }
         
+        // Crear nuevo audio engine
         audioEngine = AVAudioEngine()
         
         guard let audioEngine = audioEngine else {
-            print("❌ No se pudo crear el audio engine para monitoreo")
+            setError("No se pudo crear el motor de audio")
             return
         }
         
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        
-        // Instalar tap para leer los niveles de audio
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.processBuffer(buffer)
-        }
-        
         do {
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            
+            // Verificar que el formato sea válido
+            guard format.sampleRate > 0 && format.channelCount > 0 else {
+                setError("Formato de audio inválido")
+                return
+            }
+            
+            // Instalar tap para leer los niveles de audio
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                self?.processBuffer(buffer)
+            }
+            
             audioEngine.prepare()
             try audioEngine.start()
             isMonitoring = true
@@ -71,7 +93,8 @@ class AudioLevelMonitor: ObservableObject {
             
             print("🎤 Monitoreo de nivel iniciado")
         } catch {
-            print("❌ Error iniciando monitoreo: \(error)")
+            setError("Error al iniciar: \(error.localizedDescription)")
+            cleanup()
         }
     }
     
@@ -79,12 +102,7 @@ class AudioLevelMonitor: ObservableObject {
     func stopMonitoring() {
         guard isMonitoring else { return }
         
-        peakDecayTimer?.invalidate()
-        peakDecayTimer = nil
-        
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine?.stop()
-        audioEngine = nil
+        cleanup()
         
         isMonitoring = false
         isActive = false
@@ -94,12 +112,33 @@ class AudioLevelMonitor: ObservableObject {
         print("🎤 Monitoreo de nivel detenido")
     }
     
+    /// Limpia recursos sin cambiar el estado de monitoreo
+    private func cleanup() {
+        peakDecayTimer?.invalidate()
+        peakDecayTimer = nil
+        
+        if let engine = audioEngine {
+            // Verificar si el tap está instalado antes de removerlo
+            if engine.inputNode.numberOfInputs > 0 {
+                do {
+                    engine.inputNode.removeTap(onBus: 0)
+                } catch {
+                    // Ignorar errores al remover tap
+                }
+            }
+            engine.stop()
+        }
+        audioEngine = nil
+    }
+    
     /// Reinicia el monitoreo con un nuevo dispositivo
     func restartMonitoring(deviceUID: String) {
         stopMonitoring()
         
-        // Pequeño delay para que el sistema libere el dispositivo
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        // Delay más largo para dispositivos remotos como iPhone
+        let delay = deviceUID.contains("iPhone") || deviceUID.contains("iPad") ? 0.5 : 0.2
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.startMonitoring(deviceUID: deviceUID)
         }
     }
@@ -107,17 +146,23 @@ class AudioLevelMonitor: ObservableObject {
     /// Procesa el buffer de audio y extrae el nivel
     private func processBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData else { return }
+        guard buffer.frameLength > 0 else { return }
         
         let channelDataValue = channelData.pointee
         let channelDataValueArray = stride(from: 0, to: Int(buffer.frameLength), by: buffer.stride).map {
             channelDataValue[$0]
         }
         
+        guard !channelDataValueArray.isEmpty else { return }
+        
         // Calcular RMS (Root Mean Square) para un nivel más suave
         let rms = sqrt(channelDataValueArray.map { $0 * $0 }.reduce(0, +) / Float(channelDataValueArray.count))
         
+        // Aplicar gain
+        let amplifiedRms = rms * gain
+        
         // Convertir a escala logarítmica para mejor visualización
-        let avgPower = 20 * log10(rms)
+        let avgPower = 20 * log10(max(amplifiedRms, 0.0001)) // Evitar log(0)
         
         // Normalizar a 0-1 (asumiendo rango de -60dB a 0dB)
         let minDb: Float = -60
@@ -138,9 +183,11 @@ class AudioLevelMonitor: ObservableObject {
     }
     
     /// Configura el dispositivo de entrada
-    private func configureInputDevice(deviceUID: String) {
+    @discardableResult
+    private func configureInputDevice(deviceUID: String) -> Bool {
         guard let deviceID = AudioDeviceManager.shared.getDeviceID(for: deviceUID) else {
-            return
+            print("⚠️ Dispositivo no encontrado: \(deviceUID)")
+            return false
         }
         
         var deviceIDValue = deviceID
@@ -149,6 +196,15 @@ class AudioLevelMonitor: ObservableObject {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
+        
+        // Verificar primero si el dispositivo existe
+        var hasProperty: DarwinBoolean = false
+        let hasPropertyStatus = AudioObjectHasProperty(deviceID, &propertyAddress)
+        
+        if !hasPropertyStatus {
+            print("⚠️ Dispositivo no tiene las propiedades esperadas")
+            return false
+        }
         
         let status = AudioObjectSetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
@@ -161,7 +217,18 @@ class AudioLevelMonitor: ObservableObject {
         
         if status != noErr {
             print("⚠️ Error configurando dispositivo para monitoreo: \(status)")
+            return false
         }
+        
+        return true
+    }
+    
+    /// Establece un error
+    private func setError(_ message: String) {
+        print("❌ AudioLevelMonitor: \(message)")
+        hasError = true
+        errorMessage = message
+        isActive = false
     }
     
     deinit {
