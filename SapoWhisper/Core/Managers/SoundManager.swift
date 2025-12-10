@@ -19,41 +19,55 @@ class SoundManager {
     
     // MARK: - Sound Types
     
-    enum SoundType {
-        case startRecording
-        case stopRecording
-        case success
-        case error
-        
-        var systemSound: NSSound.Name? {
-            switch self {
-            case .startRecording:
-                return NSSound.Name("Morse")
-            case .stopRecording:
-                return NSSound.Name("Pop")
-            case .success:
-                return NSSound.Name("Glass")
-            case .error:
-                return NSSound.Name("Basso")
-            }
-        }
+    enum SoundType: String {
+        case startRecording = "start"
+        case stopRecording = "stop"
+        case success = "success"
+        case error = "error"
     }
     
     // MARK: - Play Sound
     
-    /// Reproduce un sonido del sistema
+    /// Reproduce un sonido personalizado desde Resources/Sounds
     func play(_ type: SoundType) {
+        // Verificar si los sonidos están habilitados
         guard UserDefaults.standard.bool(forKey: Constants.StorageKeys.playSound) != false else {
             return
         }
         
-        if let soundName = type.systemSound, let sound = NSSound(named: soundName) {
-            sound.play()
+        // Buscar el archivo de sonido en el bundle
+        guard let soundURL = Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds") else {
+            print("⚠️ Sound not found: \(type.rawValue).wav")
+            // Fallback a sonidos del sistema
+            playSystemFallback(type)
+            return
+        }
+        
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: soundURL)
+            audioPlayer?.prepareToPlay()
+            audioPlayer?.play()
+        } catch {
+            print("⚠️ Error playing sound: \(error.localizedDescription)")
+            playSystemFallback(type)
         }
     }
     
-    /// Reproduce un sonido de clic suave usando síntesis
-    func playClick() {
-        NSSound.beep()
+    /// Fallback a sonidos del sistema si no se encuentran los personalizados
+    private func playSystemFallback(_ type: SoundType) {
+        let soundName: NSSound.Name
+        
+        switch type {
+        case .startRecording:
+            soundName = NSSound.Name("Morse")
+        case .stopRecording:
+            soundName = NSSound.Name("Pop")
+        case .success:
+            soundName = NSSound.Name("Glass")
+        case .error:
+            soundName = NSSound.Name("Basso")
+        }
+        
+        NSSound(named: soundName)?.play()
     }
 }

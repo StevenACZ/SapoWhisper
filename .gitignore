@@ -137,7 +137,7 @@ temp/
 *.mp3
 *.m4a
 *.flac
-!Resources/sounds/*.wav
+!SapoWhisper/Resources/Sounds/*.wav
 
 # ------------------------------------------
 # AI Context Files (privados)
