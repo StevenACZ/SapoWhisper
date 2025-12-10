@@ -32,7 +32,9 @@ class SoundManager {
     /// Los archivos WAV deben agregarse al proyecto en Xcode y estar incluidos en el target
     func play(_ type: SoundType) {
         // Obtener el volumen configurado (por defecto 1.0 = 100%)
-        let volume = UserDefaults.standard.object(forKey: Constants.StorageKeys.soundVolume) as? Float ?? 1.0
+        // AppStorage guarda como Double, así que leemos Double y convertimos a Float
+        let volumeDouble = UserDefaults.standard.double(forKey: Constants.StorageKeys.soundVolume)
+        let volume: Float = volumeDouble > 0 ? Float(volumeDouble) : 1.0
         
         // Buscar el archivo de sonido en el bundle
         // Primero intenta en subcarpeta Sounds/, luego en la raíz de Resources
