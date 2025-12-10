@@ -102,3 +102,11 @@
 "model.speed.slow" = "Lento";
 "model.delete_tooltip" = "Borrar modelo para liberar espacio";
 
+/* Settings Tabs */
+"tab.general" = "General";
+"tab.engine" = "Motor";
+"tab.hotkey" = "Atajo";
+"tab.about" = "Info";
+
+/* Hotkey Settings */
+"settings.presets_desc" = "Selecciona un atajo predefinido o personaliza el tuyo";

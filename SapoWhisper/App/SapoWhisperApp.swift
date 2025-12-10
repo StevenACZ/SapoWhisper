@@ -24,21 +24,14 @@ struct SapoWhisperApp: App {
         }
         .menuBarExtraStyle(.window)
         
-        // Ventana de Configuración (se abre desde el menu)
+        // Ventana de Configuración (se abre desde el menu con botón "Configuración")
         Window("", id: "settings") {
-            ModelDownloadView(viewModel: viewModel)
+            SettingsView(viewModel: viewModel)
                 .environment(\.locale, localizationManager.locale)
                 .id(localizationManager.language)
         }
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultPosition(.center)
-        
-        // Preferencias del sistema (⌘,)
-        Settings {
-            SettingsView()
-                .environment(\.locale, localizationManager.locale)
-                .id(localizationManager.language)
-        }
     }
 }
