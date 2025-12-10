@@ -110,3 +110,7 @@
 
 /* Hotkey Settings */
 "settings.presets_desc" = "Selecciona un atajo predefinido o personaliza el tuyo";
+
+/* Microphone Level Meter */
+"settings.test_microphone" = "Probar micrófono";
+"settings.listening" = "Escuchando...";

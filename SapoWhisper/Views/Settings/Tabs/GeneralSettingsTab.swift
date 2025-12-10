@@ -61,12 +61,19 @@ struct GeneralSettingsTab: View {
     
     private var microphoneCard: some View {
         SettingsCard(icon: "mic.fill", title: "settings.microphone".localized) {
-            Picker("settings.microphone_desc".localized, selection: $selectedMicrophone) {
-                ForEach(audioDeviceManager.availableDevices) { device in
-                    Text(device.name).tag(device.uid)
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("settings.microphone_desc".localized, selection: $selectedMicrophone) {
+                    ForEach(audioDeviceManager.availableDevices) { device in
+                        Text(device.name).tag(device.uid)
+                    }
                 }
+                .pickerStyle(.menu)
+                
+                Divider()
+                
+                // Audio level meter
+                AudioLevelMeterView(deviceUID: selectedMicrophone)
             }
-            .pickerStyle(.menu)
         }
     }
     
