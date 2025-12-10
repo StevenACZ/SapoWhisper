@@ -114,3 +114,4 @@
 /* Microphone Level Meter */
 "settings.test_microphone" = "Test microphone";
 "settings.listening" = "Listening...";
+"settings.gain_desc" = "Adjust audio amplification (doesn't affect system volume)";
