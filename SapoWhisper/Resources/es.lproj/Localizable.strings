@@ -120,3 +120,11 @@
 "overlay.recording" = "Grabando...";
 "overlay.transcribing" = "Transcribiendo...";
 "overlay.completed" = "¡Listo!";
+
+/* Sound Settings */
+"settings.sounds" = "Sonidos";
+"settings.play_sounds" = "Reproducir sonidos";
+"settings.play_sounds_desc" = "Sonidos de feedback al grabar y transcribir";
+"settings.sound_volume" = "Volumen de sonidos";
+"settings.sound_volume_desc" = "Ajusta el volumen independiente del sistema";
+"settings.test_sound" = "Probar sonido";

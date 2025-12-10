@@ -28,33 +28,40 @@ class SoundManager {
     
     // MARK: - Play Sound
     
-    /// Reproduce un sonido personalizado desde Resources/Sounds
+    /// Reproduce un sonido personalizado desde Resources
+    /// Los archivos WAV deben agregarse al proyecto en Xcode y estar incluidos en el target
     func play(_ type: SoundType) {
-        // Verificar si los sonidos están habilitados
-        guard UserDefaults.standard.bool(forKey: Constants.StorageKeys.playSound) != false else {
-            return
-        }
+        // Obtener el volumen configurado (por defecto 1.0 = 100%)
+        let volume = UserDefaults.standard.object(forKey: Constants.StorageKeys.soundVolume) as? Float ?? 1.0
         
         // Buscar el archivo de sonido en el bundle
-        guard let soundURL = Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds") else {
-            print("⚠️ Sound not found: \(type.rawValue).wav")
-            // Fallback a sonidos del sistema
-            playSystemFallback(type)
+        // Primero intenta en subcarpeta Sounds/, luego en la raíz de Resources
+        let soundURL = Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds")
+                    ?? Bundle.main.url(forResource: type.rawValue, withExtension: "wav")
+        
+        guard let url = soundURL else {
+            #if DEBUG
+            print("🔊 Sound '\(type.rawValue).wav' not found - using system fallback")
+            #endif
+            playSystemFallback(type, volume: volume)
             return
         }
         
         do {
-            audioPlayer = try AVAudioPlayer(contentsOf: soundURL)
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.volume = volume
             audioPlayer?.prepareToPlay()
             audioPlayer?.play()
         } catch {
+            #if DEBUG
             print("⚠️ Error playing sound: \(error.localizedDescription)")
-            playSystemFallback(type)
+            #endif
+            playSystemFallback(type, volume: volume)
         }
     }
     
     /// Fallback a sonidos del sistema si no se encuentran los personalizados
-    private func playSystemFallback(_ type: SoundType) {
+    private func playSystemFallback(_ type: SoundType, volume: Float) {
         let soundName: NSSound.Name
         
         switch type {
@@ -68,6 +75,9 @@ class SoundManager {
             soundName = NSSound.Name("Basso")
         }
         
-        NSSound(named: soundName)?.play()
+        if let sound = NSSound(named: soundName) {
+            sound.volume = volume
+            sound.play()
+        }
     }
 }
