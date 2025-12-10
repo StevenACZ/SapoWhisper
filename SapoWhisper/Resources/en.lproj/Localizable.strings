@@ -115,3 +115,8 @@
 "settings.test_microphone" = "Test microphone";
 "settings.listening" = "Listening...";
 "settings.gain_desc" = "Adjust audio amplification (doesn't affect system volume)";
+
+/* Recording Overlay */
+"overlay.recording" = "Recording...";
+"overlay.transcribing" = "Transcribing...";
+"overlay.completed" = "Done!";
