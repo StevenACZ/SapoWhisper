@@ -18,11 +18,6 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // Contenido del tab seleccionado
             selectedTabContent
-            
-            Divider()
-            
-            // Footer
-            footerSection
         }
         .frame(width: 480, height: 500)
         .background(Color(NSColor.windowBackgroundColor))
@@ -61,26 +56,6 @@ struct SettingsView: View {
         case .about:
             AboutSettingsTab()
         }
-    }
-    
-    // MARK: - Footer
-    
-    private var footerSection: some View {
-        HStack {
-            Text("v\(Constants.appVersion)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Spacer()
-            
-            Button("close".localized) {
-                dismiss()
-            }
-            .keyboardShortcut(.escape)
-            .buttonStyle(.borderedProminent)
-            .tint(.sapoGreen)
-        }
-        .padding()
     }
 }
 
