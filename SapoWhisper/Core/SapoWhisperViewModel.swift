@@ -40,7 +40,6 @@ class SapoWhisperViewModel: ObservableObject {
     let audioRecorder = AudioRecorder()
     let transcriber = WhisperTranscriber()
     let whisperKitTranscriber = WhisperKitTranscriber()
-    let downloadManager = DownloadManager()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let audioLevelMonitor = AudioLevelMonitor.shared
@@ -234,21 +233,6 @@ class SapoWhisperViewModel: ObservableObject {
             } else {
                 appState = .noModel
             }
-        }
-    }
-
-    /// Descarga un modelo de Whisper (legacy)
-    func downloadModel(_ model: WhisperModel) {
-        downloadManager.downloadModel(model)
-    }
-
-    /// Carga un modelo despues de configurarlo (legacy)
-    func loadModel(_ model: WhisperModel) async {
-        do {
-            try await transcriber.loadModel(model)
-            appState = .idle
-        } catch {
-            appState = .error(error.localizedDescription)
         }
     }
 

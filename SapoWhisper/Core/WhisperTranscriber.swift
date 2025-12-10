@@ -4,9 +4,8 @@
 //
 //  Created by Steven on 8/12/24.
 //  
-//  NOTA: Esta versión usa Speech Recognition de Apple para el MVP.
-//  Para producción local sin internet, agregar WhisperKit via Xcode:
-//  File > Add Package Dependencies > https://github.com/argmaxinc/WhisperKit
+//  Motor de transcripción usando Speech Recognition de Apple (Online).
+//  Este es el motor secundario que requiere internet pero no necesita configuración.
 //
 
 import Foundation
@@ -19,21 +18,18 @@ import Combine
 class WhisperTranscriber: ObservableObject {
     
     @Published var isModelLoaded = false
-    // Propiedad simulada para compatibilidad con WhisperKitTranscriber
-    @Published var isModelLoading = false 
     @Published var isTranscribing = false
     @Published var progress: Double = 0
     @Published var lastTranscription: String = ""
     @Published var errorMessage: String?
     
-    private var currentModel: WhisperModel?
     private var speechRecognizer: SFSpeechRecognizer?
     
     init() {
-        checkModelAndSetup()
+        setupSpeechRecognition()
     }
     
-    private func checkModelAndSetup() {
+    private func setupSpeechRecognition() {
         // Configurar Speech Recognition
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES"))
         
@@ -43,7 +39,6 @@ class WhisperTranscriber: ObservableObject {
                 switch status {
                 case .authorized:
                     print("✅ Speech Recognition autorizado")
-                    // Para el MVP, marcar como modelo cargado si hay permisos
                     self?.isModelLoaded = true
                 case .denied, .restricted:
                     print("❌ Speech Recognition denegado")
@@ -55,18 +50,6 @@ class WhisperTranscriber: ObservableObject {
                 }
             }
         }
-    }
-    
-    /// Carga el modelo de Whisper (para compatibilidad futura con WhisperKit)
-    func loadModel(_ model: WhisperModel) async throws {
-        // Para el MVP, solo verificamos que Speech Recognition está disponible
-        guard speechRecognizer?.isAvailable == true else {
-            throw TranscriberError.transcriptionFailed("Speech Recognition no disponible")
-        }
-        
-        currentModel = model
-        isModelLoaded = true
-        print("✅ Modelo configurado: \(model.displayName)")
     }
     
     /// Transcribe un archivo de audio usando Speech Recognition de Apple
@@ -139,9 +122,9 @@ class WhisperTranscriber: ObservableObject {
         speechRecognizer?.isAvailable == true
     }
     
-    /// Obtiene el modelo actualmente cargado
+    /// Obtiene el nombre del motor de transcripción
     var loadedModelName: String? {
-        currentModel?.displayName ?? "Speech Recognition"
+        "Apple Speech Recognition"
     }
 }
 
