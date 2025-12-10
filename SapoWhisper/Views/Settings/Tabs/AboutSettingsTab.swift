@@ -9,6 +9,10 @@ import SwiftUI
 
 /// Tab de información sobre la aplicación
 struct AboutSettingsTab: View {
+    @State private var tapCount = 0
+    @State private var showLoadingIcon = false
+    @State private var iconBounce = false
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -35,11 +39,27 @@ struct AboutSettingsTab: View {
                     ))
                     .frame(width: 90, height: 90)
                 
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                // Easter egg: 3 clics cambia el icono
+                Group {
+                    if showLoadingIcon, let loadingIcon = NSImage(named: "DockIconLoading") {
+                        Image(nsImage: loadingIcon)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .scaleEffect(iconBounce ? 1.2 : 1.0)
+                .animation(.interpolatingSpring(stiffness: 300, damping: 10), value: iconBounce)
+                .onTapGesture {
+                    handleIconTap()
+                }
             }
             
             VStack(spacing: 4) {
@@ -58,6 +78,50 @@ struct AboutSettingsTab: View {
             }
         }
         .padding(.top, 8)
+    }
+    
+    // MARK: - Easter Egg Handler
+    
+    private func handleIconTap() {
+        tapCount += 1
+        
+        if tapCount >= 3 {
+            // Activar easter egg
+            tapCount = 0
+            
+            // Efecto de rebote al cambiar
+            withAnimation {
+                iconBounce = true
+                showLoadingIcon = true
+            }
+            
+            // Quitar el rebote después de la animación
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                iconBounce = false
+            }
+            
+            // Volver al icono normal después de 3 segundos
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                withAnimation {
+                    iconBounce = true
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    showLoadingIcon = false
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        iconBounce = false
+                    }
+                }
+            }
+        }
+        
+        // Reset del contador después de 1 segundo sin clics
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if tapCount > 0 && tapCount < 3 {
+                tapCount = 0
+            }
+        }
     }
     
     // MARK: - How To Section

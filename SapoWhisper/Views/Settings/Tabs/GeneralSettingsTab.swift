@@ -21,9 +21,9 @@ struct GeneralSettingsTab: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                appLanguageCard
                 microphoneCard
                 languageSelectionCard
+                appLanguageCard
                 behaviorCard
             }
             .padding()
