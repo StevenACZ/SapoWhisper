@@ -24,6 +24,7 @@ struct GeneralSettingsTab: View {
                 microphoneCard
                 languageSelectionCard
                 appLanguageCard
+                soundSettingsCard
                 behaviorCard
             }
             .padding()
@@ -121,6 +122,72 @@ struct GeneralSettingsTab: View {
                 }
                 .onChange(of: launchAtLogin) { _, newValue in
                     setLaunchAtLogin(enabled: newValue)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Sound Settings Card
+    
+    @AppStorage(Constants.StorageKeys.soundVolume) private var soundVolume: Double = 1.0
+    
+    private var soundSettingsCard: some View {
+        SettingsCard(icon: "speaker.wave.2.fill", title: "settings.sounds".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(isOn: $playSound) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.play_sounds".localized)
+                        Text("settings.play_sounds_desc".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                if playSound {
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("settings.sound_volume".localized)
+                            Spacer()
+                            Text("\(Int(soundVolume * 100))%")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                                .monospacedDigit()
+                        }
+                        
+                        HStack(spacing: 12) {
+                            Image(systemName: "speaker.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            
+                            Slider(value: $soundVolume, in: 0.2...1.0, step: 0.1)
+                                .tint(Constants.Colors.sapoGreen)
+                            
+                            Image(systemName: "speaker.wave.3.fill")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                        
+                        Text("settings.sound_volume_desc".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                    
+                    // Botón para probar el sonido
+                    Button(action: {
+                        SoundManager.shared.play(.success)
+                    }) {
+                        HStack {
+                            Image(systemName: "play.circle.fill")
+                            Text("settings.test_sound".localized)
+                        }
+                        .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(Constants.Colors.sapoGreen)
                 }
             }
         }

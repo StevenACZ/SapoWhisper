@@ -120,3 +120,11 @@
 "overlay.recording" = "Recording...";
 "overlay.transcribing" = "Transcribing...";
 "overlay.completed" = "Done!";
+
+/* Sound Settings */
+"settings.sounds" = "Sounds";
+"settings.play_sounds" = "Play sounds";
+"settings.play_sounds_desc" = "Feedback sounds when recording and transcribing";
+"settings.sound_volume" = "Sound volume";
+"settings.sound_volume_desc" = "Adjust volume independent of system";
+"settings.test_sound" = "Test sound";
