@@ -102,3 +102,11 @@
 "model.speed.slow" = "Slow";
 "model.delete_tooltip" = "Delete model to free up space";
 
+/* Settings Tabs */
+"tab.general" = "General";
+"tab.engine" = "Engine";
+"tab.hotkey" = "Hotkey";
+"tab.about" = "About";
+
+/* Hotkey Settings */
+"settings.presets_desc" = "Select a preset hotkey or customize your own";
