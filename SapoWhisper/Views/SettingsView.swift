@@ -100,15 +100,6 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-
-                Toggle(isOn: $playSound) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.feedback_sounds".localized)
-                        Text("settings.feedback_sounds_desc".localized)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
                 
                 Toggle(isOn: $launchAtLogin) {
                     VStack(alignment: .leading, spacing: 2) {

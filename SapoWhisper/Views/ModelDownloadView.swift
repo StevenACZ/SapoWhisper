@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Carbon
+import ServiceManagement
 
 /// Vista para gestionar la configuración de transcripción
 struct ModelDownloadView: View {
@@ -442,6 +443,7 @@ struct ModelDownloadView: View {
     }
 
     @State private var isRecordingHotkey = false
+    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     private var hotkeyCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -484,19 +486,40 @@ struct ModelDownloadView: View {
 
             Divider()
 
-            Toggle(isOn: $playSound) {
+            Toggle(isOn: $launchAtLogin) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("settings.feedback_sounds".localized)
-                    Text("settings.feedback_sounds_desc".localized)
+                    Text("settings.launch_at_login".localized)
+                    Text("settings.launch_at_login_desc".localized)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+            }
+            .onChange(of: launchAtLogin) { _, newValue in
+                setLaunchAtLogin(enabled: newValue)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(Constants.Sizes.cornerRadius)
+    }
+    
+    // MARK: - Launch at Login
+    
+    private func setLaunchAtLogin(enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+                print("✅ SapoWhisper registrado para iniciar al arrancar")
+            } else {
+                try SMAppService.mainApp.unregister()
+                print("✅ SapoWhisper des-registrado del arranque")
+            }
+        } catch {
+            print("❌ Error al configurar Launch at Login: \(error.localizedDescription)")
+            // Revertir el estado del toggle si hay error
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 
     // MARK: - Hotkey Helpers
