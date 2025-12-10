@@ -35,6 +35,7 @@ class AudioLevelMonitor: ObservableObject {
     @Published var errorMessage: String?
     
     private var peakDecayTimer: Timer?
+    private var previousDefaultDevice: AudioDeviceID?
     
     private init() {}
     
@@ -46,15 +47,30 @@ class AudioLevelMonitor: ObservableObject {
         hasError = false
         errorMessage = nil
         
+        // Guardar el dispositivo default actual para restaurarlo después
+        previousDefaultDevice = AudioDeviceManager.shared.getSystemDefaultInputDevice()
+        
         // Configurar dispositivo si no es default
         if deviceUID != "default" {
-            let configSuccess = configureInputDevice(deviceUID: deviceUID)
-            if !configSuccess {
-                // Si falla la configuración, intentar con default
-                print("⚠️ No se pudo configurar dispositivo, usando default")
+            if let deviceID = AudioDeviceManager.shared.getDeviceID(for: deviceUID) {
+                // Cambiar el dispositivo de entrada del sistema temporalmente
+                let success = AudioDeviceManager.shared.setSystemDefaultInputDevice(deviceID)
+                if !success {
+                    print("⚠️ No se pudo cambiar al dispositivo seleccionado, usando default")
+                }
+            } else {
+                print("⚠️ No se encontró el dispositivo: \(deviceUID)")
             }
         }
         
+        // Pequeño delay para que el sistema aplique el cambio de dispositivo
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.startAudioEngine()
+        }
+    }
+    
+    /// Inicia el AVAudioEngine después de configurar el dispositivo
+    private func startAudioEngine() {
         // Crear nuevo audio engine
         audioEngine = AVAudioEngine()
         
@@ -104,6 +120,12 @@ class AudioLevelMonitor: ObservableObject {
         
         cleanup()
         
+        // Restaurar el dispositivo default anterior si lo cambiamos
+        if let previousDevice = previousDefaultDevice {
+            AudioDeviceManager.shared.setSystemDefaultInputDevice(previousDevice)
+            previousDefaultDevice = nil
+        }
+        
         isMonitoring = false
         isActive = false
         audioLevel = 0
@@ -118,15 +140,10 @@ class AudioLevelMonitor: ObservableObject {
         peakDecayTimer = nil
         
         if let engine = audioEngine {
-            // Verificar si el tap está instalado antes de removerlo
-            if engine.inputNode.numberOfInputs > 0 {
-                do {
-                    engine.inputNode.removeTap(onBus: 0)
-                } catch {
-                    // Ignorar errores al remover tap
-                }
+            if engine.isRunning {
+                engine.inputNode.removeTap(onBus: 0)
+                engine.stop()
             }
-            engine.stop()
         }
         audioEngine = nil
     }
@@ -135,8 +152,8 @@ class AudioLevelMonitor: ObservableObject {
     func restartMonitoring(deviceUID: String) {
         stopMonitoring()
         
-        // Delay más largo para dispositivos remotos como iPhone
-        let delay = deviceUID.contains("iPhone") || deviceUID.contains("iPad") ? 0.5 : 0.2
+        // Delay para que el sistema libere el dispositivo
+        let delay: Double = 0.3
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.startMonitoring(deviceUID: deviceUID)
@@ -180,47 +197,6 @@ class AudioLevelMonitor: ObservableObject {
                 self.peakLevel = normalizedLevel
             }
         }
-    }
-    
-    /// Configura el dispositivo de entrada
-    @discardableResult
-    private func configureInputDevice(deviceUID: String) -> Bool {
-        guard let deviceID = AudioDeviceManager.shared.getDeviceID(for: deviceUID) else {
-            print("⚠️ Dispositivo no encontrado: \(deviceUID)")
-            return false
-        }
-        
-        var deviceIDValue = deviceID
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        // Verificar primero si el dispositivo existe
-        var hasProperty: DarwinBoolean = false
-        let hasPropertyStatus = AudioObjectHasProperty(deviceID, &propertyAddress)
-        
-        if !hasPropertyStatus {
-            print("⚠️ Dispositivo no tiene las propiedades esperadas")
-            return false
-        }
-        
-        let status = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            0,
-            nil,
-            UInt32(MemoryLayout<AudioDeviceID>.size),
-            &deviceIDValue
-        )
-        
-        if status != noErr {
-            print("⚠️ Error configurando dispositivo para monitoreo: \(status)")
-            return false
-        }
-        
-        return true
     }
     
     /// Establece un error

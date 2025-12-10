@@ -17,6 +17,18 @@ struct AudioDevice: Identifiable, Hashable {
     let uid: String
 
     static let systemDefault = AudioDevice(id: 0, name: "Sistema (Por defecto)", uid: "default")
+    
+    /// Lista de patrones de nombres de dispositivos a filtrar (dispositivos virtuales del sistema)
+    static let filteredPatterns = [
+        "CADefaultDeviceAggregate",
+        "CADefaultDevice",
+        "Aggregate Device"
+    ]
+    
+    /// Verifica si este dispositivo debe ser filtrado
+    var shouldBeFiltered: Bool {
+        AudioDevice.filteredPatterns.contains { name.contains($0) || uid.contains($0) }
+    }
 }
 
 /// Maneja la lista de dispositivos de audio disponibles
@@ -77,12 +89,15 @@ class AudioDeviceManager: ObservableObject {
 
         for deviceID in deviceIDs {
             if let device = getInputDevice(deviceID: deviceID) {
-                devices.append(device)
+                // Filtrar dispositivos virtuales del sistema
+                if !device.shouldBeFiltered {
+                    devices.append(device)
+                }
             }
         }
 
         availableDevices = devices
-        print("🎤 Dispositivos de entrada encontrados: \(devices.count)")
+        print("🎤 Dispositivos de entrada encontrados: \(devices.count - 1)") // -1 por System Default
     }
 
     /// Obtiene información de un dispositivo de entrada
@@ -123,7 +138,6 @@ class AudioDeviceManager: ObservableObject {
 
         var name: Unmanaged<CFString>?
         var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        // Usamos &name y dejamos que Swift maneje el pointer, casteando a RawPointer
         status = AudioObjectGetPropertyData(deviceID, &namePropertyAddress, 0, nil, &nameSize, &name)
 
         guard status == noErr, let deviceName = name?.takeRetainedValue() as String? else { return nil }
@@ -164,8 +178,59 @@ class AudioDeviceManager: ObservableObject {
     /// Obtiene el AudioDeviceID para un UID dado
     func getDeviceID(for uid: String) -> AudioDeviceID? {
         if uid == "default" {
-            return nil // Usar dispositivo por defecto del sistema
+            return getSystemDefaultInputDevice()
         }
         return availableDevices.first(where: { $0.uid == uid })?.id
+    }
+    
+    /// Obtiene el dispositivo de entrada por defecto del sistema
+    func getSystemDefaultInputDevice() -> AudioDeviceID? {
+        var deviceID: AudioDeviceID = 0
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &deviceID
+        )
+        
+        return status == noErr ? deviceID : nil
+    }
+    
+    /// Configura temporalmente un dispositivo como entrada por defecto del sistema
+    /// Retorna true si tuvo éxito
+    @discardableResult
+    func setSystemDefaultInputDevice(_ deviceID: AudioDeviceID) -> Bool {
+        var deviceIDValue = deviceID
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            UInt32(MemoryLayout<AudioDeviceID>.size),
+            &deviceIDValue
+        )
+        
+        if status == noErr {
+            print("✅ Dispositivo de entrada del sistema cambiado")
+            return true
+        } else {
+            print("⚠️ Error cambiando dispositivo del sistema: \(status)")
+            return false
+        }
     }
 }
