@@ -7,27 +7,24 @@
 
 import SwiftUI
 
-/// Vista principal del overlay de grabacion
-/// Muestra diferentes contenidos segun el estado actual
+/// Vista principal del overlay de grabacion - pill horizontal en la parte inferior
 struct RecordingOverlayView: View {
 
     @ObservedObject var manager: OverlayWindowManager
 
-    // Animaciones
     @State private var scale: CGFloat = 0.8
 
     var body: some View {
         ZStack {
-            // Fondo con bordes redondeados
-            RoundedRectangle(cornerRadius: 32)
+            Capsule()
                 .fill(.ultraThinMaterial)
 
-            // Contenido segun estado
             contentForState
-                .padding(24)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
         }
-        .frame(width: 280, height: 280)
-        .clipShape(RoundedRectangle(cornerRadius: 32))
+        .frame(width: 440, height: 56)
+        .clipShape(Capsule())
         .scaleEffect(scale)
         .onAppear {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
@@ -45,144 +42,185 @@ struct RecordingOverlayView: View {
             EmptyView()
 
         case .recording(let duration):
-            RecordingStateView(duration: duration, audioLevel: manager.audioLevel)
+            RecordingPillView(
+                duration: duration,
+                audioLevel: manager.audioLevel,
+                onPause: { manager.onPauseToggle?() }
+            )
+
+        case .paused(let duration):
+            PausedPillView(
+                duration: duration,
+                onResume: { manager.onPauseToggle?() }
+            )
 
         case .transcribing:
-            TranscribingStateView()
+            TranscribingPillView()
 
         case .completed(let text):
-            CompletedStateView(text: text)
+            CompletedPillView(text: text)
 
         case .error(let message):
-            ErrorStateView(message: message)
+            ErrorPillView(message: message)
         }
     }
-
 }
 
-// MARK: - Recording State View
+// MARK: - Recording Pill View
 
-private struct RecordingStateView: View {
+private struct RecordingPillView: View {
     let duration: TimeInterval
     let audioLevel: Float
+    let onPause: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            // Icono del sapo flotando (mas grande y centrado)
-            FloatingSapoIcon(state: .recording, size: 80)
-                .padding(.top, 8)
+        HStack(spacing: 12) {
+            FloatingSapoIcon(state: .recording, size: 36)
 
-            // Ecualizador
             AudioEqualizerView(audioLevel: audioLevel)
-                .frame(height: 50)
+                .frame(width: 120)
 
-            // Estado y tiempo
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(Color.recording)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 6, height: 6)
                     .modifier(PulseAnimation())
 
                 Text("overlay.recording".localized)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.primary)
             }
+
+            Button(action: onPause) {
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.primary.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
 
             OverlayTimer(duration: duration)
         }
     }
 }
 
-// MARK: - Transcribing State View
+// MARK: - Paused Pill View
 
-private struct TranscribingStateView: View {
+private struct PausedPillView: View {
+    let duration: TimeInterval
+    let onResume: () -> Void
+
     var body: some View {
-        VStack(spacing: 20) {
-            // Icono del sapo con pulso (mas grande)
-            FloatingSapoIcon(state: .transcribing, size: 80)
+        HStack(spacing: 12) {
+            FloatingSapoIcon(state: .paused, size: 36)
 
-            // Indicador de carga
+            // Flat bars to indicate paused
+            HStack(spacing: 2) {
+                ForEach(0..<24, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.primary.opacity(0.15))
+                        .frame(width: 3, height: 3)
+                }
+            }
+            .frame(width: 120, height: 28)
+
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.processing)
+                    .frame(width: 6, height: 6)
+
+                Text("overlay.paused".localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+            }
+
+            Button(action: onResume) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.primary.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+
+            OverlayTimer(duration: duration)
+        }
+    }
+}
+
+// MARK: - Transcribing Pill View
+
+private struct TranscribingPillView: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            FloatingSapoIcon(state: .transcribing, size: 36)
+
             TranscribingIndicator()
 
-            // Texto
             Text("overlay.transcribing".localized)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
         }
     }
 }
 
-// MARK: - Completed State View
+// MARK: - Completed Pill View
 
-private struct CompletedStateView: View {
+private struct CompletedPillView: View {
     let text: String
 
     @State private var checkmarkScale: CGFloat = 0
-    @State private var checkmarkRotation: Double = -30
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Icono del sapo con checkmark (mas grande)
+        HStack(spacing: 10) {
             ZStack {
-                FloatingSapoIcon(state: .completed, size: 80)
+                FloatingSapoIcon(state: .completed, size: 36)
 
-                // Checkmark badge
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 28))
+                    .font(.system(size: 16))
                     .foregroundColor(.sapoGreen)
-                    .background(Circle().fill(.white).padding(2))
-                    .offset(x: 28, y: -28)
+                    .background(Circle().fill(.white).padding(1))
+                    .offset(x: 14, y: -14)
                     .scaleEffect(checkmarkScale)
-                    .rotationEffect(.degrees(checkmarkRotation))
             }
 
-            // Preview del texto
-            if !text.isEmpty {
-                Text(text.prefix(100) + (text.count > 100 ? "..." : ""))
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.primary.opacity(0.05))
-                    )
-            }
-
-            // Texto de exito
             Text("overlay.completed".localized)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.sapoGreen)
+
+            if !text.isEmpty {
+                Text(text.prefix(60) + (text.count > 60 ? "..." : ""))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         .onAppear {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
                 checkmarkScale = 1.0
-                checkmarkRotation = 0
             }
         }
     }
 }
 
-// MARK: - Error State View
+// MARK: - Error Pill View
 
-private struct ErrorStateView: View {
+private struct ErrorPillView: View {
     let message: String
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Icono de error
+        HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
+                .font(.system(size: 20))
                 .foregroundColor(.sapoError)
 
             Text(message)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 }
@@ -201,4 +239,3 @@ private struct PulseAnimation: ViewModifier {
             }
     }
 }
-

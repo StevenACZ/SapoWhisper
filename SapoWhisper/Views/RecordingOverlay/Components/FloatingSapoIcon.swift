@@ -8,6 +8,7 @@ import SwiftUI
 /// Estado del icono del sapo para determinar animacion e imagen
 enum SapoIconState {
     case recording
+    case paused
     case transcribing
     case completed
     case error
@@ -16,6 +17,8 @@ enum SapoIconState {
         switch self {
         case .recording:
             return "DockIconRecording"
+        case .paused:
+            return "DockIconIdle"
         case .transcribing:
             return "DockIconTranscribing"
         case .completed, .error:
@@ -56,7 +59,11 @@ struct FloatingSapoIcon: View {
         switch state {
         case .recording:
             withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                floatOffset = -8
+                floatOffset = -4
+            }
+        case .paused:
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                pulseScale = 0.92
             }
         case .transcribing:
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {

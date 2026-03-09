@@ -11,6 +11,7 @@ import Foundation
 enum RecordingOverlayState: Equatable {
     case hidden
     case recording(duration: TimeInterval)
+    case paused(duration: TimeInterval)
     case transcribing
     case completed(text: String)
     case error(message: String)
@@ -30,6 +31,8 @@ enum RecordingOverlayState: Equatable {
             return ""
         case .recording:
             return "overlay.recording".localized
+        case .paused:
+            return "overlay.paused".localized
         case .transcribing:
             return "overlay.transcribing".localized
         case .completed:

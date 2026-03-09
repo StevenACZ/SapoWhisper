@@ -118,6 +118,7 @@
 
 /* Recording Overlay */
 "overlay.recording" = "Grabando...";
+"overlay.paused" = "En pausa";
 "overlay.transcribing" = "Transcribiendo...";
 "overlay.completed" = "¡Listo!";
 
