@@ -18,13 +18,13 @@ struct RecordingOverlayView: View {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
 
             contentForState
                 .padding(.horizontal, 28)
                 .padding(.vertical, 8)
         }
         .frame(width: 480, height: 56)
-        .clipShape(Capsule())
         .scaleEffect(scale)
         .onAppear {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
@@ -75,10 +75,11 @@ private struct RecordingPillView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            FloatingSapoIcon(state: .recording, size: 36)
+            FloatingSapoIcon(state: .recording, size: 44)
+                .padding(.trailing, 8)
 
             AudioEqualizerView(audioLevel: audioLevel)
-                .frame(width: 120)
+                .frame(width: 100)
 
             HStack(spacing: 6) {
                 Circle()
@@ -113,17 +114,17 @@ private struct PausedPillView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            FloatingSapoIcon(state: .paused, size: 36)
+            FloatingSapoIcon(state: .paused, size: 44)
 
             // Flat bars to indicate paused
             HStack(spacing: 2) {
-                ForEach(0..<24, id: \.self) { _ in
+                ForEach(0..<20, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 1.5)
                         .fill(Color.primary.opacity(0.15))
                         .frame(width: 3, height: 3)
                 }
             }
-            .frame(width: 120, height: 28)
+            .frame(width: 100, height: 28)
 
             HStack(spacing: 6) {
                 Circle()
@@ -154,7 +155,7 @@ private struct PausedPillView: View {
 private struct TranscribingPillView: View {
     var body: some View {
         HStack(spacing: 12) {
-            FloatingSapoIcon(state: .transcribing, size: 36)
+            FloatingSapoIcon(state: .transcribing, size: 44)
 
             TranscribingIndicator()
 
@@ -175,13 +176,13 @@ private struct CompletedPillView: View {
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
-                FloatingSapoIcon(state: .completed, size: 36)
+                FloatingSapoIcon(state: .completed, size: 44)
 
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 16))
                     .foregroundColor(.sapoGreen)
                     .background(Circle().fill(.white).padding(1))
-                    .offset(x: 14, y: -14)
+                    .offset(x: 16, y: -16)
                     .scaleEffect(checkmarkScale)
             }
 
@@ -190,7 +191,7 @@ private struct CompletedPillView: View {
                 .foregroundColor(.sapoGreen)
 
             if !text.isEmpty {
-                Text(text.prefix(60) + (text.count > 60 ? "..." : ""))
+                Text(text.prefix(50) + (text.count > 50 ? "..." : ""))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)

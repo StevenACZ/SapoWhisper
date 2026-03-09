@@ -17,12 +17,10 @@ enum SapoIconState {
         switch self {
         case .recording:
             return "DockIconRecording"
-        case .paused:
-            return "DockIconIdle"
+        case .paused, .completed, .error:
+            return "DockIconLoading"
         case .transcribing:
             return "DockIconTranscribing"
-        case .completed, .error:
-            return "DockIconIdle"
         }
     }
 }
@@ -58,9 +56,7 @@ struct FloatingSapoIcon: View {
 
         switch state {
         case .recording:
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                floatOffset = -4
-            }
+            break
         case .paused:
             withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
                 pulseScale = 0.92
