@@ -11,8 +11,8 @@ struct OverlayTimer: View {
 
     var body: some View {
         Text(formattedDuration)
-            .font(.system(size: 24, weight: .semibold, design: .monospaced))
-            .foregroundColor(.primary)
+            .font(.system(size: 14, weight: .medium, design: .monospaced))
+            .foregroundColor(.secondary)
             .contentTransition(.numericText())
     }
 

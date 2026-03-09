@@ -9,12 +9,12 @@ import AppKit
 import SwiftUI
 
 /// NSPanel personalizado para la ventana de overlay de grabacion
-/// Configurado para no robar focus y mantenerse flotante
+/// Pill horizontal posicionado en la parte inferior de la pantalla
 class RecordingOverlayWindow: NSPanel {
 
     init(contentView: NSView) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 280),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 56),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -25,10 +25,10 @@ class RecordingOverlayWindow: NSPanel {
         self.isMovableByWindowBackground = false
         self.backgroundColor = NSColor.clear
         self.isOpaque = false
-        self.hasShadow = false  // Sin sombra de ventana del sistema
+        self.hasShadow = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        // No activar la ventana (no roba focus)
+        // Permitir clicks en controles sin robar focus de la app activa
         self.hidesOnDeactivate = false
         self.becomesKeyOnlyIfNeeded = true
 
@@ -37,26 +37,26 @@ class RecordingOverlayWindow: NSPanel {
         self.contentView?.wantsLayer = true
         self.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
 
-        // Centrar en pantalla
-        centerOnScreen()
+        // Posicionar abajo centrado
+        positionAtBottom()
     }
 
-    /// Centra la ventana en la pantalla principal
-    func centerOnScreen() {
+    /// Posiciona la ventana centrada en la parte inferior de la pantalla
+    func positionAtBottom() {
         guard let screen = NSScreen.main else { return }
 
         let screenFrame = screen.visibleFrame
         let windowFrame = self.frame
 
         let x = screenFrame.midX - windowFrame.width / 2
-        let y = screenFrame.midY - windowFrame.height / 2
+        let y = screenFrame.minY + 60
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    /// Evita que la ventana se convierta en key window
+    /// Permite clicks en botones sin robar focus
     override var canBecomeKey: Bool {
-        return false
+        return true
     }
 
     /// Evita que la ventana se convierta en main window

@@ -21,6 +21,11 @@ class OverlayWindowManager: ObservableObject {
     @Published private(set) var state: RecordingOverlayState = .hidden
     @Published var audioLevel: Float = 0.0
 
+    // MARK: - Callbacks
+
+    /// Callback para toggle de pausa/resume (configurado por el ViewModel)
+    var onPauseToggle: (() -> Void)?
+
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?
@@ -36,7 +41,6 @@ class OverlayWindowManager: ObservableObject {
     /// Muestra la ventana de overlay con animacion
     func show() {
         guard overlayWindow == nil else {
-            // Ya esta visible, solo actualizar estado
             return
         }
 
@@ -52,7 +56,7 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.isOpaque = false
 
         // Crear contenedor transparente
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 280))
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 56))
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.layer?.isOpaque = false

@@ -7,18 +7,18 @@
 
 import SwiftUI
 
-/// Vista de ecualizador de audio con barras animadas
-/// Muestra el nivel de audio en tiempo real como barras verticales
+/// Vista de ecualizador de audio con barras animadas centradas verticalmente
+/// Estilo waveform compacto para layout horizontal en pill
 struct AudioEqualizerView: View {
 
     let audioLevel: Float
 
     // Configuracion
-    private let barCount = 17
-    private let barWidth: CGFloat = 6
-    private let barSpacing: CGFloat = 3
-    private let maxBarHeight: CGFloat = 50
-    private let minBarHeight: CGFloat = 4
+    private let barCount = 24
+    private let barWidth: CGFloat = 3
+    private let barSpacing: CGFloat = 2
+    private let maxBarHeight: CGFloat = 28
+    private let minBarHeight: CGFloat = 3
 
     // Estado interno para las barras
     @State private var barHeights: [CGFloat] = []
@@ -27,15 +27,12 @@ struct AudioEqualizerView: View {
     var body: some View {
         HStack(spacing: barSpacing) {
             ForEach(0..<barCount, id: \.self) { index in
-                BarView(
-                    height: barHeights.isEmpty ? minBarHeight : barHeights[index],
-                    maxHeight: maxBarHeight,
-                    index: index,
-                    barCount: barCount
-                )
-                .frame(width: barWidth)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(barColor(for: index))
+                    .frame(width: barWidth, height: barHeights.isEmpty ? minBarHeight : barHeights[index])
             }
         }
+        .frame(height: maxBarHeight)
         .onAppear {
             initializeBars()
         }
@@ -61,7 +58,7 @@ struct AudioEqualizerView: View {
         for i in 0..<barCount {
             // Patron de onda sinusoidal para efecto visual
             let position = Double(i) / Double(barCount - 1)
-            let centerWeight = 1.0 - abs(position - 0.5) * 1.5 // Mas alto en el centro
+            let centerWeight = 1.0 - abs(position - 0.5) * 1.5
 
             // Base del nivel de audio
             let baseHeight = CGFloat(smoothedLevel) * maxBarHeight * CGFloat(centerWeight)
@@ -81,51 +78,20 @@ struct AudioEqualizerView: View {
             barHeights = newHeights
         }
     }
-}
 
-// MARK: - Bar View
+    private func barColor(for index: Int) -> Color {
+        guard !barHeights.isEmpty else { return .primary.opacity(0.4) }
 
-private struct BarView: View {
-    let height: CGFloat
-    let maxHeight: CGFloat
-    let index: Int
-    let barCount: Int
+        let normalizedHeight = barHeights[index] / maxBarHeight
 
-    var body: some View {
-        VStack {
-            Spacer(minLength: 0)
-
-            RoundedRectangle(cornerRadius: 2)
-                .fill(barGradient)
-                .frame(height: height)
-        }
-        .frame(height: maxHeight)
-    }
-
-    private var barGradient: LinearGradient {
-        let normalizedHeight = height / maxHeight
-
-        // Colores segun nivel
-        let colors: [Color]
         if normalizedHeight > 0.85 {
-            // Muy alto - rojo
-            colors = [.red, .orange]
+            return .red.opacity(0.9)
         } else if normalizedHeight > 0.6 {
-            // Alto - amarillo/naranja
-            colors = [.orange, .yellow]
+            return .orange.opacity(0.8)
         } else if normalizedHeight > 0.35 {
-            // Medio - amarillo/verde
-            colors = [.yellow, .sapoGreen]
+            return .sapoGreen.opacity(0.8)
         } else {
-            // Bajo - verde
-            colors = [.sapoGreen, .sapoGreenLight]
+            return .primary.opacity(0.4)
         }
-
-        return LinearGradient(
-            colors: colors,
-            startPoint: .bottom,
-            endPoint: .top
-        )
     }
 }
-

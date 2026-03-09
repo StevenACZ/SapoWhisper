@@ -69,11 +69,21 @@ class SapoWhisperViewModel: ObservableObject {
         checkInitialState()
         setupHotkey()
         loadSavedSettings()
-        
+        setupOverlayCallbacks()
+
         // Cargar modelo automaticamente si el motor es WhisperLocal
         if currentEngine == .whisperLocal {
             Task {
                 await loadWhisperKitModel()
+            }
+        }
+    }
+
+    /// Configura callbacks del overlay (pause/resume)
+    private func setupOverlayCallbacks() {
+        overlayManager.onPauseToggle = { [weak self] in
+            Task { @MainActor in
+                self?.togglePause()
             }
         }
     }
@@ -307,6 +317,28 @@ class SapoWhisperViewModel: ObservableObject {
             stopRecordingAndTranscribe()
         } else {
             startRecording()
+        }
+    }
+
+    /// Toggle de pausa/resume (llamado por el botón del overlay)
+    func togglePause() {
+        guard audioRecorder.isRecording else { return }
+
+        if audioRecorder.isPaused {
+            // Resume
+            do {
+                try audioRecorder.resumeRecording()
+                overlayManager.updateState(.recording(duration: audioRecorder.recordingDuration))
+                audioLevelMonitor.startMonitoring(deviceUID: selectedMicrophone)
+            } catch {
+                print("Error resuming recording: \(error)")
+            }
+        } else {
+            // Pause
+            audioRecorder.pauseRecording()
+            overlayManager.updateState(.paused(duration: audioRecorder.recordingDuration))
+            audioLevelMonitor.stopMonitoring()
+            overlayManager.updateAudioLevel(0)
         }
     }
     

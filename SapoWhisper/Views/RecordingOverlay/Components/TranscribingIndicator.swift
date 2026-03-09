@@ -11,8 +11,8 @@ struct TranscribingIndicator: View {
 
     @State private var animatingDots: [Bool] = [false, false, false]
 
-    private let dotSize: CGFloat = 10
-    private let spacing: CGFloat = 8
+    private let dotSize: CGFloat = 6
+    private let spacing: CGFloat = 5
 
     var body: some View {
         HStack(spacing: spacing) {
