@@ -56,7 +56,7 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.isOpaque = false
 
         // Crear contenedor transparente
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 56))
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 56))
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.layer?.isOpaque = false

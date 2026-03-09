@@ -20,10 +20,10 @@ struct RecordingOverlayView: View {
                 .fill(.ultraThinMaterial)
 
             contentForState
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 28)
                 .padding(.vertical, 8)
         }
-        .frame(width: 440, height: 56)
+        .frame(width: 480, height: 56)
         .clipShape(Capsule())
         .scaleEffect(scale)
         .onAppear {

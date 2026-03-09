@@ -14,7 +14,7 @@ class RecordingOverlayWindow: NSPanel {
 
     init(contentView: NSView) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 56),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 56),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
