@@ -48,7 +48,7 @@
 
 /* Model Download / Config View */
 "config.title" = "Configuración de Voz";
-"config.subtitle" = "SapoWhisper usa el reconocimiento de voz de Apple o WhisperKit para transcribir tu audio.";
+"config.subtitle" = "SapoWhisper usa Apple Speech, WhisperKit o Google Cloud para transcribir tu audio.";
 "config.tab_settings" = "Ajustes";
 "config.tab_info" = "Info";
 "config.engine" = "Motor de Transcripción";
@@ -64,7 +64,7 @@
 "info.how_to_title" = "¿Cómo funciona?";
 "info.how_to_body" = "1. Presiona el atajo de teclado para iniciar\n2. Habla claramente al micrófono\n3. Presiona el atajo otra vez para detener\n4. El texto se copia automáticamente\n5. Con \"Auto-pegar\" activado, se pega donde tengas el cursor";
 "info.privacy_title" = "Privacidad";
-"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.";
+"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Google Cloud Speech-to-Text. Usa el modelo Chirp 3 (V2) para maxima precision. Requiere cuenta de Google Cloud.";
 "info.permissions_title" = "Permisos necesarios";
 "info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Reconocimiento de voz: Para transcribir el audio\n• Accesibilidad: Para el atajo de teclado global";
 
@@ -80,8 +80,8 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Descarga un modelo primero";
 "status.recording_generic" = "Grabando...";
-"config.subtitle_info" = "Speech-to-Text con WhisperKit y Apple Speech";
-"app.description" = "Speech-to-Text 100% local";
+"config.subtitle_info" = "Speech-to-Text con WhisperKit, Apple Speech y Google Cloud";
+"app.description" = "Speech-to-Text local y en la nube";
 "config.coming_soon" = "Próximamente";
 "config.whisper_coming_soon_desc" = "En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.";
 "menu.copy_clipboard" = "Copiar al portapapeles";
@@ -89,14 +89,23 @@
 /* Engine Descriptions */
 "engine.apple.description" = "Gratis, requiere internet. Usa los servidores de Apple.";
 "engine.whisper.description" = "100% privado, sin internet. Procesa todo en tu Mac.";
-"engine.google.description" = "Rapido y preciso. Requiere internet y API key de Google Cloud.";
+"engine.google.description" = "Chirp 3: maxima precision. Requiere internet y cuenta Google Cloud.";
 
 /* Google Cloud Engine */
 "config.api_key" = "API Key de Google Cloud";
 "config.api_key_placeholder" = "Ingresa tu API key...";
-"config.api_key_desc" = "Obten tu API key en console.cloud.google.com. Se guarda localmente.";
+"config.api_key_desc" = "Usa V1 (latest_long). Crea tu API key en:\nconsole.cloud.google.com > APIs & Services > Credentials\nSe guarda localmente.";
 "config.api_key_missing" = "API key no configurada";
 "config.api_key_configured" = "API key configurada";
+
+/* Google Cloud Service Account */
+"config.service_account" = "Service Account (Chirp 3)";
+"config.service_account_desc" = "Usa Chirp 3 (V2) para maxima precision. Instrucciones:\n1. Instala gcloud: brew install google-cloud-sdk\n2. Corre: gcloud auth application-default login\n3. Inicia sesion en tu navegador\n4. Haz clic en 'Detectar' o reinicia la app";
+"config.service_account_configured" = "Chirp 3 activo — %@";
+"config.service_account_import" = "Importar JSON";
+"config.service_account_change" = "Cambiar";
+"config.service_account_remove" = "Eliminar";
+"config.api_key_fallback" = "API Key (alternativa)";
 
 /* Badges & Labels */
 "badge.recommended" = "Recomendado";
