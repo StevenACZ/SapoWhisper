@@ -137,7 +137,16 @@ struct HotkeyPresetButton: View {
     }
 }
 
-#Preview {
+#Preview("Hotkey Settings") {
     HotkeySettingsTab()
         .frame(width: 480, height: 500)
+}
+
+#Preview("Hotkey Presets") {
+    HStack(spacing: 10) {
+        HotkeyPresetButton("⌥ Space", isSelected: true) {}
+        HotkeyPresetButton("⌘⇧ Space", isSelected: false) {}
+        HotkeyPresetButton("⌃⌥ Space", isSelected: false) {}
+    }
+    .padding()
 }

@@ -41,10 +41,11 @@ struct LanguageButton: View {
     }
 }
 
-#Preview {
-    HStack {
+#Preview("Language Buttons") {
+    HStack(spacing: 10) {
         LanguageButton(name: "Español", flag: "🇪🇸", languageCode: "es", selectedLanguage: .constant("es"))
         LanguageButton(name: "English", flag: "🇺🇸", languageCode: "en", selectedLanguage: .constant("es"))
+        LanguageButton(name: "Auto", flag: "🌐", languageCode: "auto", selectedLanguage: .constant("es"))
     }
     .padding()
 }

@@ -104,3 +104,29 @@ struct AudioEqualizerView: View {
         }
     }
 }
+
+#Preview("Equalizer Levels") {
+    VStack(spacing: 16) {
+        ForEach([(0, "Idle"), (0.2, "Low"), (0.5, "Medium"), (0.8, "High")] as [(Float, String)], id: \.1) { level, label in
+            HStack(spacing: 12) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, alignment: .trailing)
+                AudioEqualizerView(audioLevel: level)
+                    .frame(width: 120, height: 28)
+            }
+        }
+
+        Divider().padding(.horizontal)
+
+        VStack(spacing: 6) {
+            Text("Compact (Streaming)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            AudioEqualizerView(audioLevel: 0.5, barCount: 8, barWidth: 4)
+                .frame(width: 46, height: 22)
+        }
+    }
+    .padding(20)
+}

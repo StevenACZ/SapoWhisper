@@ -180,7 +180,7 @@ struct AboutSettingsTab: View {
     }
 }
 
-#Preview {
+#Preview("About") {
     AboutSettingsTab()
-        .frame(width: 480, height: 500)
+        .frame(width: 480, height: 600)
 }

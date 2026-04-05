@@ -69,6 +69,7 @@ struct MenuBarIcon: View {
     }
 }
 
-#Preview {
+#Preview("Menu Bar Icon") {
     MenuBarIcon(viewModel: SapoWhisperViewModel())
+        .padding()
 }

@@ -472,7 +472,7 @@ struct EngineSettingsTab: View {
     }
 }
 
-#Preview {
+#Preview("Engine Settings") {
     EngineSettingsTab(viewModel: SapoWhisperViewModel())
-        .frame(width: 480, height: 500)
+        .frame(width: 480, height: 600)
 }

@@ -211,7 +211,7 @@ struct GeneralSettingsTab: View {
     }
 }
 
-#Preview {
+#Preview("General Settings") {
     GeneralSettingsTab()
-        .frame(width: 480, height: 500)
+        .frame(width: 480, height: 600)
 }

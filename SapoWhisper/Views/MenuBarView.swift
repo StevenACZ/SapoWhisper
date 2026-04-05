@@ -448,7 +448,7 @@ struct ActionRow: View {
     }
 }
 
-#Preview {
+#Preview("Menu Bar Popup") {
     MenuBarView(viewModel: SapoWhisperViewModel())
         .frame(width: 320)
 }

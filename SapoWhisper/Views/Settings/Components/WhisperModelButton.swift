@@ -148,8 +148,8 @@ struct WhisperModelButton: View {
     }
 }
 
-#Preview {
-    VStack {
+#Preview("Whisper Models") {
+    VStack(spacing: 8) {
         WhisperModelButton(
             model: .small,
             isSelected: true,
@@ -159,9 +159,27 @@ struct WhisperModelButton: View {
             action: {},
             onDelete: {}
         )
-        
+
         WhisperModelButton(
             model: .largev3Turbo,
+            isSelected: false,
+            isLoading: true,
+            isDownloaded: false,
+            action: {}
+        )
+
+        WhisperModelButton(
+            model: .base,
+            isSelected: false,
+            isLoading: false,
+            isDownloaded: true,
+            downloadedSize: 150_000_000,
+            action: {},
+            onDelete: {}
+        )
+
+        WhisperModelButton(
+            model: .tiny,
             isSelected: false,
             isLoading: false,
             isDownloaded: false,
@@ -169,4 +187,5 @@ struct WhisperModelButton: View {
         )
     }
     .padding()
+    .frame(width: 420)
 }

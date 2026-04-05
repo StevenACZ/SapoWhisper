@@ -401,6 +401,102 @@ private struct PulseAnimation: ViewModifier {
 
 // MARK: - Previews
 
+#Preview("Recording") {
+    ZStack {
+        Color.black.opacity(0.3)
+        ZStack {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            RecordingPillView(duration: 15, audioLevel: 0.5, onPause: {})
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+        }
+        .frame(width: 480, height: 56)
+    }
+    .frame(width: 560, height: 120)
+}
+
+#Preview("Paused") {
+    ZStack {
+        Color.black.opacity(0.3)
+        ZStack {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            PausedPillView(duration: 42, onResume: {})
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+        }
+        .frame(width: 480, height: 56)
+    }
+    .frame(width: 560, height: 120)
+}
+
+#Preview("Transcribing") {
+    ZStack {
+        Color.black.opacity(0.3)
+        ZStack {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            TranscribingPillView()
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+        }
+        .frame(width: 480, height: 56)
+    }
+    .frame(width: 560, height: 120)
+}
+
+#Preview("Completed") {
+    ZStack {
+        Color.black.opacity(0.3)
+        ZStack {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            CompletedPillView(text: "Hola, esta es una transcripcion de ejemplo completa")
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+        }
+        .frame(width: 480, height: 56)
+    }
+    .frame(width: 560, height: 120)
+}
+
+#Preview("Error") {
+    ZStack {
+        Color.black.opacity(0.3)
+        ZStack {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            ErrorPillView(message: "No se pudo conectar al servidor", onRetry: {})
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+        }
+        .frame(width: 480, height: 56)
+    }
+    .frame(width: 560, height: 120)
+}
+
+#Preview("Device Detected") {
+    ZStack {
+        Color.black.opacity(0.3)
+        ZStack {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            DeviceDetectedPillView(deviceName: "MacBook Pro Microphone")
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+        }
+        .frame(width: 480, height: 56)
+    }
+    .frame(width: 560, height: 120)
+}
+
 #Preview("Streaming Overlay") {
     ZStack {
         Color.black.opacity(0.3)

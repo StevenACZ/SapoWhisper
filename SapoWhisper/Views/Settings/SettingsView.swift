@@ -83,6 +83,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-#Preview {
+#Preview("Settings Window") {
     SettingsView(viewModel: SapoWhisperViewModel())
 }

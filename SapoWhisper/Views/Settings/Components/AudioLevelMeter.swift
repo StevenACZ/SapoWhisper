@@ -201,7 +201,7 @@ struct AudioLevelMeterView: View {
     }
 }
 
-#Preview {
+#Preview("Audio Level Meter") {
     VStack(spacing: 20) {
         AudioLevelMeterView(deviceUID: "default")
             .padding()
