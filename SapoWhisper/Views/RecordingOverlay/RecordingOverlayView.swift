@@ -44,7 +44,8 @@ struct RecordingOverlayView: View {
         case .recording(let duration):
             RecordingPillView(
                 duration: duration,
-                onPause: { manager.onPauseToggle?() }
+                onPause: { manager.onPauseToggle?() },
+                audioLevel: manager.audioLevel
             )
 
         case .paused(let duration):
@@ -65,7 +66,8 @@ struct RecordingOverlayView: View {
         case .streaming(_, let duration):
             RecordingPillView(
                 duration: duration,
-                onPause: { manager.onPauseToggle?() }
+                onPause: { manager.onPauseToggle?() },
+                audioLevel: manager.audioLevel
             )
 
         case .deviceDetected(let deviceName):
@@ -79,6 +81,7 @@ struct RecordingOverlayView: View {
 private struct RecordingPillView: View {
     let duration: TimeInterval
     let onPause: () -> Void
+    var audioLevel: Float = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -86,18 +89,13 @@ private struct RecordingPillView: View {
 
             PillDivider()
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.recording)
-                    .frame(width: 7, height: 7)
-                    .modifier(PulseAnimation())
+            MiniEqualizerView(audioLevel: audioLevel)
 
-                Text("overlay.recording".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-            }
+            Text("overlay.recording".localized)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
 
-            Spacer(minLength: 20)
+            Spacer(minLength: 12)
 
             Button(action: onPause) {
                 Image(systemName: "pause.fill")
@@ -291,6 +289,67 @@ private struct DeviceDetectedPillView: View {
     }
 }
 
+// MARK: - Mini Equalizer (Recording Pill)
+
+/// Ecualizador compacto optimizado para el pill de grabación
+/// Barras gruesas con color recording que reaccionan al nivel de audio
+private struct MiniEqualizerView: View {
+    let audioLevel: Float
+
+    private let barCount = 5
+    private let barWidth: CGFloat = 4
+    private let barSpacing: CGFloat = 2.5
+    private let maxHeight: CGFloat = 20
+    private let minHeight: CGFloat = 5
+
+    @State private var barHeights: [CGFloat] = []
+
+    var body: some View {
+        HStack(spacing: barSpacing) {
+            ForEach(0..<barCount, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color.recording.opacity(barOpacity(for: index)))
+                    .frame(width: barWidth, height: barHeights.isEmpty ? minHeight : barHeights[index])
+            }
+        }
+        .frame(height: maxHeight)
+        .onAppear { initBars() }
+        .onChange(of: audioLevel) { _, newValue in updateBars(with: newValue) }
+    }
+
+    private func initBars() {
+        barHeights = (0..<barCount).map { i in
+            let position = Double(i) / Double(barCount - 1)
+            let weight = 0.5 + 0.5 * (1.0 - abs(position - 0.5) * 2.0)
+            let level = max(0.15, CGFloat(audioLevel))
+            return max(minHeight, level * maxHeight * CGFloat(weight) * CGFloat.random(in: 0.8...1.2))
+        }
+    }
+
+    private func updateBars(with level: Float) {
+        let clamped = max(0.15, level)
+        var newHeights: [CGFloat] = []
+
+        for i in 0..<barCount {
+            let position = Double(i) / Double(barCount - 1)
+            let weight = 0.5 + 0.5 * (1.0 - abs(position - 0.5) * 2.0)
+            let target = max(minHeight, CGFloat(clamped) * maxHeight * CGFloat(weight) * CGFloat.random(in: 0.8...1.2))
+            let current = barHeights.isEmpty ? minHeight : barHeights[i]
+            newHeights.append(min(maxHeight, current * 0.3 + target * 0.7))
+        }
+
+        withAnimation(.easeOut(duration: 0.08)) {
+            barHeights = newHeights
+        }
+    }
+
+    private func barOpacity(for index: Int) -> Double {
+        guard !barHeights.isEmpty else { return 0.5 }
+        let normalized = barHeights[index] / maxHeight
+        return 0.5 + Double(normalized) * 0.5
+    }
+}
+
 // MARK: - Shared Components
 
 private struct PillDivider: View {
@@ -343,7 +402,7 @@ private struct PillPreview<Content: View>: View {
 // MARK: - Previews
 
 #Preview("Recording") {
-    PillPreview { RecordingPillView(duration: 15, onPause: {}) }
+    PillPreview { RecordingPillView(duration: 15, onPause: {}, audioLevel: 0.5) }
 }
 
 #Preview("Paused") {
