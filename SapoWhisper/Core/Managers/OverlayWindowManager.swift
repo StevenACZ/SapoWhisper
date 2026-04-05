@@ -59,10 +59,9 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.layer?.isOpaque = false
 
-        // Determine size based on state
-        let isStreaming: Bool = { if case .streaming = state { return true }; return false }()
-        let windowWidth: CGFloat = isStreaming ? 520 : 480
-        let windowHeight: CGFloat = isStreaming ? 100 : 56
+        // Fixed size for all states
+        let windowWidth: CGFloat = 380
+        let windowHeight: CGFloat = 48
 
         // Crear contenedor transparente
         let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
@@ -211,23 +210,8 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Resize the overlay window (for streaming vs normal states)
-    private func resizeWindow(to newState: RecordingOverlayState) {
-        guard let window = overlayWindow else { return }
-        let isStreaming: Bool = { if case .streaming = newState { return true }; return false }()
-        let targetWidth: CGFloat = isStreaming ? 520 : 480
-        let targetHeight: CGFloat = isStreaming ? 100 : 56
-
-        let currentFrame = window.frame
-        let newFrame = NSRect(
-            x: currentFrame.midX - targetWidth / 2,
-            y: currentFrame.origin.y - (targetHeight - currentFrame.height),
-            width: targetWidth,
-            height: targetHeight
-        )
-        window.setFrame(newFrame, display: true, animate: true)
-        hostingView?.frame = NSRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
-    }
+    /// Resize the overlay window — no-op since all states use the same size
+    private func resizeWindow(to newState: RecordingOverlayState) {}
 
     /// Muestra un error
     func showError(message: String, autoDismissAfter delay: TimeInterval = 3.0) {

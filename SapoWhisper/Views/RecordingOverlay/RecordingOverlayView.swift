@@ -16,32 +16,21 @@ struct RecordingOverlayView: View {
 
     var body: some View {
         ZStack {
-            if isStreamingState {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-            } else {
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-            }
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
 
             contentForState
-                .padding(.horizontal, isStreamingState ? 16 : 28)
-                .padding(.vertical, isStreamingState ? 10 : 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: isStreamingState ? 520 : 480, height: isStreamingState ? 100 : 56)
+        .frame(width: 380, height: 48)
         .scaleEffect(scale)
         .onAppear {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
                 scale = 1.0
             }
         }
-    }
-
-    private var isStreamingState: Bool {
-        if case .streaming = manager.state { return true }
-        return false
     }
 
     // MARK: - Content Views
@@ -55,7 +44,6 @@ struct RecordingOverlayView: View {
         case .recording(let duration):
             RecordingPillView(
                 duration: duration,
-                audioLevel: manager.audioLevel,
                 onPause: { manager.onPauseToggle?() }
             )
 
@@ -74,11 +62,9 @@ struct RecordingOverlayView: View {
         case .error(let message):
             ErrorPillView(message: message, onRetry: manager.onRetry)
 
-        case .streaming(let partialText, let duration):
-            StreamingPillView(
-                partialText: partialText,
+        case .streaming(_, let duration):
+            RecordingPillView(
                 duration: duration,
-                audioLevel: manager.audioLevel,
                 onPause: { manager.onPauseToggle?() }
             )
 
@@ -92,21 +78,18 @@ struct RecordingOverlayView: View {
 
 private struct RecordingPillView: View {
     let duration: TimeInterval
-    let audioLevel: Float
     let onPause: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            FloatingSapoIcon(state: .recording, size: 44)
-                .padding(.trailing, 8)
+        HStack(spacing: 10) {
+            FloatingSapoIcon(state: .recording, size: 32)
 
-            AudioEqualizerView(audioLevel: audioLevel)
-                .frame(width: 100)
+            PillDivider()
 
             HStack(spacing: 6) {
                 Circle()
                     .fill(Color.recording)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 7, height: 7)
                     .modifier(PulseAnimation())
 
                 Text("overlay.recording".localized)
@@ -114,12 +97,14 @@ private struct RecordingPillView: View {
                     .foregroundColor(.primary)
             }
 
+            Spacer()
+
             Button(action: onPause) {
                 Image(systemName: "pause.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.primary)
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.12)))
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Color.primary.opacity(0.1)))
             }
             .buttonStyle(.plain)
 
@@ -135,35 +120,29 @@ private struct PausedPillView: View {
     let onResume: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            FloatingSapoIcon(state: .paused, size: 44)
+        HStack(spacing: 10) {
+            FloatingSapoIcon(state: .paused, size: 32)
 
-            // Flat bars to indicate paused
-            HStack(spacing: 2) {
-                ForEach(0..<20, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 3, height: 3)
-                }
-            }
-            .frame(width: 100, height: 28)
+            PillDivider()
 
             HStack(spacing: 6) {
                 Circle()
                     .fill(Color.processing)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 7, height: 7)
 
                 Text("overlay.paused".localized)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.primary)
             }
 
+            Spacer()
+
             Button(action: onResume) {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.primary)
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.12)))
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Color.primary.opacity(0.1)))
             }
             .buttonStyle(.plain)
 
@@ -176,14 +155,18 @@ private struct PausedPillView: View {
 
 private struct TranscribingPillView: View {
     var body: some View {
-        HStack(spacing: 12) {
-            FloatingSapoIcon(state: .transcribing, size: 44)
+        HStack(spacing: 10) {
+            FloatingSapoIcon(state: .transcribing, size: 32)
+
+            PillDivider()
 
             TranscribingIndicator()
 
             Text("overlay.transcribing".localized)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
+
+            Spacer()
         }
     }
 }
@@ -197,23 +180,24 @@ private struct CompletedPillView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ZStack {
-                FloatingSapoIcon(state: .completed, size: 44)
+            ZStack(alignment: .topTrailing) {
+                FloatingSapoIcon(state: .completed, size: 32)
 
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
+                    .font(.system(size: 12))
                     .foregroundColor(.sapoGreen)
                     .background(Circle().fill(.white).padding(1))
-                    .offset(x: 16, y: -16)
                     .scaleEffect(checkmarkScale)
+                    .offset(x: 3, y: -3)
             }
+            .frame(width: 36, height: 36)
 
             Text("overlay.completed".localized)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.sapoGreen)
 
             if !text.isEmpty {
-                Text(text.prefix(50) + (text.count > 50 ? "..." : ""))
+                Text(text.prefix(40) + (text.count > 40 ? "..." : ""))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -237,7 +221,7 @@ private struct ErrorPillView: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 20))
+                .font(.system(size: 18))
                 .foregroundColor(.sapoError)
 
             Text(message)
@@ -245,6 +229,8 @@ private struct ErrorPillView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+
+            Spacer()
 
             if let onRetry = onRetry {
                 Button(action: onRetry) {
@@ -257,7 +243,7 @@ private struct ErrorPillView: View {
                     .foregroundColor(.primary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.primary.opacity(0.12)))
+                    .background(Capsule().fill(Color.primary.opacity(0.1)))
                 }
                 .buttonStyle(.plain)
             }
@@ -273,27 +259,27 @@ private struct DeviceDetectedPillView: View {
     @State private var checkScale: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: "mic.badge.plus")
-                .font(.system(size: 22))
+                .font(.system(size: 18))
                 .foregroundColor(.sapoGreen)
                 .symbolRenderingMode(.hierarchical)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(deviceName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
                 Text("overlay.device_ready".localized)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
 
             Spacer()
 
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 18))
+                .font(.system(size: 16))
                 .foregroundColor(.sapoGreen)
                 .scaleEffect(checkScale)
         }
@@ -305,93 +291,22 @@ private struct DeviceDetectedPillView: View {
     }
 }
 
-// MARK: - Streaming Pill View
+// MARK: - Shared Components
 
-private struct StreamingPillView: View {
-    let partialText: String
-    let duration: TimeInterval
-    let audioLevel: Float
-    let onPause: () -> Void
-
-    // Fix #5: Show last 2 lines with manual text slicing
-    private var displayText: String {
-        if partialText.isEmpty { return "" }
-        let charsPerLine = 55
-        let text = partialText
-        if text.count <= charsPerLine * 2 {
-            return text
-        }
-        let startIndex = text.index(text.endIndex, offsetBy: -(charsPerLine * 2), limitedBy: text.startIndex) ?? text.startIndex
-        return "..." + String(text[startIndex...])
-    }
-
-    private var timerText: String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
+private struct PillDivider: View {
     var body: some View {
-        VStack(spacing: 8) {
-            // Text area — full width with placeholder
-            Text(displayText.isEmpty ? "overlay.streaming".localized : displayText)
-                .font(.system(size: 13, weight: displayText.isEmpty ? .medium : .regular))
-                .foregroundColor(displayText.isEmpty ? .secondary : .primary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                .animation(.none, value: partialText)
-
-            // Controls row
-            HStack(spacing: 0) {
-                FloatingSapoIcon(state: .recording, size: 30)
-
-                Spacer().frame(width: 12)
-
-                RoundedRectangle(cornerRadius: 0.5)
-                    .fill(Color.primary.opacity(0.15))
-                    .frame(width: 1, height: 18)
-
-                Spacer().frame(width: 12)
-
-                Circle()
-                    .fill(Color.recording)
-                    .frame(width: 6, height: 6)
-                    .modifier(PulseAnimation())
-
-                Spacer().frame(width: 10)
-
-                AudioEqualizerView(audioLevel: audioLevel, barCount: 8, barWidth: 4)
-                    .frame(width: 46, height: 22)
-
-                Spacer()
-
-                Button(action: onPause) {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 24, height: 24)
-                        .background(Circle().fill(Color.primary.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-
-                Spacer().frame(width: 10)
-
-                Text(timerText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
-        }
+        RoundedRectangle(cornerRadius: 0.5)
+            .fill(Color.primary.opacity(0.12))
+            .frame(width: 1, height: 16)
     }
 }
-
-// MARK: - Pulse Animation Modifier
 
 private struct PulseAnimation: ViewModifier {
     @State private var isPulsing = false
 
     func body(content: Content) -> some View {
         content
-            .opacity(isPulsing ? 0.4 : 1.0)
+            .opacity(isPulsing ? 0.3 : 1.0)
             .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
             .onAppear {
                 isPulsing = true
@@ -407,14 +322,14 @@ private struct PulseAnimation: ViewModifier {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-            RecordingPillView(duration: 15, audioLevel: 0.5, onPause: {})
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+            RecordingPillView(duration: 15, onPause: {})
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 380, height: 48)
     }
-    .frame(width: 560, height: 120)
+    .frame(width: 460, height: 100)
 }
 
 #Preview("Paused") {
@@ -423,14 +338,14 @@ private struct PulseAnimation: ViewModifier {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
             PausedPillView(duration: 42, onResume: {})
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 380, height: 48)
     }
-    .frame(width: 560, height: 120)
+    .frame(width: 460, height: 100)
 }
 
 #Preview("Transcribing") {
@@ -439,14 +354,14 @@ private struct PulseAnimation: ViewModifier {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
             TranscribingPillView()
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 380, height: 48)
     }
-    .frame(width: 560, height: 120)
+    .frame(width: 460, height: 100)
 }
 
 #Preview("Completed") {
@@ -455,14 +370,14 @@ private struct PulseAnimation: ViewModifier {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-            CompletedPillView(text: "Hola, esta es una transcripcion de ejemplo completa")
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+            CompletedPillView(text: "Hola, esta es una transcripcion de ejemplo")
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 380, height: 48)
     }
-    .frame(width: 560, height: 120)
+    .frame(width: 460, height: 100)
 }
 
 #Preview("Error") {
@@ -471,14 +386,14 @@ private struct PulseAnimation: ViewModifier {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
             ErrorPillView(message: "No se pudo conectar al servidor", onRetry: {})
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 380, height: 48)
     }
-    .frame(width: 560, height: 120)
+    .frame(width: 460, height: 100)
 }
 
 #Preview("Device Detected") {
@@ -487,58 +402,12 @@ private struct PulseAnimation: ViewModifier {
         ZStack {
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
             DeviceDetectedPillView(deviceName: "MacBook Pro Microphone")
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 380, height: 48)
     }
-    .frame(width: 560, height: 120)
-}
-
-#Preview("Streaming Overlay") {
-    ZStack {
-        Color.black.opacity(0.3)
-
-        ZStack {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-
-            StreamingPillView(
-                partialText: "...por lo que veo realmente es lo está haciendo. Es algo que me gusta y realmente creo que será un buen avance para sapo whisper.",
-                duration: 22,
-                audioLevel: 0.4,
-                onPause: {}
-            )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-        }
-        .frame(width: 520, height: 100)
-    }
-    .frame(width: 600, height: 200)
-}
-
-#Preview("Streaming Empty") {
-    ZStack {
-        Color.black.opacity(0.3)
-
-        ZStack {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-
-            StreamingPillView(
-                partialText: "",
-                duration: 2,
-                audioLevel: 0.6,
-                onPause: {}
-            )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-        }
-        .frame(width: 520, height: 100)
-    }
-    .frame(width: 600, height: 200)
+    .frame(width: 460, height: 100)
 }
