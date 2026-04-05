@@ -14,9 +14,10 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 
 - 🎤 **Instant transcription** — Press the shortcut, speak, done
 - 🔒 **100% private** — Local transcription option with WhisperKit (no internet needed)
+- ☁️ **Google Cloud Chirp 3** — Maximum accuracy with Google's latest STT model
 - ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
 - 🌐 **Bilingual** — Supports Spanish and English
-- 🎨 **Visual overlay** — Floating window shows recording status with audio visualizer
+- 🎨 **Visual overlay** — Floating pill shows recording status with audio visualizer
 
 ---
 
@@ -25,7 +26,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 ### Requirements
 
 - macOS 13.0 (Ventura) or later
-- Apple Silicon (M1/M2/M3) recommended
+- Apple Silicon (M1/M2/M3/M4/M5) recommended
 
 ### Steps
 
@@ -39,7 +40,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 ## 🎯 Usage
 
 1. **Press `⌥ + Space`** (Option + Space) — _customizable in Settings_
-2. **Speak** — You'll see a window with the audio equalizer
+2. **Speak** — You'll see a floating pill with the audio equalizer
 3. **Press the shortcut again** to stop
 4. ✨ **Text is automatically pasted**
 
@@ -71,6 +72,30 @@ Choose your preferred engine in **Settings → Engine**:
 | **Large V3 Turbo** ⭐ | 3.2 GB | Fast      | ⭐⭐⭐⭐⭐ |
 
 > 💡 **Small** and **Large V3 Turbo** are recommended for best balance.
+
+### Google Cloud (Online) — Best accuracy
+
+- 🎯 **Chirp 3 (V2)** — Google's most accurate speech-to-text model
+- 🔑 **API Key (V1)** — Simple alternative with `latest_long` model
+- ☁️ Requires internet and a Google Cloud account
+
+#### Chirp 3 Setup (Recommended)
+
+```bash
+# 1. Install gcloud CLI
+brew install google-cloud-sdk
+
+# 2. Authenticate
+gcloud auth application-default login
+```
+
+SapoWhisper will automatically detect your credentials. That's it!
+
+#### API Key Setup (Alternative)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials
+2. Create an API Key and restrict it to **Cloud Speech-to-Text API**
+3. Paste the key in SapoWhisper Settings → Engine → Google Cloud → API Key
 
 ---
 
