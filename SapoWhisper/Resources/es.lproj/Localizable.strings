@@ -138,6 +138,7 @@
 "overlay.paused" = "En pausa";
 "overlay.transcribing" = "Transcribiendo...";
 "overlay.completed" = "¡Listo!";
+"overlay.copied" = "Copiado";
 "overlay.device_ready" = "Listo para grabar";
 
 /* Sound Settings */

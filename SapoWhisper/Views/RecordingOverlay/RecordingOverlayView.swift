@@ -199,37 +199,45 @@ private struct TranscribingPillView: View {
 private struct CompletedPillView: View {
     let text: String
 
-    @State private var checkmarkScale: CGFloat = 0
+    @State private var iconScale: CGFloat = 0
+    @State private var showGlow = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack(alignment: .topTrailing) {
-                FloatingSapoIcon(state: .completed, size: 32)
+        HStack(spacing: 8) {
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.system(size: 16))
+                .foregroundColor(.sapoGreen)
+                .scaleEffect(iconScale)
 
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.sapoGreen)
-                    .background(Circle().fill(.white).padding(1))
-                    .scaleEffect(checkmarkScale)
-                    .offset(x: 3, y: -3)
-            }
-            .frame(width: 36, height: 36)
-
-            Text("overlay.completed".localized)
+            Text("overlay.copied".localized)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.sapoGreen)
 
-            if !text.isEmpty {
-                Text(text.prefix(40) + (text.count > 40 ? "..." : ""))
+            if !text.isEmpty && text.count <= 30 {
+                PillDivider()
+
+                Text(text)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary.opacity(0.7))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.sapoGreen.opacity(showGlow ? 0.4 : 0), lineWidth: 1.5)
+                .padding(.horizontal, -20)
+                .padding(.vertical, -10)
+        )
         .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
-                checkmarkScale = 1.0
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
+                iconScale = 1.0
+            }
+            withAnimation(.easeIn(duration: 0.3).delay(0.15)) {
+                showGlow = true
+            }
+            withAnimation(.easeOut(duration: 0.8).delay(1.2)) {
+                showGlow = false
             }
         }
     }
@@ -240,6 +248,8 @@ private struct CompletedPillView: View {
 private struct ErrorPillView: View {
     let message: String
     var onRetry: (() -> Void)?
+
+    @State private var showGlow = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -269,6 +279,20 @@ private struct ErrorPillView: View {
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
                 }
                 .buttonStyle(.plain)
+            }
+        }
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.sapoError.opacity(showGlow ? 0.4 : 0), lineWidth: 1.5)
+                .padding(.horizontal, -20)
+                .padding(.vertical, -10)
+        )
+        .onAppear {
+            withAnimation(.easeIn(duration: 0.3).delay(0.15)) {
+                showGlow = true
+            }
+            withAnimation(.easeOut(duration: 0.8).delay(1.2)) {
+                showGlow = false
             }
         }
     }
