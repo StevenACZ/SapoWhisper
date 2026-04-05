@@ -59,14 +59,13 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.layer?.isOpaque = false
 
-        // Determine height based on state
-        let windowHeight: CGFloat = {
-            if case .streaming = state { return 100 }
-            return 56
-        }()
+        // Determine size based on state
+        let isStreaming: Bool = { if case .streaming = state { return true }; return false }()
+        let windowWidth: CGFloat = isStreaming ? 520 : 480
+        let windowHeight: CGFloat = isStreaming ? 100 : 56
 
         // Crear contenedor transparente
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: windowHeight))
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.layer?.isOpaque = false
@@ -75,7 +74,7 @@ class OverlayWindowManager: ObservableObject {
         hostingView.autoresizingMask = [.width, .height]
 
         // Crear la ventana
-        overlayWindow = RecordingOverlayWindow(contentView: containerView, height: windowHeight)
+        overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
 
         guard let window = overlayWindow else { return }
 
@@ -136,20 +135,16 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
-        // Determine target height
-        let targetHeight: CGFloat
-        if case .streaming = newState { targetHeight = 100 }
-        else { targetHeight = 56 }
-
         // Si no hay ventana visible, mostrarla
         if overlayWindow == nil && newState.isVisible {
             state = newState
             show()
         } else if overlayWindow != nil {
-            // Resize if height changed
-            let currentHeight = overlayWindow?.frame.height ?? 56
-            if abs(currentHeight - targetHeight) > 1 {
-                resizeWindow(height: targetHeight)
+            // Resize if size changed (streaming ↔ normal)
+            let isNewStreaming: Bool = { if case .streaming = newState { return true }; return false }()
+            let isOldStreaming: Bool = { if case .streaming = state { return true }; return false }()
+            if isNewStreaming != isOldStreaming {
+                resizeWindow(to: newState)
             }
             state = newState
         } else {
@@ -217,17 +212,21 @@ class OverlayWindowManager: ObservableObject {
     }
 
     /// Resize the overlay window (for streaming vs normal states)
-    private func resizeWindow(height: CGFloat) {
+    private func resizeWindow(to newState: RecordingOverlayState) {
         guard let window = overlayWindow else { return }
+        let isStreaming: Bool = { if case .streaming = newState { return true }; return false }()
+        let targetWidth: CGFloat = isStreaming ? 520 : 480
+        let targetHeight: CGFloat = isStreaming ? 100 : 56
+
         let currentFrame = window.frame
         let newFrame = NSRect(
-            x: currentFrame.origin.x,
-            y: currentFrame.origin.y - (height - currentFrame.height),
-            width: currentFrame.width,
-            height: height
+            x: currentFrame.midX - targetWidth / 2,
+            y: currentFrame.origin.y - (targetHeight - currentFrame.height),
+            width: targetWidth,
+            height: targetHeight
         )
         window.setFrame(newFrame, display: true, animate: true)
-        hostingView?.frame = NSRect(x: 0, y: 0, width: 480, height: height)
+        hostingView?.frame = NSRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
     }
 
     /// Muestra un error

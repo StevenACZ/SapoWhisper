@@ -89,6 +89,7 @@ class SapoWhisperViewModel: ObservableObject {
                 await loadWhisperKitModel()
             }
         }
+
     }
 
     /// Configura callbacks del overlay (pause/resume/retry)

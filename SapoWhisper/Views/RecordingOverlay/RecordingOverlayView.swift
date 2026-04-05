@@ -27,10 +27,10 @@ struct RecordingOverlayView: View {
             }
 
             contentForState
-                .padding(.horizontal, 28)
-                .padding(.vertical, isStreamingState ? 12 : 8)
+                .padding(.horizontal, isStreamingState ? 16 : 28)
+                .padding(.vertical, isStreamingState ? 10 : 8)
         }
-        .frame(width: 480, height: isStreamingState ? 100 : 56)
+        .frame(width: isStreamingState ? 520 : 480, height: isStreamingState ? 100 : 56)
         .scaleEffect(scale)
         .onAppear {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
@@ -332,24 +332,24 @@ private struct StreamingPillView: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            // Text area — last 2 lines of partial transcript, full width
-            ZStack(alignment: .topLeading) {
-                Text(displayText.isEmpty ? " " : displayText)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.none, value: partialText)
-            }
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        VStack(spacing: 8) {
+            // Text area — full width with placeholder
+            Text(displayText.isEmpty ? "overlay.streaming".localized : displayText)
+                .font(.system(size: 13, weight: displayText.isEmpty ? .medium : .regular))
+                .foregroundColor(displayText.isEmpty ? .secondary : .primary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .animation(.none, value: partialText)
 
             // Controls row
-            HStack(spacing: 16) {
-                FloatingSapoIcon(state: .recording, size: 28)
+            HStack(spacing: 0) {
+                FloatingSapoIcon(state: .recording, size: 24)
+
+                Spacer()
+                    .frame(width: 24)
 
                 AudioEqualizerView(audioLevel: audioLevel)
-                    .frame(width: 80, height: 28)
+                    .frame(width: 70, height: 24)
 
                 Spacer()
 
@@ -361,6 +361,9 @@ private struct StreamingPillView: View {
                         .background(Circle().fill(Color.primary.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
+
+                Spacer()
+                    .frame(width: 10)
 
                 Text(timerText)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -383,4 +386,52 @@ private struct PulseAnimation: ViewModifier {
                 isPulsing = true
             }
     }
+}
+
+// MARK: - Previews
+
+#Preview("Streaming Overlay") {
+    ZStack {
+        Color.black.opacity(0.3)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+
+            StreamingPillView(
+                partialText: "...por lo que veo realmente es lo está haciendo. Es algo que me gusta y realmente creo que será un buen avance para sapo whisper.",
+                duration: 22,
+                audioLevel: 0.4,
+                onPause: {}
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .frame(width: 520, height: 100)
+    }
+    .frame(width: 600, height: 200)
+}
+
+#Preview("Streaming Empty") {
+    ZStack {
+        Color.black.opacity(0.3)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+
+            StreamingPillView(
+                partialText: "",
+                duration: 2,
+                audioLevel: 0.6,
+                onPause: {}
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .frame(width: 520, height: 100)
+    }
+    .frame(width: 600, height: 200)
 }
