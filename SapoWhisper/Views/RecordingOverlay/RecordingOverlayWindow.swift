@@ -12,9 +12,9 @@ import SwiftUI
 /// Pill horizontal posicionado en la parte inferior de la pantalla
 class RecordingOverlayWindow: NSPanel {
 
-    init(contentView: NSView) {
+    init(contentView: NSView, height: CGFloat = 56) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 56),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

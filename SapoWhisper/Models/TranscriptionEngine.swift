@@ -12,6 +12,7 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
     case appleOnline = "apple"
     case whisperLocal = "whisper"
     case googleCloud = "google"
+    case deepgramStreaming = "deepgram"
 
     var id: String { rawValue }
 
@@ -23,6 +24,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "Whisper (Local)"
         case .googleCloud:
             return "Google Cloud"
+        case .deepgramStreaming:
+            return "Deepgram (Streaming)"
         }
     }
 
@@ -34,6 +37,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "engine.whisper.description".localized
         case .googleCloud:
             return "engine.google.description".localized
+        case .deepgramStreaming:
+            return "engine.deepgram.description".localized
         }
     }
 
@@ -45,16 +50,16 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "desktopcomputer"
         case .googleCloud:
             return "cloud"
+        case .deepgramStreaming:
+            return "waveform.badge.mic"
         }
     }
 
     var requiresInternet: Bool {
         switch self {
-        case .appleOnline:
-            return true
         case .whisperLocal:
             return false
-        case .googleCloud:
+        default:
             return true
         }
     }

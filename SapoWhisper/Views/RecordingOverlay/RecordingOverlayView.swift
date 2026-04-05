@@ -16,21 +16,32 @@ struct RecordingOverlayView: View {
 
     var body: some View {
         ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            if isStreamingState {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            } else {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+            }
 
             contentForState
                 .padding(.horizontal, 28)
-                .padding(.vertical, 8)
+                .padding(.vertical, isStreamingState ? 12 : 8)
         }
-        .frame(width: 480, height: 56)
+        .frame(width: 480, height: isStreamingState ? 100 : 56)
         .scaleEffect(scale)
         .onAppear {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
                 scale = 1.0
             }
         }
+    }
+
+    private var isStreamingState: Bool {
+        if case .streaming = manager.state { return true }
+        return false
     }
 
     // MARK: - Content Views
@@ -61,7 +72,15 @@ struct RecordingOverlayView: View {
             CompletedPillView(text: text)
 
         case .error(let message):
-            ErrorPillView(message: message)
+            ErrorPillView(message: message, onRetry: manager.onRetry)
+
+        case .streaming(let partialText, let duration):
+            StreamingPillView(
+                partialText: partialText,
+                duration: duration,
+                audioLevel: manager.audioLevel,
+                onPause: { manager.onPauseToggle?() }
+            )
 
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)
@@ -213,6 +232,7 @@ private struct CompletedPillView: View {
 
 private struct ErrorPillView: View {
     let message: String
+    var onRetry: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -225,6 +245,22 @@ private struct ErrorPillView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+
+            if let onRetry = onRetry {
+                Button(action: onRetry) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Retry")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.primary.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
@@ -264,6 +300,71 @@ private struct DeviceDetectedPillView: View {
         .onAppear {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
                 checkScale = 1.0
+            }
+        }
+    }
+}
+
+// MARK: - Streaming Pill View
+
+private struct StreamingPillView: View {
+    let partialText: String
+    let duration: TimeInterval
+    let audioLevel: Float
+    let onPause: () -> Void
+
+    // Fix #5: Show last 2 lines with manual text slicing
+    private var displayText: String {
+        if partialText.isEmpty { return "" }
+        let charsPerLine = 55
+        let text = partialText
+        if text.count <= charsPerLine * 2 {
+            return text
+        }
+        let startIndex = text.index(text.endIndex, offsetBy: -(charsPerLine * 2), limitedBy: text.startIndex) ?? text.startIndex
+        return "..." + String(text[startIndex...])
+    }
+
+    private var timerText: String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            // Text area — last 2 lines of partial transcript, full width
+            ZStack(alignment: .topLeading) {
+                Text(displayText.isEmpty ? " " : displayText)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.none, value: partialText)
+            }
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+
+            // Controls row
+            HStack(spacing: 16) {
+                FloatingSapoIcon(state: .recording, size: 28)
+
+                AudioEqualizerView(audioLevel: audioLevel)
+                    .frame(width: 80, height: 28)
+
+                Spacer()
+
+                Button(action: onPause) {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.primary.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+
+                Text(timerText)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
             }
         }
     }

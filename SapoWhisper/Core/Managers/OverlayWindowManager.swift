@@ -26,6 +26,9 @@ class OverlayWindowManager: ObservableObject {
     /// Callback para toggle de pausa/resume (configurado por el ViewModel)
     var onPauseToggle: (() -> Void)?
 
+    /// Callback for retry on failure
+    var onRetry: (() -> Void)?
+
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?
@@ -56,16 +59,23 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.layer?.isOpaque = false
 
+        // Determine height based on state
+        let windowHeight: CGFloat = {
+            if case .streaming = state { return 100 }
+            return 56
+        }()
+
         // Crear contenedor transparente
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 56))
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: windowHeight))
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.layer?.isOpaque = false
         containerView.addSubview(hostingView)
         hostingView.frame = containerView.bounds
+        hostingView.autoresizingMask = [.width, .height]
 
         // Crear la ventana
-        overlayWindow = RecordingOverlayWindow(contentView: containerView)
+        overlayWindow = RecordingOverlayWindow(contentView: containerView, height: windowHeight)
 
         guard let window = overlayWindow else { return }
 
@@ -126,12 +136,25 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
+        // Determine target height
+        let targetHeight: CGFloat
+        if case .streaming = newState { targetHeight = 100 }
+        else { targetHeight = 56 }
+
         // Si no hay ventana visible, mostrarla
         if overlayWindow == nil && newState.isVisible {
+            state = newState
             show()
+        } else if overlayWindow != nil {
+            // Resize if height changed
+            let currentHeight = overlayWindow?.frame.height ?? 56
+            if abs(currentHeight - targetHeight) > 1 {
+                resizeWindow(height: targetHeight)
+            }
+            state = newState
+        } else {
+            state = newState
         }
-
-        state = newState
     }
 
     /// Actualiza el nivel de audio (para el ecualizador)
@@ -163,7 +186,7 @@ class OverlayWindowManager: ObservableObject {
     func showDeviceDetected(deviceName: String, autoDismissAfter delay: TimeInterval = 2.5) {
         // Don't interrupt active recording/transcribing states
         switch state {
-        case .recording, .transcribing, .paused:
+        case .recording, .transcribing, .paused, .streaming:
             return
         default:
             break
@@ -177,6 +200,34 @@ class OverlayWindowManager: ObservableObject {
                 self.hide()
             }
         }
+    }
+
+    /// Updates the streaming overlay with new partial text
+    func updateStreamingText(_ text: String, duration: TimeInterval) {
+        if case .streaming = state {
+            state = .streaming(partialText: text, duration: duration)
+        }
+    }
+
+    /// Updates the streaming duration for overlay
+    func updateStreamingDuration(_ duration: TimeInterval) {
+        if case .streaming(let text, _) = state {
+            state = .streaming(partialText: text, duration: duration)
+        }
+    }
+
+    /// Resize the overlay window (for streaming vs normal states)
+    private func resizeWindow(height: CGFloat) {
+        guard let window = overlayWindow else { return }
+        let currentFrame = window.frame
+        let newFrame = NSRect(
+            x: currentFrame.origin.x,
+            y: currentFrame.origin.y - (height - currentFrame.height),
+            width: currentFrame.width,
+            height: height
+        )
+        window.setFrame(newFrame, display: true, animate: true)
+        hostingView?.frame = NSRect(x: 0, y: 0, width: 480, height: height)
     }
 
     /// Muestra un error

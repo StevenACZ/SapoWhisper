@@ -99,6 +99,9 @@ enum Constants {
         static let googleCloudAPIKey = "googleCloudAPIKey"
         static let serviceAccountConfigured = "serviceAccountConfigured"
 
+        // Deepgram
+        static let deepgramAPIKey = "deepgramAPIKey"
+
         // Audio
         static let audioGain = "audioGain"
 

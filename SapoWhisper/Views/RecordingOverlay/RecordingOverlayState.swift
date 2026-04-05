@@ -16,6 +16,7 @@ enum RecordingOverlayState: Equatable {
     case completed(text: String)
     case error(message: String)
     case deviceDetected(deviceName: String)
+    case streaming(partialText: String, duration: TimeInterval)
 
     var isVisible: Bool {
         switch self {
@@ -42,6 +43,8 @@ enum RecordingOverlayState: Equatable {
             return message
         case .deviceDetected(let name):
             return name
+        case .streaming:
+            return "overlay.streaming".localized
         }
     }
 }

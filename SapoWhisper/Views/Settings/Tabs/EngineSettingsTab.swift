@@ -27,6 +27,14 @@ struct EngineSettingsTab: View {
     @State private var showAPIKeySection = false
     @State private var serviceAccountError: String?
 
+    @AppStorage(Constants.StorageKeys.deepgramAPIKey) private var deepgramAPIKey = ""
+
+    // Vocabulary state
+    @ObservedObject private var vocabularyManager = VocabularyManager.shared
+    @State private var newKeyterm = ""
+    @State private var newReplaceFrom = ""
+    @State private var newReplaceTo = ""
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -38,6 +46,11 @@ struct EngineSettingsTab: View {
 
                 if currentEngine == .googleCloud {
                     googleCloudSettingsCard
+                }
+
+                if currentEngine == .deepgramStreaming {
+                    deepgramSettingsCard
+                    vocabularyCard
                 }
             }
             .padding()
@@ -174,6 +187,16 @@ struct EngineSettingsTab: View {
     private var googleCloudSettingsCard: some View {
         SettingsCard(icon: "cloud", title: "Google Cloud") {
             VStack(alignment: .leading, spacing: 12) {
+                // 60s warning
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                    Text("config.google_60s_warning".localized)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+
                 serviceAccountSection
                 Divider()
                 apiKeyFallbackSection
@@ -295,8 +318,146 @@ struct EngineSettingsTab: View {
         }
     }
 
+    // MARK: - Deepgram Settings Card
+
+    private var deepgramSettingsCard: some View {
+        SettingsCard(icon: "waveform.badge.mic", title: "Deepgram") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: deepgramAPIKey.isEmpty ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(deepgramAPIKey.isEmpty ? .orange : .sapoGreen)
+                    Text(deepgramAPIKey.isEmpty ? "config.deepgram_key_missing".localized : "config.deepgram_key_configured".localized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                SecureField("config.deepgram_key_placeholder".localized, text: $deepgramAPIKey)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+
+                Text("config.deepgram_key_desc".localized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .onChange(of: deepgramAPIKey) { _ in
+            if currentEngine == .deepgramStreaming {
+                viewModel.setEngine(.deepgramStreaming)
+            }
+        }
+    }
+
+    // MARK: - Vocabulary Card
+
+    private var vocabularyCard: some View {
+        SettingsCard(icon: "text.book.closed", title: "config.vocabulary".localized) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Keyterms section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("config.keyterms".localized)
+                        .font(.subheadline.weight(.medium))
+
+                    ForEach(Array(vocabularyManager.keyterms.enumerated()), id: \.offset) { index, term in
+                        HStack {
+                            Text(term)
+                                .font(.system(size: 12, design: .monospaced))
+                            Spacer()
+                            Button(action: { vocabularyManager.removeKeyterm(at: index) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField("config.keyterm_placeholder".localized, text: $newKeyterm)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                            .onSubmit { addKeyterm() }
+
+                        Button("config.add".localized) { addKeyterm() }
+                            .buttonStyle(.bordered)
+                            .font(.caption)
+                            .disabled(newKeyterm.isEmpty)
+                    }
+
+                    Text("config.keyterms_desc".localized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Divider()
+
+                // Replacements section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("config.replacements".localized)
+                        .font(.subheadline.weight(.medium))
+
+                    ForEach(Array(vocabularyManager.replacements.sorted(by: { $0.key < $1.key })), id: \.key) { key, value in
+                        HStack {
+                            Text("\(key)")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Image(systemName: "arrow.right")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(value)
+                                .font(.system(size: 12, design: .monospaced))
+                            Spacer()
+                            Button(action: { vocabularyManager.removeReplacement(forKey: key) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField("config.replace_from".localized, text: $newReplaceFrom)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                            .frame(maxWidth: 120)
+
+                        Image(systemName: "arrow.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        TextField("config.replace_to".localized, text: $newReplaceTo)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+
+                        Button("config.add".localized) { addReplacement() }
+                            .buttonStyle(.bordered)
+                            .font(.caption)
+                            .disabled(newReplaceFrom.isEmpty || newReplaceTo.isEmpty)
+                    }
+
+                    Text("config.replacements_desc".localized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func addKeyterm() {
+        vocabularyManager.addKeyterm(newKeyterm)
+        newKeyterm = ""
+    }
+
+    private func addReplacement() {
+        vocabularyManager.addReplacement(from: newReplaceFrom, to: newReplaceTo)
+        newReplaceFrom = ""
+        newReplaceTo = ""
+    }
+
     // MARK: - Model Management
-    
+
     private func deleteModel(_ model: WhisperKitModel) {
         if currentWhisperKitModel == model && viewModel.whisperKitTranscriber.isModelLoaded {
             viewModel.setEngine(.appleOnline)

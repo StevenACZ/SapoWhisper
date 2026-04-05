@@ -147,3 +147,28 @@
 "settings.sound_volume" = "Volumen de sonidos";
 "settings.sound_volume_desc" = "Ajusta el volumen independiente del sistema";
 "settings.test_sound" = "Probar sonido";
+
+/* Deepgram Engine */
+"engine.deepgram.description" = "Streaming en tiempo real. Texto aparece mientras hablas.";
+"config.deepgram_key_placeholder" = "Ingresa tu API key de Deepgram...";
+"config.deepgram_key_desc" = "Crea tu API key en deepgram.com > Dashboard > API Keys.\nSe guarda localmente.";
+"config.deepgram_key_missing" = "API key no configurada";
+"config.deepgram_key_configured" = "API key configurada";
+
+/* Vocabulary */
+"config.vocabulary" = "Vocabulario";
+"config.keyterms" = "Palabras clave";
+"config.keyterm_placeholder" = "Ej: Claude Code";
+"config.keyterms_desc" = "Palabras que Deepgram priorizara al transcribir";
+"config.replacements" = "Correcciones automaticas";
+"config.replace_from" = "Original";
+"config.replace_to" = "Corregir a";
+"config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
+"config.add" = "Agregar";
+
+/* Streaming Overlay */
+"overlay.streaming" = "Escuchando...";
+"overlay.no_speech" = "No se detecto voz";
+
+/* Google Cloud Warning */
+"config.google_60s_warning" = "Limitado a 60 segundos por grabacion";
