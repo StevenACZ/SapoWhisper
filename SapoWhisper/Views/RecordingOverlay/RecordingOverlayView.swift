@@ -108,7 +108,7 @@ private struct RecordingPillView: View {
 
             OverlayTimer(duration: duration)
         }
-        .frame(minWidth: 300)
+        .frame(minWidth: 250)
     }
 }
 

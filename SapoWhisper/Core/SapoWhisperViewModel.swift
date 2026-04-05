@@ -549,6 +549,10 @@ class SapoWhisperViewModel: ObservableObject {
         if engine == .deepgramStreaming {
             let audioURL = audioRecorder.stopRecording()
 
+            // Show transcribing state while waiting for final results
+            appState = .processing
+            overlayManager.updateState(.transcribing)
+
             Task {
                 // Fix #3: Wait for final results before reading transcript
                 let transcription = await deepgramTranscriber.disconnect()
