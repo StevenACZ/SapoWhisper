@@ -11,6 +11,7 @@ import Foundation
 enum TranscriptionEngine: String, CaseIterable, Identifiable {
     case appleOnline = "apple"
     case whisperLocal = "whisper"
+    case googleCloud = "google"
 
     var id: String { rawValue }
 
@@ -20,6 +21,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "Apple (Online)"
         case .whisperLocal:
             return "Whisper (Local)"
+        case .googleCloud:
+            return "Google Cloud"
         }
     }
 
@@ -29,6 +32,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "engine.apple.description".localized
         case .whisperLocal:
             return "engine.whisper.description".localized
+        case .googleCloud:
+            return "engine.google.description".localized
         }
     }
 
@@ -38,6 +43,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "icloud"
         case .whisperLocal:
             return "desktopcomputer"
+        case .googleCloud:
+            return "cloud"
         }
     }
 
@@ -47,6 +54,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return true
         case .whisperLocal:
             return false
+        case .googleCloud:
+            return true
         }
     }
 }

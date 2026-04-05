@@ -96,7 +96,11 @@ enum Constants {
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
         static let whisperKitModel = "whisperKitModel"
+        static let googleCloudAPIKey = "googleCloudAPIKey"
         
+        // Audio
+        static let audioGain = "audioGain"
+
         // Launch at Login
         static let launchAtLogin = "launchAtLogin"
     }

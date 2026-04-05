@@ -94,7 +94,7 @@ struct AudioLevelMeterView: View {
     let deviceUID: String
     
     @State private var isEnabled = false
-    @State private var gain: Double = 1.0
+    @AppStorage(Constants.StorageKeys.audioGain) private var gain: Double = 1.0
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

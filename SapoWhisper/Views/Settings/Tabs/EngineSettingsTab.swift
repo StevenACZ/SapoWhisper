@@ -22,13 +22,19 @@ struct EngineSettingsTab: View {
         WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
     }
     
+    @AppStorage(Constants.StorageKeys.googleCloudAPIKey) private var googleCloudAPIKey = ""
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 transcriptionEngineCard
-                
+
                 if currentEngine == .whisperLocal {
                     whisperKitModelCard
+                }
+
+                if currentEngine == .googleCloud {
+                    googleCloudSettingsCard
                 }
             }
             .padding()
@@ -160,6 +166,30 @@ struct EngineSettingsTab: View {
         }
     }
     
+    // MARK: - Google Cloud Settings Card
+
+    private var googleCloudSettingsCard: some View {
+        SettingsCard(icon: "key.fill", title: "config.api_key".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: googleCloudAPIKey.isEmpty ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(googleCloudAPIKey.isEmpty ? .orange : .sapoGreen)
+                    Text(googleCloudAPIKey.isEmpty ? "config.api_key_missing".localized : "config.api_key_configured".localized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                SecureField("config.api_key_placeholder".localized, text: $googleCloudAPIKey)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+
+                Text("config.api_key_desc".localized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
     // MARK: - Model Management
     
     private func deleteModel(_ model: WhisperKitModel) {

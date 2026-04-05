@@ -137,6 +137,16 @@ class AudioRecorder: ObservableObject {
         }
 
         if status == .haveData {
+            // Apply saved gain to recording
+            let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
+            let effectiveGain = Float(savedGain > 0 ? savedGain : 1.0)
+            if effectiveGain != 1.0, let channelData = convertedBuffer.floatChannelData {
+                let frameCount = Int(convertedBuffer.frameLength)
+                for i in 0..<frameCount {
+                    channelData[0][i] *= effectiveGain
+                }
+            }
+
             do {
                 try audioFile.write(from: convertedBuffer)
             } catch {

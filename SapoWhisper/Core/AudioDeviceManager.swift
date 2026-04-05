@@ -39,9 +39,18 @@ class AudioDeviceManager: ObservableObject {
     @Published var availableDevices: [AudioDevice] = []
     @Published var selectedDeviceUID: String = "default"
 
+    /// Name of the newly detected default input device (published when it changes)
+    @Published var detectedDeviceName: String? = nil
+
+    /// Tracks the last known default input device ID to detect actual changes
+    private var lastKnownDefaultInputDeviceID: AudioDeviceID?
+
     private init() {
+        // Capture initial default device ID without triggering notification
+        lastKnownDefaultInputDeviceID = getSystemDefaultInputDevice()
         refreshDevices()
         setupDeviceChangeListener()
+        setupDefaultInputDeviceListener()
     }
 
     /// Refresca la lista de dispositivos de audio disponibles
@@ -172,7 +181,63 @@ class AudioDeviceManager: ObservableObject {
             DispatchQueue.main
         ) { [weak self] _, _ in
             self?.refreshDevices()
+            // Also check if default input changed (macOS sometimes only fires
+            // the device list change, not the default input change)
+            self?.checkDefaultInputDeviceChange()
         }
+    }
+
+    /// Listens for changes to the system's default input device
+    private func setupDefaultInputDeviceListener() {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            DispatchQueue.main
+        ) { [weak self] _, _ in
+            self?.handleDefaultInputDeviceChanged()
+        }
+    }
+
+    private func handleDefaultInputDeviceChanged() {
+        refreshDevices()
+        checkDefaultInputDeviceChange()
+    }
+
+    /// Checks if the default input device actually changed and notifies if so
+    private func checkDefaultInputDeviceChange() {
+        guard let currentDeviceID = getSystemDefaultInputDevice() else { return }
+
+        // Only notify if the device actually changed
+        if currentDeviceID != lastKnownDefaultInputDeviceID {
+            lastKnownDefaultInputDeviceID = currentDeviceID
+            let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
+            // Force a new publish by setting to nil first, then the name
+            detectedDeviceName = nil
+            detectedDeviceName = deviceName
+            print("🔄 Default input device changed to: \(deviceName)")
+        }
+    }
+
+    /// Gets the name of a device by its ID
+    func getDeviceName(for deviceID: AudioDeviceID) -> String? {
+        var namePropertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceNameCFString,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var name: Unmanaged<CFString>?
+        var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = AudioObjectGetPropertyData(deviceID, &namePropertyAddress, 0, nil, &nameSize, &name)
+
+        guard status == noErr, let deviceName = name?.takeRetainedValue() as String? else { return nil }
+        return deviceName
     }
 
     /// Obtiene el AudioDeviceID para un UID dado

@@ -89,6 +89,14 @@
 /* Engine Descriptions */
 "engine.apple.description" = "Free, requires internet. Uses Apple servers.";
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
+"engine.google.description" = "Fast and accurate. Requires internet and Google Cloud API key.";
+
+/* Google Cloud Engine */
+"config.api_key" = "Google Cloud API Key";
+"config.api_key_placeholder" = "Enter your API key...";
+"config.api_key_desc" = "Get your API key at console.cloud.google.com. Stored locally.";
+"config.api_key_missing" = "API key not configured";
+"config.api_key_configured" = "API key configured";
 
 /* Badges & Labels */
 "badge.recommended" = "Recommended";
@@ -121,6 +129,7 @@
 "overlay.paused" = "Paused";
 "overlay.transcribing" = "Transcribing...";
 "overlay.completed" = "Done!";
+"overlay.device_ready" = "Ready to record";
 
 /* Sound Settings */
 "settings.sounds" = "Sounds";
