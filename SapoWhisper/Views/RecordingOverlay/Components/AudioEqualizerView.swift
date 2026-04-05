@@ -14,11 +14,17 @@ struct AudioEqualizerView: View {
     let audioLevel: Float
 
     // Configuracion
-    private let barCount = 24
-    private let barWidth: CGFloat = 3
+    private let barCount: Int
+    private let barWidth: CGFloat
     private let barSpacing: CGFloat = 2
     private let maxBarHeight: CGFloat = 28
     private let minBarHeight: CGFloat = 3
+
+    init(audioLevel: Float, barCount: Int = 24, barWidth: CGFloat = 3) {
+        self.audioLevel = audioLevel
+        self.barCount = barCount
+        self.barWidth = barWidth
+    }
 
     // Estado interno para las barras
     @State private var barHeights: [CGFloat] = []
@@ -35,6 +41,9 @@ struct AudioEqualizerView: View {
         .frame(height: maxBarHeight)
         .onAppear {
             initializeBars()
+            if audioLevel > 0 {
+                updateBars(with: audioLevel)
+            }
         }
         .onChange(of: audioLevel) { oldValue, newValue in
             updateBars(with: newValue)

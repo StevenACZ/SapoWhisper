@@ -343,13 +343,25 @@ private struct StreamingPillView: View {
 
             // Controls row
             HStack(spacing: 0) {
-                FloatingSapoIcon(state: .recording, size: 24)
+                FloatingSapoIcon(state: .recording, size: 30)
 
-                Spacer()
-                    .frame(width: 24)
+                Spacer().frame(width: 12)
 
-                AudioEqualizerView(audioLevel: audioLevel)
-                    .frame(width: 70, height: 24)
+                RoundedRectangle(cornerRadius: 0.5)
+                    .fill(Color.primary.opacity(0.15))
+                    .frame(width: 1, height: 18)
+
+                Spacer().frame(width: 12)
+
+                Circle()
+                    .fill(Color.recording)
+                    .frame(width: 6, height: 6)
+                    .modifier(PulseAnimation())
+
+                Spacer().frame(width: 10)
+
+                AudioEqualizerView(audioLevel: audioLevel, barCount: 8, barWidth: 4)
+                    .frame(width: 46, height: 22)
 
                 Spacer()
 
@@ -362,8 +374,7 @@ private struct StreamingPillView: View {
                 }
                 .buttonStyle(.plain)
 
-                Spacer()
-                    .frame(width: 10)
+                Spacer().frame(width: 10)
 
                 Text(timerText)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
