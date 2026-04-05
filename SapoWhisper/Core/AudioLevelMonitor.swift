@@ -37,7 +37,10 @@ class AudioLevelMonitor: ObservableObject {
     private var peakDecayTimer: Timer?
     private var previousDefaultDevice: AudioDeviceID?
     
-    private init() {}
+    private init() {
+        let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
+        self.gain = savedGain > 0 ? Float(savedGain) : 1.0
+    }
     
     /// Inicia el monitoreo del micrófono
     func startMonitoring(deviceUID: String = "default") {
@@ -63,10 +66,8 @@ class AudioLevelMonitor: ObservableObject {
             }
         }
         
-        // Pequeño delay para que el sistema aplique el cambio de dispositivo
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.startAudioEngine()
-        }
+        // Iniciar engine directamente (el device listener ya maneja los cambios)
+        startAudioEngine()
     }
     
     /// Inicia el AVAudioEngine después de configurar el dispositivo

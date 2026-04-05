@@ -12,7 +12,7 @@ struct RecordingOverlayView: View {
 
     @ObservedObject var manager: OverlayWindowManager
 
-    @State private var scale: CGFloat = 0.8
+    @State private var scale: CGFloat = 0.9
 
     var body: some View {
         ZStack {
@@ -27,7 +27,7 @@ struct RecordingOverlayView: View {
         .frame(width: 480, height: 56)
         .scaleEffect(scale)
         .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
                 scale = 1.0
             }
         }
@@ -62,6 +62,9 @@ struct RecordingOverlayView: View {
 
         case .error(let message):
             ErrorPillView(message: message)
+
+        case .deviceDetected(let deviceName):
+            DeviceDetectedPillView(deviceName: deviceName)
         }
     }
 }
@@ -222,6 +225,46 @@ private struct ErrorPillView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+        }
+    }
+}
+
+// MARK: - Device Detected Pill View
+
+private struct DeviceDetectedPillView: View {
+    let deviceName: String
+
+    @State private var checkScale: CGFloat = 0
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mic.badge.plus")
+                .font(.system(size: 22))
+                .foregroundColor(.sapoGreen)
+                .symbolRenderingMode(.hierarchical)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(deviceName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Text("overlay.device_ready".localized)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.sapoGreen)
+                .scaleEffect(checkScale)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
+                checkScale = 1.0
+            }
         }
     }
 }

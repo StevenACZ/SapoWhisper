@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Tab de configuración del motor de transcripción y modelos WhisperKit
 struct EngineSettingsTab: View {
@@ -22,13 +23,21 @@ struct EngineSettingsTab: View {
         WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
     }
     
+    @AppStorage(Constants.StorageKeys.googleCloudAPIKey) private var googleCloudAPIKey = ""
+    @State private var showAPIKeySection = false
+    @State private var serviceAccountError: String?
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 transcriptionEngineCard
-                
+
                 if currentEngine == .whisperLocal {
                     whisperKitModelCard
+                }
+
+                if currentEngine == .googleCloud {
+                    googleCloudSettingsCard
                 }
             }
             .padding()
@@ -160,6 +169,132 @@ struct EngineSettingsTab: View {
         }
     }
     
+    // MARK: - Google Cloud Settings Card
+
+    private var googleCloudSettingsCard: some View {
+        SettingsCard(icon: "cloud", title: "Google Cloud") {
+            VStack(alignment: .leading, spacing: 12) {
+                serviceAccountSection
+                Divider()
+                apiKeyFallbackSection
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var serviceAccountSection: some View {
+        if ServiceAccountManager.shared.isConfigured {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.sapoGreen)
+                Text("config.service_account_configured".localized("Chirp 3"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button("config.service_account_change".localized) { importServiceAccount() }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.blue)
+                    .font(.caption)
+
+                Button("config.service_account_remove".localized) {
+                    ServiceAccountManager.shared.remove()
+                    viewModel.setEngine(.googleCloud)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.red)
+                .font(.caption)
+            }
+        } else {
+            Text("config.service_account_desc".localized)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 8) {
+                Button(action: { importServiceAccount() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.badge.plus")
+                        Text("config.service_account_import".localized)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+
+                Button(action: {
+                    ServiceAccountManager.shared.reload()
+                    viewModel.setEngine(.googleCloud)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Detectar")
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+
+        if let error = serviceAccountError {
+            Text(error)
+                .font(.caption)
+                .foregroundColor(.red)
+        }
+    }
+
+    @ViewBuilder
+    private var apiKeyFallbackSection: some View {
+        DisclosureGroup(
+            isExpanded: $showAPIKeySection,
+            content: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: googleCloudAPIKey.isEmpty ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundColor(googleCloudAPIKey.isEmpty ? .orange : .sapoGreen)
+                        Text(googleCloudAPIKey.isEmpty ? "config.api_key_missing".localized : "config.api_key_configured".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    SecureField("config.api_key_placeholder".localized, text: $googleCloudAPIKey)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+
+                    Text("config.api_key_desc".localized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+            },
+            label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "key.fill")
+                        .foregroundColor(.secondary)
+                    Text("config.api_key_fallback".localized)
+                        .font(.subheadline)
+                }
+            }
+        )
+    }
+
+    private func importServiceAccount() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "config.service_account_desc".localized
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try ServiceAccountManager.shared.importFile(from: url)
+            serviceAccountError = nil
+            viewModel.setEngine(.googleCloud)
+        } catch {
+            serviceAccountError = error.localizedDescription
+        }
+    }
+
     // MARK: - Model Management
     
     private func deleteModel(_ model: WhisperKitModel) {

@@ -40,8 +40,9 @@ class OverlayWindowManager: ObservableObject {
 
     /// Muestra la ventana de overlay con animacion
     func show() {
-        guard overlayWindow == nil else {
-            return
+        // If an old window exists (e.g. mid fade-out), destroy it immediately
+        if overlayWindow != nil {
+            forceCleanup()
         }
 
         // Crear la vista SwiftUI
@@ -72,9 +73,9 @@ class OverlayWindowManager: ObservableObject {
         window.alphaValue = 0
         window.orderFront(nil)
 
-        // Animacion de aparicion
+        // Animacion de aparicion (rapida para feedback inmediato)
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
+            context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1.0
         }
@@ -83,7 +84,6 @@ class OverlayWindowManager: ObservableObject {
     /// Oculta la ventana de overlay con animacion
     func hide() {
         guard let window = overlayWindow else { return }
-        guard !isAnimating else { return }
 
         isAnimating = true
 
@@ -95,6 +95,9 @@ class OverlayWindowManager: ObservableObject {
         }, completionHandler: {
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                // Only clean up if this is still the current window
+                // (a new show() call may have replaced it already)
+                guard self.overlayWindow === window else { return }
                 self.overlayWindow?.orderOut(nil)
                 self.overlayWindow = nil
                 self.hostingView = nil
@@ -102,6 +105,17 @@ class OverlayWindowManager: ObservableObject {
                 self.isAnimating = false
             }
         })
+    }
+
+    // MARK: - Private Methods
+
+    /// Immediately destroys the current window without animation
+    private func forceCleanup() {
+        overlayWindow?.animator().alphaValue = 0
+        overlayWindow?.orderOut(nil)
+        overlayWindow = nil
+        hostingView = nil
+        isAnimating = false
     }
 
     /// Actualiza el estado del overlay
@@ -140,6 +154,26 @@ class OverlayWindowManager: ObservableObject {
         Task {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             if case .completed = self.state {
+                self.hide()
+            }
+        }
+    }
+
+    /// Shows a brief notification that a new audio device was detected
+    func showDeviceDetected(deviceName: String, autoDismissAfter delay: TimeInterval = 2.5) {
+        // Don't interrupt active recording/transcribing states
+        switch state {
+        case .recording, .transcribing, .paused:
+            return
+        default:
+            break
+        }
+
+        updateState(.deviceDetected(deviceName: deviceName))
+
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            if case .deviceDetected = self.state {
                 self.hide()
             }
         }

@@ -15,6 +15,7 @@ enum RecordingOverlayState: Equatable {
     case transcribing
     case completed(text: String)
     case error(message: String)
+    case deviceDetected(deviceName: String)
 
     var isVisible: Bool {
         switch self {
@@ -39,6 +40,8 @@ enum RecordingOverlayState: Equatable {
             return "overlay.completed".localized
         case .error(let message):
             return message
+        case .deviceDetected(let name):
+            return name
         }
     }
 }

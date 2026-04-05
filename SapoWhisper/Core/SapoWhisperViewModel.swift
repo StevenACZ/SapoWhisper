@@ -40,6 +40,7 @@ class SapoWhisperViewModel: ObservableObject {
     let audioRecorder = AudioRecorder()
     let transcriber = WhisperTranscriber()
     let whisperKitTranscriber = WhisperKitTranscriber()
+    let googleCloudTranscriber = GoogleCloudTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let audioLevelMonitor = AudioLevelMonitor.shared
@@ -126,6 +127,15 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Observar estado de transcripcion (WhisperKit)
         whisperKitTranscriber.$isTranscribing
+            .sink { [weak self] isTranscribing in
+                if isTranscribing {
+                    self?.appState = .processing
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observar estado de transcripcion (Google Cloud)
+        googleCloudTranscriber.$isTranscribing
             .sink { [weak self] isTranscribing in
                 if isTranscribing {
                     self?.appState = .processing
@@ -225,6 +235,15 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.overlayManager.updateRecordingDuration(duration)
             }
             .store(in: &cancellables)
+
+        // Observe device changes for visual notification
+        AudioDeviceManager.shared.$detectedDeviceName
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] deviceName in
+                self?.overlayManager.showDeviceDetected(deviceName: deviceName)
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Initial State
@@ -239,6 +258,12 @@ class SapoWhisperViewModel: ObservableObject {
             }
         case .whisperLocal:
             if whisperKitTranscriber.isModelLoaded {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
+        case .googleCloud:
+            if googleCloudTranscriber.isConfigured {
                 appState = .idle
             } else {
                 appState = .noModel
@@ -293,6 +318,11 @@ class SapoWhisperViewModel: ObservableObject {
             Task {
                 await loadWhisperKitModel()
             }
+        }
+
+        // Si cambia a Google Cloud y no esta configurado, mostrar noModel
+        if engine == .googleCloud && !googleCloudTranscriber.isConfigured {
+            appState = .noModel
         }
     }
 
@@ -351,6 +381,8 @@ class SapoWhisperViewModel: ObservableObject {
             isReady = transcriber.isModelLoaded
         case .whisperLocal:
             isReady = whisperKitTranscriber.isModelLoaded
+        case .googleCloud:
+            isReady = googleCloudTranscriber.isConfigured
         }
 
         guard isReady else {
@@ -361,15 +393,17 @@ class SapoWhisperViewModel: ObservableObject {
         // Guardar la app activa para volver a ella despues de pegar
         PasteManager.savePreviousApp()
 
+        // Mostrar overlay PRIMERO para feedback visual inmediato
+        appState = .recording
+        overlayManager.show()
+        overlayManager.updateState(.recording(duration: 0))
+
         do {
-            // Actualizar microfono seleccionado antes de grabar
+            // Actualizar microfono seleccionado y empezar a grabar
             audioRecorder.selectedDeviceUID = selectedMicrophone
             try audioRecorder.startRecording()
-            appState = .recording
 
-            // Mostrar overlay y empezar monitoreo de audio
-            overlayManager.show()
-            overlayManager.updateState(.recording(duration: 0))
+            // Iniciar monitoreo de audio (no bloquea UI)
             audioLevelMonitor.startMonitoring(deviceUID: selectedMicrophone)
 
             if playSoundEnabled {
@@ -424,6 +458,8 @@ class SapoWhisperViewModel: ObservableObject {
                     transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
                 case .whisperLocal:
                     transcription = try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
+                case .googleCloud:
+                    transcription = try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
                 }
 
                 lastTranscription = transcription
@@ -493,6 +529,8 @@ class SapoWhisperViewModel: ObservableObject {
             return transcriber.isModelLoaded && !transcriber.isTranscribing
         case .whisperLocal:
             return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
+        case .googleCloud:
+            return googleCloudTranscriber.isConfigured && !googleCloudTranscriber.isTranscribing
         }
     }
     
