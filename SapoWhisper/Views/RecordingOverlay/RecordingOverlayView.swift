@@ -237,7 +237,7 @@ private struct ErrorPillView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("Retry")
+                        Text("overlay.retry".localized)
                             .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundColor(.primary)

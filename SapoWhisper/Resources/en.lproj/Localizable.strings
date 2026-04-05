@@ -170,5 +170,10 @@
 "overlay.streaming" = "Listening...";
 "overlay.no_speech" = "No speech detected";
 
+/* Errors */
+"error.deepgram_auth" = "Deepgram: Invalid or expired API key. Check Settings.";
+"error.no_audio" = "Could not capture audio";
+"overlay.retry" = "Retry";
+
 /* Google Cloud Warning */
 "config.google_60s_warning" = "Limited to 60 seconds per recording";

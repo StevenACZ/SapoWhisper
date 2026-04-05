@@ -294,7 +294,7 @@ class SapoWhisperViewModel: ObservableObject {
                     // Detect auth errors and show clearer message
                     let userMessage: String
                     if error.contains("-1011") || error.contains("bad response") {
-                        userMessage = "Deepgram: API key invalida o expirada. Verifica en Settings."
+                        userMessage = "error.deepgram_auth".localized
                     } else {
                         userMessage = "Deepgram: \(error)"
                     }
@@ -591,8 +591,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Batch engines (Apple, WhisperKit, Google Cloud)
         guard let audioURL = audioRecorder.stopRecording() else {
-            appState = .error("No se pudo obtener el audio")
-            overlayManager.showError(message: "No se pudo obtener el audio")
+            appState = .error("error.no_audio".localized)
+            overlayManager.showError(message: "error.no_audio".localized)
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -617,7 +617,7 @@ class SapoWhisperViewModel: ObservableObject {
                 case .googleCloud:
                     transcription = try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
                 case .deepgramStreaming:
-                    fatalError("Handled above")
+                    transcription = try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
                 }
 
                 lastTranscription = transcription
