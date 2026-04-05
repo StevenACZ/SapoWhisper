@@ -15,22 +15,22 @@ struct RecordingOverlayView: View {
     @State private var scale: CGFloat = 0.9
 
     var body: some View {
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-
-            contentForState
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-        .scaleEffect(scale)
-        .onAppear {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
-                scale = 1.0
+        contentForState
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+            )
+            .fixedSize()
+            .frame(maxWidth: 380, maxHeight: 48)
+            .scaleEffect(scale)
+            .onAppear {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                    scale = 1.0
+                }
             }
-        }
     }
 
     // MARK: - Content Views
@@ -97,7 +97,7 @@ private struct RecordingPillView: View {
                     .foregroundColor(.primary)
             }
 
-            Spacer()
+            Spacer(minLength: 20)
 
             Button(action: onPause) {
                 Image(systemName: "pause.fill")
@@ -110,6 +110,7 @@ private struct RecordingPillView: View {
 
             OverlayTimer(duration: duration)
         }
+        .frame(minWidth: 300)
     }
 }
 
@@ -135,7 +136,7 @@ private struct PausedPillView: View {
                     .foregroundColor(.primary)
             }
 
-            Spacer()
+            Spacer(minLength: 20)
 
             Button(action: onResume) {
                 Image(systemName: "play.fill")
@@ -148,6 +149,7 @@ private struct PausedPillView: View {
 
             OverlayTimer(duration: duration)
         }
+        .frame(minWidth: 300)
     }
 }
 
@@ -165,8 +167,6 @@ private struct TranscribingPillView: View {
             Text("overlay.transcribing".localized)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
-
-            Spacer()
         }
     }
 }
@@ -314,100 +314,54 @@ private struct PulseAnimation: ViewModifier {
     }
 }
 
+// MARK: - Preview Helper
+
+private struct PillPreview<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+            content
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+                )
+                .fixedSize()
+        }
+        .frame(width: 460, height: 100)
+    }
+}
+
 // MARK: - Previews
 
 #Preview("Recording") {
-    ZStack {
-        Color.black.opacity(0.3)
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            RecordingPillView(duration: 15, onPause: {})
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-    }
-    .frame(width: 460, height: 100)
+    PillPreview { RecordingPillView(duration: 15, onPause: {}) }
 }
 
 #Preview("Paused") {
-    ZStack {
-        Color.black.opacity(0.3)
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            PausedPillView(duration: 42, onResume: {})
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-    }
-    .frame(width: 460, height: 100)
+    PillPreview { PausedPillView(duration: 42, onResume: {}) }
 }
 
 #Preview("Transcribing") {
-    ZStack {
-        Color.black.opacity(0.3)
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            TranscribingPillView()
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-    }
-    .frame(width: 460, height: 100)
+    PillPreview { TranscribingPillView() }
 }
 
 #Preview("Completed") {
-    ZStack {
-        Color.black.opacity(0.3)
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            CompletedPillView(text: "Hola, esta es una transcripcion de ejemplo")
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-    }
-    .frame(width: 460, height: 100)
+    PillPreview { CompletedPillView(text: "Hola, esta es una transcripcion") }
 }
 
 #Preview("Error") {
-    ZStack {
-        Color.black.opacity(0.3)
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            ErrorPillView(message: "No se pudo conectar al servidor", onRetry: {})
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-    }
-    .frame(width: 460, height: 100)
+    PillPreview { ErrorPillView(message: "No se pudo conectar", onRetry: {}) }
 }
 
 #Preview("Device Detected") {
-    ZStack {
-        Color.black.opacity(0.3)
-        ZStack {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            DeviceDetectedPillView(deviceName: "MacBook Pro Microphone")
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-        }
-        .frame(width: 380, height: 48)
-    }
-    .frame(width: 460, height: 100)
+    PillPreview { DeviceDetectedPillView(deviceName: "MacBook Pro Microphone") }
 }
