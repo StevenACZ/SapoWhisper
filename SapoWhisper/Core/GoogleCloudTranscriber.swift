@@ -5,10 +5,11 @@
 //  Created by Steven on 4/4/26.
 //
 
+import AVFoundation
 import Combine
 import Foundation
 
-/// Transcriber using Google Cloud Speech-to-Text API with Chirp model
+/// Transcriber using Google Cloud Speech-to-Text API
 class GoogleCloudTranscriber: ObservableObject {
 
     @Published var isTranscribing = false
@@ -27,9 +28,39 @@ class GoogleCloudTranscriber: ObservableObject {
         switch appLanguage {
         case "es": return "es-ES"
         case "en": return "en-US"
-        case "auto": return "es-ES" // Default, Chirp handles detection
+        case "auto": return "es-ES"
         default: return "es-ES"
         }
+    }
+
+    /// Converts float32 PCM samples to int16 PCM (LINEAR16) for Google Cloud API
+    private func convertFloat32ToInt16(_ audioURL: URL) throws -> Data {
+        let audioFile = try AVAudioFile(forReading: audioURL)
+        let format = audioFile.processingFormat
+        let frameCount = AVAudioFrameCount(audioFile.length)
+
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            throw GoogleCloudError.invalidResponse
+        }
+        try audioFile.read(into: buffer)
+
+        guard let floatData = buffer.floatChannelData else {
+            throw GoogleCloudError.invalidResponse
+        }
+
+        let samples = Int(buffer.frameLength)
+        var int16Data = Data(count: samples * 2)
+
+        int16Data.withUnsafeMutableBytes { rawBuffer in
+            let int16Buffer = rawBuffer.bindMemory(to: Int16.self)
+            for i in 0..<samples {
+                let sample = floatData[0][i]
+                let clamped = max(-1.0, min(1.0, sample))
+                int16Buffer[i] = Int16(clamped * 32767.0)
+            }
+        }
+
+        return int16Data
     }
 
     /// Transcribes audio file using Google Cloud Speech-to-Text
@@ -42,9 +73,12 @@ class GoogleCloudTranscriber: ObservableObject {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in isTranscribing = false } }
 
-        // Read audio file and encode to base64
-        let audioData = try Data(contentsOf: audioURL)
-        let base64Audio = audioData.base64EncodedString()
+        // Convert float32 WAV to int16 PCM (LINEAR16)
+        let pcmData = try convertFloat32ToInt16(audioURL)
+        let base64Audio = pcmData.base64EncodedString()
+        let durationSecs = Double(pcmData.count) / (16000.0 * 2.0)
+
+        print("🌐 Google Cloud STT: sending \(pcmData.count) bytes (~\(String(format: "%.1f", durationSecs))s of audio)")
 
         // Build request
         let url = URL(string: "\(baseURL)?key=\(apiKey)")!
@@ -57,7 +91,7 @@ class GoogleCloudTranscriber: ObservableObject {
                 "encoding": "LINEAR16",
                 "sampleRateHertz": 16000,
                 "languageCode": googleLanguageCode(for: language),
-                "model": "chirp",
+                "model": "latest_short",
                 "enableAutomaticPunctuation": true
             ],
             "audio": [
@@ -72,6 +106,11 @@ class GoogleCloudTranscriber: ObservableObject {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw GoogleCloudError.invalidResponse
+        }
+
+        // Log raw response for debugging
+        if let responseStr = String(data: data, encoding: .utf8) {
+            print("🌐 Google Cloud STT response (\(httpResponse.statusCode)): \(responseStr.prefix(500))")
         }
 
         // Handle errors
@@ -92,8 +131,12 @@ class GoogleCloudTranscriber: ObservableObject {
         }
 
         // Parse response
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [[String: Any]] else {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw GoogleCloudError.emptyTranscription
+        }
+
+        guard let results = json["results"] as? [[String: Any]], !results.isEmpty else {
+            print("🌐 Google Cloud STT: no results in response")
             throw GoogleCloudError.emptyTranscription
         }
 
@@ -111,6 +154,7 @@ class GoogleCloudTranscriber: ObservableObject {
             throw GoogleCloudError.emptyTranscription
         }
 
+        print("🌐 Google Cloud STT result: \(transcript.prefix(80))...")
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
