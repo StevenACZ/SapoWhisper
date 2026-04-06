@@ -88,13 +88,6 @@ struct RecordingOverlayView: View {
         case .error(let message):
             ErrorPillView(message: message, onRetry: manager.onRetry)
 
-        case .streaming(_, let duration):
-            RecordingPillView(
-                duration: duration,
-                onPause: { manager.onPauseToggle?() },
-                audioLevel: manager.audioLevel
-            )
-
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)
         }

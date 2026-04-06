@@ -16,13 +16,11 @@ enum RecordingOverlayState: Equatable {
     case completed(text: String)
     case error(message: String)
     case deviceDetected(deviceName: String)
-    case streaming(partialText: String, duration: TimeInterval)
-
     /// Identifies the state type (ignoring associated values) for animation triggers
     var stateCategory: String {
         switch self {
         case .hidden: return "hidden"
-        case .recording, .streaming: return "recording"
+        case .recording: return "recording"
         case .paused: return "paused"
         case .transcribing: return "transcribing"
         case .completed: return "completed"
@@ -56,8 +54,6 @@ enum RecordingOverlayState: Equatable {
             return message
         case .deviceDetected(let name):
             return name
-        case .streaming:
-            return "overlay.streaming".localized
         }
     }
 }

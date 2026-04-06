@@ -14,7 +14,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 
 - 🎤 **Instant transcription** — Press the shortcut, speak, done
 - 🔒 **100% private** — Local transcription option with WhisperKit (no internet needed)
-- 🎙️ **Real-time streaming** — Deepgram Nova-3 shows text as you speak
+- 🎙️ **Deepgram Nova-3** — High accuracy cloud transcription
 - ☁️ **Google Cloud Chirp 3** — Maximum accuracy with Google's latest STT model
 - 📋 **Transcription history** — Browse, search, pin, and replay past transcriptions
 - ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
@@ -99,10 +99,9 @@ SapoWhisper will automatically detect your credentials. That's it!
 2. Create an API Key and restrict it to **Cloud Speech-to-Text API**
 3. Paste the key in SapoWhisper Settings → Engine → Google Cloud → API Key
 
-### Deepgram (Streaming) — Real-time transcription
+### Deepgram — High accuracy
 
-- 🎙️ **Nova-3** — Deepgram's most accurate model with real-time streaming
-- ⚡ **Live text** — See words appear as you speak via WebSocket
+- 🎙️ **Nova-3** — Deepgram's most accurate model
 - 📝 **Custom vocabulary** — Add keyterms and word replacements for better accuracy
 - ☁️ Requires internet and a Deepgram API key
 

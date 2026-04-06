@@ -48,7 +48,7 @@ struct EngineSettingsTab: View {
                     googleCloudSettingsCard
                 }
 
-                if currentEngine == .deepgramStreaming {
+                if currentEngine == .deepgram {
                     deepgramSettingsCard
                     vocabularyCard
                 }
@@ -341,8 +341,8 @@ struct EngineSettingsTab: View {
             }
         }
         .onChange(of: deepgramAPIKey) { _ in
-            if currentEngine == .deepgramStreaming {
-                viewModel.setEngine(.deepgramStreaming)
+            if currentEngine == .deepgram {
+                viewModel.setEngine(.deepgram)
             }
         }
     }

@@ -191,7 +191,7 @@
 "settings.test_sound" = "Probar sonido";
 
 /* Deepgram Engine */
-"engine.deepgram.description" = "Streaming en tiempo real. Texto aparece mientras hablas.";
+"engine.deepgram.description" = "Deepgram Nova-3. Alta precision, requiere internet.";
 "config.deepgram_key_placeholder" = "Ingresa tu API key de Deepgram...";
 "config.deepgram_key_desc" = "Crea tu API key en deepgram.com > Dashboard > API Keys.\nSe guarda localmente.";
 "config.deepgram_key_missing" = "API key no configurada";
@@ -208,8 +208,6 @@
 "config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
 "config.add" = "Agregar";
 
-/* Streaming Overlay */
-"overlay.streaming" = "Escuchando...";
 "overlay.no_speech" = "No se detecto voz";
 
 /* Errors */

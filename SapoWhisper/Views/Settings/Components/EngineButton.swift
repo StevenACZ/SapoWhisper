@@ -110,7 +110,7 @@ struct EngineButton: View {
         ) {}
 
         EngineButton(
-            engine: .deepgramStreaming,
+            engine: .deepgram,
             isSelected: false,
             isLoading: false,
             loadingProgress: 0,

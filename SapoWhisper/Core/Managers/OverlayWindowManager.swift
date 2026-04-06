@@ -139,12 +139,6 @@ class OverlayWindowManager: ObservableObject {
             state = newState
             show()
         } else if overlayWindow != nil {
-            // Resize if size changed (streaming ↔ normal)
-            let isNewStreaming: Bool = { if case .streaming = newState { return true }; return false }()
-            let isOldStreaming: Bool = { if case .streaming = state { return true }; return false }()
-            if isNewStreaming != isOldStreaming {
-                resizeWindow(to: newState)
-            }
             state = newState
         } else {
             state = newState
@@ -180,7 +174,7 @@ class OverlayWindowManager: ObservableObject {
     func showDeviceDetected(deviceName: String, autoDismissAfter delay: TimeInterval = 2.5) {
         // Don't interrupt active recording/transcribing states
         switch state {
-        case .recording, .transcribing, .paused, .streaming:
+        case .recording, .transcribing, .paused:
             return
         default:
             break
@@ -196,22 +190,6 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Updates the streaming overlay with new partial text
-    func updateStreamingText(_ text: String, duration: TimeInterval) {
-        if case .streaming = state {
-            state = .streaming(partialText: text, duration: duration)
-        }
-    }
-
-    /// Updates the streaming duration for overlay
-    func updateStreamingDuration(_ duration: TimeInterval) {
-        if case .streaming(let text, _) = state {
-            state = .streaming(partialText: text, duration: duration)
-        }
-    }
-
-    /// Resize the overlay window — no-op since all states use the same size
-    private func resizeWindow(to newState: RecordingOverlayState) {}
 
     /// Muestra un error
     func showError(message: String, autoDismissAfter delay: TimeInterval = 3.0) {

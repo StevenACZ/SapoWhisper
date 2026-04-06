@@ -28,25 +28,6 @@ class AudioRecorder: ObservableObject {
     /// UID del dispositivo de audio seleccionado
     var selectedDeviceUID: String = "default"
 
-    // Fix #4: Thread-safe callback for streaming
-    private let bufferCallbackLock = NSLock()
-    private var _onAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
-
-    /// Callback for streaming: provides raw audio buffers in real-time
-    /// Set before calling startRecording() when using streaming engines
-    var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)? {
-        get {
-            bufferCallbackLock.lock()
-            defer { bufferCallbackLock.unlock() }
-            return _onAudioBuffer
-        }
-        set {
-            bufferCallbackLock.lock()
-            defer { bufferCallbackLock.unlock() }
-            _onAudioBuffer = newValue
-        }
-    }
-
     /// Formato de audio requerido por Whisper: 16kHz, mono, float32
     private var recordingFormat: AVAudioFormat {
         AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
@@ -168,11 +149,6 @@ class AudioRecorder: ObservableObject {
 
             do {
                 try audioFile.write(from: convertedBuffer)
-                // Send buffer to streaming transcriber if callback is set
-                bufferCallbackLock.lock()
-                let callback = _onAudioBuffer
-                bufferCallbackLock.unlock()
-                callback?(convertedBuffer)
             } catch {
                 print("❌ Error escribiendo audio: \(error)")
             }
@@ -224,7 +200,6 @@ class AudioRecorder: ObservableObject {
         audioEngine = nil
 
         audioFile = nil
-        onAudioBuffer = nil
         isRecording = false
         isPaused = false
 
