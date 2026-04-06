@@ -27,6 +27,7 @@ class TranscriptionHistoryManager {
         let dbPath = appDir.appendingPathComponent("history.db").path
         if sqlite3_open(dbPath, &db) == SQLITE_OK {
             createTable()
+            migrateSchema()
             print("History DB opened: \(dbPath)")
         } else {
             print("Failed to open history DB")
@@ -35,6 +36,13 @@ class TranscriptionHistoryManager {
 
     deinit {
         sqlite3_close(db)
+    }
+
+    private func migrateSchema() {
+        // Add is_favorite column if not exists
+        let sql = "ALTER TABLE transcriptions ADD COLUMN is_favorite INTEGER DEFAULT 0;"
+        // ALTER TABLE fails silently if column exists — safe to run every launch
+        sqlite3_exec(db, sql, nil, nil, nil)
     }
 
     private func createTable() {
@@ -155,6 +163,87 @@ class TranscriptionHistoryManager {
 
         // 3. Delete audio files (after DB is clean)
         for path in pathsToDelete {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+    }
+
+    // MARK: - History View Methods
+
+    /// Fetch all transcription entries, newest first
+    func fetchAll() -> [HistoryEntry] {
+        let sql = "SELECT id, timestamp, engine, language, duration_seconds, transcription, audio_path, status, is_favorite FROM transcriptions ORDER BY timestamp DESC;"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+
+        var entries: [HistoryEntry] = []
+        let formatter = ISO8601DateFormatter()
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = sqlite3_column_int64(stmt, 0)
+            let timestampStr = String(cString: sqlite3_column_text(stmt, 1))
+            let engine = String(cString: sqlite3_column_text(stmt, 2))
+            let language = String(cString: sqlite3_column_text(stmt, 3))
+            let duration = sqlite3_column_double(stmt, 4)
+            let text = String(cString: sqlite3_column_text(stmt, 5))
+            let audioPath: String? = sqlite3_column_type(stmt, 6) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 6)) : nil
+            let status = String(cString: sqlite3_column_text(stmt, 7))
+            let isFavorite = sqlite3_column_int(stmt, 8) != 0
+
+            let timestamp = formatter.date(from: timestampStr) ?? Date()
+
+            entries.append(HistoryEntry(
+                id: id, timestamp: timestamp, engine: engine, language: language,
+                duration: duration, text: text, audioPath: audioPath,
+                status: status, isFavorite: isFavorite
+            ))
+        }
+        return entries
+    }
+
+    /// Toggle the favorite status of an entry. Returns new state.
+    @discardableResult
+    func toggleFavorite(id: Int64) -> Bool {
+        let updateSql = "UPDATE transcriptions SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END WHERE id = ?;"
+        var updateStmt: OpaquePointer?
+        defer { sqlite3_finalize(updateStmt) }
+        guard sqlite3_prepare_v2(db, updateSql, -1, &updateStmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_int64(updateStmt, 1, id)
+        sqlite3_step(updateStmt)
+
+        // Read new state
+        let selectSql = "SELECT is_favorite FROM transcriptions WHERE id = ?;"
+        var selectStmt: OpaquePointer?
+        defer { sqlite3_finalize(selectStmt) }
+        guard sqlite3_prepare_v2(db, selectSql, -1, &selectStmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_int64(selectStmt, 1, id)
+        guard sqlite3_step(selectStmt) == SQLITE_ROW else { return false }
+        return sqlite3_column_int(selectStmt, 0) != 0
+    }
+
+    /// Delete a transcription entry and its audio file
+    func delete(id: Int64) {
+        // Get audio path first
+        let selectSql = "SELECT audio_path FROM transcriptions WHERE id = ?;"
+        var selectStmt: OpaquePointer?
+        sqlite3_prepare_v2(db, selectSql, -1, &selectStmt, nil)
+        sqlite3_bind_int64(selectStmt, 1, id)
+        var audioPath: String?
+        if sqlite3_step(selectStmt) == SQLITE_ROW, sqlite3_column_type(selectStmt, 0) != SQLITE_NULL {
+            audioPath = String(cString: sqlite3_column_text(selectStmt, 0))
+        }
+        sqlite3_finalize(selectStmt)
+
+        // Delete DB entry
+        let deleteSql = "DELETE FROM transcriptions WHERE id = ?;"
+        var deleteStmt: OpaquePointer?
+        defer { sqlite3_finalize(deleteStmt) }
+        guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_int64(deleteStmt, 1, id)
+        sqlite3_step(deleteStmt)
+
+        // Delete audio file
+        if let path = audioPath {
             try? FileManager.default.removeItem(atPath: path)
         }
     }

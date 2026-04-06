@@ -18,6 +18,47 @@
 "menu.auto_paste" = "Auto-paste text";
 "menu.auto_paste_sub" = "Pastes automatically when finished";
 "menu.settings" = "Settings";
+"menu.history" = "History";
+
+/* History */
+"history.title" = "History";
+"history.search" = "Search transcriptions...";
+"history.empty" = "No history";
+"history.empty_sub" = "Transcriptions will appear here";
+"history.copy" = "Copy";
+"history.retranscribe" = "Re-transcribe";
+"history.failed" = "Failed";
+"history.failed_detail" = "Transcription could not be completed. Try again if audio is saved.";
+"history.pinned" = "Pinned";
+"history.today" = "Today";
+"history.yesterday" = "Yesterday";
+"history.this_week" = "This Week";
+"history.this_month" = "This Month";
+"history.older" = "Older";
+"history.select_transcription" = "Select a transcription";
+"history.select_transcription_sub" = "Choose an entry from the sidebar to view the full text";
+"history.copied" = "Copied!";
+"history.retranscribe_with" = "Re-transcribe with...";
+"history.pin" = "Pin";
+"history.unpin" = "Unpin";
+"history.delete" = "Delete";
+"history.delete_confirm" = "Delete transcription?";
+"history.delete_confirm_message" = "This action cannot be undone. Saved audio will also be deleted.";
+"history.no_results" = "No results";
+"history.details" = "Details";
+"history.actions" = "Actions";
+"history.engine" = "Engine";
+"history.language" = "Language";
+"history.duration" = "Duration";
+"history.words" = "Words";
+"history.audio" = "Audio";
+"history.audio_saved" = "Saved";
+"history.audio_none" = "Not saved";
+"history.status" = "Status";
+"history.status_completed" = "Completed";
+"history.status_failed" = "Failed";
+"history.play" = "Play";
+"history.pause" = "Pause";
 
 /* Settings */
 "settings.general" = "General";

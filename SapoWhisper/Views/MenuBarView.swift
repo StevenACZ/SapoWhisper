@@ -272,6 +272,18 @@ struct MenuBarView: View {
             Divider()
                 .padding(.horizontal)
             
+            // Historial
+            ActionRow(
+                icon: "clock.arrow.circlepath",
+                title: "menu.history".localized,
+                subtitle: nil
+            ) {
+                openHistoryWindow()
+            }
+
+            Divider()
+                .padding(.horizontal)
+
             // Configuración - Abre ventana separada
             ActionRow(
                 icon: "gearshape",
@@ -299,6 +311,12 @@ struct MenuBarView: View {
     
     // MARK: - Helpers
     
+    private func openHistoryWindow() {
+        NSApp.keyWindow?.close()
+        openWindow(id: "history")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
     private func openSettingsWindow() {
         // Cerrar el popup del menu bar
         NSApp.keyWindow?.close()

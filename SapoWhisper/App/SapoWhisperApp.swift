@@ -33,5 +33,16 @@ struct SapoWhisperApp: App {
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unified(showsTitle: false))
         .defaultPosition(.center)
+
+        // Ventana de Historial
+        Window("", id: "history") {
+            HistoryView()
+                .environment(\.locale, localizationManager.locale)
+                .id(localizationManager.language)
+        }
+        .windowResizability(.contentMinSize)
+        .windowToolbarStyle(.unified(showsTitle: false))
+        .defaultPosition(.center)
+        .defaultSize(width: 900, height: 560)
     }
 }
