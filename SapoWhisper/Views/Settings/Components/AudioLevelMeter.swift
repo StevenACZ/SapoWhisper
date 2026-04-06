@@ -155,7 +155,7 @@ struct AudioLevelMeterView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
-                        Slider(value: $gain, in: 0.5...3.0, step: 0.1)
+                        Slider(value: $gain, in: 0.5...10.0, step: 0.1)
                             .controlSize(.small)
                             .onChange(of: gain) { _, newValue in
                                 monitor.gain = Float(newValue)
