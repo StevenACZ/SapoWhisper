@@ -27,6 +27,10 @@
 "history.empty_sub" = "Las transcripciones aparecerán aquí";
 "history.copy" = "Copiar";
 "history.retranscribe" = "Re-transcribir";
+"history.retranscribe_create" = "Crear nueva transcripción";
+"history.retranscribing" = "Re-transcribiendo...";
+"history.retranscribe_sheet_title" = "Re-transcribir audio";
+"history.retranscribe_sheet_subtitle" = "Se creará una nueva entrada sin reemplazar la original.";
 "history.failed" = "Falló";
 "history.failed_detail" = "La transcripción no pudo completarse. Intenta de nuevo si el audio está guardado.";
 "history.pinned" = "Fijados";
@@ -39,6 +43,11 @@
 "history.select_transcription_sub" = "Elige una entrada del sidebar para ver el texto completo";
 "history.copied" = "¡Copiado!";
 "history.retranscribe_with" = "Re-transcribir con...";
+"history.download_audio" = "Descargar audio";
+"history.audio_missing_error" = "No se encontró el archivo de audio de esta entrada.";
+"history.action_failed" = "No se pudo completar la acción";
+"history.current_selection" = "Actual";
+"history.engine_unavailable" = "No disponible";
 "history.pin" = "Fijar";
 "history.unpin" = "Desfijar";
 "history.delete" = "Eliminar";
@@ -59,6 +68,14 @@
 "history.status_failed" = "Fallido";
 "history.play" = "Reproducir";
 "history.pause" = "Pausar";
+"history.filter_all" = "Todos";
+"history.filter_deepgram" = "Deepgram";
+"history.filter_google" = "Google";
+"history.filter_whisper" = "Whisper";
+"history.filter_apple" = "Apple";
+
+"common.cancel" = "Cancelar";
+"common.ok" = "OK";
 
 /* Settings */
 "settings.general" = "General";

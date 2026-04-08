@@ -12,6 +12,16 @@ import Combine
 @MainActor
 class SapoWhisperViewModel: ObservableObject {
 
+    struct HistoryRetranscriptionResult {
+        let entryId: Int64
+        let errorMessage: String?
+    }
+
+    private struct PersistedHistoryEntry {
+        let id: Int64
+        let audioURL: URL?
+    }
+
     // MARK: - Published Properties
 
     @Published private(set) var appState: AppState = .idle
@@ -43,7 +53,7 @@ class SapoWhisperViewModel: ObservableObject {
     let googleCloudTranscriber = GoogleCloudTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
-    let deepgramTranscriber = DeepgramStreamingTranscriber()
+    let deepgramTranscriber = DeepgramBatchTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
 
     // Retry support
@@ -68,6 +78,19 @@ class SapoWhisperViewModel: ObservableObject {
 
     var isWhisperKitReady: Bool {
         whisperKitTranscriber.isModelLoaded
+    }
+
+    func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
+        switch engine {
+        case .appleOnline:
+            return transcriber.isModelLoaded
+        case .whisperLocal:
+            return whisperKitTranscriber.isModelLoaded
+        case .googleCloud:
+            return googleCloudTranscriber.isConfigured
+        case .deepgram:
+            return deepgramTranscriber.isConfigured
+        }
     }
 
     // MARK: - Private Properties
@@ -408,17 +431,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// Inicia la grabacion
     func startRecording() {
         // Verificar que el motor actual tiene modelo cargado
-        let isReady: Bool
-        switch currentEngine {
-        case .appleOnline:
-            isReady = transcriber.isModelLoaded
-        case .whisperLocal:
-            isReady = whisperKitTranscriber.isModelLoaded
-        case .googleCloud:
-            isReady = googleCloudTranscriber.isConfigured
-        case .deepgram:
-            isReady = deepgramTranscriber.isConfigured
-        }
+        let isReady = isEngineReady(currentEngine)
 
         guard isReady else {
             appState = .noModel
@@ -499,18 +512,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         Task {
             do {
-                let transcription: String
-
-                switch engine {
-                case .appleOnline:
-                    transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
-                case .whisperLocal:
-                    transcription = try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
-                case .googleCloud:
-                    transcription = try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
-                case .deepgram:
-                    transcription = try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
-                }
+                let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
 
                 let transcribeElapsed = (CFAbsoluteTimeGetCurrent() - stopTime) * 1000
                 print("⏱️ [stop→result] \(String(format: "%.0f", transcribeElapsed))ms total transcription")
@@ -529,10 +531,17 @@ class SapoWhisperViewModel: ObservableObject {
                     SoundManager.shared.play(.success)
                 }
 
-                // Save to history and clean up
-                historyManager.save(engine: engine.rawValue, language: language, duration: duration, text: transcription)
+                _ = persistHistoryEntry(
+                    from: audioURL,
+                    engine: engine,
+                    language: language,
+                    duration: duration,
+                    text: transcription,
+                    status: "completed"
+                )
                 audioRecorder.deleteRecording(at: audioURL)
                 lastFailedAudioURL = nil
+                lastFailedHistoryId = nil
                 print("Transcripcion completada (\(engine.displayName)): \(transcription.prefix(50))...")
 
             } catch {
@@ -542,11 +551,16 @@ class SapoWhisperViewModel: ObservableObject {
                     SoundManager.shared.play(.error)
                 }
 
-                // Save audio for retry
-                if let savedPath = historyManager.saveAudioFile(from: audioURL) {
-                    lastFailedHistoryId = historyManager.save(engine: engine.rawValue, language: language, duration: duration, text: "", audioPath: savedPath, status: "failed")
-                    lastFailedAudioURL = URL(fileURLWithPath: savedPath)
-                }
+                let persistedEntry = persistHistoryEntry(
+                    from: audioURL,
+                    engine: engine,
+                    language: language,
+                    duration: duration,
+                    text: "",
+                    status: "failed"
+                )
+                lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
+                lastFailedAudioURL = persistedEntry.audioURL
                 audioRecorder.deleteRecording(at: audioURL)
                 print("Error en transcripcion: \(error)")
             }
@@ -599,17 +613,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         Task {
             do {
-                let transcription: String
-                switch engine {
-                case .appleOnline:
-                    transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
-                case .whisperLocal:
-                    transcription = try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
-                case .googleCloud:
-                    transcription = try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
-                case .deepgram:
-                    transcription = try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
-                }
+                let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
 
                 lastTranscription = transcription
                 PasteManager.copyToClipboard(transcription)
@@ -634,6 +638,48 @@ class SapoWhisperViewModel: ObservableObject {
                 overlayManager.showError(message: error.localizedDescription)
                 if playSoundEnabled { SoundManager.shared.play(.error) }
             }
+        }
+    }
+
+    func retranscribeHistoryEntry(_ entry: HistoryEntry, using engine: TranscriptionEngine) async -> HistoryRetranscriptionResult {
+        guard let audioPath = entry.audioPath, FileManager.default.fileExists(atPath: audioPath) else {
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                errorMessage: "history.audio_missing_error".localized
+            )
+        }
+
+        let audioURL = URL(fileURLWithPath: audioPath)
+
+        do {
+            let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
+            let persistedEntry = persistHistoryEntry(
+                from: audioURL,
+                engine: engine,
+                language: entry.language,
+                duration: entry.duration,
+                text: transcription,
+                status: "completed"
+            )
+
+            return HistoryRetranscriptionResult(
+                entryId: persistedEntry.id > 0 ? persistedEntry.id : entry.id,
+                errorMessage: nil
+            )
+        } catch {
+            let persistedEntry = persistHistoryEntry(
+                from: audioURL,
+                engine: engine,
+                language: entry.language,
+                duration: entry.duration,
+                text: "",
+                status: "failed"
+            )
+
+            return HistoryRetranscriptionResult(
+                entryId: persistedEntry.id > 0 ? persistedEntry.id : entry.id,
+                errorMessage: error.localizedDescription
+            )
         }
     }
     
@@ -689,6 +735,43 @@ class SapoWhisperViewModel: ObservableObject {
             }
             print("Error al iniciar grabacion: \(error)")
         }
+    }
+
+    private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
+        switch engine {
+        case .appleOnline:
+            return try await transcriber.transcribe(audioURL: audioURL, language: language)
+        case .whisperLocal:
+            return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .googleCloud:
+            return try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .deepgram:
+            return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+        }
+    }
+
+    private func persistHistoryEntry(
+        from sourceURL: URL,
+        engine: TranscriptionEngine,
+        language: String,
+        duration: TimeInterval,
+        text: String,
+        status: String
+    ) -> PersistedHistoryEntry {
+        let savedPath = historyManager.saveAudioFile(from: sourceURL)
+        let historyID = historyManager.save(
+            engine: engine.displayName,
+            language: language,
+            duration: duration,
+            text: text,
+            audioPath: savedPath,
+            status: status
+        )
+
+        return PersistedHistoryEntry(
+            id: historyID,
+            audioURL: savedPath.map { URL(fileURLWithPath: $0) }
+        )
     }
     
     /// Texto del estado actual

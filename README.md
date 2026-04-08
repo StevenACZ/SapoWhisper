@@ -4,8 +4,8 @@
 
 A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`, speak, and the text is automatically pasted wherever you're typing.
 
-![macOS](https://img.shields.io/badge/macOS-13.0+-black?logo=apple)
-![Swift](https://img.shields.io/badge/Swift-5.9-orange?logo=swift)
+![macOS](https://img.shields.io/badge/macOS-14.0+-black?logo=apple)
+![Swift](https://img.shields.io/badge/Swift-6.0-orange?logo=swift)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
@@ -16,10 +16,12 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 - 🔒 **100% private** — Local transcription option with WhisperKit (no internet needed)
 - 🎙️ **Deepgram Nova-3** — High accuracy cloud transcription
 - ☁️ **Google Cloud Chirp 3** — Maximum accuracy with Google's latest STT model
-- 📋 **Transcription history** — Browse, search, pin, and replay past transcriptions
+- 📋 **Transcription history** — Browse, search, pin, replay, and re-transcribe past recordings
 - ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
 - 🌐 **Bilingual** — Supports Spanish and English
 - 🎨 **Visual overlay** — Compact floating pill shows recording status
+- 🔄 **Re-transcribe** — Re-process any saved recording with a different engine
+- 💾 **Audio download** — Export your recordings from history
 
 ---
 
@@ -27,7 +29,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 
 ### Requirements
 
-- macOS 13.0 (Ventura) or later
+- macOS 14.0 (Sonoma) or later
 - Apple Silicon (M1/M2/M3/M4/M5) recommended
 
 ### Steps
@@ -48,6 +50,14 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 
 > 💡 You can change the shortcut in Settings → Hotkey
 
+### Pause & Resume
+
+Click the pause button on the overlay pill to pause recording. Click again to resume — audio segments are concatenated seamlessly.
+
+### Multi-Monitor
+
+The overlay automatically appears on the screen where your mouse cursor is.
+
 ---
 
 ## ⚙️ Transcription Engines
@@ -64,6 +74,7 @@ Choose your preferred engine in **Settings → Engine**:
 
 - 🔒 **100% offline** — Your audio never leaves your Mac
 - 📥 Models download automatically inside the app
+- 🧠 Model memory released when switching to a cloud engine
 
 | Model                 | Size   | Speed     | Accuracy   |
 | --------------------- | ------ | --------- | ---------- |
@@ -118,11 +129,36 @@ SapoWhisper will automatically detect your credentials. That's it!
 Access your past transcriptions from the menu bar → **History**.
 
 - **Browse** — Entries grouped by date (Today, Yesterday, This Week, etc.)
-- **Search** — Filter by text content
-- **Engine filter** — Show only Deepgram, Google Cloud, WhisperKit, or Apple Speech entries
+- **Search** — Filter by text content (debounced, SQL-powered)
+- **Engine filter** — Show only entries from a specific engine with colored indicators
 - **Pin** — Mark important transcriptions for quick access
-- **Audio playback** — Replay saved audio recordings
+- **Audio playback** — Replay saved audio recordings inline
+- **Re-transcribe** — Pick any engine and re-process a saved recording
+- **Download audio** — Export recordings to disk
 - **Inspector** — View metadata (engine, language, duration, word count)
+- **Real-time** — Window auto-refreshes after new transcriptions
+
+> 💡 Audio is saved for all transcriptions (success and failure), so you can always re-transcribe or download later.
+
+---
+
+## ⚡ Performance
+
+SapoWhisper is optimized for low-latency operation:
+
+| Metric | Time |
+|--------|------|
+| Hotkey → overlay visible | ~30ms |
+| Overlay → audio recording | ~30ms |
+| Total startup | ~240ms |
+| Stop → text pasted | ~1.9s (Deepgram) |
+
+Key optimizations:
+- Overlay window pre-warmed on app launch
+- Single `AVAudioEngine` for both recording and level metering
+- Sound effects pre-cached in memory
+- Audio recorded as int16 WAV (compact, no conversion needed for cloud upload)
+- Adaptive auto-paste (polls for target app instead of fixed delay)
 
 ---
 

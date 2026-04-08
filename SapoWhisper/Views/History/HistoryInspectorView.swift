@@ -9,6 +9,7 @@ struct HistoryInspectorView: View {
     let entry: HistoryEntry
     let onCopy: () -> Void
     let onRetranscribe: () -> Void
+    let onDownloadAudio: () -> Void
     let onTogglePin: () -> Void
     let onDelete: () -> Void
 
@@ -32,7 +33,7 @@ struct HistoryInspectorView: View {
             SectionHeader(title: "history.details".localized)
 
             VStack(alignment: .leading, spacing: 10) {
-                MetadataRow(icon: "cpu", label: "history.engine".localized, value: entry.engine)
+                MetadataRow(icon: "cpu", label: "history.engine".localized, value: entry.displayEngineName)
                 MetadataRow(icon: "globe", label: "history.language".localized, value: entry.language.uppercased())
                 MetadataRow(icon: "clock", label: "history.duration".localized, value: entry.formattedDuration)
                 MetadataRow(icon: "text.word.spacing", label: "history.words".localized, value: "\(entry.wordCount)")
@@ -69,6 +70,12 @@ struct HistoryInspectorView: View {
                     label: "history.retranscribe_with".localized,
                     icon: "arrow.clockwise",
                     action: onRetranscribe
+                )
+
+                InspectorButton(
+                    label: "history.download_audio".localized,
+                    icon: "square.and.arrow.down",
+                    action: onDownloadAudio
                 )
             }
 
@@ -171,6 +178,7 @@ private struct InspectorButton: View {
         entry: HistoryEntry.mockData[0],
         onCopy: {},
         onRetranscribe: {},
+        onDownloadAudio: {},
         onTogglePin: {},
         onDelete: {}
     )

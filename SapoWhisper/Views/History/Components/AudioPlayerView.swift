@@ -56,10 +56,18 @@ struct AudioPlayerView: View {
         .background(.quaternary.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onAppear(perform: loadAudio)
+        .onChange(of: audioPath) { _, _ in
+            resetAndReload()
+        }
         .onDisappear(perform: cleanup)
     }
 
     private func loadAudio() {
+        cleanup()
+        currentTime = 0
+        duration = 0
+        isPlaying = false
+
         let url = URL(fileURLWithPath: audioPath)
         guard FileManager.default.fileExists(atPath: url.path) else { return }
 
@@ -101,7 +109,13 @@ struct AudioPlayerView: View {
 
     private func cleanup() {
         timer?.invalidate()
+        timer = nil
         player?.stop()
+        player = nil
+    }
+
+    private func resetAndReload() {
+        loadAudio()
     }
 
     private func formatTime(_ time: TimeInterval) -> String {

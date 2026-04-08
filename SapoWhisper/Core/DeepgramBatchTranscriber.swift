@@ -1,5 +1,5 @@
 //
-//  DeepgramStreamingTranscriber.swift
+//  DeepgramBatchTranscriber.swift
 //  SapoWhisper
 //
 
@@ -8,7 +8,7 @@ import Combine
 import Foundation
 
 /// Batch transcription via Deepgram Nova-3 REST API
-class DeepgramStreamingTranscriber: ObservableObject {
+class DeepgramBatchTranscriber: ObservableObject {
 
     @Published var isTranscribing: Bool = false
 

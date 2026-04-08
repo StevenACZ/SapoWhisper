@@ -3,6 +3,7 @@
 //  SapoWhisper
 //
 
+import AppKit
 import SwiftUI
 
 /// Sidebar list with date-grouped sections and search
@@ -41,13 +42,21 @@ struct HistorySidebarView: View {
                 .background(.quaternary.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                Picker("Filter", selection: $engineFilter) {
-                    ForEach(EngineFilter.allCases) { filter in
-                        Text(filter.displayName).tag(filter)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(EngineFilter.allCases) { filter in
+                            EngineFilterChip(
+                                filter: filter,
+                                isSelected: engineFilter == filter
+                            ) {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    engineFilter = filter
+                                }
+                            }
+                        }
                     }
+                    .padding(.vertical, 1)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -121,6 +130,69 @@ struct HistorySidebarView: View {
         } label: {
             Label("history.delete".localized, systemImage: "trash")
         }
+    }
+}
+
+private struct EngineFilterChip: View {
+    let filter: EngineFilter
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: filter.iconName)
+                    .font(.caption)
+                Text(filter.displayName)
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(isSelected ? Color.white : foregroundColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                Capsule()
+                    .fill(isSelected ? selectedBackground : Color(NSColor.controlBackgroundColor))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(borderColor, lineWidth: isSelected ? 0 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var foregroundColor: Color {
+        switch filter {
+        case .all:
+            return .primary
+        case .deepgram:
+            return .blue
+        case .google:
+            return .orange
+        case .whisper:
+            return .purple
+        case .apple:
+            return .green
+        }
+    }
+
+    private var selectedBackground: Color {
+        switch filter {
+        case .all:
+            return .accentColor
+        case .deepgram:
+            return .blue
+        case .google:
+            return .orange
+        case .whisper:
+            return .purple
+        case .apple:
+            return .green
+        }
+    }
+
+    private var borderColor: Color {
+        foregroundColor.opacity(0.18)
     }
 }
 

@@ -22,12 +22,13 @@ struct HistoryDetailView: View {
 
                 if entry.audioFileExists, let path = entry.audioPath {
                     AudioPlayerView(audioPath: path)
+                        .id(path)
                 }
             }
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .navigationTitle(entry.engine)
+        .navigationTitle(entry.displayEngineName)
         .navigationSubtitle(entry.timestamp.formatted(.relative(presentation: .named)))
     }
 
@@ -41,7 +42,7 @@ struct HistoryDetailView: View {
                     .fill(engineColor)
                     .frame(width: 10, height: 10)
 
-                Text(entry.engine)
+                Text(entry.displayEngineName)
                     .font(.subheadline)
                     .fontWeight(.medium)
             }

@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Native Sidebar Background
 
@@ -23,6 +24,7 @@ private struct SidebarMaterial: NSViewRepresentable {
 
 /// Main history window — custom HStack sidebar layout
 struct HistoryView: View {
+    @ObservedObject var viewModel: SapoWhisperViewModel
     @State private var entries: [HistoryEntry] = []
     @State private var selectedEntry: HistoryEntry?
     @State private var searchText = ""
@@ -31,6 +33,11 @@ struct HistoryView: View {
     @State private var showInspector = false
     @State private var showDeleteConfirmation = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var retranscribeEntry: HistoryEntry?
+    @State private var selectedRetranscribeEngine: TranscriptionEngine = .appleOnline
+    @State private var isRetranscribing = false
+    @State private var showErrorAlert = false
+    @State private var actionErrorMessage = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -60,6 +67,7 @@ struct HistoryView: View {
                                 entry: entry,
                                 onCopy: { PasteManager.copyToClipboard(entry.text) },
                                 onRetranscribe: { handleRetranscribe(entry) },
+                                onDownloadAudio: { handleDownloadAudio(entry) },
                                 onTogglePin: { handleTogglePin(entry) },
                                 onDelete: { showDeleteConfirmation = true }
                             )
@@ -93,6 +101,9 @@ struct HistoryView: View {
         .onChange(of: engineFilter) { _, _ in
             loadEntries()
         }
+        .onReceive(NotificationCenter.default.publisher(for: TranscriptionHistoryManager.didChangeNotification)) { _ in
+            loadEntries()
+        }
         .confirmationDialog(
             "history.delete_confirm".localized,
             isPresented: $showDeleteConfirmation,
@@ -105,6 +116,26 @@ struct HistoryView: View {
             }
         } message: {
             Text("history.delete_confirm_message".localized)
+        }
+        .sheet(item: $retranscribeEntry) { entry in
+            HistoryRetranscribeSheet(
+                entry: entry,
+                currentEngine: viewModel.currentEngine,
+                selectedEngine: $selectedRetranscribeEngine,
+                isProcessing: isRetranscribing,
+                isEngineReady: viewModel.isEngineReady
+            ) {
+                performRetranscription(for: entry)
+            } onCancel: {
+                if !isRetranscribing {
+                    retranscribeEntry = nil
+                }
+            }
+        }
+        .alert("history.action_failed".localized, isPresented: $showErrorAlert) {
+            Button("common.ok".localized, role: .cancel) {}
+        } message: {
+            Text(actionErrorMessage)
         }
         .onAppear(perform: loadEntries)
         .onDisappear {
@@ -149,14 +180,84 @@ struct HistoryView: View {
     }
 
     private func handleRetranscribe(_ entry: HistoryEntry) {
-        // TODO: Open engine picker and re-process audio
-        print("Re-transcribe entry \(entry.id) with different engine")
+        selectedRetranscribeEngine = viewModel.currentEngine
+        retranscribeEntry = entry
+    }
+
+    private func performRetranscription(for entry: HistoryEntry) {
+        isRetranscribing = true
+
+        Task {
+            let result = await viewModel.retranscribeHistoryEntry(entry, using: selectedRetranscribeEngine)
+
+            await MainActor.run {
+                isRetranscribing = false
+                retranscribeEntry = nil
+
+                if engineFilter != .all && !engineFilter.matches(selectedRetranscribeEngine.displayName) {
+                    engineFilter = .all
+                }
+
+                loadEntries()
+                selectedEntry = entries.first { $0.id == result.entryId }
+
+                if let errorMessage = result.errorMessage {
+                    presentActionError(errorMessage)
+                }
+            }
+        }
+    }
+
+    private func handleDownloadAudio(_ entry: HistoryEntry) {
+        guard let audioPath = entry.audioPath, entry.audioFileExists else {
+            presentActionError("history.audio_missing_error".localized)
+            return
+        }
+
+        let sourceURL = URL(fileURLWithPath: audioPath)
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = exportFileName(for: entry, pathExtension: sourceURL.pathExtension)
+
+        if let type = UTType(filenameExtension: sourceURL.pathExtension) {
+            panel.allowedContentTypes = [type]
+        }
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        } catch {
+            presentActionError(error.localizedDescription)
+        }
+    }
+
+    private func exportFileName(for entry: HistoryEntry, pathExtension: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+
+        let engineName = entry.displayEngineName
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+
+        let sanitizedExtension = pathExtension.isEmpty ? "wav" : pathExtension
+        return "sapowhisper-\(engineName)-\(formatter.string(from: entry.timestamp)).\(sanitizedExtension)"
+    }
+
+    private func presentActionError(_ message: String) {
+        actionErrorMessage = message
+        showErrorAlert = true
     }
 }
 
 // MARK: - Previews
 
 #Preview("History Window") {
-    HistoryView()
+    HistoryView(viewModel: SapoWhisperViewModel())
         .frame(width: 900, height: 560)
 }

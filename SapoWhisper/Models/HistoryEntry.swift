@@ -30,6 +30,21 @@ struct HistoryEntry: Identifiable, Hashable {
         guard let path = audioPath else { return false }
         return FileManager.default.fileExists(atPath: path)
     }
+
+    var displayEngineName: String {
+        switch engine.lowercased() {
+        case let value where value.contains("deepgram"):
+            return "Deepgram"
+        case let value where value.contains("google"):
+            return "Google Cloud"
+        case let value where value.contains("whisper"):
+            return "Whisper"
+        case let value where value.contains("apple"):
+            return "Apple Speech"
+        default:
+            return engine.capitalized
+        }
+    }
 }
 
 // MARK: - Date Grouping
@@ -67,11 +82,21 @@ enum EngineFilter: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .all: return "All"
-        case .deepgram: return "DG"
-        case .google: return "GC"
-        case .whisper: return "WK"
-        case .apple: return "AS"
+        case .all: return "history.filter_all".localized
+        case .deepgram: return "history.filter_deepgram".localized
+        case .google: return "history.filter_google".localized
+        case .whisper: return "history.filter_whisper".localized
+        case .apple: return "history.filter_apple".localized
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .all: return "line.3.horizontal.decrease.circle"
+        case .deepgram: return "waveform.badge.mic"
+        case .google: return "cloud"
+        case .whisper: return "waveform"
+        case .apple: return "apple.logo"
         }
     }
 

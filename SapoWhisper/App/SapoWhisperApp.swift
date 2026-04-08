@@ -36,7 +36,7 @@ struct SapoWhisperApp: App {
 
         // Ventana de Historial
         Window("", id: "history") {
-            HistoryView()
+            HistoryView(viewModel: viewModel)
                 .environment(\.locale, localizationManager.locale)
                 .id(localizationManager.language)
         }

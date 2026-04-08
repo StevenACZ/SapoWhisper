@@ -27,6 +27,10 @@
 "history.empty_sub" = "Transcriptions will appear here";
 "history.copy" = "Copy";
 "history.retranscribe" = "Re-transcribe";
+"history.retranscribe_create" = "Create new transcription";
+"history.retranscribing" = "Re-transcribing...";
+"history.retranscribe_sheet_title" = "Re-transcribe audio";
+"history.retranscribe_sheet_subtitle" = "A new entry will be created without replacing the original.";
 "history.failed" = "Failed";
 "history.failed_detail" = "Transcription could not be completed. Try again if audio is saved.";
 "history.pinned" = "Pinned";
@@ -39,6 +43,11 @@
 "history.select_transcription_sub" = "Choose an entry from the sidebar to view the full text";
 "history.copied" = "Copied!";
 "history.retranscribe_with" = "Re-transcribe with...";
+"history.download_audio" = "Download audio";
+"history.audio_missing_error" = "The audio file for this entry could not be found.";
+"history.action_failed" = "Action could not be completed";
+"history.current_selection" = "Current";
+"history.engine_unavailable" = "Unavailable";
 "history.pin" = "Pin";
 "history.unpin" = "Unpin";
 "history.delete" = "Delete";
@@ -59,6 +68,14 @@
 "history.status_failed" = "Failed";
 "history.play" = "Play";
 "history.pause" = "Pause";
+"history.filter_all" = "All";
+"history.filter_deepgram" = "Deepgram";
+"history.filter_google" = "Google";
+"history.filter_whisper" = "Whisper";
+"history.filter_apple" = "Apple";
+
+"common.cancel" = "Cancel";
+"common.ok" = "OK";
 
 /* Settings */
 "settings.general" = "General";

@@ -14,7 +14,7 @@ struct HistoryRowView: View {
         VStack(alignment: .leading, spacing: 5) {
             // Top: engine indicator + relative time
             HStack(spacing: 6) {
-                EngineIndicator(engine: entry.engine)
+                EngineIndicator(engine: entry.displayEngineName)
 
                 Spacer(minLength: 4)
 
@@ -104,13 +104,7 @@ private struct EngineIndicator: View {
     }
 
     private var shortName: String {
-        switch engine.lowercased() {
-        case let e where e.contains("deepgram"): return "Deepgram"
-        case let e where e.contains("google"): return "Google"
-        case let e where e.contains("whisper"): return "WhisperKit"
-        case let e where e.contains("apple"): return "Apple"
-        default: return engine
-        }
+        engine
     }
 }
 

@@ -11,6 +11,7 @@ import SQLite3
 class TranscriptionHistoryManager {
 
     static let shared = TranscriptionHistoryManager()
+    static let didChangeNotification = Notification.Name("TranscriptionHistoryManager.didChange")
     private static let isoFormatter = ISO8601DateFormatter()
     private static let defaultFetchLimit = 250
 
@@ -114,6 +115,10 @@ class TranscriptionHistoryManager {
         sqlite3_bind_text(stmt, index, cStr, -1, { ptr in free(ptr) })
     }
 
+    private func notifyDidChange() {
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+    }
+
     // MARK: - CRUD
 
     /// Save a transcription entry. Returns the row ID.
@@ -140,7 +145,9 @@ class TranscriptionHistoryManager {
 
         let result = sqlite3_step(stmt)
         guard result == SQLITE_DONE else { return -1 }
-        return sqlite3_last_insert_rowid(db)
+        let rowID = sqlite3_last_insert_rowid(db)
+        notifyDidChange()
+        return rowID
     }
 
     /// Save an audio file to the audio directory. Returns the saved path.
@@ -179,6 +186,7 @@ class TranscriptionHistoryManager {
             sqlite3_bind_int64(stmt, 2, id)
         }
         sqlite3_step(stmt)
+        notifyDidChange()
     }
 
     /// Clean up audio files older than `days`
@@ -211,6 +219,8 @@ class TranscriptionHistoryManager {
         for path in pathsToDelete {
             try? FileManager.default.removeItem(atPath: path)
         }
+
+        notifyDidChange()
     }
 
     // MARK: - History View Methods
@@ -334,7 +344,9 @@ class TranscriptionHistoryManager {
         guard sqlite3_prepare_v2(db, selectSql, -1, &selectStmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_int64(selectStmt, 1, id)
         guard sqlite3_step(selectStmt) == SQLITE_ROW else { return false }
-        return sqlite3_column_int(selectStmt, 0) != 0
+        let newState = sqlite3_column_int(selectStmt, 0) != 0
+        notifyDidChange()
+        return newState
     }
 
     /// Delete a transcription entry and its audio file
@@ -362,6 +374,8 @@ class TranscriptionHistoryManager {
         if let path = audioPath {
             try? FileManager.default.removeItem(atPath: path)
         }
+
+        notifyDidChange()
     }
 
     private func audioDirectorySize() -> Int64 {

@@ -76,12 +76,12 @@ class VocabularyManager: ObservableObject {
 
     // MARK: - Query Parameters for Deepgram
 
-    /// Returns keyterm query items for Deepgram WebSocket URL
+    /// Returns keyterm query items for Deepgram batch REST requests
     func keytermQueryItems() -> [URLQueryItem] {
         keyterms.map { URLQueryItem(name: "keyterm", value: $0) }
     }
 
-    /// Returns replace query items for Deepgram WebSocket URL
+    /// Returns replace query items for Deepgram batch REST requests
     func replaceQueryItems() -> [URLQueryItem] {
         replacements.map { URLQueryItem(name: "replace", value: "\($0.key):\($0.value)") }
     }
