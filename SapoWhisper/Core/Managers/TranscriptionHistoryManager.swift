@@ -39,10 +39,14 @@ class TranscriptionHistoryManager {
     }
 
     private func migrateSchema() {
-        // Add is_favorite column if not exists
+        guard !columnExists(named: "is_favorite", in: "transcriptions") else { return }
+
         let sql = "ALTER TABLE transcriptions ADD COLUMN is_favorite INTEGER DEFAULT 0;"
-        // ALTER TABLE fails silently if column exists — safe to run every launch
-        sqlite3_exec(db, sql, nil, nil, nil)
+        if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
+            if let message = sqlite3_errmsg(db) {
+                print("Failed to migrate history schema: \(String(cString: message))")
+            }
+        }
     }
 
     private func createTable() {
@@ -55,10 +59,28 @@ class TranscriptionHistoryManager {
             duration_seconds REAL NOT NULL,
             transcription TEXT NOT NULL,
             audio_path TEXT,
-            status TEXT NOT NULL DEFAULT 'completed'
+            status TEXT NOT NULL DEFAULT 'completed',
+            is_favorite INTEGER NOT NULL DEFAULT 0
         );
         """
         sqlite3_exec(db, sql, nil, nil, nil)
+    }
+
+    private func columnExists(named columnName: String, in tableName: String) -> Bool {
+        let sql = "PRAGMA table_info(\(tableName));"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let cString = sqlite3_column_text(stmt, 1) else { continue }
+            if String(cString: cString) == columnName {
+                return true
+            }
+        }
+
+        return false
     }
 
     /// Safely bind a Swift String to a SQLite statement parameter.

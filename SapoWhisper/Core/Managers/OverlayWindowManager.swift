@@ -41,41 +41,24 @@ class OverlayWindowManager: ObservableObject {
 
     // MARK: - Public Methods
 
+    /// Pre-creates the overlay window so the first hotkey press only needs to show it.
+    func prewarm() {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        ensureWindow()
+        overlayWindow?.orderOut(nil)
+        overlayWindow?.alphaValue = 0
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        print("⏱️ [overlay prewarm] ready in \(String(format: "%.0f", elapsed))ms")
+    }
+
     /// Muestra la ventana de overlay con animacion
     func show() {
-        // If an old window exists (e.g. mid fade-out), destroy it immediately
-        if overlayWindow != nil {
-            forceCleanup()
-        }
-
-        // Crear la vista SwiftUI
-        let overlayView = RecordingOverlayView(manager: self)
-        hostingView = NSHostingView(rootView: overlayView)
-
-        guard let hostingView = hostingView else { return }
-
-        // Configurar hosting view para transparencia total
-        hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        hostingView.layer?.isOpaque = false
-
-        // Fixed size for all states
-        let windowWidth: CGFloat = 380
-        let windowHeight: CGFloat = 48
-
-        // Crear contenedor transparente
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
-        containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.clear.cgColor
-        containerView.layer?.isOpaque = false
-        containerView.addSubview(hostingView)
-        hostingView.frame = containerView.bounds
-        hostingView.autoresizingMask = [.width, .height]
-
-        // Crear la ventana
-        overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
-
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let reusedWindow = overlayWindow != nil
+        ensureWindow()
         guard let window = overlayWindow else { return }
+
+        window.positionAtBottom()
 
         // Preparar animacion de entrada
         window.alphaValue = 0
@@ -87,6 +70,8 @@ class OverlayWindowManager: ObservableObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1.0
         }
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        print("⏱️ [overlay show] \(reusedWindow ? "reused" : "created") in \(String(format: "%.0f", elapsed))ms")
     }
 
     /// Oculta la ventana de overlay con animacion
@@ -107,8 +92,6 @@ class OverlayWindowManager: ObservableObject {
                 // (a new show() call may have replaced it already)
                 guard self.overlayWindow === window else { return }
                 self.overlayWindow?.orderOut(nil)
-                self.overlayWindow = nil
-                self.hostingView = nil
                 self.state = .hidden
                 self.isAnimating = false
             }
@@ -117,13 +100,35 @@ class OverlayWindowManager: ObservableObject {
 
     // MARK: - Private Methods
 
-    /// Immediately destroys the current window without animation
-    private func forceCleanup() {
-        overlayWindow?.animator().alphaValue = 0
-        overlayWindow?.orderOut(nil)
-        overlayWindow = nil
-        hostingView = nil
+    private func ensureWindow() {
+        if overlayWindow != nil { return }
+
+        let t0 = CFAbsoluteTimeGetCurrent()
+
+        let overlayView = RecordingOverlayView(manager: self)
+        hostingView = NSHostingView(rootView: overlayView)
+
+        guard let hostingView else { return }
+
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.isOpaque = false
+
+        let windowWidth: CGFloat = 380
+        let windowHeight: CGFloat = 48
+
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.clear.cgColor
+        containerView.layer?.isOpaque = false
+        containerView.addSubview(hostingView)
+        hostingView.frame = containerView.bounds
+        hostingView.autoresizingMask = [.width, .height]
+
+        overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
         isAnimating = false
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        print("⏱️ [overlay build] window created in \(String(format: "%.0f", elapsed))ms")
     }
 
     /// Actualiza el estado del overlay

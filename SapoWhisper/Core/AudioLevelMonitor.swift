@@ -56,10 +56,15 @@ class AudioLevelMonitor: ObservableObject {
         // Configurar dispositivo si no es default
         if deviceUID != "default" {
             if let deviceID = AudioDeviceManager.shared.getDeviceID(for: deviceUID) {
-                // Cambiar el dispositivo de entrada del sistema temporalmente
-                let success = AudioDeviceManager.shared.setSystemDefaultInputDevice(deviceID)
-                if !success {
-                    print("⚠️ No se pudo cambiar al dispositivo seleccionado, usando default")
+                let shouldChangeDevice = previousDefaultDevice != deviceID
+                if shouldChangeDevice {
+                    // Cambiar el dispositivo de entrada del sistema temporalmente
+                    let success = AudioDeviceManager.shared.setSystemDefaultInputDevice(deviceID)
+                    if !success {
+                        print("⚠️ No se pudo cambiar al dispositivo seleccionado, usando default")
+                    }
+                } else {
+                    print("⏱️ [audio monitor] selected device already active")
                 }
             } else {
                 print("⚠️ No se encontró el dispositivo: \(deviceUID)")
@@ -122,8 +127,11 @@ class AudioLevelMonitor: ObservableObject {
         cleanup()
         
         // Restaurar el dispositivo default anterior si lo cambiamos
-        if let previousDevice = previousDefaultDevice {
+        if let previousDevice = previousDefaultDevice,
+           AudioDeviceManager.shared.getSystemDefaultInputDevice() != previousDevice {
             AudioDeviceManager.shared.setSystemDefaultInputDevice(previousDevice)
+            previousDefaultDevice = nil
+        } else {
             previousDefaultDevice = nil
         }
         

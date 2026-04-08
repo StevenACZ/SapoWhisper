@@ -13,6 +13,7 @@ class PasteManager {
 
     /// Guarda la app activa antes de grabar para volver a ella después
     private static var previousApp: NSRunningApplication?
+    private static var lastPasteTriggerTime: CFAbsoluteTime = 0
 
     /// Guarda la app activa actual
     static func savePreviousApp() {
@@ -30,6 +31,9 @@ class PasteManager {
 
     /// Simula Cmd+V para pegar automáticamente
     static func simulatePaste() {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        lastPasteTriggerTime = t0
+
         // Primero activar la app anterior donde el usuario estaba escribiendo
         if let app = previousApp {
             app.activate(options: [])
@@ -38,6 +42,8 @@ class PasteManager {
 
         // Pequeño delay para que la app se active
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            let activationDelay = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            print("⏱️ [paste] activation wait \(String(format: "%.0f", activationDelay))ms")
             performPaste()
         }
     }
@@ -61,6 +67,8 @@ class PasteManager {
         vUp.post(tap: .cghidEventTap)
 
         print("⌨️ Auto-paste ejecutado")
+        let totalElapsed = (CFAbsoluteTimeGetCurrent() - lastPasteTriggerTime) * 1000
+        print("⏱️ [paste] total from trigger \(String(format: "%.0f", totalElapsed))ms")
     }
 
     /// Copia texto y lo pega automáticamente

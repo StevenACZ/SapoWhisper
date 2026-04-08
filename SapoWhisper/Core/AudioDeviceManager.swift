@@ -274,6 +274,16 @@ class AudioDeviceManager: ObservableObject {
     /// Retorna true si tuvo éxito
     @discardableResult
     func setSystemDefaultInputDevice(_ deviceID: AudioDeviceID) -> Bool {
+        guard deviceID != AudioObjectID(kAudioObjectUnknown) else {
+            print("⚠️ Ignorando cambio a dispositivo de entrada invalido (0)")
+            return false
+        }
+
+        if let currentDeviceID = getSystemDefaultInputDevice(), currentDeviceID == deviceID {
+            print("⏱️ [audio device] set default skipped (already active)")
+            return true
+        }
+
         var deviceIDValue = deviceID
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,

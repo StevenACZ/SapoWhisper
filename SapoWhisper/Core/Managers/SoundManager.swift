@@ -10,56 +10,54 @@ import AppKit
 
 /// Maneja los sonidos de feedback de la aplicación
 class SoundManager {
-    
+
     static let shared = SoundManager()
-    
-    private var audioPlayer: AVAudioPlayer?
-    
-    private init() {}
-    
+
+    /// Pre-cached players avoid disk I/O + AVAudioPlayer creation (~20-70ms) on each play
+    private var cachedPlayers: [SoundType: AVAudioPlayer] = [:]
+
+    private init() {
+        preloadSounds()
+    }
+
     // MARK: - Sound Types
-    
+
     enum SoundType: String {
         case startRecording = "start"
         case stopRecording = "stop"
         case success = "success"
         case error = "error"
     }
-    
+
+    // MARK: - Preloading
+
+    /// Load all sound files into memory on init so play() is instant
+    private func preloadSounds() {
+        for type in [SoundType.startRecording, .stopRecording, .success, .error] {
+            let url = Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds")
+                      ?? Bundle.main.url(forResource: type.rawValue, withExtension: "wav")
+            guard let url = url else { continue }
+            guard let player = try? AVAudioPlayer(contentsOf: url) else { continue }
+            player.prepareToPlay()
+            cachedPlayers[type] = player
+        }
+    }
+
     // MARK: - Play Sound
-    
-    /// Reproduce un sonido personalizado desde Resources
-    /// Los archivos WAV deben agregarse al proyecto en Xcode y estar incluidos en el target
+
+    /// Reproduce un sonido pre-cargado desde cache (sin I/O de disco)
     func play(_ type: SoundType) {
-        // Obtener el volumen configurado (por defecto 1.0 = 100%)
-        // AppStorage guarda como Double, así que leemos Double y convertimos a Float
         let volumeDouble = UserDefaults.standard.double(forKey: Constants.StorageKeys.soundVolume)
         let volume: Float = volumeDouble > 0 ? Float(volumeDouble) : 1.0
-        
-        // Buscar el archivo de sonido en el bundle
-        // Primero intenta en subcarpeta Sounds/, luego en la raíz de Resources
-        let soundURL = Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds")
-                    ?? Bundle.main.url(forResource: type.rawValue, withExtension: "wav")
-        
-        guard let url = soundURL else {
-            #if DEBUG
-            print("🔊 Sound '\(type.rawValue).wav' not found - using system fallback")
-            #endif
-            playSystemFallback(type, volume: volume)
+
+        if let player = cachedPlayers[type] {
+            player.volume = volume
+            player.currentTime = 0
+            player.play()
             return
         }
-        
-        do {
-            audioPlayer = try AVAudioPlayer(contentsOf: url)
-            audioPlayer?.volume = volume
-            audioPlayer?.prepareToPlay()
-            audioPlayer?.play()
-        } catch {
-            #if DEBUG
-            print("⚠️ Error playing sound: \(error.localizedDescription)")
-            #endif
-            playSystemFallback(type, volume: volume)
-        }
+
+        playSystemFallback(type, volume: volume)
     }
     
     /// Fallback a sonidos del sistema si no se encuentran los personalizados
