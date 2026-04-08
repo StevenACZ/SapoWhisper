@@ -31,6 +31,7 @@ class AudioRecorder: ObservableObject {
     private var lastAudioLevelPublishTime: CFAbsoluteTime = 0
     private var activeGain: Float = 1.0
     private let converterLock = NSLock()
+    private let tapBufferSize: AVAudioFrameCount = 1024
     private var startRecordingTime: CFAbsoluteTime = 0
     private var firstInputBufferLogged = false
     private var lastInputBufferTime: CFAbsoluteTime = 0
@@ -38,9 +39,10 @@ class AudioRecorder: ObservableObject {
     /// UID del dispositivo de audio seleccionado
     var selectedDeviceUID: String = "default"
 
-    /// Formato de audio requerido por Whisper: 16kHz, mono, float32
+    /// Standard recording format shared by local and cloud engines.
+    /// Int16 cuts file size in half vs float32 and removes an extra conversion for cloud uploads.
     private var recordingFormat: AVAudioFormat {
-        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+        AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
     }
 
     /// Configura el dispositivo de entrada de audio
@@ -111,8 +113,14 @@ class AudioRecorder: ObservableObject {
         // Configurar el formato de salida (16kHz mono para Whisper)
         let outputFormat = recordingFormat
 
-        // Crear el archivo de audio
-        audioFile = try AVAudioFile(forWriting: recordingURL, settings: outputFormat.settings)
+        // AVAudioFile(forWriting:settings:) always uses float32 as processing format.
+        // We need the client format to match the converted int16 buffers we write.
+        audioFile = try AVAudioFile(
+            forWriting: recordingURL,
+            settings: outputFormat.settings,
+            commonFormat: outputFormat.commonFormat,
+            interleaved: outputFormat.isInterleaved
+        )
 
         // Crear converter para convertir del formato de entrada al formato de Whisper
         guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
@@ -122,7 +130,7 @@ class AudioRecorder: ObservableObject {
         self.converterOutputFormat = outputFormat
 
         // Instalar tap en el input node
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: inputFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer, converter: converter, outputFormat: outputFormat)
         }
 
@@ -206,12 +214,7 @@ class AudioRecorder: ObservableObject {
     private func writeConvertedBuffer(_ convertedBuffer: AVAudioPCMBuffer, to audioFile: AVAudioFile, publishLevel: Bool) {
         guard convertedBuffer.frameLength > 0 else { return }
 
-        if activeGain != 1.0, let channelData = convertedBuffer.floatChannelData {
-            let frameCount = Int(convertedBuffer.frameLength)
-            for i in 0..<frameCount {
-                channelData[0][i] *= activeGain
-            }
-        }
+        applyGainIfNeeded(to: convertedBuffer)
 
         if publishLevel {
             publishAudioLevel(from: convertedBuffer)
@@ -227,14 +230,24 @@ class AudioRecorder: ObservableObject {
     /// Calculates and publishes recorder level from the same buffer tap used for writing.
     /// This avoids spinning up a second AVAudioEngine only for visualization.
     private func publishAudioLevel(from buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData else { return }
         let frameLength = Int(buffer.frameLength)
         guard frameLength > 0 else { return }
 
-        let samples = UnsafeBufferPointer(start: channelData[0], count: frameLength)
         var sum: Float = 0
-        for sample in samples {
-            sum += sample * sample
+
+        if let channelData = buffer.floatChannelData {
+            let samples = UnsafeBufferPointer(start: channelData[0], count: frameLength)
+            for sample in samples {
+                sum += sample * sample
+            }
+        } else if let channelData = buffer.int16ChannelData {
+            let samples = UnsafeBufferPointer(start: channelData[0], count: frameLength)
+            for sample in samples {
+                let normalized = Float(sample) / Float(Int16.max)
+                sum += normalized * normalized
+            }
+        } else {
+            return
         }
 
         let rms = sqrt(sum / Float(frameLength))
@@ -250,6 +263,30 @@ class AudioRecorder: ObservableObject {
         let level = smoothedAudioLevel
         DispatchQueue.main.async { [weak self] in
             self?.audioLevel = level
+        }
+    }
+
+    private func applyGainIfNeeded(to buffer: AVAudioPCMBuffer) {
+        guard activeGain != 1.0 else { return }
+
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return }
+
+        if let channelData = buffer.floatChannelData {
+            for i in 0..<frameCount {
+                channelData[0][i] *= activeGain
+            }
+            return
+        }
+
+        guard let channelData = buffer.int16ChannelData else { return }
+        let maxSample = Float(Int16.max)
+        let minSample = Float(Int16.min)
+
+        for i in 0..<frameCount {
+            let amplified = Float(channelData[0][i]) * activeGain
+            let clamped = max(minSample, min(maxSample, amplified))
+            channelData[0][i] = Int16(clamped)
         }
     }
 

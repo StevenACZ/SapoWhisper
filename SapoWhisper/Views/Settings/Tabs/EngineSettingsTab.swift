@@ -340,7 +340,7 @@ struct EngineSettingsTab: View {
                     .foregroundColor(.secondary)
             }
         }
-        .onChange(of: deepgramAPIKey) { _ in
+        .onChange(of: deepgramAPIKey) { _, _ in
             if currentEngine == .deepgram {
                 viewModel.setEngine(.deepgram)
             }

@@ -30,6 +30,7 @@ struct HistoryView: View {
     @State private var sidebarVisible = true
     @State private var showInspector = false
     @State private var showDeleteConfirmation = false
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -39,7 +40,9 @@ struct HistoryView: View {
                     entries: entries,
                     selection: $selectedEntry,
                     searchText: $searchText,
-                    engineFilter: $engineFilter
+                    engineFilter: $engineFilter,
+                    onTogglePin: handleTogglePin,
+                    onDelete: handleDelete
                 )
                 .frame(width: 240)
                 .background(SidebarMaterial())
@@ -84,6 +87,12 @@ struct HistoryView: View {
         .onChange(of: selectedEntry) { _, newValue in
             showInspector = newValue != nil
         }
+        .onChange(of: searchText) { _, _ in
+            scheduleLoadEntries()
+        }
+        .onChange(of: engineFilter) { _, _ in
+            loadEntries()
+        }
         .confirmationDialog(
             "history.delete_confirm".localized,
             isPresented: $showDeleteConfirmation,
@@ -98,12 +107,31 @@ struct HistoryView: View {
             Text("history.delete_confirm_message".localized)
         }
         .onAppear(perform: loadEntries)
+        .onDisappear {
+            searchTask?.cancel()
+        }
     }
 
     // MARK: - Data
 
     private func loadEntries() {
-        entries = TranscriptionHistoryManager.shared.fetchAll()
+        let previousSelectionID = selectedEntry?.id
+        entries = TranscriptionHistoryManager.shared.fetchEntries(
+            searchText: searchText,
+            engineFilter: engineFilter
+        )
+        selectedEntry = entries.first { $0.id == previousSelectionID } ?? entries.first
+    }
+
+    private func scheduleLoadEntries() {
+        searchTask?.cancel()
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                loadEntries()
+            }
+        }
     }
 
     // MARK: - Actions

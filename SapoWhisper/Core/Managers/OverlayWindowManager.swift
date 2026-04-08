@@ -34,6 +34,7 @@ class OverlayWindowManager: ObservableObject {
     private var overlayWindow: RecordingOverlayWindow?
     private var hostingView: NSHostingView<RecordingOverlayView>?
     private var isAnimating = false
+    private var presentationRevision: UInt = 0
 
     // MARK: - Initialization
 
@@ -57,12 +58,16 @@ class OverlayWindowManager: ObservableObject {
         let reusedWindow = overlayWindow != nil
         ensureWindow()
         guard let window = overlayWindow else { return }
+        presentationRevision &+= 1
+        let revision = presentationRevision
+        isAnimating = false
 
         window.positionAtBottom()
+        window.contentView?.layer?.removeAllAnimations()
 
         // Preparar animacion de entrada
         window.alphaValue = 0
-        window.orderFront(nil)
+        window.orderFrontRegardless()
 
         // Animacion de aparicion (rapida para feedback inmediato)
         NSAnimationContext.runAnimationGroup { context in
@@ -70,6 +75,7 @@ class OverlayWindowManager: ObservableObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1.0
         }
+        guard revision == presentationRevision else { return }
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         print("⏱️ [overlay show] \(reusedWindow ? "reused" : "created") in \(String(format: "%.0f", elapsed))ms")
     }
@@ -79,6 +85,7 @@ class OverlayWindowManager: ObservableObject {
         guard let window = overlayWindow else { return }
 
         isAnimating = true
+        let revisionAtHide = presentationRevision
 
         // Animacion de salida
         NSAnimationContext.runAnimationGroup({ context in
@@ -90,7 +97,7 @@ class OverlayWindowManager: ObservableObject {
                 guard let self else { return }
                 // Only clean up if this is still the current window
                 // (a new show() call may have replaced it already)
-                guard self.overlayWindow === window else { return }
+                guard self.overlayWindow === window, self.presentationRevision == revisionAtHide else { return }
                 self.overlayWindow?.orderOut(nil)
                 self.state = .hidden
                 self.isAnimating = false
@@ -139,14 +146,10 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
-        // Si no hay ventana visible, mostrarla
-        if overlayWindow == nil && newState.isVisible {
-            state = newState
+        state = newState
+
+        if newState.isVisible, overlayWindow?.isVisible != true {
             show()
-        } else if overlayWindow != nil {
-            state = newState
-        } else {
-            state = newState
         }
     }
 
@@ -164,7 +167,7 @@ class OverlayWindowManager: ObservableObject {
 
     /// Muestra el estado de completado con preview del texto
     func showCompleted(text: String, autoDismissAfter delay: TimeInterval = 2.0) {
-        state = .completed(text: text)
+        updateState(.completed(text: text))
 
         // Auto-ocultar despues del delay
         Task {
@@ -198,7 +201,7 @@ class OverlayWindowManager: ObservableObject {
 
     /// Muestra un error
     func showError(message: String, autoDismissAfter delay: TimeInterval = 3.0) {
-        state = .error(message: message)
+        updateState(.error(message: message))
 
         // Auto-ocultar despues del delay
         Task {

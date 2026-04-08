@@ -110,16 +110,18 @@ class DeepgramStreamingTranscriber: ObservableObject {
         let t0 = CFAbsoluteTimeGetCurrent()
         do {
             let sourceFile = try AVAudioFile(forReading: wavURL)
-            let format = sourceFile.processingFormat
+            let fileFormat = sourceFile.fileFormat
 
-            // Fast path: if the source is already int16 WAV, send as-is.
-            if format.commonFormat == .pcmFormatInt16 {
+            // Fast path: if the source is already int16 WAV on disk, send as-is.
+            if fileFormat.commonFormat == .pcmFormatInt16 {
                 let passthroughData = try Data(contentsOf: wavURL)
                 let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
                 print("⏱️ [compress] passthrough int16 WAV (\(passthroughData.count) bytes, \(String(format: "%.0f", elapsed))ms)")
                 return (passthroughData, "audio/wav")
             }
 
+            let int16File = try AVAudioFile(forReading: wavURL, commonFormat: .pcmFormatInt16, interleaved: false)
+            let format = int16File.processingFormat
             let channelCount = Int(format.channelCount)
             let sampleRate = UInt32(format.sampleRate)
             let frameCapacity: AVAudioFrameCount = 4096
@@ -127,21 +129,20 @@ class DeepgramStreamingTranscriber: ObservableObject {
                 throw DeepgramError.apiError("Failed to create audio buffer")
             }
 
-            let estimatedPCMBytes = max(0, Int(sourceFile.length)) * channelCount * 2
+            let estimatedPCMBytes = max(0, Int(int16File.length)) * channelCount * 2
             var pcm16Data = Data()
             pcm16Data.reserveCapacity(estimatedPCMBytes)
 
-            while sourceFile.framePosition < sourceFile.length {
-                try sourceFile.read(into: buffer)
-                guard let channels = buffer.floatChannelData else {
-                    throw DeepgramError.apiError("Failed to access float channel data")
+            while int16File.framePosition < int16File.length {
+                try int16File.read(into: buffer)
+                guard let channels = buffer.int16ChannelData else {
+                    throw DeepgramError.apiError("Failed to access int16 channel data")
                 }
 
                 let frameLength = Int(buffer.frameLength)
                 for frame in 0..<frameLength {
                     for channel in 0..<channelCount {
-                        let sample = max(-1.0, min(1.0, channels[channel][frame]))
-                        var int16 = Int16(sample * 32767.0).littleEndian
+                        var int16 = channels[channel][frame].littleEndian
                         withUnsafeBytes(of: &int16) { bytes in
                             pcm16Data.append(contentsOf: bytes)
                         }

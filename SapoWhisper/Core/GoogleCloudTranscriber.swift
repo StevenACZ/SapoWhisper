@@ -61,8 +61,7 @@ class GoogleCloudTranscriber: ObservableObject {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in isTranscribing = false } }
 
-        // Convert float32 WAV to int16 LINEAR16 for V2
-        let pcmData = try convertFloat32ToInt16(audioURL)
+        let pcmData = try loadLinear16PCM(from: audioURL)
         let base64Audio = pcmData.base64EncodedString()
         let estimate = Double(pcmData.count) / (16000.0 * 2.0)
 
@@ -118,7 +117,7 @@ class GoogleCloudTranscriber: ObservableObject {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in isTranscribing = false } }
 
-        let pcmData = try convertFloat32ToInt16(audioURL)
+        let pcmData = try loadLinear16PCM(from: audioURL)
         let base64Audio = pcmData.base64EncodedString()
         let secs = Double(pcmData.count) / (16000.0 * 2.0)
 
@@ -155,24 +154,38 @@ class GoogleCloudTranscriber: ObservableObject {
 
     // MARK: - Helpers
 
-    private func convertFloat32ToInt16(_ audioURL: URL) throws -> Data {
-        let audioFile = try AVAudioFile(forReading: audioURL)
-        let frameCount = AVAudioFrameCount(audioFile.length)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: frameCount) else {
+    private func loadLinear16PCM(from audioURL: URL) throws -> Data {
+        let audioFile = try AVAudioFile(forReading: audioURL, commonFormat: .pcmFormatInt16, interleaved: false)
+        let format = audioFile.processingFormat
+        let channelCount = Int(format.channelCount)
+        let frameCapacity: AVAudioFrameCount = 4096
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else {
             throw GoogleCloudError.invalidResponse
         }
-        try audioFile.read(into: buffer)
-        guard let floatData = buffer.floatChannelData else { throw GoogleCloudError.invalidResponse }
 
-        let samples = Int(buffer.frameLength)
-        var int16Data = Data(count: samples * 2)
-        int16Data.withUnsafeMutableBytes { raw in
-            let buf = raw.bindMemory(to: Int16.self)
-            for i in 0..<samples {
-                buf[i] = Int16(max(-1.0, min(1.0, floatData[0][i])) * 32767.0)
+        var linear16Data = Data()
+        linear16Data.reserveCapacity(max(0, Int(audioFile.length)) * max(1, channelCount) * 2)
+
+        while audioFile.framePosition < audioFile.length {
+            try audioFile.read(into: buffer)
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { continue }
+
+            guard let int16Channels = buffer.int16ChannelData else {
+                throw GoogleCloudError.invalidResponse
+            }
+
+            for frame in 0..<frameLength {
+                for channel in 0..<channelCount {
+                    var sample = int16Channels[channel][frame].littleEndian
+                    withUnsafeBytes(of: &sample) { bytes in
+                        linear16Data.append(contentsOf: bytes)
+                    }
+                }
             }
         }
-        return int16Data
+
+        return linear16Data
     }
 
     private func handleError(data: Data, statusCode: Int) throws -> String {

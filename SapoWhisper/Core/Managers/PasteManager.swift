@@ -11,6 +11,10 @@ import Carbon
 /// Maneja el portapapeles y auto-paste
 class PasteManager {
 
+    private static let initialActivationDelay: TimeInterval = 0.03
+    private static let activationPollInterval: TimeInterval = 0.02
+    private static let activationTimeout: TimeInterval = 0.18
+
     /// Guarda la app activa antes de grabar para volver a ella después
     private static var previousApp: NSRunningApplication?
     private static var lastPasteTriggerTime: CFAbsoluteTime = 0
@@ -33,18 +37,38 @@ class PasteManager {
     static func simulatePaste() {
         let t0 = CFAbsoluteTimeGetCurrent()
         lastPasteTriggerTime = t0
+        let targetApp = previousApp
 
         // Primero activar la app anterior donde el usuario estaba escribiendo
-        if let app = previousApp {
+        if let app = targetApp {
             app.activate(options: [])
             print("🔄 Activando app: \(app.localizedName ?? "desconocida")")
         }
 
-        // Pequeño delay para que la app se active
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            let activationDelay = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        DispatchQueue.main.asyncAfter(deadline: .now() + initialActivationDelay) {
+            attemptPaste(for: targetApp, startedAt: t0)
+        }
+    }
+
+    private static func attemptPaste(for targetApp: NSRunningApplication?, startedAt startTime: CFAbsoluteTime) {
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        let isReadyToPaste: Bool
+
+        if let targetApp {
+            isReadyToPaste = NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp.processIdentifier
+        } else {
+            isReadyToPaste = true
+        }
+
+        if isReadyToPaste || elapsed >= activationTimeout {
+            let activationDelay = elapsed * 1000
             print("⏱️ [paste] activation wait \(String(format: "%.0f", activationDelay))ms")
             performPaste()
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + activationPollInterval) {
+            attemptPaste(for: targetApp, startedAt: startTime)
         }
     }
 
@@ -74,9 +98,7 @@ class PasteManager {
     /// Copia texto y lo pega automáticamente
     static func copyAndPaste(_ text: String) {
         copyToClipboard(text)
-
-        // Pequeño delay para asegurar que el clipboard esté listo
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.async {
             simulatePaste()
         }
     }

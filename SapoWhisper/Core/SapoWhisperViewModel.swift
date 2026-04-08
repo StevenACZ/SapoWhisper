@@ -53,7 +53,7 @@ class SapoWhisperViewModel: ObservableObject {
     // Auto-stop timers
     private var autoStopTimer: Timer?
     private static let googleCloudMaxDuration: TimeInterval = 58 // Stop before 60s limit
-    private static let stopTailPadding: TimeInterval = 0.18
+    private static let stopTailPadding: TimeInterval = 0.12
     private var isStopPending = false
 
     // MARK: - Computed Properties
@@ -344,23 +344,20 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Cambia el motor de transcripcion
     func setEngine(_ engine: TranscriptionEngine) {
+        let previousEngine = currentEngine
         selectedEngine = engine.rawValue
+
+        if previousEngine == .whisperLocal && engine != .whisperLocal {
+            whisperKitTranscriber.unloadModel()
+        }
+
+        checkInitialState()
 
         // Si cambia a WhisperKit y no hay modelo cargado, intentar cargarlo
         if engine == .whisperLocal && !whisperKitTranscriber.isModelLoaded {
             Task {
                 await loadWhisperKitModel()
             }
-        }
-
-        // Si cambia a Google Cloud y no esta configurado, mostrar noModel
-        if engine == .googleCloud && !googleCloudTranscriber.isConfigured {
-            appState = .noModel
-        }
-
-        // Si cambia a Deepgram y no esta configurado, mostrar noModel
-        if engine == .deepgram && !deepgramTranscriber.isConfigured {
-            appState = .noModel
         }
     }
 
@@ -436,7 +433,6 @@ class SapoWhisperViewModel: ObservableObject {
         let hotkeyTime = CFAbsoluteTimeGetCurrent()
         appState = .recording
 
-        overlayManager.show()
         overlayManager.updateState(.recording(duration: 0))
         print("⏱️ [hotkey→overlay] \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - hotkeyTime) * 1000))ms")
 
@@ -524,7 +520,6 @@ class SapoWhisperViewModel: ObservableObject {
                 overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
                     PasteManager.simulatePaste()
                 }
                 print("⏱️ [stop→paste] \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - stopTime) * 1000))ms total")
@@ -572,16 +567,23 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Fix #18: Tighter check interval
         autoStopTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self = self, self.audioRecorder.isRecording else {
-                self?.autoStopTimer?.invalidate()
-                return
+            Task { @MainActor [weak self] in
+                self?.handleAutoStopTick(maxDuration: maxDuration)
             }
-            if self.recordingDuration >= maxDuration {
-                self.autoStopTimer?.invalidate()
-                Task { @MainActor in
-                    self.requestStopRecordingAndTranscribe()
-                }
-            }
+        }
+    }
+
+    private func handleAutoStopTick(maxDuration: TimeInterval) {
+        guard audioRecorder.isRecording else {
+            autoStopTimer?.invalidate()
+            autoStopTimer = nil
+            return
+        }
+
+        if recordingDuration >= maxDuration {
+            autoStopTimer?.invalidate()
+            autoStopTimer = nil
+            requestStopRecordingAndTranscribe()
         }
     }
 
@@ -614,7 +616,6 @@ class SapoWhisperViewModel: ObservableObject {
                 overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
                     PasteManager.simulatePaste()
                 }
 

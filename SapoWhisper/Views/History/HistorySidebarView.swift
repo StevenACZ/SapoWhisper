@@ -11,6 +11,8 @@ struct HistorySidebarView: View {
     @Binding var selection: HistoryEntry?
     @Binding var searchText: String
     @Binding var engineFilter: EngineFilter
+    let onTogglePin: (HistoryEntry) -> Void
+    let onDelete: (HistoryEntry) -> Void
 
     var body: some View {
         List(selection: $selection) {
@@ -55,27 +57,13 @@ struct HistorySidebarView: View {
 
     // MARK: - Date Grouping
 
-    private var filteredEntries: [HistoryEntry] {
-        var result = entries
-
-        if engineFilter != .all {
-            result = result.filter { engineFilter.matches($0.engine) }
-        }
-
-        if !searchText.isEmpty {
-            result = result.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
-        }
-
-        return result
-    }
-
     private var groupedEntries: [(group: DateGroup, entries: [HistoryEntry])] {
         let calendar = Calendar.current
         let now = Date()
 
         var groups: [DateGroup: [HistoryEntry]] = [:]
 
-        for entry in filteredEntries {
+        for entry in entries {
             if entry.isFavorite {
                 groups[.pinned, default: []].append(entry)
             }
@@ -118,7 +106,7 @@ struct HistorySidebarView: View {
         }
 
         Button {
-            TranscriptionHistoryManager.shared.toggleFavorite(id: entry.id)
+            onTogglePin(entry)
         } label: {
             Label(
                 entry.isFavorite ? "history.unpin".localized : "history.pin".localized,
@@ -129,7 +117,7 @@ struct HistorySidebarView: View {
         Divider()
 
         Button(role: .destructive) {
-            TranscriptionHistoryManager.shared.delete(id: entry.id)
+            onDelete(entry)
         } label: {
             Label("history.delete".localized, systemImage: "trash")
         }
@@ -143,7 +131,9 @@ struct HistorySidebarView: View {
         entries: HistoryEntry.mockData,
         selection: .constant(HistoryEntry.mockData.first),
         searchText: .constant(""),
-        engineFilter: .constant(.all)
+        engineFilter: .constant(.all),
+        onTogglePin: { _ in },
+        onDelete: { _ in }
     )
     .frame(width: 260, height: 500)
 }
