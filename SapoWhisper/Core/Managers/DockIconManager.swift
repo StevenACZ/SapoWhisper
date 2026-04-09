@@ -27,29 +27,11 @@ final class DockIconManager: ObservableObject {
     private var lastIconName: String?
     private let isMenuBarOnlyApp = Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool == true
     
-    private init() {
-        // Verificar que todas las imágenes carguen correctamente
-        print("🎨 DockIconManager: Initializing...")
-        if idleIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconIdle") }
-        else { print("✅ DockIconManager: DockIconIdle loaded") }
-        
-        if loadingIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconLoading") }
-        else { print("✅ DockIconManager: DockIconLoading loaded") }
-        
-        if recordingIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconRecording") }
-        else { print("✅ DockIconManager: DockIconRecording loaded") }
-        
-        if transcribingIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconTranscribing") }
-        else { print("✅ DockIconManager: DockIconTranscribing loaded") }
-    }
+    private init() {}
     
     /// Actualiza el icono del Dock basado en el estado de la app
     func updateIcon(for state: AppState, isModelLoading: Bool = false) {
-        let t0 = CFAbsoluteTimeGetCurrent()
-
         if isMenuBarOnlyApp {
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("⏱️ [dock icon] skipped in menu-bar-only mode (\(String(format: "%.0f", elapsed))ms)")
             return
         }
 
@@ -73,11 +55,7 @@ final class DockIconManager: ObservableObject {
             }
         }
         
-        print("🎨 DockIconManager: Updating to \(iconName) (state: \(state), isModelLoading: \(isModelLoading))")
-
         if lastIconName == iconName {
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("⏱️ [dock icon] skipped duplicate \(iconName) (\(String(format: "%.0f", elapsed))ms)")
             return
         }
         
@@ -85,14 +63,10 @@ final class DockIconManager: ObservableObject {
         if let icon = newIcon {
             NSApp.applicationIconImage = icon
             lastIconName = iconName
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("✅ DockIconManager: Icon updated successfully (\(String(format: "%.0f", elapsed))ms)")
         } else {
             // Fallback al icono original de la app si algo falla
             NSApp.applicationIconImage = nil 
             lastIconName = nil
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("⚠️ DockIconManager: Icon was nil, using default (\(String(format: "%.0f", elapsed))ms)")
         }
     }
     

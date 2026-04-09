@@ -30,8 +30,6 @@ class DeepgramBatchTranscriber: ObservableObject {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in isTranscribing = false } }
 
-        let transcribeStart = CFAbsoluteTimeGetCurrent()
-
         // Compress audio for faster upload (int16 ~2x smaller than float32)
         let (audioData, contentType) = compressAudio(from: audioURL)
 
@@ -61,13 +59,8 @@ class DeepgramBatchTranscriber: ObservableObject {
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = audioData
 
-        print("⏱️ [request] sending \(audioData.count) bytes (\(deepgramLanguageCode(for: language)))")
-        let apiStart = CFAbsoluteTimeGetCurrent()
-
         // Send request
         let (data, response) = try await URLSession.shared.data(for: request)
-        let apiElapsed = (CFAbsoluteTimeGetCurrent() - apiStart) * 1000
-        print("⏱️ [request] API responded in \(String(format: "%.0f", apiElapsed))ms")
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw DeepgramError.apiError("Invalid response")
@@ -93,12 +86,16 @@ class DeepgramBatchTranscriber: ObservableObject {
               let firstChannel = channels.first,
               let alternatives = firstChannel["alternatives"] as? [[String: Any]],
               let transcript = alternatives.first?["transcript"] as? String else {
+            let previewData = Data(data.prefix(400))
+            let bodyPreview = String(data: previewData, encoding: .utf8) ?? "<non-utf8 response>"
+            print(
+                "⚠️ [deepgram debug] parse failure " +
+                "(status: \(httpResponse.statusCode), bytes: \(audioData.count), body: \(bodyPreview))"
+            )
             throw DeepgramError.apiError("Could not parse response")
         }
 
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let totalElapsed = (CFAbsoluteTimeGetCurrent() - transcribeStart) * 1000
-        print("⏱️ [total] transcription complete in \(String(format: "%.0f", totalElapsed))ms (\(trimmed.count) chars)")
         return trimmed
     }
 
@@ -107,7 +104,6 @@ class DeepgramBatchTranscriber: ObservableObject {
     /// Convert WAV float32 to int16 WAV for faster upload (~2x smaller)
     /// while staying in memory to avoid extra disk I/O before the request.
     private func compressAudio(from wavURL: URL) -> (Data, String) {
-        let t0 = CFAbsoluteTimeGetCurrent()
         do {
             let sourceFile = try AVAudioFile(forReading: wavURL)
             let fileFormat = sourceFile.fileFormat
@@ -115,8 +111,6 @@ class DeepgramBatchTranscriber: ObservableObject {
             // Fast path: if the source is already int16 WAV on disk, send as-is.
             if fileFormat.commonFormat == .pcmFormatInt16 {
                 let passthroughData = try Data(contentsOf: wavURL)
-                let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                print("⏱️ [compress] passthrough int16 WAV (\(passthroughData.count) bytes, \(String(format: "%.0f", elapsed))ms)")
                 return (passthroughData, "audio/wav")
             }
 
@@ -155,13 +149,9 @@ class DeepgramBatchTranscriber: ObservableObject {
                 sampleRate: sampleRate,
                 channelCount: UInt16(channelCount)
             )
-            let originalSize = (try? FileManager.default.attributesOfItem(atPath: wavURL.path)[.size] as? NSNumber)?.intValue ?? 0
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("⏱️ [compress] \(originalSize) → \(wavData.count) bytes (int16 in-memory, \(String(format: "%.0f", elapsed))ms)")
             return (wavData, "audio/wav")
         } catch {
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            print("⏱️ [compress] failed (\(error)), sending raw WAV (\(String(format: "%.0f", elapsed))ms)")
+            print("⚠️ [deepgram debug] audio compression fallback: \(error)")
             let data = (try? Data(contentsOf: wavURL)) ?? Data()
             return (data, "audio/wav")
         }

@@ -230,6 +230,7 @@
 /* Errors */
 "error.deepgram_auth" = "Deepgram: Invalid or expired API key. Check Settings.";
 "error.no_audio" = "Could not capture audio";
+"error.input_not_ready" = "The microphone was not ready after the device change";
 "overlay.retry" = "Retry";
 
 /* Google Cloud Warning */

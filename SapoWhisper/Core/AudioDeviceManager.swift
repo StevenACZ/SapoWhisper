@@ -35,6 +35,7 @@ struct AudioDevice: Identifiable, Hashable {
 class AudioDeviceManager: ObservableObject {
 
     static let shared = AudioDeviceManager()
+    private static let recorderInputSettleWindow: CFTimeInterval = 0.35
 
     @Published var availableDevices: [AudioDevice] = []
     @Published var selectedDeviceUID: String = "default"
@@ -44,6 +45,7 @@ class AudioDeviceManager: ObservableObject {
 
     /// Tracks the last known default input device ID to detect actual changes
     private var lastKnownDefaultInputDeviceID: AudioDeviceID?
+    private var lastDefaultInputTransitionTime: CFAbsoluteTime = 0
 
     private init() {
         // Capture initial default device ID without triggering notification
@@ -106,7 +108,6 @@ class AudioDeviceManager: ObservableObject {
         }
 
         availableDevices = devices
-        print("🎤 Dispositivos de entrada encontrados: \(devices.count - 1)") // -1 por System Default
     }
 
     /// Obtiene información de un dispositivo de entrada
@@ -216,12 +217,20 @@ class AudioDeviceManager: ObservableObject {
         // Only notify if the device actually changed
         if currentDeviceID != lastKnownDefaultInputDeviceID {
             lastKnownDefaultInputDeviceID = currentDeviceID
+            lastDefaultInputTransitionTime = CFAbsoluteTimeGetCurrent()
             let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
             // Force a new publish by setting to nil first, then the name
             detectedDeviceName = nil
             detectedDeviceName = deviceName
-            print("🔄 Default input device changed to: \(deviceName)")
+            print("🎙️ [audio route] default input -> \(deviceName)")
         }
+    }
+
+    func recorderInputSettleDelay() -> TimeInterval {
+        guard lastDefaultInputTransitionTime > 0 else { return 0 }
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - lastDefaultInputTransitionTime
+        return max(0, Self.recorderInputSettleWindow - elapsed)
     }
 
     /// Gets the name of a device by its ID
@@ -275,12 +284,10 @@ class AudioDeviceManager: ObservableObject {
     @discardableResult
     func setSystemDefaultInputDevice(_ deviceID: AudioDeviceID) -> Bool {
         guard deviceID != AudioObjectID(kAudioObjectUnknown) else {
-            print("⚠️ Ignorando cambio a dispositivo de entrada invalido (0)")
             return false
         }
 
         if let currentDeviceID = getSystemDefaultInputDevice(), currentDeviceID == deviceID {
-            print("⏱️ [audio device] set default skipped (already active)")
             return true
         }
 
@@ -301,10 +308,9 @@ class AudioDeviceManager: ObservableObject {
         )
         
         if status == noErr {
-            print("✅ Dispositivo de entrada del sistema cambiado")
+            lastDefaultInputTransitionTime = CFAbsoluteTimeGetCurrent()
             return true
         } else {
-            print("⚠️ Error cambiando dispositivo del sistema: \(status)")
             return false
         }
     }
