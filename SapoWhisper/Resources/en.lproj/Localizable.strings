@@ -190,6 +190,10 @@
 "settings.test_microphone" = "Test microphone";
 "settings.listening" = "Listening...";
 "settings.gain_desc" = "Adjust audio amplification (doesn't affect system volume)";
+"settings.record_sample" = "Record sample";
+"settings.stop_sample" = "Stop";
+"settings.sample_original" = "Original";
+"settings.sample_compressed" = "As sent to engine";
 
 /* Recording Overlay */
 "overlay.recording" = "Recording...";

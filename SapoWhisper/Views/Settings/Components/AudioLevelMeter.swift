@@ -123,7 +123,7 @@ struct AudioLevelMeterView: View {
             
             // Mostrar meter y controles solo cuando está habilitado
             if isEnabled {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     // Error message si hay error
                     if monitor.hasError, let error = monitor.errorMessage {
                         HStack(spacing: 6) {
@@ -134,48 +134,94 @@ struct AudioLevelMeterView: View {
                                 .font(.caption)
                                 .foregroundColor(.orange)
                         }
-                        .padding(8)
+                        .padding(6)
                         .background(Color.orange.opacity(0.1))
                         .cornerRadius(6)
                     }
-                    
+
                     // Meter con porcentaje
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         AudioLevelMeter(monitor: monitor)
-                        
+
                         Text("\(Int(monitor.audioLevel * 100))%")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundColor(.secondary)
                             .frame(width: 35, alignment: .trailing)
                     }
-                    
+
                     // Gain slider
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: "speaker.wave.1")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(.secondary)
-                        
-                        Slider(value: $gain, in: 0.5...10.0, step: 0.1)
-                            .controlSize(.small)
+
+                        Slider(value: $gain, in: 0.5...50.0, step: 0.5)
+                            .controlSize(.mini)
                             .onChange(of: gain) { _, newValue in
                                 monitor.gain = Float(newValue)
                             }
-                        
+
                         Image(systemName: "speaker.wave.3")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(.secondary)
-                        
+
                         Text("\(String(format: "%.1f", gain))x")
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.system(.caption2, design: .monospaced))
                             .foregroundColor(.secondary)
-                            .frame(width: 35, alignment: .trailing)
+                            .frame(width: 38, alignment: .trailing)
                     }
-                    
-                    Text("settings.gain_desc".localized)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+
+                    Divider()
+
+                    // Sample recording
+                    HStack {
+                        if monitor.isRecordingSample {
+                            Button(action: { monitor.stopSampleRecording() }) {
+                                Label("settings.stop_sample".localized, systemImage: "stop.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.small)
+
+                            Spacer()
+
+                            Text(formatSampleDuration(monitor.sampleRecordingDuration))
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        } else {
+                            Button(action: { monitor.startSampleRecording() }) {
+                                Label("settings.record_sample".localized, systemImage: "mic.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!monitor.isActive)
+                        }
+                    }
+
+                    // Sample players
+                    if let rawURL = monitor.rawSampleURL,
+                       !monitor.isRecordingSample,
+                       let rawMeta = monitor.rawSampleMetadata {
+                        VStack(spacing: 4) {
+                            AudioSamplePlayerView(
+                                url: rawURL,
+                                label: "settings.sample_original".localized,
+                                metadata: rawMeta
+                            )
+
+                            if let compURL = monitor.compressedSampleURL,
+                               let compMeta = monitor.compressedSampleMetadata {
+                                AudioSamplePlayerView(
+                                    url: compURL,
+                                    label: "settings.sample_compressed".localized,
+                                    metadata: compMeta
+                                )
+                            }
+                        }
+                    }
                 }
-                .padding(10)
+                .padding(8)
                 .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
                 .cornerRadius(8)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -198,6 +244,12 @@ struct AudioLevelMeterView: View {
         .onDisappear {
             monitor.stopMonitoring()
         }
+    }
+
+    private func formatSampleDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 
