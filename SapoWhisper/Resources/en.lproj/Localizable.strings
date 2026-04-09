@@ -84,6 +84,7 @@
 "settings.audio" = "Audio";
 "settings.microphone" = "Microphone";
 "settings.microphone_desc" = "Audio input device";
+"settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";
 "settings.input_language_desc" = "The language you will speak";
 "settings.behavior" = "Behavior";
@@ -188,6 +189,7 @@
 
 /* Microphone Level Meter */
 "settings.test_microphone" = "Test microphone";
+"settings.gain" = "Gain";
 "settings.listening" = "Listening...";
 "settings.gain_desc" = "Adjust audio amplification (doesn't affect system volume)";
 "settings.record_sample" = "Record sample";

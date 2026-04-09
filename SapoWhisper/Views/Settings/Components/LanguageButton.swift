@@ -29,12 +29,12 @@ struct LanguageButton: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.sapoGreen.opacity(0.2) : Color(NSColor.windowBackgroundColor))
-            .foregroundColor(isSelected ? .sapoGreen : .primary)
-            .cornerRadius(16)
+            .background(isSelected ? Color.sapoGreen.opacity(0.15) : Color.secondary.opacity(0.06))
+            .foregroundStyle(isSelected ? Color.sapoGreen : .primary)
+            .clipShape(Capsule())
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color.sapoGreen : Color.secondary.opacity(0.3), lineWidth: 1)
+                Capsule()
+                    .strokeBorder(isSelected ? Color.sapoGreen : .secondary.opacity(0.2), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
