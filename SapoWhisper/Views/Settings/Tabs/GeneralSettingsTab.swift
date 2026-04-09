@@ -95,7 +95,7 @@ struct GeneralSettingsTab: View {
         Section {
             Toggle("settings.play_sounds".localized, isOn: $playSound)
                 .onChange(of: playSound) { _, enabled in
-                    if enabled && soundVolume <= 0 { soundVolume = 0.5 }
+                    if enabled && soundVolume < 0.05 { soundVolume = 0.5 }
                 }
 
             if playSound {
@@ -108,7 +108,7 @@ struct GeneralSettingsTab: View {
                 }
                 .tint(Constants.Colors.sapoGreen)
                 .onChange(of: soundVolume) { _, newValue in
-                    if newValue <= 0 { playSound = false }
+                    if newValue < 0.01 { playSound = false }
                 }
 
                 Button(action: {
