@@ -49,11 +49,20 @@ struct GeneralSettingsTab: View {
                     Text(device.name).tag(device.uid)
                 }
             }
+            .onChange(of: selectedMicrophone) { _, newUID in
+                syncSystemDefaultInput(uid: newUID)
+            }
 
             AudioLevelMeterView(deviceUID: selectedMicrophone)
         } header: {
             Label("settings.microphone".localized, systemImage: "mic.fill")
         }
+    }
+
+    /// Sets the system default input device to match the selected mic
+    private func syncSystemDefaultInput(uid: String) {
+        guard let deviceID = audioDeviceManager.getDeviceID(for: uid) else { return }
+        audioDeviceManager.setSystemDefaultInputDevice(deviceID)
     }
 
     // MARK: - Language (combined)
