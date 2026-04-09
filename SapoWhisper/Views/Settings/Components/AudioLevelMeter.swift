@@ -195,7 +195,7 @@ struct AudioLevelMeterView: View {
     }
 
     private var gainSlider: some View {
-        Slider(value: $gain, in: 1.0...50.0) {
+        Slider(value: $gain, in: 1.0...40.0) {
             Text("settings.gain".localized)
         } minimumValueLabel: {
             Text("1x")
