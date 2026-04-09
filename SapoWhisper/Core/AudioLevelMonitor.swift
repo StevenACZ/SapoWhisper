@@ -353,11 +353,31 @@ class AudioLevelMonitor: ObservableObject {
 
     // MARK: - Audio Level Processing
 
+    /// Applies gain to a copy of the buffer (leaves original untouched)
+    private func bufferWithGain(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let srcData = buffer.floatChannelData else { return nil }
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return nil }
+        copy.frameLength = buffer.frameLength
+        guard let dstData = copy.floatChannelData else { return nil }
+
+        let count = Int(buffer.frameLength)
+        for i in 0..<count {
+            dstData[0][i] = max(-1.0, min(1.0, srcData[0][i] * gain))
+        }
+        return copy
+    }
+
     /// Procesa el buffer de audio y extrae el nivel
     private func processBuffer(_ buffer: AVAudioPCMBuffer) {
-        // Write to sample file if recording
+        // Write to sample file if recording — apply gain so playback matches real transcription
         if isRecordingSample, let sampleFile {
-            do { try sampleFile.write(from: buffer) } catch {
+            do {
+                if gain != 1.0, let gained = bufferWithGain(buffer) {
+                    try sampleFile.write(from: gained)
+                } else {
+                    try sampleFile.write(from: buffer)
+                }
+            } catch {
                 print("❌ [sample] write failed: \(error)")
             }
         }

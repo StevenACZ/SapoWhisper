@@ -59,8 +59,8 @@ struct AudioSamplePlayerView: View {
 
             // Metadata line
             Text("\(String(format: "%.0f", metadata.sampleRate))Hz  \(metadata.format)  \(metadata.formattedSize)")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.quaternary)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
                 .padding(.leading, 22)
         }
         .padding(.vertical, 3)
