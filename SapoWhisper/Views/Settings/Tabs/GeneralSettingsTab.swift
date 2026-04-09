@@ -96,7 +96,7 @@ struct GeneralSettingsTab: View {
             Toggle("settings.play_sounds".localized, isOn: $playSound)
 
             if playSound {
-                Slider(value: $soundVolume, in: 0.0...1.0) {
+                Slider(value: $soundVolume, in: 0.0...1.0, step: 0.05) {
                     Text("settings.sound_volume".localized)
                 } minimumValueLabel: {
                     Text("")
@@ -105,7 +105,7 @@ struct GeneralSettingsTab: View {
                 }
                 .tint(Constants.Colors.sapoGreen)
                 .onChange(of: soundVolume) { _, newValue in
-                    if newValue < 0.01 {
+                    if newValue == 0 {
                         soundVolume = 0.5
                         playSound = false
                     }
