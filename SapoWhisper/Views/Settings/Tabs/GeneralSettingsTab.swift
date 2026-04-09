@@ -96,20 +96,14 @@ struct GeneralSettingsTab: View {
             Toggle("settings.play_sounds".localized, isOn: $playSound)
 
             if playSound {
-                Slider(value: $soundVolume, in: 0.0...1.0, step: 0.05) {
+                Slider(value: $soundVolume, in: 0.05...1.0, step: 0.05) {
                     Text("settings.sound_volume".localized)
                 } minimumValueLabel: {
-                    Text("")
+                    Text("5%")
                 } maximumValueLabel: {
                     Text("\(Int(soundVolume * 100))%")
                 }
                 .tint(Constants.Colors.sapoGreen)
-                .onChange(of: soundVolume) { _, newValue in
-                    if newValue == 0 {
-                        soundVolume = 0.5
-                        playSound = false
-                    }
-                }
 
                 Button(action: {
                     SoundManager.shared.play(.success)
