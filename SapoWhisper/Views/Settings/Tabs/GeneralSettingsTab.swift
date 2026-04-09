@@ -94,6 +94,9 @@ struct GeneralSettingsTab: View {
     private var soundSection: some View {
         Section {
             Toggle("settings.play_sounds".localized, isOn: $playSound)
+                .onChange(of: playSound) { _, enabled in
+                    if enabled && soundVolume <= 0 { soundVolume = 0.5 }
+                }
 
             if playSound {
                 Slider(value: $soundVolume, in: 0.0...1.0) {
