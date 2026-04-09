@@ -47,8 +47,12 @@ class SoundManager {
 
     /// Reproduce un sonido pre-cargado desde cache (sin I/O de disco)
     func play(_ type: SoundType) {
-        let volumeDouble = UserDefaults.standard.double(forKey: Constants.StorageKeys.soundVolume)
-        let volume: Float = volumeDouble > 0 ? Float(volumeDouble) : 1.0
+        let volume: Float
+        if UserDefaults.standard.object(forKey: Constants.StorageKeys.soundVolume) != nil {
+            volume = Float(UserDefaults.standard.double(forKey: Constants.StorageKeys.soundVolume))
+        } else {
+            volume = 1.0
+        }
 
         if let player = cachedPlayers[type] {
             player.volume = volume
