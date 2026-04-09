@@ -104,6 +104,9 @@ struct GeneralSettingsTab: View {
                     Text("\(Int(soundVolume * 100))%")
                 }
                 .tint(Constants.Colors.sapoGreen)
+                .onChange(of: soundVolume) { _, newValue in
+                    if newValue <= 0 { playSound = false }
+                }
 
                 Button(action: {
                     SoundManager.shared.play(.success)
