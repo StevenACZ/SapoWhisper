@@ -10,6 +10,7 @@ import AVFoundation
 import CoreAudio
 import AudioToolbox
 import Combine
+import os
 
 /// Maneja la grabación de audio usando AVAudioEngine
 class AudioRecorder: ObservableObject {
@@ -31,15 +32,19 @@ class AudioRecorder: ObservableObject {
     private var smoothedAudioLevel: Float = 0
     private var lastAudioLevelPublishTime: CFAbsoluteTime = 0
     private var activeGain: Float = 1.0
-    private let converterLock = NSLock()
+    private var converterLock = os_unfair_lock()
     private let tapBufferSize: AVAudioFrameCount = 1024
     private var startRecordingTime: CFAbsoluteTime = 0
     private var firstInputBufferLogged = false
     private var lastInputBufferTime: CFAbsoluteTime = 0
-    private let captureStateLock = NSLock()
+    private var captureStateLock = os_unfair_lock()
+    private let audioSetupQueue = DispatchQueue(label: "com.sapowhisper.audioSetup", qos: .userInitiated)
+    private let setupGenerationQueue = DispatchQueue(label: "com.sapowhisper.audioSetup.generation", qos: .userInitiated)
     private var inputBufferCount = 0
     private var writtenFrameCount: AVAudioFramePosition = 0
     private var firstInputLatencyMs: Double?
+    private var captureDeviceUID: String = "default"
+    private var activeSetupGeneration: UInt64 = 0
 
     private(set) var lastCaptureDiagnostics: RecordingCaptureDiagnostics?
 
@@ -64,7 +69,7 @@ class AudioRecorder: ObservableObject {
         deviceManager.refreshDevices()
 
         guard selectedDeviceUID != "default" else {
-            let settleDelay = deviceManager.recorderInputSettleDelay()
+            let settleDelay = deviceManager.captureRouteSettleDelay()
             logInputSettleDelayIfNeeded(settleDelay)
             return settleDelay
         }
@@ -74,7 +79,9 @@ class AudioRecorder: ObservableObject {
             return 0
         }
 
-        return 0
+        let settleDelay = deviceManager.captureRouteSettleDelay()
+        logInputSettleDelayIfNeeded(settleDelay)
+        return settleDelay
     }
 
     private func logInputSettleDelayIfNeeded(_ delay: TimeInterval) {
@@ -82,100 +89,171 @@ class AudioRecorder: ObservableObject {
         print("🎙️ [capture] waiting \(String(format: "%.0f", delay * 1000))ms for input to settle")
     }
 
-    /// Inicia la grabación de audio
-    func startRecording() throws {
-        // Crear nuevo audio engine
-        audioEngine = AVAudioEngine()
-
-        guard let audioEngine = audioEngine else {
-            throw RecordingError.engineCreationFailed
-        }
-
-        let inputNode = audioEngine.inputNode
-        let hwFormat = try bindPreferredInputDevice(to: inputNode)
-
-        // Use actual hardware format from Core Audio to avoid stale format in inputNode.outputFormat
-        let cachedFormat = inputNode.outputFormat(forBus: 0)
-        let tapFormat: AVAudioFormat
-        if let hwFormat, hwFormat.sampleRate != cachedFormat.sampleRate {
-            tapFormat = hwFormat
-            print(
-                "🎙️ [capture] format override: cached=\(String(format: "%.0f", cachedFormat.sampleRate))Hz, " +
-                "hw=\(String(format: "%.0f", hwFormat.sampleRate))Hz → using hw format for tap"
-            )
-        } else if let hwFormat {
-            tapFormat = hwFormat
-            print(
-                "🎙️ [capture] input format: \(String(format: "%.0f", hwFormat.sampleRate))Hz, " +
-                "\(hwFormat.channelCount)ch (hw matches cached)"
-            )
-        } else {
-            tapFormat = cachedFormat
-            print(
-                "🎙️ [capture] input format: \(String(format: "%.0f", cachedFormat.sampleRate))Hz, " +
-                "\(cachedFormat.channelCount)ch (system default)"
-            )
-        }
-
-        // Crear archivo temporal para guardar el audio
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileName = "recording_\(Date().timeIntervalSince1970).wav"
-        recordingURL = tempDir.appendingPathComponent(fileName)
-
-        guard let recordingURL = recordingURL else {
-            throw RecordingError.fileCreationFailed
-        }
-
-        // Configurar el formato de salida (16kHz mono para Whisper)
+    /// Inicia la grabación de audio. Toda la configuración del HAL de Core Audio se ejecuta
+    /// en `audioSetupQueue` para no bloquear el hilo principal durante transiciones de dispositivo.
+    func startRecording() async throws {
+        // Snapshot configuration on the calling thread before dispatching to background
+        let deviceUID = selectedDeviceUID
+        let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
         let outputFormat = recordingFormat
+        let setupGeneration = beginSetupGeneration()
 
-        // AVAudioFile(forWriting:settings:) always uses float32 as processing format.
-        // We need the client format to match the converted int16 buffers we write.
-        audioFile = try AVAudioFile(
-            forWriting: recordingURL,
-            settings: outputFormat.settings,
-            commonFormat: outputFormat.commonFormat,
-            interleaved: outputFormat.isInterleaved
-        )
+        // Reset per-recording state before background work begins
+        converter = nil
+        converterOutputFormat = nil
+        resetCaptureDiagnostics()
+        setCaptureDeviceUID(deviceUID)
+        firstInputBufferLogged = false
+        lastInputBufferTime = 0
+        lastAudioLevelPublishTime = 0
+        activeGain = Float(savedGain > 0 ? savedGain : 1.0)
 
-        // Converter created lazily from actual buffer format to avoid stale format after device switch
-        self.converter = nil
-        self.converterOutputFormat = outputFormat
+        // Move all Core Audio HAL operations off the main thread.
+        // During device transitions these calls can block 200ms–2000ms+, freezing the UI.
+        typealias SetupResult = (engine: AVAudioEngine, url: URL)
+        let result: SetupResult = try await withCheckedThrowingContinuation { continuation in
+            audioSetupQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(throwing: RecordingError.engineCreationFailed)
+                    return
+                }
 
-        // Install tap with actual hardware format (queried via Core Audio, not the stale inputNode cache)
-        inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
-            self?.processAudioBuffer(buffer)
+                var engine: AVAudioEngine?
+                var pendingRecordingURL: URL?
+
+                do {
+                    let t0 = CFAbsoluteTimeGetCurrent()
+
+                    let localEngine = AVAudioEngine()
+                    engine = localEngine
+                    print("🎙️ [capture] setup: engine created (\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms)")
+
+                    let inputNode = localEngine.inputNode
+                    print("🎙️ [capture] setup: inputNode accessed (\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms)")
+
+                    let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
+
+                    // Use actual hardware format from Core Audio to avoid stale format in inputNode.outputFormat
+                    let cachedFormat = inputNode.outputFormat(forBus: 0)
+                    let tapFormat: AVAudioFormat
+                    if let hwFormat, hwFormat.sampleRate != cachedFormat.sampleRate {
+                        tapFormat = hwFormat
+                        print(
+                            "🎙️ [capture] setup: format override: cached=\(Int(cachedFormat.sampleRate))Hz, " +
+                            "hw=\(Int(hwFormat.sampleRate))Hz → using hw format for tap"
+                        )
+                    } else if let hwFormat {
+                        tapFormat = hwFormat
+                        print(
+                            "🎙️ [capture] setup: format \(Int(hwFormat.sampleRate))Hz \(hwFormat.channelCount)ch (hw matches cached)"
+                        )
+                    } else {
+                        tapFormat = cachedFormat
+                        print(
+                            "🎙️ [capture] setup: format \(Int(cachedFormat.sampleRate))Hz \(cachedFormat.channelCount)ch (system default)"
+                        )
+                    }
+
+                    guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
+                        print("❌ [capture] setup: FAILED format invalid sampleRate=\(tapFormat.sampleRate)")
+                        continuation.resume(throwing: RecordingError.invalidFormat)
+                        return
+                    }
+
+                    // Crear archivo temporal para guardar el audio
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let fileName = "recording_\(Date().timeIntervalSince1970).wav"
+                    let recordingURL = tempDir.appendingPathComponent(fileName)
+                    pendingRecordingURL = recordingURL
+
+                    // AVAudioFile(forWriting:settings:) always uses float32 as processing format.
+                    // We need the client format to match the converted int16 buffers we write.
+                    let audioFile = try AVAudioFile(
+                        forWriting: recordingURL,
+                        settings: outputFormat.settings,
+                        commonFormat: outputFormat.commonFormat,
+                        interleaved: outputFormat.isInterleaved
+                    )
+
+                    guard self.isSetupGenerationCurrent(setupGeneration) else {
+                        self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+
+                    self.audioFile = audioFile
+                    self.converterOutputFormat = outputFormat
+                    self.recordingURL = recordingURL
+
+                    // Install tap with actual hardware format (queried via Core Audio, not the stale inputNode cache)
+                    inputNode.installTap(onBus: 0, bufferSize: self.tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+                        self?.processAudioBuffer(buffer)
+                    }
+
+                    guard self.isSetupGenerationCurrent(setupGeneration) else {
+                        self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+
+                    localEngine.prepare()
+                    // Record start time just before engine.start() so the audio tap sees the correct value
+                    self.startRecordingTime = CFAbsoluteTimeGetCurrent()
+                    try localEngine.start()
+
+                    guard self.isSetupGenerationCurrent(setupGeneration) else {
+                        self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+
+                    print("🎙️ [capture] setup: total \(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms (off-main)")
+
+                    continuation.resume(returning: (localEngine, recordingURL))
+                } catch {
+                    self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingRecordingURL, deleteTemporaryFile: true)
+                    print("❌ [capture] setup: FAILED \(error)")
+                    continuation.resume(throwing: error)
+                }
+            }
         }
 
-        // Preparar e iniciar el engine
-        audioEngine.prepare()
-        try audioEngine.start()
+        guard !Task.isCancelled, isSetupGenerationCurrent(setupGeneration) else {
+            cancelPendingSetup(deleteTemporaryFile: true)
+            throw CancellationError()
+        }
 
+        // Back on caller context (MainActor) — update remaining instance state
+        audioEngine = result.engine
+        recordingURL = result.url
         isRecording = true
         isPaused = false
         accumulatedDuration = 0
         startTime = Date()
-        startRecordingTime = CFAbsoluteTimeGetCurrent()
-        let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
-        activeGain = Float(savedGain > 0 ? savedGain : 1.0)
-        lastAudioLevelPublishTime = 0
-        firstInputBufferLogged = false
-        lastInputBufferTime = 0
-        resetCaptureDiagnostics()
 
-        // Timer para actualizar la duración
+        // Timer must be scheduled on the main run loop
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self, let startTime = self.startTime else { return }
             self.recordingDuration = self.accumulatedDuration + Date().timeIntervalSince(startTime)
         }
     }
 
+    func cancelPendingSetup(deleteTemporaryFile: Bool = true) {
+        invalidateSetupGeneration()
+        audioSetupQueue.async { [weak self] in
+            guard let self, !self.isRecording else { return }
+            self.cleanupSetupArtifacts(engine: nil, recordingURL: self.recordingURL, deleteTemporaryFile: deleteTemporaryFile)
+        }
+    }
+
     /// Binds the preferred input device. Returns the device's actual hardware format if bound.
-    private func bindPreferredInputDevice(to inputNode: AVAudioInputNode) throws -> AVAudioFormat? {
-        guard selectedDeviceUID != "default" else { return nil }
+    /// Accepts `deviceUID` as a parameter so it can be called safely from a background queue
+    /// without reading `self.selectedDeviceUID` across thread boundaries.
+    private func bindPreferredInputDevice(to inputNode: AVAudioInputNode, deviceUID: String) throws -> AVAudioFormat? {
+        guard deviceUID != "default" else { return nil }
 
         let deviceManager = AudioDeviceManager.shared
-        guard let deviceID = deviceManager.getDeviceID(for: selectedDeviceUID) else { return nil }
+        guard let deviceID = deviceManager.getDeviceID(for: deviceUID) else { return nil }
         guard let audioUnit = inputNode.audioUnit else {
             throw RecordingError.deviceSelectionFailed(-1)
         }
@@ -191,7 +269,7 @@ class AudioRecorder: ObservableObject {
             &size
         )
 
-        let deviceName = deviceManager.getDeviceName(for: deviceID) ?? selectedDeviceUID
+        let deviceName = deviceManager.getDeviceName(for: deviceID) ?? deviceUID
         if getStatus == noErr, currentDeviceID == deviceID {
             print("🎙️ [capture] input already bound -> \(deviceName)")
             return queryDeviceInputFormat(deviceID: deviceID)
@@ -245,14 +323,15 @@ class AudioRecorder: ObservableObject {
         if !firstInputBufferLogged {
             firstInputBufferLogged = true
             let elapsed = (inputBufferTime - startRecordingTime) * 1000
-            let effectiveDevice = selectedDeviceUID == "default" ? "system-default" : selectedDeviceUID
+            let captureDeviceUID = currentCaptureDeviceUID()
+            let effectiveDevice = captureDeviceUID == "default" ? "system-default" : captureDeviceUID
             print(
                 "🎙️ [capture] first input buffer in \(String(format: "%.0f", elapsed))ms " +
                 "(\(buffer.frameLength) frames @ \(String(format: "%.0f", buffer.format.sampleRate))Hz, input: \(effectiveDevice))"
             )
         }
-        converterLock.lock()
-        defer { converterLock.unlock() }
+        os_unfair_lock_lock(&converterLock)
+        defer { os_unfair_lock_unlock(&converterLock) }
 
         // Lazy converter creation from actual buffer format (avoids stale format cache after device switch)
         if converter == nil {
@@ -425,23 +504,29 @@ class AudioRecorder: ObservableObject {
     /// Detiene la grabación y retorna la URL del archivo
     func stopRecording(logSummary: Bool = true) -> URL? {
         let stopStart = CFAbsoluteTimeGetCurrent()
+        invalidateSetupGeneration()
         timer?.invalidate()
         timer = nil
 
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine?.stop()
-        audioEngine?.reset()
+        let url = audioSetupQueue.sync { () -> URL? in
+            audioEngine?.inputNode.removeTap(onBus: 0)
+            audioEngine?.stop()
+            audioEngine?.reset()
 
-        _ = flushRemainingConvertedAudio()
+            _ = flushRemainingConvertedAudio()
 
-        audioFile = nil
-        audioEngine = nil
-        converter = nil
-        converterOutputFormat = nil
+            let currentURL = recordingURL
+            audioFile = nil
+            audioEngine = nil
+            converter = nil
+            converterOutputFormat = nil
+            recordingURL = nil
+            return currentURL
+        }
+
         isRecording = false
         isPaused = false
 
-        let url = recordingURL
         let diagnostics = makeCaptureDiagnostics(fileURL: url, referenceTime: stopStart)
         lastCaptureDiagnostics = diagnostics
         if logSummary {
@@ -510,8 +595,8 @@ class AudioRecorder: ObservableObject {
             return (0, 0, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
         }
 
-        converterLock.lock()
-        defer { converterLock.unlock() }
+        os_unfair_lock_lock(&converterLock)
+        defer { os_unfair_lock_unlock(&converterLock) }
 
         let frameCapacity: AVAudioFrameCount = 4096
         var chunks = 0
@@ -550,8 +635,8 @@ class AudioRecorder: ObservableObject {
     }
 
     private func resetCaptureDiagnostics() {
-        captureStateLock.lock()
-        defer { captureStateLock.unlock() }
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
 
         inputBufferCount = 0
         writtenFrameCount = 0
@@ -560,8 +645,8 @@ class AudioRecorder: ObservableObject {
     }
 
     private func registerInputBuffer(at timestamp: CFAbsoluteTime) {
-        captureStateLock.lock()
-        defer { captureStateLock.unlock() }
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
 
         inputBufferCount += 1
         if firstInputLatencyMs == nil {
@@ -570,24 +655,38 @@ class AudioRecorder: ObservableObject {
     }
 
     private func registerWrittenFrames(_ frameCount: AVAudioFrameCount) {
-        captureStateLock.lock()
-        defer { captureStateLock.unlock() }
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
 
         writtenFrameCount += AVAudioFramePosition(frameCount)
     }
 
     private func hasReceivedInputBuffer() -> Bool {
-        captureStateLock.lock()
-        defer { captureStateLock.unlock() }
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
         return inputBufferCount > 0
     }
 
+    private func setCaptureDeviceUID(_ uid: String) {
+        os_unfair_lock_lock(&captureStateLock)
+        captureDeviceUID = uid
+        os_unfair_lock_unlock(&captureStateLock)
+    }
+
+    private func currentCaptureDeviceUID() -> String {
+        os_unfair_lock_lock(&captureStateLock)
+        let uid = captureDeviceUID
+        os_unfair_lock_unlock(&captureStateLock)
+        return uid
+    }
+
     private func makeCaptureDiagnostics(fileURL: URL?, referenceTime: CFAbsoluteTime) -> RecordingCaptureDiagnostics {
-        captureStateLock.lock()
+        os_unfair_lock_lock(&captureStateLock)
         let bufferCount = inputBufferCount
         let frameCount = writtenFrameCount
         let firstLatency = firstInputLatencyMs
-        captureStateLock.unlock()
+        let deviceUID = captureDeviceUID
+        os_unfair_lock_unlock(&captureStateLock)
 
         let lastBufferAgeMs = lastInputBufferTime > 0 ? (referenceTime - lastInputBufferTime) * 1000 : nil
         let fileSizeBytes: Int
@@ -599,13 +698,51 @@ class AudioRecorder: ObservableObject {
         }
 
         return RecordingCaptureDiagnostics(
-            selectedDeviceUID: selectedDeviceUID,
+            selectedDeviceUID: deviceUID,
             inputBufferCount: bufferCount,
             writtenFrameCount: frameCount,
             firstInputLatencyMs: firstLatency,
             lastBufferAgeMs: lastBufferAgeMs,
             fileSizeBytes: fileSizeBytes
         )
+    }
+
+    private func beginSetupGeneration() -> UInt64 {
+        setupGenerationQueue.sync {
+            activeSetupGeneration &+= 1
+            return activeSetupGeneration
+        }
+    }
+
+    private func invalidateSetupGeneration() {
+        setupGenerationQueue.sync {
+            activeSetupGeneration &+= 1
+        }
+    }
+
+    private func isSetupGenerationCurrent(_ generation: UInt64) -> Bool {
+        setupGenerationQueue.sync {
+            activeSetupGeneration == generation
+        }
+    }
+
+    private func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
+        if let engine {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            engine.reset()
+        }
+
+        audioFile = nil
+        audioEngine = nil
+        converter = nil
+        converterOutputFormat = nil
+
+        let cleanupURL = self.recordingURL ?? recordingURL
+        self.recordingURL = nil
+        if deleteTemporaryFile, let cleanupURL {
+            deleteRecording(at: cleanupURL)
+        }
     }
 }
 
@@ -631,6 +768,7 @@ enum RecordingError: LocalizedError {
     case permissionDenied
     case deviceSelectionFailed(OSStatus)
     case noInputAfterDeviceSwitch
+    case invalidFormat
 
     var errorDescription: String? {
         switch self {
@@ -646,6 +784,68 @@ enum RecordingError: LocalizedError {
             return "No se pudo seleccionar el microfono configurado"
         case .noInputAfterDeviceSwitch:
             return "error.input_not_ready".localized
+        case .invalidFormat:
+            return "Formato de audio del dispositivo no disponible. Intenta de nuevo."
         }
     }
+}
+
+struct RecordingStartFailureClassification {
+    let isTransient: Bool
+    let reason: String
+}
+
+func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) -> RecordingStartFailureClassification {
+    if error is CancellationError {
+        return RecordingStartFailureClassification(isTransient: false, reason: "cancelled")
+    }
+
+    if let recordingError = error as? RecordingError {
+        switch recordingError {
+        case .invalidFormat, .noInputAfterDeviceSwitch:
+            return RecordingStartFailureClassification(isTransient: true, reason: "\(recordingError)")
+        case .deviceSelectionFailed(let status):
+            let transientStatuses: Set<OSStatus> = [
+                kAudioUnitErr_FailedInitialization,
+                kAudioUnitErr_InvalidElement,
+                kAudioUnitErr_CannotDoInCurrentContext
+            ]
+            let isTransient = routeTransitionActive && transientStatuses.contains(status)
+            return RecordingStartFailureClassification(
+                isTransient: isTransient,
+                reason: "deviceSelectionFailed(\(status))"
+            )
+        case .engineCreationFailed, .fileCreationFailed, .converterCreationFailed, .permissionDenied:
+            return RecordingStartFailureClassification(isTransient: false, reason: "\(recordingError)")
+        }
+    }
+
+    let nsError = error as NSError
+    let errorDescription = "\(error)"
+    let userInfoDescription = nsError.userInfo.values.map { "\($0)" }.joined(separator: " ")
+
+    let transientCodes: Set<Int> = [
+        Int(kAudioUnitErr_FailedInitialization),
+        Int(kAudioUnitErr_InvalidElement),
+        Int(kAudioUnitErr_CannotDoInCurrentContext)
+    ]
+
+    if transientCodes.contains(nsError.code) {
+        return RecordingStartFailureClassification(
+            isTransient: routeTransitionActive,
+            reason: "osstatus(\(nsError.code))"
+        )
+    }
+
+    if errorDescription.contains("outputHWFormat")
+        || errorDescription.contains("IsFormatSampleRateAndChannelCountValid")
+        || userInfoDescription.contains("outputHWFormat")
+        || userInfoDescription.contains("IsFormatSampleRateAndChannelCountValid") {
+        return RecordingStartFailureClassification(isTransient: true, reason: "outputHWFormat invalid")
+    }
+
+    return RecordingStartFailureClassification(
+        isTransient: false,
+        reason: nsError.domain.isEmpty ? errorDescription : "\(nsError.domain)(\(nsError.code))"
+    )
 }

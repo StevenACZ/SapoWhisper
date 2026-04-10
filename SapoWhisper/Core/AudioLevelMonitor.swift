@@ -64,7 +64,11 @@ class AudioLevelMonitor: ObservableObject {
     private var sampleStartTime: Date?
 
     private var peakDecayTimer: Timer?
+    private let monitorQueue = DispatchQueue(label: "com.sapowhisper.audioMonitor.control", qos: .userInitiated)
     private var selectedDeviceUID: String = "default"
+    private var restartGeneration: UInt64 = 0
+    private var monitoringRequested = false
+    private var resumeAfterRecorder = false
 
     private init() {
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
@@ -73,23 +77,14 @@ class AudioLevelMonitor: ObservableObject {
     
     /// Inicia el monitoreo del micrófono
     func startMonitoring(deviceUID: String = "default") {
-        guard !isMonitoring else { return }
-
-        hasError = false
-        errorMessage = nil
-        selectedDeviceUID = deviceUID
-
-        startAudioEngine()
+        scheduleMonitoringStart(deviceUID: deviceUID, minimumDelay: 0)
     }
 
     /// Inicia el AVAudioEngine y bindea el dispositivo directamente al AudioUnit
-    private func startAudioEngine() {
-        audioEngine = AVAudioEngine()
+    private func startAudioEngineOnQueue(deviceUID: String) {
+        let audioEngine = AVAudioEngine()
 
-        guard let audioEngine = audioEngine else {
-            setError("No se pudo crear el motor de audio")
-            return
-        }
+        selectedDeviceUID = deviceUID
 
         do {
             let inputNode = audioEngine.inputNode
@@ -108,23 +103,21 @@ class AudioLevelMonitor: ObservableObject {
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
                 self?.processBuffer(buffer)
             }
-
             audioEngine.prepare()
             try audioEngine.start()
+            self.audioEngine = audioEngine
             isMonitoring = true
-            isActive = true
-
-            peakDecayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                if self.peakLevel > self.audioLevel {
-                    self.peakLevel = max(self.audioLevel, self.peakLevel - 0.02)
-                }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.hasError = false
+                self.errorMessage = nil
+                self.isActive = true
+                self.startPeakDecayTimer()
+                print("🎤 Monitoreo de nivel iniciado")
             }
-
-            print("🎤 Monitoreo de nivel iniciado")
         } catch {
             setError("Error al iniciar: \(error.localizedDescription)")
-            cleanup()
+            cleanupEngineOnQueue()
         }
     }
 
@@ -168,44 +161,125 @@ class AudioLevelMonitor: ObservableObject {
 
     /// Detiene el monitoreo
     func stopMonitoring() {
-        guard isMonitoring else { return }
-
         if isRecordingSample { stopSampleRecording() }
         clearSampleRecording()
-        cleanup()
-
-        isMonitoring = false
-        isActive = false
-        audioLevel = 0
-        peakLevel = 0
-        sampleTapFormat = nil
-
-        print("🎤 Monitoreo de nivel detenido")
+        monitorQueue.async { [weak self] in
+            self?.stopMonitoringOnQueue(clearIntent: true, logStop: true)
+        }
     }
     
     /// Limpia recursos sin cambiar el estado de monitoreo
-    private func cleanup() {
-        peakDecayTimer?.invalidate()
-        peakDecayTimer = nil
-        
+    private func cleanupEngineOnQueue() {
         if let engine = audioEngine {
             if engine.isRunning {
                 engine.inputNode.removeTap(onBus: 0)
                 engine.stop()
             }
+            engine.reset()
         }
         audioEngine = nil
+        sampleTapFormat = nil
+        isMonitoring = false
     }
     
     /// Reinicia el monitoreo con un nuevo dispositivo
     func restartMonitoring(deviceUID: String) {
-        stopMonitoring()
-        
-        // Delay para que el sistema libere el dispositivo
-        let delay: Double = 0.3
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.startMonitoring(deviceUID: deviceUID)
+        scheduleMonitoringStart(
+            deviceUID: deviceUID,
+            minimumDelay: AudioDeviceManager.shared.captureRouteSettleDelay()
+        )
+    }
+
+    @discardableResult
+    func suspendForRecorder() -> Bool {
+        let shouldResume = monitorQueue.sync {
+            monitoringRequested
+        }
+
+        guard shouldResume else { return false }
+
+        if isRecordingSample { stopSampleRecording() }
+        clearSampleRecording()
+
+        monitorQueue.async { [weak self] in
+            guard let self else { return }
+            self.resumeAfterRecorder = self.monitoringRequested
+            self.bumpRestartGeneration()
+            self.stopMonitoringOnQueue(clearIntent: false, logStop: false)
+            print("🎤 [audio monitor] suspended for recorder")
+        }
+        return true
+    }
+
+    func resumeAfterRecorderIfNeeded() {
+        let resumeContext = monitorQueue.sync { () -> (shouldResume: Bool, deviceUID: String) in
+            let shouldResume = resumeAfterRecorder && monitoringRequested
+            resumeAfterRecorder = false
+            return (shouldResume, selectedDeviceUID)
+        }
+
+        guard resumeContext.shouldResume else { return }
+        restartMonitoring(deviceUID: resumeContext.deviceUID)
+    }
+
+    private func scheduleMonitoringStart(deviceUID: String, minimumDelay: TimeInterval) {
+        monitorQueue.async { [weak self] in
+            guard let self else { return }
+            self.monitoringRequested = true
+            self.selectedDeviceUID = deviceUID
+            self.resumeAfterRecorder = false
+            let generation = self.bumpRestartGeneration()
+            self.stopMonitoringOnQueue(clearIntent: false, logStop: false)
+
+            let settleDelay = max(0, minimumDelay)
+            if settleDelay > 0 {
+                print("🎤 [audio monitor] waiting \(Int(settleDelay * 1000))ms for route to settle")
+            }
+
+            self.monitorQueue.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
+                guard let self else { return }
+                guard self.monitoringRequested, self.restartGeneration == generation else { return }
+                self.startAudioEngineOnQueue(deviceUID: deviceUID)
+            }
+        }
+    }
+
+    private func stopMonitoringOnQueue(clearIntent: Bool, logStop: Bool) {
+        if clearIntent {
+            monitoringRequested = false
+            resumeAfterRecorder = false
+            bumpRestartGeneration()
+        }
+
+        let wasMonitoring = isMonitoring || audioEngine != nil
+        cleanupEngineOnQueue()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.peakDecayTimer?.invalidate()
+            self.peakDecayTimer = nil
+            self.isActive = false
+            self.audioLevel = 0
+            self.peakLevel = 0
+            if logStop && wasMonitoring {
+                print("🎤 Monitoreo de nivel detenido")
+            }
+        }
+    }
+
+    @discardableResult
+    private func bumpRestartGeneration() -> UInt64 {
+        restartGeneration &+= 1
+        return restartGeneration
+    }
+
+    private func startPeakDecayTimer() {
+        peakDecayTimer?.invalidate()
+        peakDecayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.peakLevel > self.audioLevel {
+                self.peakLevel = max(self.audioLevel, self.peakLevel - 0.02)
+            }
         }
     }
     
@@ -217,9 +291,12 @@ class AudioLevelMonitor: ObservableObject {
 
         clearSampleRecording()
 
-        guard let audioEngine, audioEngine.isRunning else { return }
+        let monitorSnapshot = monitorQueue.sync { () -> (engine: AVAudioEngine?, tapFormat: AVAudioFormat?, isRunning: Bool) in
+            (audioEngine, sampleTapFormat, isMonitoring)
+        }
+        guard let audioEngine = monitorSnapshot.engine, monitorSnapshot.isRunning else { return }
 
-        let tapFormat = sampleTapFormat ?? audioEngine.inputNode.outputFormat(forBus: 0)
+        let tapFormat = monitorSnapshot.tapFormat ?? audioEngine.inputNode.outputFormat(forBus: 0)
         let tempDir = FileManager.default.temporaryDirectory
         let rawURL = tempDir.appendingPathComponent("mic_test_raw_\(Date().timeIntervalSince1970).wav")
 
@@ -421,10 +498,16 @@ class AudioLevelMonitor: ObservableObject {
     
     /// Establece un error
     private func setError(_ message: String) {
-        print("❌ AudioLevelMonitor: \(message)")
-        hasError = true
-        errorMessage = message
-        isActive = false
+        DispatchQueue.main.async { [weak self] in
+            print("❌ AudioLevelMonitor: \(message)")
+            self?.hasError = true
+            self?.errorMessage = message
+            self?.isActive = false
+            self?.peakDecayTimer?.invalidate()
+            self?.peakDecayTimer = nil
+            self?.audioLevel = 0
+            self?.peakLevel = 0
+        }
     }
     
     deinit {

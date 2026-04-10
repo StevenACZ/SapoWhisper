@@ -65,10 +65,12 @@ class SapoWhisperViewModel: ObservableObject {
     private static let googleCloudMaxDuration: TimeInterval = 58 // Stop before 60s limit
     private static let stopTailPadding: TimeInterval = 0.12
     private static let firstInputBufferTimeout: TimeInterval = 0.8
-    private static let missingInputRetryDelay: TimeInterval = 0.45
+    private static let startRetryBudget: TimeInterval = 1.0
+    private static let startRetryBackoffs: [TimeInterval] = [0.15, 0.30]
     private var isStopPending = false
     private var startRecordingTask: Task<Void, Never>?
     private var isStartPending = false
+    private var shouldResumeMicMonitorAfterRecording = false
 
     // MARK: - Computed Properties
 
@@ -466,11 +468,13 @@ class SapoWhisperViewModel: ObservableObject {
     private func cancelPendingRecordingStart() {
         guard isStartPending else { return }
 
+        audioRecorder.cancelPendingSetup()
         startRecordingTask?.cancel()
         startRecordingTask = nil
         isStartPending = false
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
+        restoreMicMonitorAfterRecordingIfNeeded()
         checkInitialState()
     }
     
@@ -491,6 +495,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// Detiene la grabacion y transcribe
     private func stopRecordingAndTranscribe() {
         isStopPending = false
+        defer { restoreMicMonitorAfterRecordingIfNeeded() }
         // Detener timers
         autoStopTimer?.invalidate()
         autoStopTimer = nil
@@ -723,22 +728,34 @@ class SapoWhisperViewModel: ObservableObject {
         microphone: String,
         playSound: Bool
     ) {
+        if isStartPending {
+            audioRecorder.cancelPendingSetup()
+        }
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            var recorderDidStart = false
 
             defer {
                 self.isStartPending = false
                 self.startRecordingTask = nil
+                if didSuspendMonitor && !recorderDidStart {
+                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                }
             }
 
             do {
                 try await self.startRecorderWithRecovery(microphone: microphone)
+                recorderDidStart = true
                 self.startAutoStopTimer(for: engine)
                 if playSound {
                     SoundManager.shared.play(.startRecording)
                 }
             } catch {
+                if error is CancellationError {
+                    return
+                }
                 self.appState = .error(error.localizedDescription)
                 self.overlayManager.showError(message: error.localizedDescription)
                 if playSound {
@@ -750,34 +767,58 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func startRecorderWithRecovery(microphone: String) async throws {
-        let firstAttemptSucceeded = try await attemptRecorderStart(
-            microphone: microphone,
-            attempt: 1,
-            minimumDelay: 0
-        )
-        if firstAttemptSucceeded {
-            return
+        let deadline = CFAbsoluteTimeGetCurrent() + Self.startRetryBudget
+        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
+
+        for attempt in 1...3 {
+            guard !Task.isCancelled else { throw CancellationError() }
+
+            do {
+                let didStart = try await attemptRecorderStart(
+                    microphone: microphone,
+                    attempt: attempt,
+                    minimumDelay: attempt == 1 ? 0 : Self.startRetryBackoffs[attempt - 2]
+                )
+                if didStart {
+                    if attempt > 1 {
+                        print("✅ [capture] recovered on retry after route transition")
+                    }
+                    return
+                }
+                lastFailure = RecordingError.noInputAfterDeviceSwitch
+            } catch {
+                if error is CancellationError {
+                    throw error
+                }
+                lastFailure = error
+            }
+
+            audioRecorder.discardRecording()
+
+            guard attempt < 3 else { break }
+
+            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
+            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
+            guard classification.isTransient else {
+                throw lastFailure
+            }
+
+            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
+            guard remainingBudget > 0 else { break }
+
+            let retryDelay = min(
+                remainingBudget,
+                max(Self.startRetryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
+            )
+
+            print(
+                "🎙️ [capture] transient start failure (\(classification.reason)), " +
+                "retrying \(attempt + 1)/3 after \(Int(retryDelay * 1000))ms"
+            )
+            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
         }
 
-        audioRecorder.discardRecording()
-        let retryDelay = max(Self.missingInputRetryDelay, AudioDeviceManager.shared.recorderInputSettleDelay())
-        print("🎙️ [capture] retrying start after \(String(format: "%.0f", retryDelay * 1000))ms")
-        try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
-
-        guard !Task.isCancelled else { return }
-
-        let secondAttemptSucceeded = try await attemptRecorderStart(
-            microphone: microphone,
-            attempt: 2,
-            minimumDelay: 0
-        )
-        if secondAttemptSucceeded {
-            print("✅ [capture] recovered on retry after device change")
-            return
-        }
-
-        audioRecorder.discardRecording()
-        throw RecordingError.noInputAfterDeviceSwitch
+        throw lastFailure
     }
 
     private func attemptRecorderStart(
@@ -793,7 +834,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard !Task.isCancelled else { return false }
 
-        try audioRecorder.startRecording()
+        try await audioRecorder.startRecording()
         let receivedInput = await audioRecorder.waitForFirstInputBuffer(timeout: Self.firstInputBufferTimeout)
         if receivedInput {
             return true
@@ -807,6 +848,20 @@ class SapoWhisperViewModel: ObservableObject {
             "(bytes: \(diagnostics.fileSizeBytes), input: \(inputDescription))"
         )
         return false
+    }
+
+    private func suspendMicMonitorForRecordingIfNeeded() -> Bool {
+        let shouldResume = AudioLevelMonitor.shared.suspendForRecorder()
+        if shouldResume {
+            shouldResumeMicMonitorAfterRecording = true
+        }
+        return shouldResume
+    }
+
+    private func restoreMicMonitorAfterRecordingIfNeeded() {
+        guard shouldResumeMicMonitorAfterRecording else { return }
+        shouldResumeMicMonitorAfterRecording = false
+        AudioLevelMonitor.shared.resumeAfterRecorderIfNeeded()
     }
 
     private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
