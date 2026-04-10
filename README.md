@@ -17,6 +17,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 - 🎙️ **Deepgram Nova-3** — High accuracy cloud transcription
 - ☁️ **Google Cloud Chirp 3** — Maximum accuracy with Google's latest STT model
 - 📋 **Transcription history** — Browse, search, pin, replay, and re-transcribe past recordings
+- 🎛️ **Persistent preferred microphone** — Keep your chosen mic as the macOS global input even when switching between AirPods, speakers, or other output routes
 - ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
 - 🌐 **Bilingual** — Supports Spanish and English
 - 🎨 **Visual overlay** — Compact floating pill shows recording status
@@ -57,6 +58,10 @@ Click the pause button on the overlay pill to pause recording. Click again to re
 ### Multi-Monitor
 
 The overlay automatically appears on the screen where your mouse cursor is.
+
+### Preferred Microphone Sync
+
+If you choose a specific microphone in **Settings → General**, SapoWhisper keeps that device aligned with the macOS global input when audio routes change. If the microphone is unplugged or disappears, the app automatically falls back to **System Default**.
 
 ---
 

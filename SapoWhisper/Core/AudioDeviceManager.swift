@@ -53,9 +53,13 @@ class AudioDeviceManager: ObservableObject {
 
     /// Name of the newly detected default input device (published when it changes)
     @Published var detectedDeviceName: String? = nil
+    var routeChanges: AnyPublisher<Void, Never> {
+        routeChangeSubject.eraseToAnyPublisher()
+    }
 
     private let stateQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.state", qos: .userInitiated)
     private let listenerQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.listeners", qos: .userInitiated)
+    private let routeChangeSubject = PassthroughSubject<Void, Never>()
     private var state = StateSnapshot()
 
     private init() {
@@ -247,11 +251,8 @@ class AudioDeviceManager: ObservableObject {
         guard changed else { return }
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
-        DispatchQueue.main.async { [weak self] in
-            self?.detectedDeviceName = nil
-            self?.detectedDeviceName = deviceName
-        }
         print("🎙️ [audio route] default input -> \(deviceName)")
+        notifyRouteChange()
     }
 
     private func checkDefaultOutputDeviceChange() {
@@ -269,6 +270,7 @@ class AudioDeviceManager: ObservableObject {
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
         print("🔊 [audio route] default output -> \(deviceName)")
+        notifyRouteChange()
     }
 
     func recorderInputSettleDelay() -> TimeInterval {
@@ -420,6 +422,20 @@ class AudioDeviceManager: ObservableObject {
         writeState { state in
             state.lastDeviceListChangeTime = timestamp
         }
+        notifyRouteChange()
+    }
+
+    func publishDetectedDeviceName(_ deviceName: String) {
+        let publish = {
+            self.detectedDeviceName = nil
+            self.detectedDeviceName = deviceName
+        }
+
+        if Thread.isMainThread {
+            publish()
+        } else {
+            DispatchQueue.main.async(execute: publish)
+        }
     }
 
     private func queryAllDeviceIDs() -> [AudioDeviceID]? {
@@ -479,5 +495,9 @@ class AudioDeviceManager: ObservableObject {
         stateQueue.sync {
             block(&state)
         }
+    }
+
+    private func notifyRouteChange() {
+        routeChangeSubject.send()
     }
 }

@@ -12,6 +12,10 @@ struct SapoWhisperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var viewModel = SapoWhisperViewModel()
     @StateObject private var localizationManager = LocalizationManager.shared
+
+    init() {
+        PreferredMicrophoneCoordinator.shared.start()
+    }
     
     var body: some Scene {
         // Menu Bar App principal

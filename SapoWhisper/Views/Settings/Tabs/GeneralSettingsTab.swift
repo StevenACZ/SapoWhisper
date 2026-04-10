@@ -18,6 +18,7 @@ struct GeneralSettingsTab: View {
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    private let preferredMicrophoneCoordinator = PreferredMicrophoneCoordinator.shared
 
     private var appBinding: Binding<String> {
         Binding(
@@ -59,10 +60,9 @@ struct GeneralSettingsTab: View {
         }
     }
 
-    /// Sets the system default input device to match the selected mic
+    /// Reconciles the app selection with the macOS default input device
     private func syncSystemDefaultInput(uid: String) {
-        guard let deviceID = audioDeviceManager.getDeviceID(for: uid) else { return }
-        audioDeviceManager.setSystemDefaultInputDevice(deviceID)
+        preferredMicrophoneCoordinator.applyUserSelection(uid: uid)
     }
 
     // MARK: - Language (combined)

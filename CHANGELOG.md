@@ -16,6 +16,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Music playback could cut out when starting a recording** — Removed the "silent output" redirection logic that created a competing output route inside `AVAudioEngine`.
 - **Rapid start/cancel/start could leave stale recorder setups behind** — Recorder startup now uses a setup generation token so obsolete starts are cancelled and cleaned up before they can publish state.
 - **Device switches could still miss retries even after the async recorder change** — Recovery now retries transient route errors like `-10875`, invalid hardware format, and missing first input buffers within a bounded retry budget.
+- **Preferred microphone could drift away from the macOS global input** — After output route changes (AirPods, speakers, Bluetooth headphones), SapoWhisper could still record from the selected mic while System Settings silently switched the native input to another device. The app now reconciles route changes and restores the preferred microphone as the global default input.
 
 ### Changed
 
@@ -23,6 +24,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Settle delay now includes output changes too** — New route-settle logic accounts for default input, default output, and device list transitions.
 - **Core Audio listeners moved off the main thread** — Route listeners now run on a dedicated queue and only publish UI-facing state back to main.
 - **Mic test monitor is serialized and recorder-aware** — It now restarts through a dedicated control queue, uses the same route settle delay, and suspends automatically while the main recorder is active.
+- **Preferred mic selection is now a persistent system-level source of truth** — If the app preference is a specific device, route changes re-apply it globally; if that device disappears, SapoWhisper automatically falls back to `System Default` instead of forcing a stale selection.
 
 ### Added
 
