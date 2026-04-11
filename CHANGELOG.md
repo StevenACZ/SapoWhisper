@@ -6,6 +6,26 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## Auto-Ducking — 2026-04-11
+
+> Automatically lower system audio volume during recording so background music/videos don't interfere with transcription.
+
+### Added
+
+- **Auto-Ducking** — New feature that reduces system output volume while recording and restores it when done. Configurable in Settings > General > Auto-Ducking.
+- **Volume reduction slider** — Adjustable from 10% to 100% reduction (default 80%). At 80%, system volume drops to 20% of its original level during recording.
+- **Smart restore** — If the user manually changes volume during recording, the app respects their choice and doesn't override it on restore.
+- **Safety net** — Volume is force-restored on app termination to prevent getting stuck at low volume.
+- **Core Audio HAL integration** — Uses `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` with per-channel fallback, no AVAudioSession (macOS doesn't support it).
+- **Localization** — Full ES/EN support for all Auto-Ducking UI strings.
+
+### Files
+
+- New: `Core/Managers/AutoDuckingManager.swift`
+- Modified: `Constants.swift`, `SapoWhisperViewModel.swift`, `AppDelegate.swift`, `GeneralSettingsTab.swift`, `Localizable.strings` (EN/ES)
+
+---
+
 ## Audio Route Resilience + Music Playback Fix — 2026-04-09
 
 > Hardened audio capture against input/output device changes while music is playing. Recording and mic test no longer touch output routing, startup now retries transient Core Audio failures, and the app stays responsive during route transitions.

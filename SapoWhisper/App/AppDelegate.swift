@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Cleanup si es necesario
+        // Safety net: restaurar volumen del sistema si la app se cierra durante grabación
+        AutoDuckingManager.shared.forceRestore()
     }
 }

@@ -15,6 +15,8 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
     @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
     @AppStorage(Constants.StorageKeys.soundVolume) private var soundVolume: Double = 1.0
+    @AppStorage(Constants.StorageKeys.autoDuckingEnabled) private var autoDuckingEnabled = false
+    @AppStorage(Constants.StorageKeys.autoDuckingAmount) private var autoDuckingAmount: Double = 0.8
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
@@ -32,6 +34,7 @@ struct GeneralSettingsTab: View {
             microphoneSection
             languageSection
             soundSection
+            autoDuckingSection
             behaviorSection
         }
         .formStyle(.grouped)
@@ -126,6 +129,29 @@ struct GeneralSettingsTab: View {
             Label("settings.sounds".localized, systemImage: "speaker.wave.2.fill")
         } footer: {
             Text("settings.play_sounds_desc".localized)
+        }
+    }
+
+    // MARK: - Auto-Ducking
+
+    private var autoDuckingSection: some View {
+        Section {
+            Toggle("settings.auto_ducking".localized, isOn: $autoDuckingEnabled)
+
+            if autoDuckingEnabled {
+                Slider(value: $autoDuckingAmount, in: 0.1...1.0, step: 0.05) {
+                    Text("settings.ducking_amount".localized)
+                } minimumValueLabel: {
+                    Text("10%")
+                } maximumValueLabel: {
+                    Text("\(Int(autoDuckingAmount * 100))%")
+                }
+                .tint(Constants.Colors.sapoGreen)
+            }
+        } header: {
+            Label("settings.auto_ducking_header".localized, systemImage: "speaker.minus.fill")
+        } footer: {
+            Text("settings.auto_ducking_desc".localized)
         }
     }
 

@@ -241,3 +241,9 @@
 
 /* Google Cloud Warning */
 "config.google_60s_warning" = "Limited to 60 seconds per recording";
+
+/* Auto-Ducking */
+"settings.auto_ducking" = "Auto-duck system audio";
+"settings.ducking_amount" = "Volume reduction";
+"settings.auto_ducking_header" = "Auto-Ducking";
+"settings.auto_ducking_desc" = "Automatically lower system audio volume while recording";

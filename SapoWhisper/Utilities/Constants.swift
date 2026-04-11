@@ -107,6 +107,10 @@ enum Constants {
 
         // Launch at Login
         static let launchAtLogin = "launchAtLogin"
+
+        // Auto-Ducking
+        static let autoDuckingEnabled = "autoDuckingEnabled"
+        static let autoDuckingAmount = "autoDuckingAmount"  // 0.0 a 1.0 (porcentaje de reducción)
     }
 }
 

@@ -23,6 +23,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 - 🎨 **Visual overlay** — Compact floating pill shows recording status
 - 🔄 **Re-transcribe** — Re-process any saved recording with a different engine
 - 💾 **Audio download** — Export your recordings from history
+- 🔉 **Auto-ducking** — Automatically lowers system volume while recording so background audio doesn't interfere
 
 ---
 
