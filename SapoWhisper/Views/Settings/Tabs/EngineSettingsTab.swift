@@ -2,7 +2,6 @@
 //  EngineSettingsTab.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI

@@ -2,7 +2,6 @@
 //  AutoDuckingManager.swift
 //  SapoWhisper
 //
-//  Created by Steven on 11/04/26.
 //
 
 import Foundation

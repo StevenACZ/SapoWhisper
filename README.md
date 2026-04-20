@@ -21,6 +21,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 - ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
 - 🌐 **Bilingual** — Supports Spanish and English
 - 🎨 **Visual overlay** — Compact floating pill shows recording status
+- 🔐 **Guided permissions** — Opens the exact System Settings panel with a live “Missing Permissions” checklist
 - 🔄 **Re-transcribe** — Re-process any saved recording with a different engine
 - 💾 **Audio download** — Export your recordings from history
 - 🔉 **Auto-ducking** — Automatically lowers system volume while recording so background audio doesn't interfere
@@ -36,10 +37,10 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 
 ### Steps
 
-1. Download the latest version from [Releases](https://github.com/StevenACZ/SapoWhisper/releases)
+1. Download the latest version from the repository Releases page
 2. Drag `SapoWhisper.app` to your Applications folder
 3. Open the app — a 🐸 will appear in your menu bar
-4. Grant microphone permissions when prompted
+4. If macOS needs access, SapoWhisper will open a guided **Missing Permissions** flow and take you to the exact System Settings panel
 
 ---
 
@@ -51,6 +52,16 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 4. ✨ **Text is automatically pasted**
 
 > 💡 You can change the shortcut in Settings → Hotkey
+
+### Guided Permissions
+
+If a required permission is missing, SapoWhisper opens a **Missing Permissions** window that:
+
+- keeps every permission visible in one place
+- shows live status updates (`Pending` / `Active`)
+- opens the exact System Settings privacy panel for that permission
+- shows a floating helper overlay on top of System Settings
+- lets you drag the app into the Accessibility list if needed
 
 ### Pause & Resume
 
@@ -170,10 +181,10 @@ Key optimizations:
 
 ## 🤝 Contributing
 
-Contributions are welcome! If you find a bug or have an idea, open an [Issue](https://github.com/StevenACZ/SapoWhisper/issues).
+Contributions are welcome. If you find a bug or have an idea, open an issue in the repository.
 
 ---
 
 ## 📄 License
 
-MIT © [StevenACZ](https://github.com/StevenACZ)
+MIT

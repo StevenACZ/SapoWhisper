@@ -2,7 +2,6 @@
 //  GoogleCloudTranscriber.swift
 //  SapoWhisper
 //
-//  Created by Steven on 4/4/26.
 //
 
 import AVFoundation

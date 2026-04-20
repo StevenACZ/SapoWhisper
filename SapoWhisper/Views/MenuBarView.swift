@@ -2,7 +2,6 @@
 //  MenuBarView.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 
 import SwiftUI
@@ -16,21 +15,24 @@ struct MenuBarView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header con estado
             headerSection
-            
-            // Botón principal de grabación
-            recordingSection
-            
-            // Última transcripción
-            if !viewModel.lastTranscription.isEmpty {
-                transcriptionSection
+
+            MenuBarPermissionReminderView {
+                openPermissionsWindow()
             }
-            
+
+            recordingSection
+
+            if !viewModel.lastTranscription.isEmpty {
+                MenuBarTranscriptionSection(transcription: viewModel.lastTranscription) {
+                    PasteManager.copyToClipboard(viewModel.lastTranscription)
+                    SoundManager.shared.play(.success)
+                }
+            }
+
             Divider()
                 .padding(.horizontal)
-            
-            // Configuraciones rápidas y acciones
+
             actionsSection
         }
         .frame(width: Constants.Sizes.menuBarWidth)
@@ -41,12 +43,11 @@ struct MenuBarView: View {
     
     private var headerSection: some View {
         HStack(spacing: 12) {
-            // Icono del sapo
             ZStack {
                 Circle()
                     .fill(viewModel.appState.iconColor.opacity(0.2))
                     .frame(width: 44, height: 44)
-                
+
                 if case .recording = viewModel.appState {
                     Circle()
                         .stroke(viewModel.appState.iconColor, lineWidth: 2)
@@ -57,8 +58,7 @@ struct MenuBarView: View {
                         .onAppear { pulseAnimation = true }
                         .onDisappear { pulseAnimation = false }
                 }
-                
-                // Usar siempre el icono Idle para el header del popup
+
                 if let idleIcon = NSImage(named: "DockIconIdle") {
                     Image(nsImage: idleIcon)
                         .resizable()
@@ -78,15 +78,14 @@ struct MenuBarView: View {
                 Text("app_name".localized)
                     .font(.headline)
                     .fontWeight(.semibold)
-                
+
                 Text(viewModel.statusText)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
-            // Badge del hotkey
+
             HotkeyBadge(text: viewModel.hotkeyManager.hotkeyDescription)
         }
         .padding()
@@ -97,13 +96,11 @@ struct MenuBarView: View {
     
     private var recordingSection: some View {
         VStack(spacing: 16) {
-            // Timer de grabación (si está grabando)
             if case .recording = viewModel.appState {
                 RecordingTimer(duration: viewModel.recordingDuration)
                     .transition(.scale.combined(with: .opacity))
             }
-            
-            // Botón principal
+
             Button(action: {
                 withAnimation(Constants.Animation.spring) {
                     viewModel.toggleRecording()
@@ -139,8 +136,7 @@ struct MenuBarView: View {
                     isHoveringRecord = hovering
                 }
             }
-            
-            // Mensaje si no hay modelo
+
             if case .noModel = viewModel.appState {
                 Button(action: { openSettingsWindow() }) {
                     Label("menu.configure_details".localized, systemImage: "arrow.down.circle.fill")
@@ -213,52 +209,11 @@ struct MenuBarView: View {
             }
         }
     }
-    
-    // MARK: - Transcription Section
-    
-    private var transcriptionSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "text.quote")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                
-                Text("menu.last_transcription".localized)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                Button(action: {
-                    PasteManager.copyToClipboard(viewModel.lastTranscription)
-                    SoundManager.shared.play(.success)
-                }) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("menu.copy_clipboard".localized)
-            }
-            
-            Text(viewModel.lastTranscription)
-                .font(.callout)
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(Constants.Sizes.smallCornerRadius)
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-    }
-    
+
     // MARK: - Actions Section
-    
+
     private var actionsSection: some View {
         VStack(spacing: 0) {
-            // Toggle de auto-paste
             SettingsRow(
                 icon: "doc.on.clipboard",
                 title: "menu.auto_paste".localized,
@@ -268,11 +223,10 @@ struct MenuBarView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
             }
-            
+
             Divider()
                 .padding(.horizontal)
-            
-            // Historial
+
             ActionRow(
                 icon: "clock.arrow.circlepath",
                 title: "menu.history".localized,
@@ -284,7 +238,6 @@ struct MenuBarView: View {
             Divider()
                 .padding(.horizontal)
 
-            // Configuración - Abre ventana separada
             ActionRow(
                 icon: "gearshape",
                 title: "menu.settings".localized,
@@ -292,11 +245,10 @@ struct MenuBarView: View {
             ) {
                 openSettingsWindow()
             }
-            
+
             Divider()
                 .padding(.horizontal)
-            
-            // Salir
+
             ActionRow(
                 icon: "power",
                 title: "quit".localized,
@@ -327,142 +279,11 @@ struct MenuBarView: View {
         // Activar la app para que la ventana aparezca al frente
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
-}
 
-// MARK: - Supporting Views
-
-/// Badge que muestra el atajo de teclado
-struct HotkeyBadge: View {
-    let text: String
-    
-    var body: some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(6)
-    }
-}
-
-/// Timer visual de la grabación
-struct RecordingTimer: View {
-    let duration: TimeInterval
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(Color.recording)
-                .frame(width: 8, height: 8)
-            
-            Text(formattedDuration)
-                .font(.system(.title2, design: .monospaced))
-                .fontWeight(.medium)
-                .foregroundColor(.recording)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.recording.opacity(0.1))
-        .cornerRadius(Constants.Sizes.smallCornerRadius)
-    }
-    
-    private var formattedDuration: String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        let milliseconds = Int((duration.truncatingRemainder(dividingBy: 1)) * 10)
-        return String(format: "%d:%02d.%d", minutes, seconds, milliseconds)
-    }
-}
-
-/// Fila de configuración con toggle
-struct SettingsRow<Content: View>: View {
-    let icon: String
-    let title: String
-    let subtitle: String?
-    let content: () -> Content
-    
-    init(icon: String, title: String, subtitle: String? = nil, @ViewBuilder content: @escaping () -> Content) {
-        self.icon = icon
-        self.title = title
-        self.subtitle = subtitle
-        self.content = content
-    }
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .frame(width: 20)
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.subheadline)
-                
-                if let subtitle = subtitle {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            content()
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-    }
-}
-
-/// Fila de acción clickeable
-struct ActionRow: View {
-    let icon: String
-    let title: String
-    let subtitle: String?
-    var isDestructive: Bool = false
-    let action: () -> Void
-    
-    @State private var isHovering = false
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(isDestructive ? .red : .secondary)
-                    .frame(width: 20)
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.subheadline)
-                        .foregroundColor(isDestructive ? .red : .primary)
-                    
-                    if let subtitle = subtitle {
-                        Text(subtitle)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                if !isDestructive {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 10)
-            .background(isHovering ? Color(NSColor.controlBackgroundColor) : Color.clear)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovering = hovering
-        }
+    private func openPermissionsWindow() {
+        NSApp.keyWindow?.close()
+        PermissionRequirementsWindowController.shared.showWindow(force: true)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }
 

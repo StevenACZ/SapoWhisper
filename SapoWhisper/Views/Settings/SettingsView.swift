@@ -2,7 +2,6 @@
 //  SettingsView.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 
 import SwiftUI

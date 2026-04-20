@@ -2,7 +2,6 @@
 //  SapoWhisperViewModel.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 
 import SwiftUI
@@ -89,7 +88,7 @@ class SapoWhisperViewModel: ObservableObject {
     func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
         switch engine {
         case .appleOnline:
-            return transcriber.isModelLoaded
+            return true
         case .whisperLocal:
             return whisperKitTranscriber.isModelLoaded
         case .googleCloud:
@@ -270,6 +269,14 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.transcriber.refreshAuthorizationStatus()
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
         // Observar nivel de audio del recorder para el overlay
         audioRecorder.$audioLevel
             .receive(on: DispatchQueue.main)
@@ -309,11 +316,7 @@ class SapoWhisperViewModel: ObservableObject {
     private func checkInitialState() {
         switch currentEngine {
         case .appleOnline:
-            if transcriber.isModelLoaded {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
+            appState = .idle
         case .whisperLocal:
             if whisperKitTranscriber.isModelLoaded {
                 appState = .idle
@@ -440,8 +443,16 @@ class SapoWhisperViewModel: ObservableObject {
     
     /// Inicia la grabacion
     func startRecording() {
+        let engine = currentEngine
+        let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
+
+        guard missingPermissions.isEmpty else {
+            PermissionService.shared.showRequirementsWindow(force: true)
+            return
+        }
+
         // Verificar que el motor actual tiene modelo cargado
-        let isReady = isEngineReady(currentEngine)
+        let isReady = isEngineReady(engine)
 
         guard isReady else {
             appState = .noModel
@@ -452,7 +463,6 @@ class SapoWhisperViewModel: ObservableObject {
         PasteManager.savePreviousApp()
 
         // Mostrar overlay PRIMERO para feedback visual inmediato
-        let engine = currentEngine
         appState = .recording
 
         overlayManager.updateState(.recording(duration: 0))
@@ -869,6 +879,9 @@ class SapoWhisperViewModel: ObservableObject {
     private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
         switch engine {
         case .appleOnline:
+            guard PermissionService.shared.isGranted(.speechRecognition) else {
+                throw TranscriberError.permissionDenied
+            }
             return try await transcriber.transcribe(audioURL: audioURL, language: language)
         case .whisperLocal:
             return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
@@ -923,7 +936,7 @@ class SapoWhisperViewModel: ObservableObject {
     var canRecord: Bool {
         switch currentEngine {
         case .appleOnline:
-            return transcriber.isModelLoaded && !transcriber.isTranscribing
+            return !transcriber.isTranscribing
         case .whisperLocal:
             return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
         case .googleCloud:

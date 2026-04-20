@@ -2,7 +2,6 @@
 //  AboutSettingsTab.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI
@@ -165,16 +164,10 @@ struct AboutSettingsTab: View {
                 Text("made_by".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
-                Button {
-                    if let url = URL(string: Constants.githubURL) {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Label("settings.view_github".localized, systemImage: "link")
-                        .font(.caption)
-                }
-                .buttonStyle(.link)
+
+                Text("about.open_source".localized)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
         }
     }

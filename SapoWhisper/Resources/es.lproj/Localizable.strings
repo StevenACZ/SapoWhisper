@@ -1,7 +1,8 @@
 /* General */
 "app_name" = "SapoWhisper";
 "version" = "Versión %@";
-"made_by" = "Creado con 💚 por Steven";
+"made_by" = "Creado con cuidado para macOS";
+"about.open_source" = "Proyecto open source listo para compartirse publicamente.";
 "close" = "Cerrar";
 "quit" = "Salir de SapoWhisper";
 "about" = "Acerca de";
@@ -188,6 +189,62 @@
 "settings.presets_desc" = "Selecciona un atajo predefinido o personaliza el tuyo";
 
 /* Microphone Level Meter */
+
+/* Guided Permissions */
+"permissions.microphone.title" = "Micrófono";
+"permissions.microphone.summary" = "Necesario para capturar tu voz antes de transcribir.";
+"permissions.microphone.overlay_title" = "Activa Micrófono";
+"permissions.microphone.overlay_message" = "Activa el interruptor de SapoWhisper en este panel.";
+"permissions.microphone.helper_title" = "Habilita el interruptor de SapoWhisper";
+"permissions.microphone.helper_message" = "Cuando lo actives, validaremos el estado automáticamente.";
+"permissions.microphone.active_detail" = "SapoWhisper ya puede usar el micrófono para grabar.";
+"permissions.microphone.pending_detail" = "Necesario para grabar audio antes de transcribir.";
+"permissions.speech.title" = "Reconocimiento de voz";
+"permissions.speech.summary" = "Necesario para usar el motor Apple Speech.";
+"permissions.speech.overlay_title" = "Activa Reconocimiento de voz";
+"permissions.speech.overlay_message" = "Busca SapoWhisper en la lista y habilita el acceso a reconocimiento de voz. Si macOS todavía no lo muestra, acepta primero el diálogo del sistema y luego vuelve aquí.";
+"permissions.speech.helper_title" = "Activa el permiso para Apple Speech";
+"permissions.speech.helper_message" = "Este ajuste permite que Apple Speech procese el audio grabado por SapoWhisper.";
+"permissions.speech.active_detail" = "Apple Speech ya está listo para transcribir desde SapoWhisper.";
+"permissions.speech.pending_detail" = "Necesario para transcribir con el motor Apple Speech.";
+"permissions.accessibility.title" = "Accesibilidad";
+"permissions.accessibility.summary" = "Necesario para auto-pegar y para un flujo global sin fricción.";
+"permissions.accessibility.overlay_title" = "Activa Accesibilidad";
+"permissions.accessibility.overlay_message" = "Si SapoWhisper ya aparece en la lista, solo habilítalo. Si todavía no está visible, arrástralo desde la tarjeta inferior hacia la lista.";
+"permissions.accessibility.helper_title" = "Arrastra SapoWhisper si hace falta";
+"permissions.accessibility.helper_message" = "La tarjeta inferior te deja soltar la app dentro de la lista de Accesibilidad cuando todavía no aparece.";
+"permissions.accessibility.active_detail" = "SapoWhisper ya puede auto-pegar y completar mejor el flujo global.";
+"permissions.accessibility.pending_detail" = "Recomendado para auto-pegar y para completar el flujo desde cualquier app.";
+"permissions.overlay.footnote" = "Cuando vuelvas a SapoWhisper, actualizaremos este estado automáticamente.";
+"permissions.overlay.drag_subtitle" = "Arrástrame hacia la lista si hace falta";
+"permissions.banner.title" = "Permisos pendientes";
+"permissions.banner.body" = "Activa %@ para desbloquear el flujo completo de SapoWhisper.";
+"permissions.banner.generic_permissions" = "los permisos";
+"permissions.banner.and" = "y";
+"permissions.review" = "Revisar";
+"permissions.window_title" = "Permisos pendientes";
+"permissions.window.section_title" = "Permisos del sistema";
+"permissions.window.footer_ready" = "Todo está listo. Puedes cerrar esta ventana y continuar.";
+"permissions.window.footer_pending" = "Puedes cerrar esta ventana y volver luego.";
+"permissions.window.close_ready" = "Cerrar";
+"permissions.window.close_pending" = "Ahora no";
+"permissions.window.subtitle" = "SapoWhisper te guía al panel correcto de Ajustes del Sistema y refresca el estado cuando regresas.";
+"permissions.window.hero_ready" = "Todo listo para transcribir";
+"permissions.window.hero_one" = "Activa el permiso pendiente";
+"permissions.window.hero_many" = "Activa los permisos pendientes";
+"permissions.window.badge_ready" = "Todo listo";
+"permissions.window.badge_one" = "1 pendiente";
+"permissions.window.badge_many" = "%d pendientes";
+"permissions.window.helper_ready" = "Ya puedes volver al menú o grabar con normalidad.";
+"permissions.window.helper_pending" = "Todos los permisos siguen visibles aquí aunque alguno ya esté activo, para que completes el onboarding sin perder contexto.";
+"permissions.status.active" = "Activo";
+"permissions.status.pending" = "Pendiente";
+"permissions.card.ready" = "Listo";
+"permissions.activate" = "Activar";
+"permissions.settings.row_hint" = "SapoWhisper te lleva al panel correcto y refresca el estado al volver.";
+"permissions.speech.denied_error" = "Permisos de reconocimiento de voz denegados";
+"settings.permissions_guided_footer" = "Puedes abrir el onboarding guiado para cada permiso y ver el estado en vivo mientras vuelves desde Ajustes del Sistema.";
+"settings.permissions_guided_desc" = "Accesibilidad sigue siendo clave para auto-pegar y para un flujo cómodo desde cualquier app. Si quieres ver todos los permisos juntos, abre el onboarding guiado.";
 "settings.test_microphone" = "Probar micrófono";
 "settings.gain" = "Ganancia";
 "settings.listening" = "Escuchando...";

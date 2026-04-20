@@ -2,7 +2,6 @@
 //  GeneralSettingsTab.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI
@@ -36,6 +35,7 @@ struct GeneralSettingsTab: View {
             soundSection
             autoDuckingSection
             behaviorSection
+            permissionsSection
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -169,6 +169,24 @@ struct GeneralSettingsTab: View {
             Label("settings.behavior".localized, systemImage: "gearshape")
         } footer: {
             Text("settings.auto_paste_desc".localized)
+        }
+    }
+
+    // MARK: - Permissions
+
+    private var permissionsSection: some View {
+        Section {
+            ForEach(AppPermission.allCases) { permission in
+                PermissionStatusRow(permission: permission)
+            }
+
+            Button("permissions.review".localized) {
+                PermissionRequirementsWindowController.shared.showWindow(force: true)
+            }
+        } header: {
+            Label("settings.permissions".localized, systemImage: "hand.raised.fill")
+        } footer: {
+            Text("settings.permissions_guided_footer".localized)
         }
     }
 

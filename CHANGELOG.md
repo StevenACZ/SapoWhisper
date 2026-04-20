@@ -6,6 +6,33 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## Guided Permission Onboarding + Public Repo Cleanup — 2026-04-19
+
+> Added a PeekOCR-style guided permissions flow for SapoWhisper and cleaned the public-facing docs/UI so the repository is ready to share publicly.
+
+### Added
+
+- **Guided permission onboarding** — New `Missing Permissions` window that keeps all required permissions visible at once, even after some become active.
+- **Live permission status updates** — Microphone, Speech Recognition, and Accessibility now refresh automatically when returning from System Settings.
+- **Floating assistant overlay** — A contextual overlay opens on top of the exact System Settings privacy panel and explains the next step.
+- **Accessibility drag helper** — If SapoWhisper is not listed yet in Accessibility, the overlay provides a draggable app card to drop into the list.
+- **Permission banner in the menu bar** — The main popover now warns about missing permissions and links directly into the guided flow.
+- **Permission rows in Settings** — General and Hotkey settings now show inline permission status rows with activation actions.
+
+### Changed
+
+- **Recording flow now checks required permissions first** — Starting a recording opens the guided onboarding when a blocking permission is missing instead of failing later in the pipeline.
+- **Launch no longer triggers surprise permission prompts** — Permission requests are now driven by explicit onboarding actions.
+- **Apple Speech permission state is refreshed on app activation** — The app picks up Speech Recognition changes as soon as the user comes back.
+- **Menu bar UI was split into smaller components** — Keeps the codebase within the project size limits while integrating the new permission reminder UI.
+- **Permission onboarding UI was polished** — Shorter microphone helper copy, a taller hero card, and a roomier missing-permissions window improve readability during setup.
+
+### Documentation
+
+- **README updated for public release** — Added the guided permission flow to the feature/installation docs and removed hardcoded personal repository links.
+- **Public-facing copy sanitized** — In-app credits and localized strings were updated to avoid personal attribution in the shared build.
+- **Source headers cleaned up** — Removed personal author headers from tracked Swift files.
+
 ## Auto-Ducking — 2026-04-11
 
 > Automatically lower system audio volume during recording so background music/videos don't interfere with transcription.
