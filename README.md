@@ -21,7 +21,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 - ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
 - 🌐 **Bilingual** — Supports Spanish and English
 - 🎨 **Visual overlay** — Compact floating pill shows recording status
-- 🔐 **Guided permissions** — Opens the exact System Settings panel with a live “Missing Permissions” checklist
+- 🔐 **Guided permissions** — Opens on launch when access is missing and guides you to the exact System Settings panel
 - 🔄 **Re-transcribe** — Re-process any saved recording with a different engine
 - 💾 **Audio download** — Export your recordings from history
 - 🔉 **Auto-ducking** — Automatically lowers system volume while recording so background audio doesn't interfere
@@ -40,7 +40,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 1. Download the latest version from the repository Releases page
 2. Drag `SapoWhisper.app` to your Applications folder
 3. Open the app — a 🐸 will appear in your menu bar
-4. If macOS needs access, SapoWhisper will open a guided **Missing Permissions** flow and take you to the exact System Settings panel
+4. If macOS needs access, SapoWhisper will open a guided **Missing Permissions** flow on launch and take you to the exact System Settings panel
 
 ---
 
@@ -57,6 +57,7 @@ A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`
 
 If a required permission is missing, SapoWhisper opens a **Missing Permissions** window that:
 
+- appears automatically on launch when setup is incomplete
 - keeps every permission visible in one place
 - shows live status updates (`Pending` / `Active`)
 - opens the exact System Settings privacy panel for that permission
@@ -155,7 +156,7 @@ Access your past transcriptions from the menu bar → **History**.
 - **Inspector** — View metadata (engine, language, duration, word count)
 - **Real-time** — Window auto-refreshes after new transcriptions
 
-> 💡 Audio is saved for all transcriptions (success and failure), so you can always re-transcribe or download later.
+> 💡 Audio is saved for all transcriptions (success and failure), so you can always re-transcribe or download later. SapoWhisper automatically removes orphan recordings and trims old audio when the history storage cap is reached.
 
 ---
 
@@ -175,6 +176,7 @@ Key optimizations:
 - Single `AVAudioEngine` for both recording and level metering
 - Sound effects pre-cached in memory
 - Audio recorded as int16 WAV (compact, no conversion needed for cloud upload)
+- Deterministic overlay animations avoid long-session redraw churn
 - Adaptive auto-paste (polls for target app instead of fixed delay)
 
 ---

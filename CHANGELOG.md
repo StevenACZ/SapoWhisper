@@ -6,6 +6,30 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## Permission Reliability + Long-Run Stability — 2026-04-24
+
+> Stabilized macOS permission detection across relaunches/restarts, improved the missing-permissions onboarding surfaces, and reduced long-running UI/storage pressure.
+
+### Added
+
+- **Launch permission reminder** — SapoWhisper now opens the `Missing Permissions` window shortly after launch when Microphone, Speech Recognition, or Accessibility is missing.
+- **Adaptive permission colors** — Permission windows, cards, and System Settings helper overlays now use Light/Dark-aware colors for readable contrast in both appearances.
+- **History audio storage guardrails** — Saved recordings are cleaned up after history writes, removing orphan files and keeping storage within the configured cap.
+
+### Changed
+
+- **Stable app signing identity** — Debug and Release builds now use the configured Apple Development team/signing identity with hardened runtime enabled, helping macOS keep TCC permissions attached to the same app identity after restarts.
+- **Permission status refresh** — The menu bar reminder refreshes when its window becomes active, so returning from System Settings immediately updates the visible state.
+- **Recording overlay rendering** — The overlay was split into smaller pill components with a deterministic mini equalizer, reducing redraw churn during long sessions.
+- **History manager structure** — SQLite setup, queries, actions, and audio storage cleanup were split into focused files to keep the manager maintainable.
+
+### Fixed
+
+- **Permissions appeared pending after reboot even when enabled in System Settings** — Stabilized signing and startup refresh behavior so macOS permission state is read consistently.
+- **Missing permissions were only obvious after opening Settings** — Users now see the guided permission window on app launch when setup is incomplete.
+- **Permission helper overlay was too dark in Light Mode** — Removed the hard dark/translucent treatment and switched to semantic adaptive surfaces.
+- **Old saved recordings could accumulate over long runs** — Orphan cleanup and storage trimming now run after inserts and deletes.
+
 ## Guided Permission Onboarding + Public Repo Cleanup — 2026-04-19
 
 > Added a PeekOCR-style guided permissions flow for SapoWhisper and cleaned the public-facing docs/UI so the repository is ready to share publicly.
