@@ -8,7 +8,7 @@
 import AppKit
 
 final class PermissionOverlayContentView: NSView {
-    static let preferredSize = NSSize(width: 548, height: 170)
+    static let preferredSize = NSSize(width: 548, height: 184)
 
     private let onClose: () -> Void
 
@@ -25,35 +25,21 @@ final class PermissionOverlayContentView: NSView {
     }
 
     private func setup(hostApp: PermissionHostApp, permission: AppPermission) {
-        let materialView = NSVisualEffectView()
-        materialView.translatesAutoresizingMaskIntoConstraints = false
-        materialView.material = .popover
-        materialView.blendingMode = .behindWindow
-        materialView.state = .active
-        materialView.wantsLayer = true
-        materialView.layer?.cornerRadius = 20
-        materialView.layer?.masksToBounds = true
-        materialView.layer?.borderWidth = 1
-        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.18).cgColor
-        addSubview(materialView)
-
-        let tintView = NSView()
-        tintView.translatesAutoresizingMaskIntoConstraints = false
-        tintView.wantsLayer = true
-        tintView.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.82).cgColor
-        materialView.addSubview(tintView)
+        let cardView = PermissionOverlayCardContainerView()
+        addSubview(cardView)
 
         let arrowView = NSImageView()
         arrowView.translatesAutoresizingMaskIntoConstraints = false
         arrowView.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)
         arrowView.symbolConfiguration = .init(pointSize: 24, weight: .bold)
         arrowView.contentTintColor = permission.accentColor
-        materialView.addSubview(arrowView)
+        cardView.addSubview(arrowView)
 
         let titleLabel = NSTextField(labelWithString: permission.overlayTitle)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        materialView.addSubview(titleLabel)
+        titleLabel.textColor = .labelColor
+        cardView.addSubview(titleLabel)
 
         let closeButton = NSButton()
         closeButton.translatesAutoresizingMaskIntoConstraints = false
@@ -62,39 +48,34 @@ final class PermissionOverlayContentView: NSView {
         closeButton.contentTintColor = .secondaryLabelColor
         closeButton.target = self
         closeButton.action = #selector(closePressed)
-        materialView.addSubview(closeButton)
+        cardView.addSubview(closeButton)
 
         let messageLabel = NSTextField(wrappingLabelWithString: permission.overlayMessage)
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         messageLabel.font = .systemFont(ofSize: 12.5, weight: .medium)
         messageLabel.textColor = .secondaryLabelColor
-        materialView.addSubview(messageLabel)
+        cardView.addSubview(messageLabel)
 
         let helperView = makeHelperView(hostApp: hostApp, permission: permission)
-        materialView.addSubview(helperView)
+        cardView.addSubview(helperView)
 
         let footnoteLabel = NSTextField(wrappingLabelWithString: permission.overlayFootnote)
         footnoteLabel.translatesAutoresizingMaskIntoConstraints = false
         footnoteLabel.font = .systemFont(ofSize: 11, weight: .medium)
         footnoteLabel.textColor = .tertiaryLabelColor
-        materialView.addSubview(footnoteLabel)
+        cardView.addSubview(footnoteLabel)
 
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: Self.preferredSize.width),
             heightAnchor.constraint(equalToConstant: Self.preferredSize.height),
 
-            materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            materialView.topAnchor.constraint(equalTo: topAnchor),
-            materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            cardView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            cardView.topAnchor.constraint(equalTo: topAnchor),
+            cardView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            tintView.leadingAnchor.constraint(equalTo: materialView.leadingAnchor),
-            tintView.trailingAnchor.constraint(equalTo: materialView.trailingAnchor),
-            tintView.topAnchor.constraint(equalTo: materialView.topAnchor),
-            tintView.bottomAnchor.constraint(equalTo: materialView.bottomAnchor),
-
-            arrowView.leadingAnchor.constraint(equalTo: materialView.leadingAnchor, constant: 24),
-            arrowView.topAnchor.constraint(equalTo: materialView.topAnchor, constant: 18),
+            arrowView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
+            arrowView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 18),
             arrowView.widthAnchor.constraint(equalToConstant: 24),
             arrowView.heightAnchor.constraint(equalToConstant: 24),
 
@@ -102,17 +83,17 @@ final class PermissionOverlayContentView: NSView {
             titleLabel.centerYAnchor.constraint(equalTo: arrowView.centerYAnchor),
             titleLabel.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -12),
 
-            closeButton.trailingAnchor.constraint(equalTo: materialView.trailingAnchor, constant: -16),
+            closeButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
             closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             closeButton.widthAnchor.constraint(equalToConstant: 18),
             closeButton.heightAnchor.constraint(equalToConstant: 18),
 
             messageLabel.leadingAnchor.constraint(equalTo: arrowView.leadingAnchor),
-            messageLabel.trailingAnchor.constraint(equalTo: materialView.trailingAnchor, constant: -22),
+            messageLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -22),
             messageLabel.topAnchor.constraint(equalTo: arrowView.bottomAnchor, constant: 12),
 
-            helperView.leadingAnchor.constraint(equalTo: materialView.leadingAnchor, constant: 24),
-            helperView.trailingAnchor.constraint(equalTo: materialView.trailingAnchor, constant: -24),
+            helperView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
+            helperView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
             helperView.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 14),
             helperView.heightAnchor.constraint(equalToConstant: 56),
 
@@ -143,15 +124,49 @@ final class PermissionOverlayContentView: NSView {
     }
 }
 
+private final class PermissionOverlayCardContainerView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 20
+        layer?.masksToBounds = true
+        layer?.borderWidth = 1
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let backgroundAlpha: CGFloat = permissionUsesDarkAppearance ? 0.94 : 0.98
+        let borderAlpha: CGFloat = permissionUsesDarkAppearance ? 0.26 : 0.16
+        layer?.backgroundColor = permissionCGColor(.windowBackgroundColor, alpha: backgroundAlpha)
+        layer?.borderColor = permissionCGColor(.separatorColor, alpha: borderAlpha)
+    }
+}
+
 private final class PermissionOverlayInfoCardView: NSView {
+    private let accentColor: NSColor
+    private let titleLabel: NSTextField
+    private let messageLabel: NSTextField
+
     init(title: String, message: String, accentColor: NSColor) {
+        self.accentColor = accentColor
+        self.titleLabel = NSTextField(labelWithString: title)
+        self.messageLabel = NSTextField(wrappingLabelWithString: message)
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
         layer?.cornerRadius = 12
         layer?.borderWidth = 1
-        layer?.borderColor = accentColor.withAlphaComponent(0.15).cgColor
-        layer?.backgroundColor = accentColor.withAlphaComponent(0.08).cgColor
 
         let iconView = NSImageView()
         iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -160,15 +175,12 @@ private final class PermissionOverlayInfoCardView: NSView {
         iconView.contentTintColor = accentColor
         addSubview(iconView)
 
-        let titleLabel = NSTextField(labelWithString: title)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         addSubview(titleLabel)
 
-        let messageLabel = NSTextField(wrappingLabelWithString: message)
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         messageLabel.font = .systemFont(ofSize: 11.5, weight: .medium)
-        messageLabel.textColor = .secondaryLabelColor
         addSubview(messageLabel)
 
         NSLayoutConstraint.activate([
@@ -187,10 +199,26 @@ private final class PermissionOverlayInfoCardView: NSView {
             messageLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
             messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
         ])
+
+        updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let backgroundAlpha: CGFloat = permissionUsesDarkAppearance ? 0.16 : 0.08
+        let borderAlpha: CGFloat = permissionUsesDarkAppearance ? 0.24 : 0.16
+        layer?.backgroundColor = permissionCGColor(accentColor, alpha: backgroundAlpha)
+        layer?.borderColor = permissionCGColor(accentColor, alpha: borderAlpha)
+        titleLabel.textColor = .labelColor
+        messageLabel.textColor = .secondaryLabelColor
     }
 }

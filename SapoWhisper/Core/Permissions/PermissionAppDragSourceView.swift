@@ -11,10 +11,14 @@ final class PermissionAppDragSourceView: NSView, NSPasteboardItemDataProvider, N
     private let hostApp: PermissionHostApp
     private let accentColor: NSColor
     private let rowView = NSView()
+    private let iconChrome = NSView()
+    private let titleLabel: NSTextField
+    private let subtitleLabel = NSTextField(labelWithString: "permissions.overlay.drag_subtitle".localized)
 
     init(hostApp: PermissionHostApp, accentColor: NSColor) {
         self.hostApp = hostApp
         self.accentColor = accentColor
+        self.titleLabel = NSTextField(labelWithString: hostApp.displayName)
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         setup()
@@ -56,15 +60,11 @@ final class PermissionAppDragSourceView: NSView, NSPasteboardItemDataProvider, N
         rowView.wantsLayer = true
         rowView.layer?.cornerRadius = 12
         rowView.layer?.borderWidth = 1
-        rowView.layer?.borderColor = accentColor.withAlphaComponent(0.15).cgColor
-        rowView.layer?.backgroundColor = accentColor.withAlphaComponent(0.08).cgColor
         addSubview(rowView)
 
-        let iconChrome = NSView()
         iconChrome.translatesAutoresizingMaskIntoConstraints = false
         iconChrome.wantsLayer = true
         iconChrome.layer?.cornerRadius = 10
-        iconChrome.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.92).cgColor
         rowView.addSubview(iconChrome)
 
         let iconView = NSImageView(image: hostApp.icon)
@@ -72,15 +72,12 @@ final class PermissionAppDragSourceView: NSView, NSPasteboardItemDataProvider, N
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconChrome.addSubview(iconView)
 
-        let titleLabel = NSTextField(labelWithString: hostApp.displayName)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         rowView.addSubview(titleLabel)
 
-        let subtitleLabel = NSTextField(labelWithString: "permissions.overlay.drag_subtitle".localized)
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         subtitleLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        subtitleLabel.textColor = .secondaryLabelColor
         rowView.addSubview(subtitleLabel)
 
         NSLayoutConstraint.activate([
@@ -108,6 +105,23 @@ final class PermissionAppDragSourceView: NSView, NSPasteboardItemDataProvider, N
             subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
         ])
+
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let fillAlpha: CGFloat = permissionUsesDarkAppearance ? 0.16 : 0.08
+        let borderAlpha: CGFloat = permissionUsesDarkAppearance ? 0.24 : 0.16
+        rowView.layer?.backgroundColor = permissionCGColor(accentColor, alpha: fillAlpha)
+        rowView.layer?.borderColor = permissionCGColor(accentColor, alpha: borderAlpha)
+        iconChrome.layer?.backgroundColor = permissionCGColor(.windowBackgroundColor, alpha: 0.92)
+        titleLabel.textColor = .labelColor
+        subtitleLabel.textColor = .secondaryLabelColor
     }
 
     private func dragPreviewImage() -> NSImage {

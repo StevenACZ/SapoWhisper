@@ -14,6 +14,8 @@ struct PermissionRequirementCard: View {
     let isGranted: Bool
     let onActivate: (AppPermission) -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(spacing: 8) {
@@ -66,7 +68,7 @@ struct PermissionRequirementCard: View {
 
                     Label(permission.detailText(isGranted: isGranted), systemImage: "arrow.up.right.square")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -78,12 +80,22 @@ struct PermissionRequirementCard: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.green)
                     } else {
-                        Button("permissions.activate".localized) {
+                        Button {
                             onActivate(permission)
+                        } label: {
+                            Text("permissions.activate".localized)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .frame(minWidth: 74)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(toneColor)
+                                )
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(Color(nsColor: permission.accentColor))
+                        .buttonStyle(.plain)
                     }
                 }
                 .frame(minWidth: 84, alignment: .trailing)
@@ -99,11 +111,11 @@ struct PermissionRequirementCard: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.86))
+            .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.88 : 1))
             .overlay(
                 LinearGradient(
                     colors: [
-                        toneColor.opacity(0.10),
+                        toneColor.opacity(colorScheme == .dark ? 0.14 : 0.07),
                         .clear
                     ],
                     startPoint: .leading,
@@ -113,8 +125,14 @@ struct PermissionRequirementCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(toneColor.opacity(0.12), lineWidth: 1)
+                    .stroke(borderColor, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.05), radius: 12, y: 6)
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark
+            ? toneColor.opacity(0.20)
+            : Color(nsColor: .separatorColor).opacity(0.18)
     }
 }

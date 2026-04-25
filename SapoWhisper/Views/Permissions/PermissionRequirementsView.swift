@@ -16,6 +16,7 @@ struct PermissionRequirementsView: View {
     private let refreshTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
     private let previewGrantedPermissions: Set<AppPermission>?
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var grantedPermissions: Set<AppPermission> = []
 
     init(
@@ -72,21 +73,14 @@ struct PermissionRequirementsView: View {
     }
 
     private var backgroundLayer: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-
-            Circle()
-                .fill(Color.sapoGreen.opacity(0.18))
-                .frame(width: 240, height: 240)
-                .blur(radius: 80)
-                .offset(x: -120, y: -120)
-
-            Circle()
-                .fill(Color.orange.opacity(0.10))
-                .frame(width: 180, height: 180)
-                .blur(radius: 60)
-                .offset(x: 200, y: 120)
-        }
+        LinearGradient(
+            colors: [
+                Color(nsColor: .windowBackgroundColor),
+                Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.42 : 0.72)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         .ignoresSafeArea()
     }
 
@@ -152,4 +146,17 @@ struct PermissionRequirementsView: View {
         width: PermissionRequirementsView.windowSize.width,
         height: PermissionRequirementsView.windowSize.height
     )
+}
+
+#Preview("Dark") {
+    PermissionRequirementsView(
+        previewGrantedPermissions: [.microphone],
+        onActivate: { _ in },
+        onClose: {}
+    )
+    .frame(
+        width: PermissionRequirementsView.windowSize.width,
+        height: PermissionRequirementsView.windowSize.height
+    )
+    .preferredColorScheme(.dark)
 }
