@@ -8,9 +8,8 @@
 import SwiftUI
 
 struct MenuBarPermissionReminderView: View {
+    let missingPermissions: [AppPermission]
     let onReview: () -> Void
-
-    @State private var missingPermissions: [AppPermission] = []
 
     var body: some View {
         Group {
@@ -28,16 +27,5 @@ struct MenuBarPermissionReminderView: View {
                 }
             }
         }
-        .onAppear(perform: refreshMissingPermissions)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshMissingPermissions()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            refreshMissingPermissions()
-        }
-    }
-
-    private func refreshMissingPermissions() {
-        missingPermissions = PermissionService.shared.missingPermissions()
     }
 }

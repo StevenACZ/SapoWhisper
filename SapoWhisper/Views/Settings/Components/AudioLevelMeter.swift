@@ -102,6 +102,7 @@ struct AudioLevelMeterView: View {
                 Toggle("settings.test_microphone".localized, isOn: $isEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                    .tint(Constants.Colors.sapoGreen)
 
                 Spacer()
 

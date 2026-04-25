@@ -9,7 +9,12 @@ import SwiftUI
 /// Vista principal del popup del menu bar - Diseño limpio y moderno
 struct MenuBarView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openWindow) var openWindow
+    var missingPermissions: [AppPermission] = []
+    var openSettingsAction: (() -> Void)?
+    var openHistoryAction: (() -> Void)?
+    var openPermissionsAction: (() -> Void)?
+    var closeMenuBarAction: (() -> Void)?
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
     
@@ -17,7 +22,7 @@ struct MenuBarView: View {
         VStack(spacing: 0) {
             headerSection
 
-            MenuBarPermissionReminderView {
+            MenuBarPermissionReminderView(missingPermissions: missingPermissions) {
                 openPermissionsWindow()
             }
 
@@ -261,30 +266,6 @@ struct MenuBarView: View {
         .padding(.vertical, 4)
     }
     
-    // MARK: - Helpers
-    
-    private func openHistoryWindow() {
-        NSApp.keyWindow?.close()
-        openWindow(id: "history")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-    }
-
-    private func openSettingsWindow() {
-        // Cerrar el popup del menu bar
-        NSApp.keyWindow?.close()
-        
-        // Abrir la ventana de configuración
-        openWindow(id: "settings")
-        
-        // Activar la app para que la ventana aparezca al frente
-        NSApplication.shared.activate(ignoringOtherApps: true)
-    }
-
-    private func openPermissionsWindow() {
-        NSApp.keyWindow?.close()
-        PermissionRequirementsWindowController.shared.showWindow(force: true)
-        NSApplication.shared.activate(ignoringOtherApps: true)
-    }
 }
 
 #Preview("Menu Bar Popup") {

@@ -39,6 +39,7 @@ struct GeneralSettingsTab: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .tint(Constants.Colors.sapoGreen)
         .onAppear {
             audioDeviceManager.refreshDevices()
         }

@@ -12,36 +12,39 @@ struct MenuBarIcon: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     
     var body: some View {
-        Image(nsImage: menuBarImage)
+        Image(nsImage: MenuBarIconImageProvider.image(
+            for: viewModel.appState,
+            isLoadingWhisperKit: viewModel.isLoadingWhisperKit
+        ))
             .renderingMode(.original)
     }
-    
-    /// Imagen del Menu Bar basada en el estado actual
-    private var menuBarImage: NSImage {
-        let imageName = menuBarImageName
-        
-        // Intentar cargar la imagen del asset catalog
+}
+
+enum MenuBarIconImageProvider {
+    static func image(for appState: AppState, isLoadingWhisperKit: Bool) -> NSImage {
+        let imageName = menuBarImageName(for: appState, isLoadingWhisperKit: isLoadingWhisperKit)
+
         if let image = NSImage(named: imageName) {
-            // Configurar el tamaño correcto para el menu bar
-            image.size = NSSize(width: 22, height: 22)
-            return image
+            let statusImage = (image.copy() as? NSImage) ?? image
+            statusImage.size = NSSize(width: 22, height: 22)
+            return statusImage
         }
-        
-        // Fallback: crear una imagen con SF Symbol si falla
+
         print("⚠️ MenuBarIcon: Failed to load \(imageName), using fallback")
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-        return NSImage(systemSymbolName: fallbackIconName, accessibilityDescription: nil)?
+        return NSImage(systemSymbolName: fallbackIconName(for: appState), accessibilityDescription: nil)?
             .withSymbolConfiguration(config) ?? NSImage()
     }
-    
-    /// Nombre del asset de imagen según el estado
-    private var menuBarImageName: String {
-        // Primero verificar si el modelo está cargando
-        if viewModel.isLoadingWhisperKit {
+
+    private static func menuBarImageName(
+        for appState: AppState,
+        isLoadingWhisperKit: Bool
+    ) -> String {
+        if isLoadingWhisperKit {
             return "MenuBarIconLoading"
         }
-        
-        switch viewModel.appState {
+
+        switch appState {
         case .recording:
             return "MenuBarIconRecording"
         case .processing:
@@ -50,10 +53,9 @@ struct MenuBarIcon: View {
             return "MenuBarIconIdle"
         }
     }
-    
-    /// SF Symbol de respaldo si la imagen no carga
-    private var fallbackIconName: String {
-        switch viewModel.appState {
+
+    private static func fallbackIconName(for appState: AppState) -> String {
+        switch appState {
         case .recording:
             return "mic.circle.fill"
         case .processing:

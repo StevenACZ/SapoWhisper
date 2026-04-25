@@ -6,6 +6,23 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## Menu Bar Popover Animation — 2026-04-24
+
+> Brought the native PeekOCR-style menu bar popover animation and anchored presentation into SapoWhisper.
+
+### Changed
+
+- **Native menu bar popover** — Replaced the SwiftUI `MenuBarExtra` host with an AppKit `NSStatusItem` + `NSPopover`, giving the top icon the same anchored popover animation used by PeekOCR.
+- **Status icon press feedback** — Added a subtle click bounce to the SapoWhisper menu bar icon while preserving state-specific frog icons.
+- **Settings and History routing** — Settings and History now open from the AppKit menu bar controller while sharing the same `SapoWhisperViewModel` instance as the popover.
+
+### Fixed
+
+- **Settings switches first render** — Settings windows now activate and redraw their hosted SwiftUI content on first presentation, with Sapo green switch tinting to avoid the initial all-blue toggle paint glitch.
+- **Popover layout after rapid clicks** — The menu bar popover now rebuilds its SwiftUI host and debounces transition clicks before opening, preventing stale measurements from leaving a blank area above the content.
+- **Popover bottom gap** — Removed the artificial minimum popover height so the window hugs the menu content instead of exposing an empty native background strip.
+- **Missing permissions banner first paint** — Missing permissions are now calculated before the popover is built, so the warning is visible on first open instead of appearing only after an extra click.
+
 ## Permission Reliability + Long-Run Stability — 2026-04-24
 
 > Stabilized macOS permission detection across relaunches/restarts, improved the missing-permissions onboarding surfaces, and reduced long-running UI/storage pressure.

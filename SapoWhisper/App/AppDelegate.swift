@@ -6,11 +6,16 @@
 
 import SwiftUI
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private lazy var menuBarStatusController = MenuBarStatusController(
+        viewModel: SapoWhisperAppEnvironment.shared.viewModel
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
         NSApp.setActivationPolicy(.accessory)
+        menuBarStatusController.start()
         scheduleInitialPermissionCheck()
     }
 
