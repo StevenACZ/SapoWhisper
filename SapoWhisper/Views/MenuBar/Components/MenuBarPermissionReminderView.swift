@@ -32,6 +32,9 @@ struct MenuBarPermissionReminderView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshMissingPermissions()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            refreshMissingPermissions()
+        }
     }
 
     private func refreshMissingPermissions() {
