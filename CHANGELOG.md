@@ -6,6 +6,21 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## Microphone Permission Verification — 2026-04-24
+
+> Fixed the last false-pending microphone state seen after installing the DMG while macOS already showed SapoWhisper enabled in System Settings.
+
+### Changed
+
+- **Audio input entitlement is now explicit** — Debug and Release builds include the SapoWhisper entitlements file, including `com.apple.security.device.audio-input`, so packaged builds keep the expected microphone capability.
+- **Microphone permission checks now match real audio usage** — Added a dedicated microphone permission helper that combines AVFoundation status, `AVAudioApplication` status, and a guarded audio-input probe after returning from System Settings.
+- **Permission refresh is quieter** — Permission windows and settings rows now update only when the granted set changes and no longer rewrite SwiftUI state every 0.5s.
+
+### Fixed
+
+- **Microphone stayed visually pending while enabled in System Settings** — Successful mic-test or recorder audio starts now mark microphone access as granted for the running session, preventing stale TCC reads from keeping the onboarding UI blocked.
+- **Permission window could consume CPU while open** — Reduced polling and eliminated redundant state writes during permission refresh.
+
 ## Menu Bar Popover Animation — 2026-04-24
 
 > Brought the native PeekOCR-style menu bar popover animation and anchored presentation into SapoWhisper.

@@ -7,7 +7,6 @@
 
 import AppKit
 import ApplicationServices
-import AVFoundation
 import Speech
 
 enum PermissionPrimingResult {
@@ -130,7 +129,7 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
     func isGranted() -> Bool {
         switch self {
         case .microphone:
-            return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            return MicrophonePermission.isGranted
         case .speechRecognition:
             return SFSpeechRecognizer.authorizationStatus() == .authorized
         case .accessibility:
@@ -159,14 +158,7 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
     func primeSystemAccessIfNeeded() async -> PermissionPrimingResult {
         switch self {
         case .microphone:
-            let status = AVCaptureDevice.authorizationStatus(for: .audio)
-            guard status == .notDetermined else { return .skipped }
-            let granted = await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-            return granted ? .granted : .needsSystemSettings
+            return await MicrophonePermission.primeIfNeeded()
         case .speechRecognition:
             let status = SFSpeechRecognizer.authorizationStatus()
             guard status == .notDetermined else { return .skipped }

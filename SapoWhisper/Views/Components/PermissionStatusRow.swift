@@ -11,6 +11,7 @@ struct PermissionStatusRow: View {
     let permission: AppPermission
 
     @State private var isGranted = false
+    @State private var isValidatingMicrophone = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -68,13 +69,31 @@ struct PermissionStatusRow: View {
             }
         }
         .padding(.vertical, 6)
-        .onAppear(perform: refreshPermissionStatus)
+        .onAppear {
+            refreshPermissionStatus()
+            validateMicrophoneStatus()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatus()
+            validateMicrophoneStatus()
         }
     }
 
     private func refreshPermissionStatus() {
-        isGranted = PermissionService.shared.isGranted(permission)
+        let nextStatus = PermissionService.shared.isGranted(permission)
+        guard isGranted != nextStatus else { return }
+        isGranted = nextStatus
+    }
+
+    private func validateMicrophoneStatus() {
+        guard permission == .microphone, !isGranted, !isValidatingMicrophone else { return }
+
+        isValidatingMicrophone = true
+        Task { @MainActor in
+            if await MicrophonePermission.refreshFromAudioInputProbeIfNeeded() {
+                refreshPermissionStatus()
+            }
+            isValidatingMicrophone = false
+        }
     }
 }

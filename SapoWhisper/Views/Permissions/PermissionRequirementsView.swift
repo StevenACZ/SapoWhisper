@@ -13,11 +13,12 @@ struct PermissionRequirementsView: View {
 
     let onActivate: (AppPermission) -> Void
     let onClose: () -> Void
-    private let refreshTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    private let refreshTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
     private let previewGrantedPermissions: Set<AppPermission>?
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var grantedPermissions: Set<AppPermission> = []
+    @State private var isValidatingMicrophone = false
 
     init(
         previewGrantedPermissions: Set<AppPermission>? = nil,
@@ -63,9 +64,13 @@ struct PermissionRequirementsView: View {
         }
         .frame(width: Self.windowSize.width, height: Self.windowSize.height)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear(perform: refreshPermissionStatuses)
+        .onAppear {
+            refreshPermissionStatuses()
+            validateMicrophoneAfterSettingsReturn()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatuses()
+            validateMicrophoneAfterSettingsReturn()
         }
         .onReceive(refreshTimer) { _ in
             refreshPermissionStatuses()
@@ -128,11 +133,30 @@ struct PermissionRequirementsView: View {
 
     private func refreshPermissionStatuses() {
         if let previewGrantedPermissions {
-            grantedPermissions = previewGrantedPermissions
+            updateGrantedPermissions(previewGrantedPermissions)
             return
         }
 
-        grantedPermissions = Set(AppPermission.allCases.filter { PermissionService.shared.isGranted($0) })
+        let nextPermissions = Set(AppPermission.allCases.filter { PermissionService.shared.isGranted($0) })
+        updateGrantedPermissions(nextPermissions)
+    }
+
+    private func updateGrantedPermissions(_ nextPermissions: Set<AppPermission>) {
+        guard grantedPermissions != nextPermissions else { return }
+        grantedPermissions = nextPermissions
+    }
+
+    private func validateMicrophoneAfterSettingsReturn() {
+        guard previewGrantedPermissions == nil else { return }
+        guard !grantedPermissions.contains(.microphone), !isValidatingMicrophone else { return }
+
+        isValidatingMicrophone = true
+        Task { @MainActor in
+            if await MicrophonePermission.refreshFromAudioInputProbeIfNeeded() {
+                refreshPermissionStatuses()
+            }
+            isValidatingMicrophone = false
+        }
     }
 }
 

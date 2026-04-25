@@ -199,6 +199,7 @@ class AudioRecorder: ObservableObject {
                     // Record start time just before engine.start() so the audio tap sees the correct value
                     self.startRecordingTime = CFAbsoluteTimeGetCurrent()
                     try localEngine.start()
+                    MicrophonePermission.noteAudioInputGranted()
 
                     guard self.isSetupGenerationCurrent(setupGeneration) else {
                         self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
@@ -489,6 +490,7 @@ class AudioRecorder: ObservableObject {
         guard isRecording, isPaused else { return }
 
         try audioEngine?.start()
+        MicrophonePermission.noteAudioInputGranted()
         isPaused = false
         startTime = Date()
         lastAudioLevelPublishTime = 0

@@ -104,6 +104,7 @@ class AudioLevelMonitor: ObservableObject {
             }
             audioEngine.prepare()
             try audioEngine.start()
+            MicrophonePermission.noteAudioInputGranted()
             self.audioEngine = audioEngine
             isMonitoring = true
             DispatchQueue.main.async { [weak self] in
