@@ -165,6 +165,7 @@
 "config.service_account_import" = "Importar JSON";
 "config.service_account_change" = "Cambiar";
 "config.service_account_remove" = "Eliminar";
+"config.service_account_detect" = "Detectar";
 "config.api_key_fallback" = "API Key (alternativa)";
 
 /* Badges & Labels */

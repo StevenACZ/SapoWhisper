@@ -55,6 +55,7 @@ xcuserdata/
 .build/
 Packages/
 Package.resolved
+!SapoWhisper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # ------------------------------------------
 # CocoaPods (si se usa)

@@ -6,6 +6,36 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.0] - 2026-04-28
+
+> Public release for the Deepgram Nova-3 batch engine, transcription history, guided permissions, and long-run audio stability work.
+
+### Added
+
+- **Deepgram Nova-3 batch transcription** — Added Deepgram as a high-accuracy cloud engine with API key setup, custom keyterms, and word replacements.
+- **Transcription history** — Added a searchable history window with date grouping, engine filters, favorites, metadata inspection, audio playback, audio download, and re-transcription with any engine.
+- **Guided permission onboarding** — Added a Missing Permissions window, live permission status rows, menu bar reminders, and System Settings helper overlays for Microphone, Speech Recognition, and Accessibility.
+- **Auto-ducking** — Added optional system volume reduction during recording with smart restore after transcription.
+- **Preferred microphone sync** — Added persistent preferred microphone handling that keeps the macOS global input aligned across route changes.
+- **Public release metadata** — Added an MIT license file, shared Xcode scheme, and trackable Swift package resolution for reproducible public builds.
+
+### Changed
+
+- **Recording pipeline** — Optimized hotkey-to-recording latency, pre-warmed the overlay, reduced redundant audio engine work, and switched recordings to compact 16 kHz mono int16 WAV files.
+- **Deepgram architecture** — Replaced the early streaming experiment with a simpler REST batch flow that uploads the completed recording.
+- **Overlay UI** — Redesigned the recording overlay into a compact adaptive pill with pause/resume, terminal states, deterministic equalizer animation, and multi-monitor positioning.
+- **Settings UI** — Modernized settings with native grouped forms, improved microphone testing, gain controls, and extracted the oversized engine settings view into smaller components.
+- **History storage** — Split the SQLite history manager by setup, queries, actions, and audio file policy while adding cleanup for orphaned or oversized recording storage.
+- **Release target** — Aligned the Xcode deployment target with the public requirement of macOS 14.0 or later.
+
+### Fixed
+
+- **Microphone permission detection** — Stabilized packaged-build microphone checks so the app no longer shows stale pending states after macOS already granted access.
+- **Audio route changes** — Hardened recording and mic testing across AirPods, speakers, Bluetooth devices, and default input/output transitions.
+- **Auto-paste timing** — Switched to adaptive frontmost-app polling to reduce paste misses after transcription.
+- **Sound volume edge cases** — Fixed 0% sound volume playing at full volume and improved volume slider behavior.
+- **Long-run stability** — Reduced overlay redraw churn, avoided stale recorder setups, trimmed accumulated audio files, and quieted permission polling.
+
 ## Microphone Permission Verification — 2026-04-24
 
 > Fixed the last false-pending microphone state seen after installing the DMG while macOS already showed SapoWhisper enabled in System Settings.
