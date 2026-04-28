@@ -2,7 +2,6 @@
 //  EngineButton.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI
@@ -83,8 +82,8 @@ struct EngineButton: View {
     }
 }
 
-#Preview {
-    VStack {
+#Preview("Engine Buttons") {
+    VStack(spacing: 8) {
         EngineButton(
             engine: .appleOnline,
             isSelected: true,
@@ -92,7 +91,7 @@ struct EngineButton: View {
             loadingProgress: 0,
             loadingMessage: ""
         ) {}
-        
+
         EngineButton(
             engine: .whisperLocal,
             isSelected: false,
@@ -100,6 +99,23 @@ struct EngineButton: View {
             loadingProgress: 0,
             loadingMessage: ""
         ) {}
+
+        EngineButton(
+            engine: .googleCloud,
+            isSelected: false,
+            isLoading: true,
+            loadingProgress: 0.6,
+            loadingMessage: "Loading..."
+        ) {}
+
+        EngineButton(
+            engine: .deepgram,
+            isSelected: false,
+            isLoading: false,
+            loadingProgress: 0,
+            loadingMessage: ""
+        ) {}
     }
     .padding()
+    .frame(width: 400)
 }

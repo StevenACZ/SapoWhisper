@@ -14,20 +14,45 @@ struct RecordingOverlayView: View {
 
     @State private var scale: CGFloat = 0.9
 
+    private var stateCategory: String { manager.state.stateCategory }
+
     var body: some View {
         ZStack {
+            contentForState
+                .id(stateCategory)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeOut(duration: 0.2)),
+                    removal: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeIn(duration: 0.15))
+                ))
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-
-            contentForState
-                .padding(.horizontal, 28)
-                .padding(.vertical, 8)
-        }
-        .frame(width: 480, height: 56)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+        )
+        .fixedSize()
+        .frame(maxWidth: 380, maxHeight: 48)
         .scaleEffect(scale)
+        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: stateCategory)
+        .onChange(of: stateCategory) { _, _ in
+            microBounce()
+        }
         .onAppear {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                scale = 1.0
+            }
+        }
+    }
+
+    /// Micro-bounce effect when state changes — subtle scale pop for tactile feedback
+    private func microBounce() {
+        withAnimation(.spring(response: 0.12, dampingFraction: 0.4)) {
+            scale = 1.05
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                 scale = 1.0
             }
         }
@@ -44,8 +69,8 @@ struct RecordingOverlayView: View {
         case .recording(let duration):
             RecordingPillView(
                 duration: duration,
-                audioLevel: manager.audioLevel,
-                onPause: { manager.onPauseToggle?() }
+                onPause: { manager.onPauseToggle?() },
+                audioLevel: manager.audioLevel
             )
 
         case .paused(let duration):
@@ -61,225 +86,10 @@ struct RecordingOverlayView: View {
             CompletedPillView(text: text)
 
         case .error(let message):
-            ErrorPillView(message: message)
+            ErrorPillView(message: message, onRetry: manager.onRetry)
 
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)
         }
-    }
-}
-
-// MARK: - Recording Pill View
-
-private struct RecordingPillView: View {
-    let duration: TimeInterval
-    let audioLevel: Float
-    let onPause: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            FloatingSapoIcon(state: .recording, size: 44)
-                .padding(.trailing, 8)
-
-            AudioEqualizerView(audioLevel: audioLevel)
-                .frame(width: 100)
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.recording)
-                    .frame(width: 6, height: 6)
-                    .modifier(PulseAnimation())
-
-                Text("overlay.recording".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-            }
-
-            Button(action: onPause) {
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.12)))
-            }
-            .buttonStyle(.plain)
-
-            OverlayTimer(duration: duration)
-        }
-    }
-}
-
-// MARK: - Paused Pill View
-
-private struct PausedPillView: View {
-    let duration: TimeInterval
-    let onResume: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            FloatingSapoIcon(state: .paused, size: 44)
-
-            // Flat bars to indicate paused
-            HStack(spacing: 2) {
-                ForEach(0..<20, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color.primary.opacity(0.15))
-                        .frame(width: 3, height: 3)
-                }
-            }
-            .frame(width: 100, height: 28)
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.processing)
-                    .frame(width: 6, height: 6)
-
-                Text("overlay.paused".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-            }
-
-            Button(action: onResume) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.12)))
-            }
-            .buttonStyle(.plain)
-
-            OverlayTimer(duration: duration)
-        }
-    }
-}
-
-// MARK: - Transcribing Pill View
-
-private struct TranscribingPillView: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            FloatingSapoIcon(state: .transcribing, size: 44)
-
-            TranscribingIndicator()
-
-            Text("overlay.transcribing".localized)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
-        }
-    }
-}
-
-// MARK: - Completed Pill View
-
-private struct CompletedPillView: View {
-    let text: String
-
-    @State private var checkmarkScale: CGFloat = 0
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                FloatingSapoIcon(state: .completed, size: 44)
-
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(.sapoGreen)
-                    .background(Circle().fill(.white).padding(1))
-                    .offset(x: 16, y: -16)
-                    .scaleEffect(checkmarkScale)
-            }
-
-            Text("overlay.completed".localized)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.sapoGreen)
-
-            if !text.isEmpty {
-                Text(text.prefix(50) + (text.count > 50 ? "..." : ""))
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        }
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
-                checkmarkScale = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Error Pill View
-
-private struct ErrorPillView: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 20))
-                .foregroundColor(.sapoError)
-
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-    }
-}
-
-// MARK: - Device Detected Pill View
-
-private struct DeviceDetectedPillView: View {
-    let deviceName: String
-
-    @State private var checkScale: CGFloat = 0
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "mic.badge.plus")
-                .font(.system(size: 22))
-                .foregroundColor(.sapoGreen)
-                .symbolRenderingMode(.hierarchical)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(deviceName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                Text("overlay.device_ready".localized)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 18))
-                .foregroundColor(.sapoGreen)
-                .scaleEffect(checkScale)
-        }
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
-                checkScale = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Pulse Animation Modifier
-
-private struct PulseAnimation: ViewModifier {
-    @State private var isPulsing = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(isPulsing ? 0.4 : 1.0)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
-            .onAppear {
-                isPulsing = true
-            }
     }
 }

@@ -16,6 +16,18 @@ enum RecordingOverlayState: Equatable {
     case completed(text: String)
     case error(message: String)
     case deviceDetected(deviceName: String)
+    /// Identifies the state type (ignoring associated values) for animation triggers
+    var stateCategory: String {
+        switch self {
+        case .hidden: return "hidden"
+        case .recording: return "recording"
+        case .paused: return "paused"
+        case .transcribing: return "transcribing"
+        case .completed: return "completed"
+        case .error: return "error"
+        case .deviceDetected: return "deviceDetected"
+        }
+    }
 
     var isVisible: Bool {
         switch self {

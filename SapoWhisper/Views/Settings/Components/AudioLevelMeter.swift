@@ -2,7 +2,6 @@
 //  AudioLevelMeter.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI
@@ -92,93 +91,55 @@ struct AudioBar: View {
 struct AudioLevelMeterView: View {
     @StateObject private var monitor = AudioLevelMonitor.shared
     let deviceUID: String
-    
+
     @State private var isEnabled = false
     @AppStorage(Constants.StorageKeys.audioGain) private var gain: Double = 1.0
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Toggle para activar/desactivar
+            // Toggle + live status
             HStack {
-                Toggle(isOn: $isEnabled) {
-                    Text("settings.test_microphone".localized)
-                        .font(.caption)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                
+                Toggle("settings.test_microphone".localized, isOn: $isEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .tint(Constants.Colors.sapoGreen)
+
                 Spacer()
-                
+
                 if isEnabled && monitor.isActive {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 6, height: 6)
-                        Text("settings.listening".localized)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    listeningBadge
                 }
             }
-            
-            // Mostrar meter y controles solo cuando está habilitado
+
+            // Expanded mic test panel
             if isEnabled {
                 VStack(alignment: .leading, spacing: 10) {
-                    // Error message si hay error
+                    // Error banner
                     if monitor.hasError, let error = monitor.errorMessage {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                        .padding(8)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(6)
+                        errorBanner(error)
                     }
-                    
-                    // Meter con porcentaje
+
+                    // Level meter + percentage
                     HStack(spacing: 8) {
                         AudioLevelMeter(monitor: monitor)
-                        
+
                         Text("\(Int(monitor.audioLevel * 100))%")
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .frame(width: 35, alignment: .trailing)
+                            .contentTransition(.numericText())
                     }
-                    
-                    // Gain slider
-                    HStack(spacing: 8) {
-                        Image(systemName: "speaker.wave.1")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Slider(value: $gain, in: 0.5...3.0, step: 0.1)
-                            .controlSize(.small)
-                            .onChange(of: gain) { _, newValue in
-                                monitor.gain = Float(newValue)
-                            }
-                        
-                        Image(systemName: "speaker.wave.3")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(String(format: "%.1f", gain))x")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .frame(width: 35, alignment: .trailing)
-                    }
-                    
-                    Text("settings.gain_desc".localized)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+
+                    // Gain control
+                    gainSlider
+
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    // Sample recording + playback
+                    sampleRecordingSection
                 }
-                .padding(10)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                .cornerRadius(8)
-                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isEnabled)
@@ -199,9 +160,114 @@ struct AudioLevelMeterView: View {
             monitor.stopMonitoring()
         }
     }
+
+    // MARK: - Subviews
+
+    private var listeningBadge: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 6, height: 6)
+                .shadow(color: .red.opacity(0.5), radius: 3)
+            Text("settings.listening".localized)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.red.opacity(0.08))
+        .clipShape(Capsule())
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.caption)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var gainSlider: some View {
+        Slider(value: $gain, in: 1.0...40.0) {
+            Text("settings.gain".localized)
+        } minimumValueLabel: {
+            Text("1x")
+        } maximumValueLabel: {
+            Text("\(String(format: "%.0f", gain))x")
+        }
+        .tint(Constants.Colors.sapoGreen)
+        .controlSize(.small)
+        .onChange(of: gain) { _, newValue in
+            monitor.gain = Float(newValue)
+        }
+    }
+
+    private var sampleRecordingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if monitor.isRecordingSample {
+                    Button(action: { monitor.stopSampleRecording() }) {
+                        Label("settings.stop_sample".localized, systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+
+                    Spacer()
+
+                    Text(formatSampleDuration(monitor.sampleRecordingDuration))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                } else {
+                    Button(action: { monitor.startSampleRecording() }) {
+                        Label("settings.record_sample".localized, systemImage: "mic.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!monitor.isActive)
+                }
+            }
+
+            // Sample players
+            if let rawURL = monitor.rawSampleURL,
+               !monitor.isRecordingSample,
+               let rawMeta = monitor.rawSampleMetadata {
+                VStack(spacing: 4) {
+                    AudioSamplePlayerView(
+                        url: rawURL,
+                        label: "settings.sample_original".localized,
+                        metadata: rawMeta
+                    )
+
+                    if let compURL = monitor.compressedSampleURL,
+                       let compMeta = monitor.compressedSampleMetadata {
+                        AudioSamplePlayerView(
+                            url: compURL,
+                            label: "settings.sample_compressed".localized,
+                            metadata: compMeta
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func formatSampleDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
 }
 
-#Preview {
+#Preview("Audio Level Meter") {
     VStack(spacing: 20) {
         AudioLevelMeterView(deviceUID: "default")
             .padding()

@@ -1,7 +1,8 @@
 /* General */
 "app_name" = "SapoWhisper";
 "version" = "Version %@";
-"made_by" = "Created with 💚 by Steven";
+"made_by" = "Built with care for macOS";
+"about.open_source" = "Open-source project prepared for public sharing.";
 "close" = "Close";
 "quit" = "Quit SapoWhisper";
 "about" = "About";
@@ -18,6 +19,64 @@
 "menu.auto_paste" = "Auto-paste text";
 "menu.auto_paste_sub" = "Pastes automatically when finished";
 "menu.settings" = "Settings";
+"menu.history" = "History";
+
+/* History */
+"history.title" = "History";
+"history.search" = "Search transcriptions...";
+"history.empty" = "No history";
+"history.empty_sub" = "Transcriptions will appear here";
+"history.copy" = "Copy";
+"history.retranscribe" = "Re-transcribe";
+"history.retranscribe_create" = "Create new transcription";
+"history.retranscribing" = "Re-transcribing...";
+"history.retranscribe_sheet_title" = "Re-transcribe audio";
+"history.retranscribe_sheet_subtitle" = "A new entry will be created without replacing the original.";
+"history.failed" = "Failed";
+"history.failed_detail" = "Transcription could not be completed. Try again if audio is saved.";
+"history.pinned" = "Pinned";
+"history.today" = "Today";
+"history.yesterday" = "Yesterday";
+"history.this_week" = "This Week";
+"history.this_month" = "This Month";
+"history.older" = "Older";
+"history.select_transcription" = "Select a transcription";
+"history.select_transcription_sub" = "Choose an entry from the sidebar to view the full text";
+"history.copied" = "Copied!";
+"history.retranscribe_with" = "Re-transcribe with...";
+"history.download_audio" = "Download audio";
+"history.audio_missing_error" = "The audio file for this entry could not be found.";
+"history.action_failed" = "Action could not be completed";
+"history.current_selection" = "Current";
+"history.engine_unavailable" = "Unavailable";
+"history.pin" = "Pin";
+"history.unpin" = "Unpin";
+"history.delete" = "Delete";
+"history.delete_confirm" = "Delete transcription?";
+"history.delete_confirm_message" = "This action cannot be undone. Saved audio will also be deleted.";
+"history.no_results" = "No results";
+"history.details" = "Details";
+"history.actions" = "Actions";
+"history.engine" = "Engine";
+"history.language" = "Language";
+"history.duration" = "Duration";
+"history.words" = "Words";
+"history.audio" = "Audio";
+"history.audio_saved" = "Saved";
+"history.audio_none" = "Not saved";
+"history.status" = "Status";
+"history.status_completed" = "Completed";
+"history.status_failed" = "Failed";
+"history.play" = "Play";
+"history.pause" = "Pause";
+"history.filter_all" = "All";
+"history.filter_deepgram" = "Deepgram";
+"history.filter_google" = "Google";
+"history.filter_whisper" = "Whisper";
+"history.filter_apple" = "Apple";
+
+"common.cancel" = "Cancel";
+"common.ok" = "OK";
 
 /* Settings */
 "settings.general" = "General";
@@ -26,6 +85,7 @@
 "settings.audio" = "Audio";
 "settings.microphone" = "Microphone";
 "settings.microphone_desc" = "Audio input device";
+"settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";
 "settings.input_language_desc" = "The language you will speak";
 "settings.behavior" = "Behavior";
@@ -105,6 +165,7 @@
 "config.service_account_import" = "Import JSON";
 "config.service_account_change" = "Change";
 "config.service_account_remove" = "Remove";
+"config.service_account_detect" = "Detect";
 "config.api_key_fallback" = "API Key (alternative)";
 
 /* Badges & Labels */
@@ -129,15 +190,77 @@
 "settings.presets_desc" = "Select a preset hotkey or customize your own";
 
 /* Microphone Level Meter */
+
+/* Guided Permissions */
+"permissions.microphone.title" = "Microphone";
+"permissions.microphone.summary" = "Required to capture your voice before transcription.";
+"permissions.microphone.overlay_title" = "Enable Microphone";
+"permissions.microphone.overlay_message" = "Turn on the SapoWhisper toggle in this panel.";
+"permissions.microphone.helper_title" = "Turn on the SapoWhisper toggle";
+"permissions.microphone.helper_message" = "Once enabled, we will validate the status automatically.";
+"permissions.microphone.active_detail" = "SapoWhisper can already use the microphone to record.";
+"permissions.microphone.pending_detail" = "Required to record audio before transcription.";
+"permissions.speech.title" = "Speech Recognition";
+"permissions.speech.summary" = "Required to use the Apple Speech engine.";
+"permissions.speech.overlay_title" = "Enable Speech Recognition";
+"permissions.speech.overlay_message" = "Find SapoWhisper in the list and enable speech recognition access. If macOS does not show it yet, allow the system dialog first and then come back here.";
+"permissions.speech.helper_title" = "Enable Apple Speech access";
+"permissions.speech.helper_message" = "This setting allows Apple Speech to process the audio recorded by SapoWhisper.";
+"permissions.speech.active_detail" = "Apple Speech is already ready to transcribe from SapoWhisper.";
+"permissions.speech.pending_detail" = "Required to transcribe with the Apple Speech engine.";
+"permissions.accessibility.title" = "Accessibility";
+"permissions.accessibility.summary" = "Required for auto-paste and the smoothest global flow.";
+"permissions.accessibility.overlay_title" = "Enable Accessibility";
+"permissions.accessibility.overlay_message" = "If SapoWhisper is already in the list, just enable it. If it is still missing, drag it from the card below into the list.";
+"permissions.accessibility.helper_title" = "Drag SapoWhisper if needed";
+"permissions.accessibility.helper_message" = "The card below lets you drop the app into the Accessibility list when it is not visible yet.";
+"permissions.accessibility.active_detail" = "SapoWhisper can already auto-paste and complete the global flow more reliably.";
+"permissions.accessibility.pending_detail" = "Recommended for auto-paste and for completing the flow from any app.";
+"permissions.overlay.footnote" = "When you return to SapoWhisper, we will refresh this status automatically.";
+"permissions.overlay.drag_subtitle" = "Drag me into the list if needed";
+"permissions.banner.title" = "Permissions pending";
+"permissions.banner.body" = "Enable %@ to unlock the full SapoWhisper flow.";
+"permissions.banner.generic_permissions" = "the permissions";
+"permissions.banner.and" = "and";
+"permissions.review" = "Review";
+"permissions.window_title" = "Missing Permissions";
+"permissions.window.section_title" = "System permissions";
+"permissions.window.footer_ready" = "Everything is ready. You can close this window and continue.";
+"permissions.window.footer_pending" = "You can close this window and come back later.";
+"permissions.window.close_ready" = "Close";
+"permissions.window.close_pending" = "Not now";
+"permissions.window.subtitle" = "SapoWhisper takes you to the right System Settings panel and refreshes the status when you return.";
+"permissions.window.hero_ready" = "Everything is ready to transcribe";
+"permissions.window.hero_one" = "Enable the pending permission";
+"permissions.window.hero_many" = "Enable the pending permissions";
+"permissions.window.badge_ready" = "Ready";
+"permissions.window.badge_one" = "1 pending";
+"permissions.window.badge_many" = "%d pending";
+"permissions.window.helper_ready" = "You can go back to the menu or start recording normally.";
+"permissions.window.helper_pending" = "All permissions stay visible here even when one is already active, so you can finish onboarding without losing context.";
+"permissions.status.active" = "Active";
+"permissions.status.pending" = "Pending";
+"permissions.card.ready" = "Ready";
+"permissions.activate" = "Enable";
+"permissions.settings.row_hint" = "SapoWhisper takes you to the right panel and refreshes the status when you come back.";
+"permissions.speech.denied_error" = "Speech recognition permission was denied";
+"settings.permissions_guided_footer" = "You can open the guided onboarding for each permission and watch the live status update when you return from System Settings.";
+"settings.permissions_guided_desc" = "Accessibility is still key for auto-paste and for the smoothest flow from any app. If you want to review all permissions together, open the guided onboarding.";
 "settings.test_microphone" = "Test microphone";
+"settings.gain" = "Gain";
 "settings.listening" = "Listening...";
 "settings.gain_desc" = "Adjust audio amplification (doesn't affect system volume)";
+"settings.record_sample" = "Record sample";
+"settings.stop_sample" = "Stop";
+"settings.sample_original" = "Original";
+"settings.sample_compressed" = "As sent to engine";
 
 /* Recording Overlay */
 "overlay.recording" = "Recording...";
 "overlay.paused" = "Paused";
 "overlay.transcribing" = "Transcribing...";
 "overlay.completed" = "Done!";
+"overlay.copied" = "Copied";
 "overlay.device_ready" = "Ready to record";
 
 /* Sound Settings */
@@ -147,3 +270,38 @@
 "settings.sound_volume" = "Sound volume";
 "settings.sound_volume_desc" = "Adjust volume independent of system";
 "settings.test_sound" = "Test sound";
+
+/* Deepgram Engine */
+"engine.deepgram.description" = "Deepgram Nova-3. High accuracy, requires internet.";
+"config.deepgram_key_placeholder" = "Enter your Deepgram API key...";
+"config.deepgram_key_desc" = "Create your API key at deepgram.com > Dashboard > API Keys.\nStored locally.";
+"config.deepgram_key_missing" = "API key not configured";
+"config.deepgram_key_configured" = "API key configured";
+
+/* Vocabulary */
+"config.vocabulary" = "Vocabulary";
+"config.keyterms" = "Keywords";
+"config.keyterm_placeholder" = "e.g. Claude Code";
+"config.keyterms_desc" = "Words that Deepgram will prioritize when transcribing";
+"config.replacements" = "Auto-corrections";
+"config.replace_from" = "Original";
+"config.replace_to" = "Replace with";
+"config.replacements_desc" = "Automatically correct words in the transcription output";
+"config.add" = "Add";
+
+"overlay.no_speech" = "No speech detected";
+
+/* Errors */
+"error.deepgram_auth" = "Deepgram: Invalid or expired API key. Check Settings.";
+"error.no_audio" = "Could not capture audio";
+"error.input_not_ready" = "The microphone was not ready after the device change";
+"overlay.retry" = "Retry";
+
+/* Google Cloud Warning */
+"config.google_60s_warning" = "Limited to 60 seconds per recording";
+
+/* Auto-Ducking */
+"settings.auto_ducking" = "Auto-duck system audio";
+"settings.ducking_amount" = "Volume reduction";
+"settings.auto_ducking_header" = "Auto-Ducking";
+"settings.auto_ducking_desc" = "Automatically lower system audio volume while recording";

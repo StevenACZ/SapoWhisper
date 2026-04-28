@@ -1,7 +1,8 @@
 /* General */
 "app_name" = "SapoWhisper";
 "version" = "Versión %@";
-"made_by" = "Creado con 💚 por Steven";
+"made_by" = "Creado con cuidado para macOS";
+"about.open_source" = "Proyecto open source listo para compartirse publicamente.";
 "close" = "Cerrar";
 "quit" = "Salir de SapoWhisper";
 "about" = "Acerca de";
@@ -18,6 +19,64 @@
 "menu.auto_paste" = "Auto-pegar texto";
 "menu.auto_paste_sub" = "Pega automáticamente al terminar";
 "menu.settings" = "Configuración";
+"menu.history" = "Historial";
+
+/* History */
+"history.title" = "Historial";
+"history.search" = "Buscar transcripciones...";
+"history.empty" = "Sin historial";
+"history.empty_sub" = "Las transcripciones aparecerán aquí";
+"history.copy" = "Copiar";
+"history.retranscribe" = "Re-transcribir";
+"history.retranscribe_create" = "Crear nueva transcripción";
+"history.retranscribing" = "Re-transcribiendo...";
+"history.retranscribe_sheet_title" = "Re-transcribir audio";
+"history.retranscribe_sheet_subtitle" = "Se creará una nueva entrada sin reemplazar la original.";
+"history.failed" = "Falló";
+"history.failed_detail" = "La transcripción no pudo completarse. Intenta de nuevo si el audio está guardado.";
+"history.pinned" = "Fijados";
+"history.today" = "Hoy";
+"history.yesterday" = "Ayer";
+"history.this_week" = "Esta semana";
+"history.this_month" = "Este mes";
+"history.older" = "Anteriores";
+"history.select_transcription" = "Selecciona una transcripción";
+"history.select_transcription_sub" = "Elige una entrada del sidebar para ver el texto completo";
+"history.copied" = "¡Copiado!";
+"history.retranscribe_with" = "Re-transcribir con...";
+"history.download_audio" = "Descargar audio";
+"history.audio_missing_error" = "No se encontró el archivo de audio de esta entrada.";
+"history.action_failed" = "No se pudo completar la acción";
+"history.current_selection" = "Actual";
+"history.engine_unavailable" = "No disponible";
+"history.pin" = "Fijar";
+"history.unpin" = "Desfijar";
+"history.delete" = "Eliminar";
+"history.delete_confirm" = "¿Eliminar transcripción?";
+"history.delete_confirm_message" = "Esta acción no se puede deshacer. También se eliminará el audio guardado.";
+"history.no_results" = "Sin resultados";
+"history.details" = "Detalles";
+"history.actions" = "Acciones";
+"history.engine" = "Motor";
+"history.language" = "Idioma";
+"history.duration" = "Duración";
+"history.words" = "Palabras";
+"history.audio" = "Audio";
+"history.audio_saved" = "Guardado";
+"history.audio_none" = "No guardado";
+"history.status" = "Estado";
+"history.status_completed" = "Completado";
+"history.status_failed" = "Fallido";
+"history.play" = "Reproducir";
+"history.pause" = "Pausar";
+"history.filter_all" = "Todos";
+"history.filter_deepgram" = "Deepgram";
+"history.filter_google" = "Google";
+"history.filter_whisper" = "Whisper";
+"history.filter_apple" = "Apple";
+
+"common.cancel" = "Cancelar";
+"common.ok" = "OK";
 
 /* Settings */
 "settings.general" = "General";
@@ -26,6 +85,7 @@
 "settings.audio" = "Audio";
 "settings.microphone" = "Micrófono";
 "settings.microphone_desc" = "Dispositivo de entrada de audio";
+"settings.language_header" = "Idioma";
 "settings.input_language" = "Idioma de transcripción";
 "settings.input_language_desc" = "El idioma que usarás para hablar";
 "settings.behavior" = "Comportamiento";
@@ -105,6 +165,7 @@
 "config.service_account_import" = "Importar JSON";
 "config.service_account_change" = "Cambiar";
 "config.service_account_remove" = "Eliminar";
+"config.service_account_detect" = "Detectar";
 "config.api_key_fallback" = "API Key (alternativa)";
 
 /* Badges & Labels */
@@ -129,15 +190,77 @@
 "settings.presets_desc" = "Selecciona un atajo predefinido o personaliza el tuyo";
 
 /* Microphone Level Meter */
+
+/* Guided Permissions */
+"permissions.microphone.title" = "Micrófono";
+"permissions.microphone.summary" = "Necesario para capturar tu voz antes de transcribir.";
+"permissions.microphone.overlay_title" = "Activa Micrófono";
+"permissions.microphone.overlay_message" = "Activa el interruptor de SapoWhisper en este panel.";
+"permissions.microphone.helper_title" = "Habilita el interruptor de SapoWhisper";
+"permissions.microphone.helper_message" = "Cuando lo actives, validaremos el estado automáticamente.";
+"permissions.microphone.active_detail" = "SapoWhisper ya puede usar el micrófono para grabar.";
+"permissions.microphone.pending_detail" = "Necesario para grabar audio antes de transcribir.";
+"permissions.speech.title" = "Reconocimiento de voz";
+"permissions.speech.summary" = "Necesario para usar el motor Apple Speech.";
+"permissions.speech.overlay_title" = "Activa Reconocimiento de voz";
+"permissions.speech.overlay_message" = "Busca SapoWhisper en la lista y habilita el acceso a reconocimiento de voz. Si macOS todavía no lo muestra, acepta primero el diálogo del sistema y luego vuelve aquí.";
+"permissions.speech.helper_title" = "Activa el permiso para Apple Speech";
+"permissions.speech.helper_message" = "Este ajuste permite que Apple Speech procese el audio grabado por SapoWhisper.";
+"permissions.speech.active_detail" = "Apple Speech ya está listo para transcribir desde SapoWhisper.";
+"permissions.speech.pending_detail" = "Necesario para transcribir con el motor Apple Speech.";
+"permissions.accessibility.title" = "Accesibilidad";
+"permissions.accessibility.summary" = "Necesario para auto-pegar y para un flujo global sin fricción.";
+"permissions.accessibility.overlay_title" = "Activa Accesibilidad";
+"permissions.accessibility.overlay_message" = "Si SapoWhisper ya aparece en la lista, solo habilítalo. Si todavía no está visible, arrástralo desde la tarjeta inferior hacia la lista.";
+"permissions.accessibility.helper_title" = "Arrastra SapoWhisper si hace falta";
+"permissions.accessibility.helper_message" = "La tarjeta inferior te deja soltar la app dentro de la lista de Accesibilidad cuando todavía no aparece.";
+"permissions.accessibility.active_detail" = "SapoWhisper ya puede auto-pegar y completar mejor el flujo global.";
+"permissions.accessibility.pending_detail" = "Recomendado para auto-pegar y para completar el flujo desde cualquier app.";
+"permissions.overlay.footnote" = "Cuando vuelvas a SapoWhisper, actualizaremos este estado automáticamente.";
+"permissions.overlay.drag_subtitle" = "Arrástrame hacia la lista si hace falta";
+"permissions.banner.title" = "Permisos pendientes";
+"permissions.banner.body" = "Activa %@ para desbloquear el flujo completo de SapoWhisper.";
+"permissions.banner.generic_permissions" = "los permisos";
+"permissions.banner.and" = "y";
+"permissions.review" = "Revisar";
+"permissions.window_title" = "Permisos pendientes";
+"permissions.window.section_title" = "Permisos del sistema";
+"permissions.window.footer_ready" = "Todo está listo. Puedes cerrar esta ventana y continuar.";
+"permissions.window.footer_pending" = "Puedes cerrar esta ventana y volver luego.";
+"permissions.window.close_ready" = "Cerrar";
+"permissions.window.close_pending" = "Ahora no";
+"permissions.window.subtitle" = "SapoWhisper te guía al panel correcto de Ajustes del Sistema y refresca el estado cuando regresas.";
+"permissions.window.hero_ready" = "Todo listo para transcribir";
+"permissions.window.hero_one" = "Activa el permiso pendiente";
+"permissions.window.hero_many" = "Activa los permisos pendientes";
+"permissions.window.badge_ready" = "Todo listo";
+"permissions.window.badge_one" = "1 pendiente";
+"permissions.window.badge_many" = "%d pendientes";
+"permissions.window.helper_ready" = "Ya puedes volver al menú o grabar con normalidad.";
+"permissions.window.helper_pending" = "Todos los permisos siguen visibles aquí aunque alguno ya esté activo, para que completes el onboarding sin perder contexto.";
+"permissions.status.active" = "Activo";
+"permissions.status.pending" = "Pendiente";
+"permissions.card.ready" = "Listo";
+"permissions.activate" = "Activar";
+"permissions.settings.row_hint" = "SapoWhisper te lleva al panel correcto y refresca el estado al volver.";
+"permissions.speech.denied_error" = "Permisos de reconocimiento de voz denegados";
+"settings.permissions_guided_footer" = "Puedes abrir el onboarding guiado para cada permiso y ver el estado en vivo mientras vuelves desde Ajustes del Sistema.";
+"settings.permissions_guided_desc" = "Accesibilidad sigue siendo clave para auto-pegar y para un flujo cómodo desde cualquier app. Si quieres ver todos los permisos juntos, abre el onboarding guiado.";
 "settings.test_microphone" = "Probar micrófono";
+"settings.gain" = "Ganancia";
 "settings.listening" = "Escuchando...";
 "settings.gain_desc" = "Ajusta la amplificación del audio (no afecta el volumen del sistema)";
+"settings.record_sample" = "Grabar muestra";
+"settings.stop_sample" = "Detener";
+"settings.sample_original" = "Original";
+"settings.sample_compressed" = "Como se envía";
 
 /* Recording Overlay */
 "overlay.recording" = "Grabando...";
 "overlay.paused" = "En pausa";
 "overlay.transcribing" = "Transcribiendo...";
 "overlay.completed" = "¡Listo!";
+"overlay.copied" = "Copiado";
 "overlay.device_ready" = "Listo para grabar";
 
 /* Sound Settings */
@@ -147,3 +270,38 @@
 "settings.sound_volume" = "Volumen de sonidos";
 "settings.sound_volume_desc" = "Ajusta el volumen independiente del sistema";
 "settings.test_sound" = "Probar sonido";
+
+/* Deepgram Engine */
+"engine.deepgram.description" = "Deepgram Nova-3. Alta precision, requiere internet.";
+"config.deepgram_key_placeholder" = "Ingresa tu API key de Deepgram...";
+"config.deepgram_key_desc" = "Crea tu API key en deepgram.com > Dashboard > API Keys.\nSe guarda localmente.";
+"config.deepgram_key_missing" = "API key no configurada";
+"config.deepgram_key_configured" = "API key configurada";
+
+/* Vocabulary */
+"config.vocabulary" = "Vocabulario";
+"config.keyterms" = "Palabras clave";
+"config.keyterm_placeholder" = "Ej: Claude Code";
+"config.keyterms_desc" = "Palabras que Deepgram priorizara al transcribir";
+"config.replacements" = "Correcciones automaticas";
+"config.replace_from" = "Original";
+"config.replace_to" = "Corregir a";
+"config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
+"config.add" = "Agregar";
+
+"overlay.no_speech" = "No se detecto voz";
+
+/* Errors */
+"error.deepgram_auth" = "Deepgram: API key invalida o expirada. Verifica en Settings.";
+"error.no_audio" = "No se pudo obtener el audio";
+"error.input_not_ready" = "El microfono no estuvo listo tras cambiar de dispositivo";
+"overlay.retry" = "Reintentar";
+
+/* Google Cloud Warning */
+"config.google_60s_warning" = "Limitado a 60 segundos por grabacion";
+
+/* Auto-Ducking */
+"settings.auto_ducking" = "Reducir audio del sistema";
+"settings.ducking_amount" = "Reduccion de volumen";
+"settings.auto_ducking_header" = "Auto-Ducking";
+"settings.auto_ducking_desc" = "Reduce automaticamente el volumen del sistema durante la grabacion";

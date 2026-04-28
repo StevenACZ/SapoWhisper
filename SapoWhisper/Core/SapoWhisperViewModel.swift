@@ -2,7 +2,6 @@
 //  SapoWhisperViewModel.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 
 import SwiftUI
@@ -11,6 +10,16 @@ import Combine
 /// ViewModel principal que coordina toda la funcionalidad de la app
 @MainActor
 class SapoWhisperViewModel: ObservableObject {
+
+    struct HistoryRetranscriptionResult {
+        let entryId: Int64
+        let errorMessage: String?
+    }
+
+    private struct PersistedHistoryEntry {
+        let id: Int64
+        let audioURL: URL?
+    }
 
     // MARK: - Published Properties
 
@@ -43,7 +52,24 @@ class SapoWhisperViewModel: ObservableObject {
     let googleCloudTranscriber = GoogleCloudTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
-    let audioLevelMonitor = AudioLevelMonitor.shared
+    let deepgramTranscriber = DeepgramBatchTranscriber()
+    private let historyManager = TranscriptionHistoryManager.shared
+
+    // Retry support
+    @Published var lastFailedAudioURL: URL?
+    private var lastFailedHistoryId: Int64?
+
+    // Auto-stop timers
+    private var autoStopTimer: Timer?
+    private static let googleCloudMaxDuration: TimeInterval = 58 // Stop before 60s limit
+    private static let stopTailPadding: TimeInterval = 0.12
+    private static let firstInputBufferTimeout: TimeInterval = 0.8
+    private static let startRetryBudget: TimeInterval = 1.0
+    private static let startRetryBackoffs: [TimeInterval] = [0.15, 0.30]
+    private var isStopPending = false
+    private var startRecordingTask: Task<Void, Never>?
+    private var isStartPending = false
+    private var shouldResumeMicMonitorAfterRecording = false
 
     // MARK: - Computed Properties
 
@@ -59,6 +85,19 @@ class SapoWhisperViewModel: ObservableObject {
         whisperKitTranscriber.isModelLoaded
     }
 
+    func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
+        switch engine {
+        case .appleOnline:
+            return true
+        case .whisperLocal:
+            return whisperKitTranscriber.isModelLoaded
+        case .googleCloud:
+            return googleCloudTranscriber.isConfigured
+        case .deepgram:
+            return deepgramTranscriber.isConfigured
+        }
+    }
+
     // MARK: - Private Properties
     
     private var cancellables = Set<AnyCancellable>()
@@ -71,6 +110,8 @@ class SapoWhisperViewModel: ObservableObject {
         setupHotkey()
         loadSavedSettings()
         setupOverlayCallbacks()
+        _ = SoundManager.shared
+        overlayManager.prewarm()
 
         // Cargar modelo automaticamente si el motor es WhisperLocal
         if currentEngine == .whisperLocal {
@@ -78,13 +119,19 @@ class SapoWhisperViewModel: ObservableObject {
                 await loadWhisperKitModel()
             }
         }
+
     }
 
-    /// Configura callbacks del overlay (pause/resume)
+    /// Configura callbacks del overlay (pause/resume/retry)
     private func setupOverlayCallbacks() {
         overlayManager.onPauseToggle = { [weak self] in
             Task { @MainActor in
                 self?.togglePause()
+            }
+        }
+        overlayManager.onRetry = { [weak self] in
+            Task { @MainActor in
+                self?.retryTranscription()
             }
         }
     }
@@ -188,6 +235,8 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.objectWillChange.send()
                 // Actualizar icono del Dock usando el manager
                 DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingWhisperKit ?? false)
+                // Auto-Ducking: reducir/restaurar volumen del sistema
+                AutoDuckingManager.shared.handleStateChange(state)
             }
             .store(in: &cancellables)
         
@@ -220,19 +269,35 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Observar nivel de audio para el overlay
-        audioLevelMonitor.$audioLevel
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.transcriber.refreshAuthorizationStatus()
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        // Observar nivel de audio del recorder para el overlay
+        audioRecorder.$audioLevel
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.overlayManager.updateAudioLevel(level)
             }
             .store(in: &cancellables)
 
-        // Observar duracion de grabacion para el overlay
+        // Update overlay duration during recording
         audioRecorder.$recordingDuration
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
-                self?.overlayManager.updateRecordingDuration(duration)
+                guard let self = self else { return }
+                switch self.overlayManager.state {
+                case .recording:
+                    self.overlayManager.updateRecordingDuration(duration)
+                case .paused:
+                    break // Don't update timer during pause
+                default:
+                    break
+                }
             }
             .store(in: &cancellables)
 
@@ -251,11 +316,7 @@ class SapoWhisperViewModel: ObservableObject {
     private func checkInitialState() {
         switch currentEngine {
         case .appleOnline:
-            if transcriber.isModelLoaded {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
+            appState = .idle
         case .whisperLocal:
             if whisperKitTranscriber.isModelLoaded {
                 appState = .idle
@@ -264,6 +325,12 @@ class SapoWhisperViewModel: ObservableObject {
             }
         case .googleCloud:
             if googleCloudTranscriber.isConfigured {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
+        case .deepgram:
+            if deepgramTranscriber.isConfigured {
                 appState = .idle
             } else {
                 appState = .noModel
@@ -311,18 +378,20 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Cambia el motor de transcripcion
     func setEngine(_ engine: TranscriptionEngine) {
+        let previousEngine = currentEngine
         selectedEngine = engine.rawValue
+
+        if previousEngine == .whisperLocal && engine != .whisperLocal {
+            whisperKitTranscriber.unloadModel()
+        }
+
+        checkInitialState()
 
         // Si cambia a WhisperKit y no hay modelo cargado, intentar cargarlo
         if engine == .whisperLocal && !whisperKitTranscriber.isModelLoaded {
             Task {
                 await loadWhisperKitModel()
             }
-        }
-
-        // Si cambia a Google Cloud y no esta configurado, mostrar noModel
-        if engine == .googleCloud && !googleCloudTranscriber.isConfigured {
-            appState = .noModel
         }
     }
 
@@ -344,7 +413,9 @@ class SapoWhisperViewModel: ObservableObject {
     /// Toggle de grabación (llamado por hotkey o botón)
     func toggleRecording() {
         if audioRecorder.isRecording {
-            stopRecordingAndTranscribe()
+            requestStopRecordingAndTranscribe()
+        } else if isStartPending {
+            cancelPendingRecordingStart()
         } else {
             startRecording()
         }
@@ -359,31 +430,29 @@ class SapoWhisperViewModel: ObservableObject {
             do {
                 try audioRecorder.resumeRecording()
                 overlayManager.updateState(.recording(duration: audioRecorder.recordingDuration))
-                audioLevelMonitor.startMonitoring(deviceUID: selectedMicrophone)
             } catch {
-                print("Error resuming recording: \(error)")
+                print("❌ [capture] failed to resume recording: \(error)")
             }
         } else {
             // Pause
             audioRecorder.pauseRecording()
             overlayManager.updateState(.paused(duration: audioRecorder.recordingDuration))
-            audioLevelMonitor.stopMonitoring()
             overlayManager.updateAudioLevel(0)
         }
     }
     
     /// Inicia la grabacion
     func startRecording() {
-        // Verificar que el motor actual tiene modelo cargado
-        let isReady: Bool
-        switch currentEngine {
-        case .appleOnline:
-            isReady = transcriber.isModelLoaded
-        case .whisperLocal:
-            isReady = whisperKitTranscriber.isModelLoaded
-        case .googleCloud:
-            isReady = googleCloudTranscriber.isConfigured
+        let engine = currentEngine
+        let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
+
+        guard missingPermissions.isEmpty else {
+            PermissionService.shared.showRequirementsWindow(force: true)
+            return
         }
+
+        // Verificar que el motor actual tiene modelo cargado
+        let isReady = isEngineReady(engine)
 
         guard isReady else {
             appState = .noModel
@@ -395,85 +464,100 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Mostrar overlay PRIMERO para feedback visual inmediato
         appState = .recording
-        overlayManager.show()
+
         overlayManager.updateState(.recording(duration: 0))
 
-        do {
-            // Actualizar microfono seleccionado y empezar a grabar
-            audioRecorder.selectedDeviceUID = selectedMicrophone
-            try audioRecorder.startRecording()
+        let mic = selectedMicrophone
+        let playSound = playSoundEnabled
+        isStartPending = true
+        startRecordingSession(
+            engine: engine,
+            microphone: mic,
+            playSound: playSound
+        )
+    }
 
-            // Iniciar monitoreo de audio (no bloquea UI)
-            audioLevelMonitor.startMonitoring(deviceUID: selectedMicrophone)
+    private func cancelPendingRecordingStart() {
+        guard isStartPending else { return }
 
-            if playSoundEnabled {
-                SoundManager.shared.play(.startRecording)
-            }
-            print("Grabacion iniciada (Motor: \(currentEngine.displayName))")
-        } catch {
-            appState = .error(error.localizedDescription)
-            overlayManager.showError(message: error.localizedDescription)
-            if playSoundEnabled {
-                SoundManager.shared.play(.error)
-            }
-            print("Error al iniciar grabacion: \(error)")
-        }
+        audioRecorder.cancelPendingSetup()
+        startRecordingTask?.cancel()
+        startRecordingTask = nil
+        isStartPending = false
+        overlayManager.updateAudioLevel(0)
+        overlayManager.updateState(.hidden)
+        restoreMicMonitorAfterRecordingIfNeeded()
+        checkInitialState()
     }
     
+    private func requestStopRecordingAndTranscribe() {
+        guard !isStopPending else { return }
+        isStopPending = true
+
+        let tailPadding = Self.stopTailPadding
+
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
+            await MainActor.run {
+                self.stopRecordingAndTranscribe()
+            }
+        }
+    }
+
     /// Detiene la grabacion y transcribe
-    func stopRecordingAndTranscribe() {
-        // Detener monitoreo de audio
-        audioLevelMonitor.stopMonitoring()
+    private func stopRecordingAndTranscribe() {
+        isStopPending = false
+        defer { restoreMicMonitorAfterRecordingIfNeeded() }
+        // Detener timers
+        autoStopTimer?.invalidate()
+        autoStopTimer = nil
 
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
         }
 
+        let engine = currentEngine
+        let language = selectedLanguage
+        let duration = recordingDuration
+
+        // All engines: stop recording, get audio file, transcribe
         guard let audioURL = audioRecorder.stopRecording() else {
-            appState = .error("No se pudo obtener el audio")
-            overlayManager.showError(message: "No se pudo obtener el audio")
+            appState = .error("error.no_audio".localized)
+            overlayManager.showError(message: "error.no_audio".localized)
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
             return
         }
 
-        print("Grabacion detenida, iniciando transcripcion con \(currentEngine.displayName)...")
+        if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
+            print(
+                "⚠️ [capture] dropping empty recording after device switch " +
+                "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
+            )
+            audioRecorder.deleteRecording(at: audioURL)
+            appState = .error("error.no_audio".localized)
+            overlayManager.showError(message: "error.no_audio".localized)
+            if playSoundEnabled {
+                SoundManager.shared.play(.error)
+            }
+            return
+        }
+
         appState = .processing
 
         // Actualizar overlay a transcribing
         overlayManager.updateState(.transcribing)
 
-        // Capturar valores para usar en el Task
-        let language = selectedLanguage
-        let engine = currentEngine
-
         Task {
             do {
-                let transcription: String
-
-                // Usar el motor correspondiente
-                switch engine {
-                case .appleOnline:
-                    transcription = try await transcriber.transcribe(audioURL: audioURL, language: language)
-                case .whisperLocal:
-                    transcription = try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
-                case .googleCloud:
-                    transcription = try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
-                }
+                let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
 
                 lastTranscription = transcription
-
-                // Copiar al portapapeles
                 PasteManager.copyToClipboard(transcription)
-
-                // Mostrar overlay con resultado (se oculta automaticamente)
                 overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
 
-                // Auto-paste si esta habilitado
                 if autoPasteEnabled {
-                    // Pequeno delay para asegurar que el clipboard este listo
-                    try? await Task.sleep(nanoseconds: 100_000_000)
                     PasteManager.simulatePaste()
                 }
 
@@ -482,17 +566,154 @@ class SapoWhisperViewModel: ObservableObject {
                     SoundManager.shared.play(.success)
                 }
 
-                // Limpiar archivo temporal
+                _ = persistHistoryEntry(
+                    from: audioURL,
+                    engine: engine,
+                    language: language,
+                    duration: duration,
+                    text: transcription,
+                    status: "completed"
+                )
                 audioRecorder.deleteRecording(at: audioURL)
-                print("Transcripcion completada (\(engine.displayName)): \(transcription.prefix(50))...")
+                lastFailedAudioURL = nil
+                lastFailedHistoryId = nil
+
             } catch {
                 appState = .error(error.localizedDescription)
                 overlayManager.showError(message: error.localizedDescription)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
-                print("Error en transcripcion: \(error)")
+
+                let persistedEntry = persistHistoryEntry(
+                    from: audioURL,
+                    engine: engine,
+                    language: language,
+                    duration: duration,
+                    text: "",
+                    status: "failed"
+                )
+                lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
+                lastFailedAudioURL = persistedEntry.audioURL
+                audioRecorder.deleteRecording(at: audioURL)
+                print("❌ [transcription] \(engine.displayName): \(error)")
             }
+        }
+    }
+
+    /// Starts auto-stop timer for engines with duration limits
+    private func startAutoStopTimer(for engine: TranscriptionEngine) {
+        autoStopTimer?.invalidate()
+
+        let maxDuration: TimeInterval
+        switch engine {
+        case .googleCloud:
+            maxDuration = Self.googleCloudMaxDuration
+        default:
+            return // No limit for Apple/WhisperKit
+        }
+
+        // Fix #18: Tighter check interval
+        autoStopTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleAutoStopTick(maxDuration: maxDuration)
+            }
+        }
+    }
+
+    private func handleAutoStopTick(maxDuration: TimeInterval) {
+        guard audioRecorder.isRecording else {
+            autoStopTimer?.invalidate()
+            autoStopTimer = nil
+            return
+        }
+
+        if recordingDuration >= maxDuration {
+            autoStopTimer?.invalidate()
+            autoStopTimer = nil
+            requestStopRecordingAndTranscribe()
+        }
+    }
+
+    /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
+    func retryTranscription() {
+        guard let audioURL = lastFailedAudioURL else { return }
+
+        appState = .processing
+        overlayManager.updateState(.transcribing)
+
+        let engine = currentEngine
+        let language = selectedLanguage
+
+        Task {
+            do {
+                let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
+
+                lastTranscription = transcription
+                PasteManager.copyToClipboard(transcription)
+                overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
+
+                if autoPasteEnabled {
+                    PasteManager.simulatePaste()
+                }
+
+                appState = .idle
+                if playSoundEnabled { SoundManager.shared.play(.success) }
+
+                // Update history entry
+                if let historyId = lastFailedHistoryId {
+                    historyManager.updateStatus(id: historyId, status: "completed", transcription: transcription)
+                }
+                lastFailedAudioURL = nil
+                lastFailedHistoryId = nil
+
+            } catch {
+                appState = .error(error.localizedDescription)
+                overlayManager.showError(message: error.localizedDescription)
+                if playSoundEnabled { SoundManager.shared.play(.error) }
+            }
+        }
+    }
+
+    func retranscribeHistoryEntry(_ entry: HistoryEntry, using engine: TranscriptionEngine) async -> HistoryRetranscriptionResult {
+        guard let audioPath = entry.audioPath, FileManager.default.fileExists(atPath: audioPath) else {
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                errorMessage: "history.audio_missing_error".localized
+            )
+        }
+
+        let audioURL = URL(fileURLWithPath: audioPath)
+
+        do {
+            let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
+            let persistedEntry = persistHistoryEntry(
+                from: audioURL,
+                engine: engine,
+                language: entry.language,
+                duration: entry.duration,
+                text: transcription,
+                status: "completed"
+            )
+
+            return HistoryRetranscriptionResult(
+                entryId: persistedEntry.id > 0 ? persistedEntry.id : entry.id,
+                errorMessage: nil
+            )
+        } catch {
+            let persistedEntry = persistHistoryEntry(
+                from: audioURL,
+                engine: engine,
+                language: entry.language,
+                duration: entry.duration,
+                text: "",
+                status: "failed"
+            )
+
+            return HistoryRetranscriptionResult(
+                entryId: persistedEntry.id > 0 ? persistedEntry.id : entry.id,
+                errorMessage: error.localizedDescription
+            )
         }
     }
     
@@ -500,10 +721,199 @@ class SapoWhisperViewModel: ObservableObject {
     
     private func setupHotkey() {
         hotkeyManager.registerHotkey { [weak self] in
-            Task { @MainActor in
-                self?.toggleRecording()
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    self?.toggleRecording()
+                }
+            } else {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        self?.toggleRecording()
+                    }
+                }
             }
         }
+    }
+
+    private func startRecordingSession(
+        engine: TranscriptionEngine,
+        microphone: String,
+        playSound: Bool
+    ) {
+        if isStartPending {
+            audioRecorder.cancelPendingSetup()
+        }
+        startRecordingTask?.cancel()
+        startRecordingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            var recorderDidStart = false
+
+            defer {
+                self.isStartPending = false
+                self.startRecordingTask = nil
+                if didSuspendMonitor && !recorderDidStart {
+                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                }
+            }
+
+            do {
+                try await self.startRecorderWithRecovery(microphone: microphone)
+                recorderDidStart = true
+                self.startAutoStopTimer(for: engine)
+                if playSound {
+                    SoundManager.shared.play(.startRecording)
+                }
+            } catch {
+                if error is CancellationError {
+                    return
+                }
+                self.appState = .error(error.localizedDescription)
+                self.overlayManager.showError(message: error.localizedDescription)
+                if playSound {
+                    SoundManager.shared.play(.error)
+                }
+                print("❌ [capture] failed to start recording: \(error)")
+            }
+        }
+    }
+
+    private func startRecorderWithRecovery(microphone: String) async throws {
+        let deadline = CFAbsoluteTimeGetCurrent() + Self.startRetryBudget
+        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
+
+        for attempt in 1...3 {
+            guard !Task.isCancelled else { throw CancellationError() }
+
+            do {
+                let didStart = try await attemptRecorderStart(
+                    microphone: microphone,
+                    attempt: attempt,
+                    minimumDelay: attempt == 1 ? 0 : Self.startRetryBackoffs[attempt - 2]
+                )
+                if didStart {
+                    if attempt > 1 {
+                        print("✅ [capture] recovered on retry after route transition")
+                    }
+                    return
+                }
+                lastFailure = RecordingError.noInputAfterDeviceSwitch
+            } catch {
+                if error is CancellationError {
+                    throw error
+                }
+                lastFailure = error
+            }
+
+            audioRecorder.discardRecording()
+
+            guard attempt < 3 else { break }
+
+            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
+            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
+            guard classification.isTransient else {
+                throw lastFailure
+            }
+
+            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
+            guard remainingBudget > 0 else { break }
+
+            let retryDelay = min(
+                remainingBudget,
+                max(Self.startRetryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
+            )
+
+            print(
+                "🎙️ [capture] transient start failure (\(classification.reason)), " +
+                "retrying \(attempt + 1)/3 after \(Int(retryDelay * 1000))ms"
+            )
+            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+        }
+
+        throw lastFailure
+    }
+
+    private func attemptRecorderStart(
+        microphone: String,
+        attempt: Int,
+        minimumDelay: TimeInterval
+    ) async throws -> Bool {
+        audioRecorder.selectedDeviceUID = microphone
+        let settleDelay = max(minimumDelay, audioRecorder.prepareInputDeviceForRecording())
+        if settleDelay > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
+        }
+
+        guard !Task.isCancelled else { return false }
+
+        try await audioRecorder.startRecording()
+        let receivedInput = await audioRecorder.waitForFirstInputBuffer(timeout: Self.firstInputBufferTimeout)
+        if receivedInput {
+            return true
+        }
+
+        let diagnostics = audioRecorder.currentCaptureDiagnostics()
+        let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
+        print(
+            "⚠️ [capture] attempt \(attempt) received no input buffer within " +
+            "\(Int(Self.firstInputBufferTimeout * 1000))ms " +
+            "(bytes: \(diagnostics.fileSizeBytes), input: \(inputDescription))"
+        )
+        return false
+    }
+
+    private func suspendMicMonitorForRecordingIfNeeded() -> Bool {
+        let shouldResume = AudioLevelMonitor.shared.suspendForRecorder()
+        if shouldResume {
+            shouldResumeMicMonitorAfterRecording = true
+        }
+        return shouldResume
+    }
+
+    private func restoreMicMonitorAfterRecordingIfNeeded() {
+        guard shouldResumeMicMonitorAfterRecording else { return }
+        shouldResumeMicMonitorAfterRecording = false
+        AudioLevelMonitor.shared.resumeAfterRecorderIfNeeded()
+    }
+
+    private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
+        switch engine {
+        case .appleOnline:
+            guard PermissionService.shared.isGranted(.speechRecognition) else {
+                throw TranscriberError.permissionDenied
+            }
+            return try await transcriber.transcribe(audioURL: audioURL, language: language)
+        case .whisperLocal:
+            return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .googleCloud:
+            return try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .deepgram:
+            return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+        }
+    }
+
+    private func persistHistoryEntry(
+        from sourceURL: URL,
+        engine: TranscriptionEngine,
+        language: String,
+        duration: TimeInterval,
+        text: String,
+        status: String
+    ) -> PersistedHistoryEntry {
+        let savedPath = historyManager.saveAudioFile(from: sourceURL)
+        let historyID = historyManager.save(
+            engine: engine.displayName,
+            language: language,
+            duration: duration,
+            text: text,
+            audioPath: savedPath,
+            status: status
+        )
+
+        return PersistedHistoryEntry(
+            id: historyID,
+            audioURL: savedPath.map { URL(fileURLWithPath: $0) }
+        )
     }
     
     /// Texto del estado actual
@@ -526,11 +936,13 @@ class SapoWhisperViewModel: ObservableObject {
     var canRecord: Bool {
         switch currentEngine {
         case .appleOnline:
-            return transcriber.isModelLoaded && !transcriber.isTranscribing
+            return !transcriber.isTranscribing
         case .whisperLocal:
             return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
         case .googleCloud:
             return googleCloudTranscriber.isConfigured && !googleCloudTranscriber.isTranscribing
+        case .deepgram:
+            return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing
         }
     }
     

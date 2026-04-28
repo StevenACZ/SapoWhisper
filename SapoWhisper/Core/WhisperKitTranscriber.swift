@@ -2,7 +2,6 @@
 //  WhisperKitTranscriber.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 //  Transcriptor local usando WhisperKit (optimizado para Apple Silicon)
 //
@@ -87,6 +86,10 @@ class WhisperKitTranscriber: ObservableObject {
     /// Incluye reintentos automaticos para manejar errores de red
     func loadModel(_ model: WhisperKitModel, language: String = "es") async throws {
         #if canImport(WhisperKit)
+
+        if currentModel == model, isModelLoaded, !isLoading {
+            return
+        }
         
         // Cancelar tarea anterior si existe
         if let existingTask = loadTask {
@@ -311,10 +314,17 @@ class WhisperKitTranscriber: ObservableObject {
 
     /// Descarga el modelo actual de memoria
     func unloadModel() {
+        loadTask?.cancel()
+        loadTask = nil
         #if canImport(WhisperKit)
         whisperKit = nil
         #endif
         isModelLoaded = false
+        isLoading = false
+        isTranscribing = false
+        loadingProgress = 0
+        loadingMessage = ""
+        loadingState = .idle
         currentModel = nil
         currentModelName = nil
         print("Modelo WhisperKit descargado de memoria")

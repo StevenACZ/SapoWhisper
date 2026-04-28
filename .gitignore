@@ -5,8 +5,8 @@
 # ------------------------------------------
 # DOCUMENTACIÓN PRIVADA (NO SUBIR AL REPO)
 # ------------------------------------------
+AGENTS.md
 CLAUDE.md
-CHANGELOG.md
 FUTURE_FEATURES.md
 DMG/
 
@@ -55,6 +55,7 @@ xcuserdata/
 .build/
 Packages/
 Package.resolved
+!SapoWhisper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # ------------------------------------------
 # CocoaPods (si se usa)
@@ -146,3 +147,5 @@ temp/
 .agent/
 .cursor/
 .claude/
+.superpowers/
+docs/

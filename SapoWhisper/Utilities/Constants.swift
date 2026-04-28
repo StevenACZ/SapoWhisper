@@ -2,7 +2,6 @@
 //  Constants.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 
 import SwiftUI
@@ -15,7 +14,6 @@ enum Constants {
     static let appName = "SapoWhisper"
     static let appVersion = "1.2.0"
     static let appDescription = "Speech-to-Text 100% local"
-    static let githubURL = "https://github.com/StevenACZ/SapoWhisper"
     
     // MARK: - Colores de la Marca
     
@@ -99,11 +97,18 @@ enum Constants {
         static let googleCloudAPIKey = "googleCloudAPIKey"
         static let serviceAccountConfigured = "serviceAccountConfigured"
 
+        // Deepgram
+        static let deepgramAPIKey = "deepgramAPIKey"
+
         // Audio
         static let audioGain = "audioGain"
 
         // Launch at Login
         static let launchAtLogin = "launchAtLogin"
+
+        // Auto-Ducking
+        static let autoDuckingEnabled = "autoDuckingEnabled"
+        static let autoDuckingAmount = "autoDuckingAmount"  // 0.0 a 1.0 (porcentaje de reducción)
     }
 }
 

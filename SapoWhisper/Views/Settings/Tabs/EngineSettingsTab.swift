@@ -1,31 +1,14 @@
-//
-//  EngineSettingsTab.swift
-//  SapoWhisper
-//
-//  Created by Steven on 9/12/24.
-//
-
 import SwiftUI
-import UniformTypeIdentifiers
 
-/// Tab de configuración del motor de transcripción y modelos WhisperKit
+/// Transcription engine settings coordinator.
 struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
-    
+
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
-    @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
-    
+
     private var currentEngine: TranscriptionEngine {
         TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
     }
-    
-    private var currentWhisperKitModel: WhisperKitModel {
-        WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
-    }
-    
-    @AppStorage(Constants.StorageKeys.googleCloudAPIKey) private var googleCloudAPIKey = ""
-    @State private var showAPIKeySection = false
-    @State private var serviceAccountError: String?
 
     var body: some View {
         ScrollView {
@@ -33,19 +16,22 @@ struct EngineSettingsTab: View {
                 transcriptionEngineCard
 
                 if currentEngine == .whisperLocal {
-                    whisperKitModelCard
+                    WhisperKitSettingsCard(viewModel: viewModel)
                 }
 
                 if currentEngine == .googleCloud {
-                    googleCloudSettingsCard
+                    GoogleCloudSettingsCard(viewModel: viewModel)
+                }
+
+                if currentEngine == .deepgram {
+                    DeepgramSettingsCard(viewModel: viewModel)
+                    VocabularySettingsCard()
                 }
             }
             .padding()
         }
     }
-    
-    // MARK: - Transcription Engine Card
-    
+
     private var transcriptionEngineCard: some View {
         SettingsCard(icon: "cpu", title: "config.engine".localized) {
             VStack(spacing: 8) {
@@ -66,252 +52,9 @@ struct EngineSettingsTab: View {
             }
         }
     }
-    
-    // MARK: - WhisperKit Model Card
-    
-    private var whisperKitModelCard: some View {
-        SettingsCard(icon: "square.stack.3d.up", title: "config.whisper_model".localized) {
-            VStack(alignment: .leading, spacing: 12) {
-                // Estado del modelo cargado
-                if viewModel.whisperKitTranscriber.isModelLoaded {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.sapoGreen)
-                        Text(viewModel.whisperKitTranscriber.loadedModelName ?? "")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                    }
-                }
-                
-                // Progress de carga/descarga
-                if viewModel.isLoadingWhisperKit {
-                    loadingProgressView
-                }
-                
-                // Lista de modelos
-                modelsList
-                
-                // Espacio usado
-                storageInfo
-                
-                Text("config.models_download_auto".localized)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-    
-    private var loadingProgressView: some View {
-        VStack(spacing: 8) {
-            ProgressView(value: viewModel.whisperKitLoadingProgress)
-                .progressViewStyle(.linear)
-                .tint(viewModel.whisperKitTranscriber.loadingState == .downloading ? .blue : .sapoGreen)
-            
-            HStack(spacing: 6) {
-                if viewModel.whisperKitTranscriber.loadingState == .downloading {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .foregroundColor(.blue)
-                        .font(.caption)
-                } else if viewModel.whisperKitTranscriber.loadingState == .prewarming {
-                    Image(systemName: "cpu.fill")
-                        .foregroundColor(.sapoGreen)
-                        .font(.caption)
-                }
-                
-                Text(viewModel.whisperKitLoadingMessage)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-    
-    private var modelsList: some View {
-        VStack(spacing: 8) {
-            ForEach(WhisperKitModel.allCases) { model in
-                let isDownloaded = viewModel.whisperKitTranscriber.isModelDownloaded(model)
-                let downloadedSize = viewModel.whisperKitTranscriber.downloadedModelSize(model)
-                
-                WhisperModelButton(
-                    model: model,
-                    isSelected: currentWhisperKitModel == model,
-                    isLoading: viewModel.isLoadingWhisperKit && currentWhisperKitModel == model,
-                    isDownloaded: isDownloaded,
-                    downloadedSize: downloadedSize,
-                    action: {
-                        selectedWhisperModel = model.rawValue
-                        viewModel.setWhisperKitModel(model)
-                    },
-                    onDelete: isDownloaded ? {
-                        deleteModel(model)
-                    } : nil
-                )
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var storageInfo: some View {
-        let downloadedModels = viewModel.whisperKitTranscriber.getDownloadedModelsInfo()
-        if !downloadedModels.isEmpty {
-            let totalSize = downloadedModels.reduce(0) { $0 + $1.size }
-            HStack {
-                Image(systemName: "internaldrive")
-                    .foregroundColor(.secondary)
-                Text("config.space_used".localized(WhisperKitTranscriber.formatBytes(totalSize)))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding(.top, 4)
-        }
-    }
-    
-    // MARK: - Google Cloud Settings Card
-
-    private var googleCloudSettingsCard: some View {
-        SettingsCard(icon: "cloud", title: "Google Cloud") {
-            VStack(alignment: .leading, spacing: 12) {
-                serviceAccountSection
-                Divider()
-                apiKeyFallbackSection
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var serviceAccountSection: some View {
-        if ServiceAccountManager.shared.isConfigured {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.sapoGreen)
-                Text("config.service_account_configured".localized("Chirp 3"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            HStack(spacing: 8) {
-                Button("config.service_account_change".localized) { importServiceAccount() }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.blue)
-                    .font(.caption)
-
-                Button("config.service_account_remove".localized) {
-                    ServiceAccountManager.shared.remove()
-                    viewModel.setEngine(.googleCloud)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.red)
-                .font(.caption)
-            }
-        } else {
-            Text("config.service_account_desc".localized)
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            HStack(spacing: 8) {
-                Button(action: { importServiceAccount() }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.badge.plus")
-                        Text("config.service_account_import".localized)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-
-                Button(action: {
-                    ServiceAccountManager.shared.reload()
-                    viewModel.setEngine(.googleCloud)
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Detectar")
-                    }
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-
-        if let error = serviceAccountError {
-            Text(error)
-                .font(.caption)
-                .foregroundColor(.red)
-        }
-    }
-
-    @ViewBuilder
-    private var apiKeyFallbackSection: some View {
-        DisclosureGroup(
-            isExpanded: $showAPIKeySection,
-            content: {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: googleCloudAPIKey.isEmpty ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .foregroundColor(googleCloudAPIKey.isEmpty ? .orange : .sapoGreen)
-                        Text(googleCloudAPIKey.isEmpty ? "config.api_key_missing".localized : "config.api_key_configured".localized)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    SecureField("config.api_key_placeholder".localized, text: $googleCloudAPIKey)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-
-                    Text("config.api_key_desc".localized)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 4)
-            },
-            label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "key.fill")
-                        .foregroundColor(.secondary)
-                    Text("config.api_key_fallback".localized)
-                        .font(.subheadline)
-                }
-            }
-        )
-    }
-
-    private func importServiceAccount() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "config.service_account_desc".localized
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            try ServiceAccountManager.shared.importFile(from: url)
-            serviceAccountError = nil
-            viewModel.setEngine(.googleCloud)
-        } catch {
-            serviceAccountError = error.localizedDescription
-        }
-    }
-
-    // MARK: - Model Management
-    
-    private func deleteModel(_ model: WhisperKitModel) {
-        if currentWhisperKitModel == model && viewModel.whisperKitTranscriber.isModelLoaded {
-            viewModel.setEngine(.appleOnline)
-        }
-        
-        let success = viewModel.whisperKitTranscriber.deleteDownloadedModel(model)
-        if success {
-            print("✅ Modelo \(model.displayName) borrado exitosamente")
-        } else {
-            print("❌ Error al borrar modelo \(model.displayName)")
-        }
-    }
 }
 
-#Preview {
+#Preview("Engine Settings") {
     EngineSettingsTab(viewModel: SapoWhisperViewModel())
-        .frame(width: 480, height: 500)
+        .frame(width: 480, height: 600)
 }

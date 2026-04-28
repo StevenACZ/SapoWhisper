@@ -2,7 +2,6 @@
 //  HotkeySettingsTab.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI
@@ -78,15 +77,17 @@ struct HotkeySettingsTab: View {
     
     private var permissionsCard: some View {
         SettingsCard(icon: "hand.raised", title: "settings.permissions".localized) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("settings.permissions_desc".localized)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("settings.permissions_guided_desc".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
-                Button("settings.open_preferences".localized) {
-                    openAccessibilityPreferences()
+
+                PermissionStatusRow(permission: .accessibility)
+
+                Button("permissions.review".localized) {
+                    PermissionRequirementsWindowController.shared.showWindow(force: true)
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.bordered)
             }
         }
     }
@@ -101,11 +102,6 @@ struct HotkeySettingsTab: View {
         hotkeyKeyCode = keyCode
         hotkeyModifiers = modifiers
         HotkeyManager.shared.updateHotkey(keyCode: UInt32(keyCode), modifiers: UInt32(modifiers))
-    }
-    
-    private func openAccessibilityPreferences() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
     }
 }
 
@@ -137,7 +133,16 @@ struct HotkeyPresetButton: View {
     }
 }
 
-#Preview {
+#Preview("Hotkey Settings") {
     HotkeySettingsTab()
         .frame(width: 480, height: 500)
+}
+
+#Preview("Hotkey Presets") {
+    HStack(spacing: 10) {
+        HotkeyPresetButton("⌥ Space", isSelected: true) {}
+        HotkeyPresetButton("⌘⇧ Space", isSelected: false) {}
+        HotkeyPresetButton("⌃⌥ Space", isSelected: false) {}
+    }
+    .padding()
 }

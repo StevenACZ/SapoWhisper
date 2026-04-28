@@ -2,7 +2,6 @@
 //  SettingsCard.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import SwiftUI
@@ -56,18 +55,28 @@ struct InfoSection: View {
     }
 }
 
-#Preview {
-    VStack {
-        SettingsCard(icon: "gear", title: "Configuración") {
-            Text("Contenido de ejemplo")
+#Preview("Settings Cards") {
+    VStack(spacing: 16) {
+        SettingsCard(icon: "gear", title: "Configuration") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Auto-paste", isOn: .constant(true))
+                Divider()
+                Toggle("Launch at login", isOn: .constant(false))
+            }
+        }
+
+        SettingsCard(icon: "mic.fill", title: "Microphone") {
+            Text("MacBook Pro Microphone")
+                .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-        
+
         InfoSection(
-            icon: "info.circle",
-            title: "Información",
-            content: "Este es un texto de ejemplo para la sección de información."
+            icon: "lock.shield.fill",
+            title: "Privacy",
+            content: "All audio is processed locally on your device. No data is sent to external servers."
         )
     }
     .padding()
+    .frame(width: 420)
 }

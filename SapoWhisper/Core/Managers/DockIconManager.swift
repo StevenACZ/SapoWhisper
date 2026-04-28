@@ -2,7 +2,6 @@
 //  DockIconManager.swift
 //  SapoWhisper
 //
-//  Created by Steven on 9/12/24.
 //
 
 import AppKit
@@ -24,25 +23,17 @@ final class DockIconManager: ObservableObject {
     private let loadingIcon = NSImage(named: "DockIconLoading")
     private let recordingIcon = NSImage(named: "DockIconRecording")
     private let transcribingIcon = NSImage(named: "DockIconTranscribing")
+    private var lastIconName: String?
+    private let isMenuBarOnlyApp = Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool == true
     
-    private init() {
-        // Verificar que todas las imágenes carguen correctamente
-        print("🎨 DockIconManager: Initializing...")
-        if idleIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconIdle") }
-        else { print("✅ DockIconManager: DockIconIdle loaded") }
-        
-        if loadingIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconLoading") }
-        else { print("✅ DockIconManager: DockIconLoading loaded") }
-        
-        if recordingIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconRecording") }
-        else { print("✅ DockIconManager: DockIconRecording loaded") }
-        
-        if transcribingIcon == nil { print("⚠️ DockIconManager: Failed to load DockIconTranscribing") }
-        else { print("✅ DockIconManager: DockIconTranscribing loaded") }
-    }
+    private init() {}
     
     /// Actualiza el icono del Dock basado en el estado de la app
     func updateIcon(for state: AppState, isModelLoading: Bool = false) {
+        if isMenuBarOnlyApp {
+            return
+        }
+
         let newIcon: NSImage?
         var iconName: String = ""
         
@@ -63,16 +54,18 @@ final class DockIconManager: ObservableObject {
             }
         }
         
-        print("🎨 DockIconManager: Updating to \(iconName) (state: \(state), isModelLoading: \(isModelLoading))")
+        if lastIconName == iconName {
+            return
+        }
         
         // Solo actualizar si la imagen es válida y diferente (aunque NSApp lo gestiona bien)
         if let icon = newIcon {
             NSApp.applicationIconImage = icon
-            print("✅ DockIconManager: Icon updated successfully")
+            lastIconName = iconName
         } else {
             // Fallback al icono original de la app si algo falla
             NSApp.applicationIconImage = nil 
-            print("⚠️ DockIconManager: Icon was nil, using default")
+            lastIconName = nil
         }
     }
     

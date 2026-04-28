@@ -42,3 +42,13 @@ struct TranscribingIndicator: View {
         }
     }
 }
+
+#Preview("Transcribing Indicator") {
+    HStack(spacing: 12) {
+        TranscribingIndicator()
+        Text("Transcribiendo...")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(.primary)
+    }
+    .padding(20)
+}

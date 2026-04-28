@@ -2,60 +2,67 @@
 //  WhisperTranscriber.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //  
 //  Motor de transcripción usando Speech Recognition de Apple (Online).
 //  Este es el motor secundario que requiere internet pero no necesita configuración.
 //
 
-import Foundation
-import AVFoundation
-import Speech
+import AppKit
 import Combine
+import Foundation
+import Speech
 
 /// Maneja la transcripción de audio usando Speech Recognition de Apple
 @MainActor
 class WhisperTranscriber: ObservableObject {
-    
     @Published var isModelLoaded = false
     @Published var isTranscribing = false
     @Published var progress: Double = 0
     @Published var lastTranscription: String = ""
     @Published var errorMessage: String?
-    
+
     private var speechRecognizer: SFSpeechRecognizer?
-    
+    private var cancellables = Set<AnyCancellable>()
+
     init() {
         setupSpeechRecognition()
+        observeAppActivation()
     }
-    
+
     private func setupSpeechRecognition() {
-        // Configurar Speech Recognition
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES"))
-        
-        // Solicitar permisos de Speech Recognition
-        SFSpeechRecognizer.requestAuthorization { [weak self] status in
-            Task { @MainActor in
-                switch status {
-                case .authorized:
-                    print("✅ Speech Recognition autorizado")
-                    self?.isModelLoaded = true
-                case .denied, .restricted:
-                    print("❌ Speech Recognition denegado")
-                    self?.errorMessage = "Permisos de reconocimiento de voz denegados"
-                case .notDetermined:
-                    print("⏳ Speech Recognition no determinado")
-                @unknown default:
-                    break
-                }
+        refreshAuthorizationStatus()
+    }
+
+    private func observeAppActivation() {
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                self?.refreshAuthorizationStatus()
             }
+            .store(in: &cancellables)
+    }
+
+    func refreshAuthorizationStatus() {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            isModelLoaded = true
+            errorMessage = nil
+        case .denied, .restricted:
+            isModelLoaded = false
+            errorMessage = "permissions.speech.denied_error".localized
+        case .notDetermined:
+            isModelLoaded = false
+            errorMessage = nil
+        @unknown default:
+            isModelLoaded = false
         }
     }
-    
+
     /// Transcribe un archivo de audio usando Speech Recognition de Apple
     func transcribe(audioURL: URL, language: String = "es") async throws -> String {
-        guard isModelLoaded else {
-            throw TranscriberError.modelNotLoaded
+        guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
+            refreshAuthorizationStatus()
+            throw TranscriberError.permissionDenied
         }
 
         isTranscribing = true
@@ -67,7 +74,6 @@ class WhisperTranscriber: ObservableObject {
             progress = 1.0
         }
 
-        // Configurar el reconocedor con el idioma correcto
         let recognizer: SFSpeechRecognizer?
 
         switch language {
@@ -85,43 +91,41 @@ class WhisperTranscriber: ObservableObject {
         guard let recognizer = recognizer, recognizer.isAvailable else {
             throw TranscriberError.transcriptionFailed("Speech Recognition no disponible para \(language)")
         }
-        
+
         progress = 0.3
-        
-        // Crear la solicitud de reconocimiento
+
         let request = SFSpeechURLRecognitionRequest(url: audioURL)
         request.shouldReportPartialResults = false
         request.taskHint = .dictation
-        
+
         progress = 0.5
-        
-        // Realizar la transcripción
+
         let transcription = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             recognizer.recognitionTask(with: request) { result, error in
                 if let error = error {
                     continuation.resume(throwing: error)
                     return
                 }
-                
+
                 if let result = result, result.isFinal {
                     let text = result.bestTranscription.formattedString
                     continuation.resume(returning: text)
                 }
             }
         }
-        
+
         progress = 1.0
         lastTranscription = transcription
         print("✅ Transcripción completada: \(transcription.prefix(100))...")
-        
+
         return transcription
     }
-    
+
     /// Verifica si hay un modelo disponible
     var hasAvailableModel: Bool {
         speechRecognizer?.isAvailable == true
     }
-    
+
     /// Obtiene el nombre del motor de transcripción
     var loadedModelName: String? {
         "Apple Speech Recognition"
@@ -131,12 +135,15 @@ class WhisperTranscriber: ObservableObject {
 // MARK: - Errors
 
 enum TranscriberError: LocalizedError {
+    case permissionDenied
     case modelNotDownloaded
     case modelNotLoaded
     case transcriptionFailed(String)
-    
+
     var errorDescription: String? {
         switch self {
+        case .permissionDenied:
+            return "permissions.speech.denied_error".localized
         case .modelNotDownloaded:
             return "El modelo no está descargado"
         case .modelNotLoaded:

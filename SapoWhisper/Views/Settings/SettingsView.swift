@@ -2,7 +2,6 @@
 //  SettingsView.swift
 //  SapoWhisper
 //
-//  Created by Steven on 8/12/24.
 //
 
 import SwiftUI
@@ -83,6 +82,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-#Preview {
+#Preview("Settings Window") {
     SettingsView(viewModel: SapoWhisperViewModel())
 }

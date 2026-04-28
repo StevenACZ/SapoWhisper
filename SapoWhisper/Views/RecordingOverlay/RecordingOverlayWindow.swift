@@ -12,21 +12,21 @@ import SwiftUI
 /// Pill horizontal posicionado en la parte inferior de la pantalla
 class RecordingOverlayWindow: NSPanel {
 
-    init(contentView: NSView) {
+    init(contentView: NSView, width: CGFloat = 380, height: CGFloat = 48) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 56),
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
 
         // Configuracion de la ventana - transparencia total
-        self.level = .floating
+        self.level = .statusBar
         self.isMovableByWindowBackground = false
         self.backgroundColor = NSColor.clear
         self.isOpaque = false
         self.hasShadow = false
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
         // Permitir clicks en controles sin robar focus de la app activa
         self.hidesOnDeactivate = false
@@ -43,7 +43,7 @@ class RecordingOverlayWindow: NSPanel {
 
     /// Posiciona la ventana centrada en la parte inferior de la pantalla
     func positionAtBottom() {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = targetScreen() else { return }
 
         let screenFrame = screen.visibleFrame
         let windowFrame = self.frame
@@ -52,6 +52,15 @@ class RecordingOverlayWindow: NSPanel {
         let y = screenFrame.minY + 60
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func targetScreen() -> NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        if let hoveredScreen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) {
+            return hoveredScreen
+        }
+
+        return NSScreen.main ?? NSScreen.screens.first
     }
 
     /// Permite clicks en botones sin robar focus
