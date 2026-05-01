@@ -6,6 +6,8 @@
 
 import SwiftUI
 import Combine
+import OSLog
+import os
 
 /// ViewModel principal que coordina toda la funcionalidad de la app
 @MainActor
@@ -443,10 +445,13 @@ class SapoWhisperViewModel: ObservableObject {
     
     /// Inicia la grabacion
     func startRecording() {
+        let triggerTime = CFAbsoluteTimeGetCurrent()
         let engine = currentEngine
+        SapoLog.hotkey.info("Recording trigger accepted engine=\(engine.rawValue, privacy: .public)")
         let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
 
         guard missingPermissions.isEmpty else {
+            SapoLog.recording.warning("Recording blocked by missing permissions")
             PermissionService.shared.showRequirementsWindow(force: true)
             return
         }
@@ -456,6 +461,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard isReady else {
             appState = .noModel
+            SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
         }
 
@@ -466,6 +472,8 @@ class SapoWhisperViewModel: ObservableObject {
         appState = .recording
 
         overlayManager.updateState(.recording(duration: 0))
+        let uiReadyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+        SapoLog.recording.info("Recording UI ready in \(uiReadyMs, privacy: .public)ms")
 
         let mic = selectedMicrophone
         let playSound = playSoundEnabled
@@ -473,7 +481,8 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingSession(
             engine: engine,
             microphone: mic,
-            playSound: playSound
+            playSound: playSound,
+            triggerTime: triggerTime
         )
     }
 
@@ -738,7 +747,8 @@ class SapoWhisperViewModel: ObservableObject {
     private func startRecordingSession(
         engine: TranscriptionEngine,
         microphone: String,
-        playSound: Bool
+        playSound: Bool,
+        triggerTime: CFAbsoluteTime
     ) {
         if isStartPending {
             audioRecorder.cancelPendingSetup()
@@ -760,6 +770,8 @@ class SapoWhisperViewModel: ObservableObject {
             do {
                 try await self.startRecorderWithRecovery(microphone: microphone)
                 recorderDidStart = true
+                let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+                SapoLog.recording.info("Recording input ready in \(readyMs, privacy: .public)ms")
                 self.startAutoStopTimer(for: engine)
                 if playSound {
                     SoundManager.shared.play(.startRecording)
@@ -773,6 +785,7 @@ class SapoWhisperViewModel: ObservableObject {
                 if playSound {
                     SoundManager.shared.play(.error)
                 }
+                SapoLog.recording.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
                 print("❌ [capture] failed to start recording: \(error)")
             }
         }
@@ -841,6 +854,8 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.selectedDeviceUID = microphone
         let settleDelay = max(minimumDelay, audioRecorder.prepareInputDeviceForRecording())
         if settleDelay > 0 {
+            let settleMs = Int(settleDelay * 1000)
+            SapoLog.recording.info("Delaying recorder start for route settle \(settleMs, privacy: .public)ms")
             try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
         }
 

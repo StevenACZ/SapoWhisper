@@ -12,6 +12,7 @@ struct SapoWhisperApp: App {
 
     init() {
         PreferredMicrophoneCoordinator.shared.start()
+        AudioInputPreflightManager.shared.start()
     }
     
     var body: some Scene {

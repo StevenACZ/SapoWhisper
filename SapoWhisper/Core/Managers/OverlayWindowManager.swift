@@ -8,6 +8,8 @@
 import AppKit
 import SwiftUI
 import Combine
+import OSLog
+import os
 
 /// Gestiona la ventana de overlay de grabacion
 /// Singleton para controlar mostrar/ocultar y actualizar estados
@@ -19,7 +21,8 @@ class OverlayWindowManager: ObservableObject {
     // MARK: - Published Properties
 
     @Published private(set) var state: RecordingOverlayState = .hidden
-    @Published var audioLevel: Float = 0.0
+
+    let audioLevelPublisher: AnyPublisher<Float, Never>
 
     // MARK: - Callbacks
 
@@ -35,10 +38,19 @@ class OverlayWindowManager: ObservableObject {
     private var hostingView: NSHostingView<RecordingOverlayView>?
     private var isAnimating = false
     private var presentationRevision: UInt = 0
+    private let audioLevelSubject = PassthroughSubject<Float, Never>()
+    private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
+    private var lastAudioLevelValue: Float = 0
+    private var displayedRecordingSecond: Int?
+    private var meterSessionStartedAt: CFAbsoluteTime?
+    private var meterInputSamples = 0
+    private var meterPublishedSamples = 0
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        audioLevelPublisher = audioLevelSubject.eraseToAnyPublisher()
+    }
 
     // MARK: - Public Methods
 
@@ -50,6 +62,7 @@ class OverlayWindowManager: ObservableObject {
         overlayWindow?.alphaValue = 0
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         print("⏱️ [overlay prewarm] ready in \(String(format: "%.0f", elapsed))ms")
+        SapoLog.overlay.info("Overlay prewarmed in \(Int(elapsed), privacy: .public)ms")
     }
 
     /// Muestra la ventana de overlay con animacion
@@ -78,14 +91,21 @@ class OverlayWindowManager: ObservableObject {
         guard revision == presentationRevision else { return }
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         print("⏱️ [overlay show] \(reusedWindow ? "reused" : "created") in \(String(format: "%.0f", elapsed))ms")
+        let reuseState = reusedWindow ? "reused" : "created"
+        SapoLog.overlay.info(
+            "Overlay shown state=\(reuseState, privacy: .public) elapsed=\(Int(elapsed), privacy: .public)ms"
+        )
     }
 
     /// Oculta la ventana de overlay con animacion
     func hide() {
         guard let window = overlayWindow else { return }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         isAnimating = true
         let revisionAtHide = presentationRevision
+        finishMeterSession(reason: "hidden")
+        SapoLog.overlay.info("Overlay hide started")
 
         // Animacion de salida
         NSAnimationContext.runAnimationGroup({ context in
@@ -101,6 +121,10 @@ class OverlayWindowManager: ObservableObject {
                 self.overlayWindow?.orderOut(nil)
                 self.state = .hidden
                 self.isAnimating = false
+                self.displayedRecordingSecond = nil
+                self.publishAudioLevel(0, force: true)
+                let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                SapoLog.overlay.info("Overlay hidden in \(elapsed, privacy: .public)ms")
             }
         })
     }
@@ -136,6 +160,7 @@ class OverlayWindowManager: ObservableObject {
         isAnimating = false
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         print("⏱️ [overlay build] window created in \(String(format: "%.0f", elapsed))ms")
+        SapoLog.overlay.info("Overlay window created in \(Int(elapsed), privacy: .public)ms")
     }
 
     /// Actualiza el estado del overlay
@@ -146,7 +171,21 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
+        if case .recording = state,
+           case .recording = newState {
+            // Still recording; duration-only updates should not reset the meter session.
+        } else if case .recording = state {
+            finishMeterSession(reason: newState.stateCategory)
+        }
+
+        updateDisplayedSecond(for: newState)
         state = newState
+        SapoLog.overlay.info("Overlay state changed to \(newState.stateCategory, privacy: .public)")
+
+        if case .recording = newState {
+            beginMeterSession()
+            publishAudioLevel(0, force: true)
+        }
 
         if newState.isVisible, overlayWindow?.isVisible != true {
             show()
@@ -155,13 +194,19 @@ class OverlayWindowManager: ObservableObject {
 
     /// Actualiza el nivel de audio (para el ecualizador)
     func updateAudioLevel(_ level: Float) {
-        audioLevel = level
+        if meterSessionStartedAt != nil {
+            meterInputSamples += 1
+        }
+        publishAudioLevel(level)
     }
 
     /// Actualiza la duracion de grabacion
     func updateRecordingDuration(_ duration: TimeInterval) {
         if case .recording = state {
-            state = .recording(duration: duration)
+            let displaySecond = max(0, Int(duration))
+            guard displayedRecordingSecond != displaySecond else { return }
+            displayedRecordingSecond = displaySecond
+            state = .recording(duration: TimeInterval(displaySecond))
         }
     }
 
@@ -210,5 +255,51 @@ class OverlayWindowManager: ObservableObject {
                 self.hide()
             }
         }
+    }
+
+    private func updateDisplayedSecond(for state: RecordingOverlayState) {
+        switch state {
+        case .recording(let duration):
+            displayedRecordingSecond = max(0, Int(duration))
+        default:
+            displayedRecordingSecond = nil
+        }
+    }
+
+    private func publishAudioLevel(_ level: Float, force: Bool = false) {
+        let clampedLevel = max(0, min(1, level))
+        let now = CFAbsoluteTimeGetCurrent()
+        let elapsed = now - lastAudioLevelEmitTime
+        let changedEnough = abs(clampedLevel - lastAudioLevelValue) >= 0.08
+
+        guard force || elapsed >= (1.0 / 30.0) || changedEnough else { return }
+
+        lastAudioLevelEmitTime = now
+        lastAudioLevelValue = clampedLevel
+        if meterSessionStartedAt != nil {
+            meterPublishedSamples += 1
+        }
+        audioLevelSubject.send(clampedLevel)
+    }
+
+    private func beginMeterSession() {
+        guard meterSessionStartedAt == nil else { return }
+        meterSessionStartedAt = CFAbsoluteTimeGetCurrent()
+        meterInputSamples = 0
+        meterPublishedSamples = 0
+        SapoLog.overlay.info("Overlay meter session started")
+    }
+
+    private func finishMeterSession(reason: String) {
+        guard let startedAt = meterSessionStartedAt else { return }
+
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+        SapoLog.overlay.info(
+            "Overlay meter session finished reason=\(reason, privacy: .public) elapsed=\(elapsed, privacy: .public)ms received=\(self.meterInputSamples, privacy: .public) rendered=\(self.meterPublishedSamples, privacy: .public)"
+        )
+
+        meterSessionStartedAt = nil
+        meterInputSamples = 0
+        meterPublishedSamples = 0
     }
 }
