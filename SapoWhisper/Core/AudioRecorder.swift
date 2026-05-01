@@ -9,6 +9,7 @@ import AVFoundation
 import CoreAudio
 import AudioToolbox
 import Combine
+import OSLog
 import os
 
 /// Maneja la grabación de audio usando AVAudioEngine
@@ -65,7 +66,6 @@ class AudioRecorder: ObservableObject {
     /// binding happens directly on the recorder audio unit during start.
     private func configureInputDevice() -> TimeInterval {
         let deviceManager = AudioDeviceManager.shared
-        deviceManager.refreshDevices()
 
         guard selectedDeviceUID != "default" else {
             let settleDelay = deviceManager.captureRouteSettleDelay()
@@ -73,8 +73,13 @@ class AudioRecorder: ObservableObject {
             return settleDelay
         }
 
+        if deviceManager.getDeviceID(for: selectedDeviceUID) == nil {
+            deviceManager.refreshDevices()
+        }
+
         guard deviceManager.getDeviceID(for: selectedDeviceUID) != nil else {
             print("⚠️ [capture] selected input not found, falling back to system default")
+            SapoLog.recording.warning("Selected input was missing during capture preparation")
             return 0
         }
 
@@ -85,7 +90,9 @@ class AudioRecorder: ObservableObject {
 
     private func logInputSettleDelayIfNeeded(_ delay: TimeInterval) {
         guard delay > 0 else { return }
+        let delayMs = Int(delay * 1000)
         print("🎙️ [capture] waiting \(String(format: "%.0f", delay * 1000))ms for input to settle")
+        SapoLog.recording.info("Waiting \(delayMs, privacy: .public)ms for input route to settle")
     }
 
     /// Inicia la grabación de audio. Toda la configuración del HAL de Core Audio se ejecuta
@@ -207,7 +214,9 @@ class AudioRecorder: ObservableObject {
                         return
                     }
 
-                    print("🎙️ [capture] setup: total \(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms (off-main)")
+                    let setupMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                    print("🎙️ [capture] setup: total \(setupMs)ms (off-main)")
+                    SapoLog.recording.info("Recorder setup completed in \(setupMs, privacy: .public)ms")
 
                     continuation.resume(returning: (localEngine, recordingURL))
                 } catch {
@@ -328,6 +337,10 @@ class AudioRecorder: ObservableObject {
             print(
                 "🎙️ [capture] first input buffer in \(String(format: "%.0f", elapsed))ms " +
                 "(\(buffer.frameLength) frames @ \(String(format: "%.0f", buffer.format.sampleRate))Hz, input: \(effectiveDevice))"
+            )
+            let elapsedMs = Int(elapsed)
+            SapoLog.recording.info(
+                "First input buffer received in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public)"
             )
         }
         os_unfair_lock_lock(&converterLock)

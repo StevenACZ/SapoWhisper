@@ -3,6 +3,7 @@
 //  SapoWhisper
 //
 
+import Combine
 import SwiftUI
 
 private struct PillPreview<Content: View>: View {
@@ -30,7 +31,13 @@ private struct PillPreview<Content: View>: View {
 }
 
 #Preview("Recording") {
-    PillPreview { RecordingPillView(duration: 15, onPause: {}, audioLevel: 0.5) }
+    PillPreview {
+        RecordingPillView(
+            duration: 15,
+            onPause: {},
+            audioLevelPublisher: Just(Float(0.5)).eraseToAnyPublisher()
+        )
+    }
 }
 
 #Preview("Paused") {

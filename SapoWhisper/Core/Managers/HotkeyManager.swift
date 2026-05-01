@@ -7,6 +7,8 @@
 import Cocoa
 import Carbon
 import Combine
+import OSLog
+import os
 
 /// Maneja los hotkeys globales de la aplicación
 class HotkeyManager: ObservableObject {
@@ -45,6 +47,7 @@ class HotkeyManager: ObservableObject {
             { (_, event, userData) -> OSStatus in
                 guard let userData = userData else { return noErr }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+                SapoLog.hotkey.info("Global hotkey pressed")
                 manager.hotkeyCallback?()
                 return noErr
             },
@@ -55,6 +58,7 @@ class HotkeyManager: ObservableObject {
         )
         
         if status != noErr {
+            SapoLog.hotkey.error("Failed to install event handler status=\(status, privacy: .public)")
             print("❌ Error instalando event handler: \(status)")
             return
         }
@@ -72,8 +76,10 @@ class HotkeyManager: ObservableObject {
         )
         
         if registerStatus != noErr {
+            SapoLog.hotkey.error("Failed to register hotkey status=\(registerStatus, privacy: .public)")
             print("❌ Error registrando hotkey: \(registerStatus)")
         } else {
+            SapoLog.hotkey.info("Global hotkey registered \(self.hotkeyDescription, privacy: .public)")
             print("✅ Hotkey registrado: \(hotkeyDescription)")
         }
     }

@@ -6,6 +6,8 @@
 
 import SwiftUI
 import Combine
+import OSLog
+import os
 
 /// ViewModel principal que coordina toda la funcionalidad de la app
 @MainActor
@@ -66,9 +68,14 @@ class SapoWhisperViewModel: ObservableObject {
     private static let firstInputBufferTimeout: TimeInterval = 0.8
     private static let startRetryBudget: TimeInterval = 1.0
     private static let startRetryBackoffs: [TimeInterval] = [0.15, 0.30]
+    private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
     private var startRecordingTask: Task<Void, Never>?
     private var isStartPending = false
+    private var recordingSessionCounter: UInt64 = 0
+    private var activeRecordingSessionID: UInt64?
+    private var activeTranscriptionSessionID: UInt64?
+    private var lastStartHotkeyTime: CFAbsoluteTime = 0
     private var shouldResumeMicMonitorAfterRecording = false
 
     // MARK: - Computed Properties
@@ -416,9 +423,35 @@ class SapoWhisperViewModel: ObservableObject {
             requestStopRecordingAndTranscribe()
         } else if isStartPending {
             cancelPendingRecordingStart()
-        } else {
+        } else if canStartRecordingFromHotkey() {
             startRecording()
+        } else {
+            return
         }
+    }
+
+    private func canStartRecordingFromHotkey() -> Bool {
+        if let activeTranscriptionSessionID {
+            SapoLog.hotkey.info(
+                "Hotkey ignored while transcription session=\(activeTranscriptionSessionID, privacy: .public) is active"
+            )
+            return false
+        }
+
+        if case .processing = appState {
+            SapoLog.hotkey.info("Hotkey ignored while app is processing")
+            return false
+        }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        let elapsed = now - lastStartHotkeyTime
+        guard elapsed >= Self.startHotkeyDebounce else {
+            let elapsedMs = Int(elapsed * 1000)
+            SapoLog.hotkey.info("Hotkey ignored by start debounce elapsed=\(elapsedMs, privacy: .public)ms")
+            return false
+        }
+
+        return true
     }
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
@@ -443,10 +476,19 @@ class SapoWhisperViewModel: ObservableObject {
     
     /// Inicia la grabacion
     func startRecording() {
+        let triggerTime = CFAbsoluteTimeGetCurrent()
         let engine = currentEngine
+        let sessionID = nextRecordingSessionID()
+        lastStartHotkeyTime = triggerTime
+        activeRecordingSessionID = sessionID
+        SapoLog.hotkey.info(
+            "Recording trigger accepted engine=\(engine.rawValue, privacy: .public) session=\(sessionID, privacy: .public)"
+        )
         let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
 
         guard missingPermissions.isEmpty else {
+            activeRecordingSessionID = nil
+            SapoLog.recording.warning("Recording blocked by missing permissions")
             PermissionService.shared.showRequirementsWindow(force: true)
             return
         }
@@ -455,7 +497,9 @@ class SapoWhisperViewModel: ObservableObject {
         let isReady = isEngineReady(engine)
 
         guard isReady else {
+            activeRecordingSessionID = nil
             appState = .noModel
+            SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
         }
 
@@ -466,14 +510,18 @@ class SapoWhisperViewModel: ObservableObject {
         appState = .recording
 
         overlayManager.updateState(.recording(duration: 0))
+        let uiReadyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+        SapoLog.recording.info("Recording UI ready in \(uiReadyMs, privacy: .public)ms")
 
         let mic = selectedMicrophone
         let playSound = playSoundEnabled
         isStartPending = true
         startRecordingSession(
+            sessionID: sessionID,
             engine: engine,
             microphone: mic,
-            playSound: playSound
+            playSound: playSound,
+            triggerTime: triggerTime
         )
     }
 
@@ -484,14 +532,30 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask?.cancel()
         startRecordingTask = nil
         isStartPending = false
+        activeRecordingSessionID = nil
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
         restoreMicMonitorAfterRecordingIfNeeded()
         checkInitialState()
     }
+
+    private func nextRecordingSessionID() -> UInt64 {
+        recordingSessionCounter &+= 1
+        return recordingSessionCounter
+    }
+
+    private func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64) {
+        SapoLog.recording.warning(
+            "Ignoring stale transcription completion session=\(sessionID, privacy: .public)"
+        )
+        audioRecorder.deleteRecording(at: audioURL)
+    }
     
     private func requestStopRecordingAndTranscribe() {
-        guard !isStopPending else { return }
+        guard !isStopPending else {
+            SapoLog.hotkey.info("Hotkey ignored because stop is already pending")
+            return
+        }
         isStopPending = true
 
         let tailPadding = Self.stopTailPadding
@@ -519,9 +583,13 @@ class SapoWhisperViewModel: ObservableObject {
         let engine = currentEngine
         let language = selectedLanguage
         let duration = recordingDuration
+        let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
+        activeRecordingSessionID = nil
+        activeTranscriptionSessionID = sessionID
 
         // All engines: stop recording, get audio file, transcribe
         guard let audioURL = audioRecorder.stopRecording() else {
+            activeTranscriptionSessionID = nil
             appState = .error("error.no_audio".localized)
             overlayManager.showError(message: "error.no_audio".localized)
             if playSoundEnabled {
@@ -536,6 +604,7 @@ class SapoWhisperViewModel: ObservableObject {
                 "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
             )
             audioRecorder.deleteRecording(at: audioURL)
+            activeTranscriptionSessionID = nil
             appState = .error("error.no_audio".localized)
             overlayManager.showError(message: "error.no_audio".localized)
             if playSoundEnabled {
@@ -549,9 +618,13 @@ class SapoWhisperViewModel: ObservableObject {
         // Actualizar overlay a transcribing
         overlayManager.updateState(.transcribing)
 
-        Task {
+        Task { @MainActor in
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
+                    return
+                }
 
                 lastTranscription = transcription
                 PasteManager.copyToClipboard(transcription)
@@ -562,6 +635,7 @@ class SapoWhisperViewModel: ObservableObject {
                 }
 
                 appState = .idle
+                activeTranscriptionSessionID = nil
                 if playSoundEnabled {
                     SoundManager.shared.play(.success)
                 }
@@ -579,7 +653,12 @@ class SapoWhisperViewModel: ObservableObject {
                 lastFailedHistoryId = nil
 
             } catch {
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
+                    return
+                }
                 appState = .error(error.localizedDescription)
+                activeTranscriptionSessionID = nil
                 overlayManager.showError(message: error.localizedDescription)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
@@ -736,9 +815,11 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func startRecordingSession(
+        sessionID: UInt64,
         engine: TranscriptionEngine,
         microphone: String,
-        playSound: Bool
+        playSound: Bool,
+        triggerTime: CFAbsoluteTime
     ) {
         if isStartPending {
             audioRecorder.cancelPendingSetup()
@@ -760,6 +841,8 @@ class SapoWhisperViewModel: ObservableObject {
             do {
                 try await self.startRecorderWithRecovery(microphone: microphone)
                 recorderDidStart = true
+                let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+                SapoLog.recording.info("Recording input ready in \(readyMs, privacy: .public)ms")
                 self.startAutoStopTimer(for: engine)
                 if playSound {
                     SoundManager.shared.play(.startRecording)
@@ -768,11 +851,19 @@ class SapoWhisperViewModel: ObservableObject {
                 if error is CancellationError {
                     return
                 }
+                guard self.activeRecordingSessionID == sessionID else {
+                    SapoLog.recording.warning(
+                        "Ignoring stale recording start failure session=\(sessionID, privacy: .public)"
+                    )
+                    return
+                }
+                self.activeRecordingSessionID = nil
                 self.appState = .error(error.localizedDescription)
                 self.overlayManager.showError(message: error.localizedDescription)
                 if playSound {
                     SoundManager.shared.play(.error)
                 }
+                SapoLog.recording.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
                 print("❌ [capture] failed to start recording: \(error)")
             }
         }
@@ -841,6 +932,8 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.selectedDeviceUID = microphone
         let settleDelay = max(minimumDelay, audioRecorder.prepareInputDeviceForRecording())
         if settleDelay > 0 {
+            let settleMs = Int(settleDelay * 1000)
+            SapoLog.recording.info("Delaying recorder start for route settle \(settleMs, privacy: .public)ms")
             try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
         }
 

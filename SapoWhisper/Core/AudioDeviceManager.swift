@@ -8,6 +8,8 @@ import Foundation
 import AVFoundation
 import CoreAudio
 import Combine
+import OSLog
+import os
 
 /// Representa un dispositivo de audio (micrófono)
 struct AudioDevice: Identifiable, Hashable {
@@ -251,6 +253,7 @@ class AudioDeviceManager: ObservableObject {
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
         print("🎙️ [audio route] default input -> \(deviceName)")
+        SapoLog.audioRoute.info("Default input changed to \(deviceName, privacy: .public)")
         notifyRouteChange()
     }
 
@@ -269,6 +272,7 @@ class AudioDeviceManager: ObservableObject {
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
         print("🔊 [audio route] default output -> \(deviceName)")
+        SapoLog.audioRoute.info("Default output changed to \(deviceName, privacy: .public)")
         notifyRouteChange()
     }
 
@@ -421,6 +425,7 @@ class AudioDeviceManager: ObservableObject {
         writeState { state in
             state.lastDeviceListChangeTime = timestamp
         }
+        SapoLog.audioRoute.info("Audio device list changed")
         notifyRouteChange()
     }
 
@@ -497,6 +502,8 @@ class AudioDeviceManager: ObservableObject {
     }
 
     private func notifyRouteChange() {
-        routeChangeSubject.send()
+        DispatchQueue.main.async { [weak self] in
+            self?.routeChangeSubject.send()
+        }
     }
 }

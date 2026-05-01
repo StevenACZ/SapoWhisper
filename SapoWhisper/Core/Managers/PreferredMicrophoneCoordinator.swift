@@ -48,6 +48,7 @@ final class PreferredMicrophoneCoordinator {
     func applyUserSelection(uid: String) {
         userDefaults.set(uid, forKey: Constants.StorageKeys.selectedMicrophone)
         scheduleReconciliation(announceFinalDevice: false, delayOverride: 0)
+        AudioInputPreflightManager.shared.preflightSoon(reason: "mic-selection")
     }
 
     private func scheduleReconciliation(

@@ -3,18 +3,19 @@
 //  SapoWhisper
 //
 
+import Combine
 import SwiftUI
 
 struct RecordingPillView: View {
     let duration: TimeInterval
     let onPause: () -> Void
-    var audioLevel: Float = 0
+    let audioLevelPublisher: AnyPublisher<Float, Never>
 
     var body: some View {
         HStack(spacing: 10) {
             FloatingSapoIcon(state: .recording, size: 32)
             PillDivider()
-            MiniEqualizerView(audioLevel: audioLevel)
+            MiniEqualizerView(audioLevelPublisher: audioLevelPublisher)
 
             Text("overlay.recording".localized)
                 .font(.system(size: 13, weight: .medium))
