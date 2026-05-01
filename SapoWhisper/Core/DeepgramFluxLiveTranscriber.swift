@@ -97,9 +97,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         }
 
         await audioSendTask?.value
+        defer { cleanupWebSocket() }
         try await sendCloseStream()
         let transcript = try await waitForFinalTranscript(timeout: 4.0)
-        cleanupWebSocket()
 
         let cleanedTranscript = VocabularyManager.shared
             .applyingReplacements(to: transcript)
