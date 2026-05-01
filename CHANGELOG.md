@@ -6,6 +6,20 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.1.0] - 2026-05-01
+
+### Added
+
+- **Deepgram Flux Live mode** — Added a near real-time Deepgram streaming mode using `flux-general-multi` over WebSocket, with live PCM upload while the user is speaking and final text ready almost immediately after stop.
+- **Deepgram mode selector** — Settings now lets users choose between Nova-3 batch mode and Flux Live mode.
+- **Flux capture pipeline** — Added a dedicated streaming audio capture path that writes the same saved WAV used by history while simultaneously sending ordered LINEAR16 chunks to Deepgram.
+
+### Changed
+
+- **Deepgram language behavior** — Flux Live automatically uses `Auto` language and locks the transcription-language picker until the user switches back to Nova-3.
+- **Deepgram history labels** — History entries now distinguish `Deepgram Nova-3` from `Deepgram Flux Live`.
+- **Vocabulary handling** — Flux Live sends Deepgram keyterms and applies saved word replacements locally after receiving the final transcript.
+
 ## [2.0.1] - 2026-05-01
 
 > Patch release focused on recording overlay responsiveness, hotkey safety, and capture diagnostics after the SapoWhisper 2.0 launch.

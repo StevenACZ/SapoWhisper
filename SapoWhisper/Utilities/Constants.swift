@@ -12,7 +12,7 @@ enum Constants {
     // MARK: - App Info
     
     static let appName = "SapoWhisper"
-    static let appVersion = "1.2.0"
+    static let appVersion = "2.1.0"
     static let appDescription = "Speech-to-Text 100% local"
     
     // MARK: - Colores de la Marca
@@ -99,6 +99,8 @@ enum Constants {
 
         // Deepgram
         static let deepgramAPIKey = "deepgramAPIKey"
+        static let deepgramTranscriptionMode = "deepgramTranscriptionMode"
+        static let deepgramPreviousLanguage = "deepgramPreviousLanguage"
 
         // Audio
         static let audioGain = "audioGain"
