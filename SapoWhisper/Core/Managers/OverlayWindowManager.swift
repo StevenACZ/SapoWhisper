@@ -187,7 +187,7 @@ class OverlayWindowManager: ObservableObject {
             publishAudioLevel(0, force: true)
         }
 
-        if newState.isVisible, overlayWindow?.isVisible != true {
+        if shouldShowOverlay(for: newState) {
             show()
         }
     }
@@ -264,6 +264,12 @@ class OverlayWindowManager: ObservableObject {
         default:
             displayedRecordingSecond = nil
         }
+    }
+
+    private func shouldShowOverlay(for state: RecordingOverlayState) -> Bool {
+        guard state.isVisible else { return false }
+        guard let overlayWindow else { return true }
+        return overlayWindow.isVisible != true || isAnimating || overlayWindow.alphaValue < 0.99
     }
 
     private func publishAudioLevel(_ level: Float, force: Bool = false) {
