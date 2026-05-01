@@ -45,6 +45,8 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
     @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.appleOnline.rawValue
     @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramPreviousLanguage) var deepgramPreviousLanguage: String = ""
 
     // MARK: - Managers
 
@@ -55,6 +57,7 @@ class SapoWhisperViewModel: ObservableObject {
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
+    let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
 
     // Retry support
@@ -86,6 +89,18 @@ class SapoWhisperViewModel: ObservableObject {
 
     var currentWhisperKitModel: WhisperKitModel {
         WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
+    }
+
+    var currentDeepgramMode: DeepgramTranscriptionMode {
+        DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3
+    }
+
+    private var isDeepgramFluxLiveSelected: Bool {
+        currentEngine == .deepgram && currentDeepgramMode == .fluxLive
+    }
+
+    private var isAnyRecorderActive: Bool {
+        audioRecorder.isRecording || deepgramFluxTranscriber.isStreaming
     }
 
     var isWhisperKitReady: Bool {
@@ -166,6 +181,22 @@ class SapoWhisperViewModel: ObservableObject {
         // Observar duracion de grabacion
         audioRecorder.$recordingDuration
             .sink { [weak self] duration in
+                guard self?.deepgramFluxTranscriber.isStreaming != true else { return }
+                self?.recordingDuration = duration
+            }
+            .store(in: &cancellables)
+
+        deepgramFluxTranscriber.$isStreaming
+            .sink { [weak self] isStreaming in
+                if isStreaming {
+                    self?.appState = .recording
+                }
+            }
+            .store(in: &cancellables)
+
+        deepgramFluxTranscriber.$recordingDuration
+            .sink { [weak self] duration in
+                guard self?.currentEngine == .deepgram else { return }
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
@@ -292,6 +323,14 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        deepgramFluxTranscriber.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                guard self?.currentEngine == .deepgram else { return }
+                self?.overlayManager.updateAudioLevel(level)
+            }
+            .store(in: &cancellables)
+
         // Update overlay duration during recording
         audioRecorder.$recordingDuration
             .receive(on: DispatchQueue.main)
@@ -302,6 +341,21 @@ class SapoWhisperViewModel: ObservableObject {
                     self.overlayManager.updateRecordingDuration(duration)
                 case .paused:
                     break // Don't update timer during pause
+                default:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+
+        deepgramFluxTranscriber.$recordingDuration
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] duration in
+                guard let self, self.currentEngine == .deepgram else { return }
+                switch self.overlayManager.state {
+                case .recording:
+                    self.overlayManager.updateRecordingDuration(duration)
+                case .paused:
+                    break
                 default:
                     break
                 }
@@ -392,6 +446,8 @@ class SapoWhisperViewModel: ObservableObject {
             whisperKitTranscriber.unloadModel()
         }
 
+        applyDeepgramLanguagePolicy()
+
         checkInitialState()
 
         // Si cambia a WhisperKit y no hay modelo cargado, intentar cargarlo
@@ -414,15 +470,40 @@ class SapoWhisperViewModel: ObservableObject {
             }
         }
     }
+
+    func setDeepgramMode(_ mode: DeepgramTranscriptionMode) {
+        selectedDeepgramMode = mode.rawValue
+        applyDeepgramLanguagePolicy()
+        checkInitialState()
+    }
+
+    private func applyDeepgramLanguagePolicy() {
+        guard currentEngine == .deepgram else { return }
+
+        switch currentDeepgramMode {
+        case .fluxLive:
+            if selectedLanguage != "auto" {
+                deepgramPreviousLanguage = selectedLanguage
+            }
+            selectedLanguage = "auto"
+        case .nova3:
+            if selectedLanguage == "auto", !deepgramPreviousLanguage.isEmpty {
+                selectedLanguage = deepgramPreviousLanguage
+            }
+            deepgramPreviousLanguage = ""
+        }
+    }
     
     // MARK: - Recording & Transcription
     
     /// Toggle de grabación (llamado por hotkey o botón)
     func toggleRecording() {
-        if audioRecorder.isRecording {
-            requestStopRecordingAndTranscribe()
-        } else if isStartPending {
+        if isStartPending {
             cancelPendingRecordingStart()
+        } else if deepgramFluxTranscriber.isStreaming {
+            requestStopFluxRecordingAndTranscribe()
+        } else if audioRecorder.isRecording {
+            requestStopRecordingAndTranscribe()
         } else if canStartRecordingFromHotkey() {
             startRecording()
         } else {
@@ -456,6 +537,22 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
     func togglePause() {
+        if deepgramFluxTranscriber.isStreaming {
+            if deepgramFluxTranscriber.isPaused {
+                do {
+                    try deepgramFluxTranscriber.resumeRecording()
+                    overlayManager.updateState(.recording(duration: deepgramFluxTranscriber.recordingDuration))
+                } catch {
+                    print("❌ [flux] failed to resume recording: \(error)")
+                }
+            } else {
+                deepgramFluxTranscriber.pauseRecording()
+                overlayManager.updateState(.paused(duration: deepgramFluxTranscriber.recordingDuration))
+                overlayManager.updateAudioLevel(0)
+            }
+            return
+        }
+
         guard audioRecorder.isRecording else { return }
 
         if audioRecorder.isPaused {
@@ -516,19 +613,29 @@ class SapoWhisperViewModel: ObservableObject {
         let mic = selectedMicrophone
         let playSound = playSoundEnabled
         isStartPending = true
-        startRecordingSession(
-            sessionID: sessionID,
-            engine: engine,
-            microphone: mic,
-            playSound: playSound,
-            triggerTime: triggerTime
-        )
+        if isDeepgramFluxLiveSelected {
+            startFluxRecordingSession(
+                sessionID: sessionID,
+                microphone: mic,
+                playSound: playSound,
+                triggerTime: triggerTime
+            )
+        } else {
+            startRecordingSession(
+                sessionID: sessionID,
+                engine: engine,
+                microphone: mic,
+                playSound: playSound,
+                triggerTime: triggerTime
+            )
+        }
     }
 
     private func cancelPendingRecordingStart() {
         guard isStartPending else { return }
 
         audioRecorder.cancelPendingSetup()
+        deepgramFluxTranscriber.cancel()
         startRecordingTask?.cancel()
         startRecordingTask = nil
         isStartPending = false
@@ -564,6 +671,109 @@ class SapoWhisperViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
             await MainActor.run {
                 self.stopRecordingAndTranscribe()
+            }
+        }
+    }
+
+    private func requestStopFluxRecordingAndTranscribe() {
+        guard !isStopPending else {
+            SapoLog.hotkey.info("Hotkey ignored because Flux stop is already pending")
+            return
+        }
+        isStopPending = true
+
+        let tailPadding = Self.stopTailPadding
+
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
+            await MainActor.run {
+                self.stopFluxRecordingAndTranscribe()
+            }
+        }
+    }
+
+    private func stopFluxRecordingAndTranscribe() {
+        isStopPending = false
+        defer { restoreMicMonitorAfterRecordingIfNeeded() }
+        autoStopTimer?.invalidate()
+        autoStopTimer = nil
+
+        if playSoundEnabled {
+            SoundManager.shared.play(.stopRecording)
+        }
+
+        let engine = TranscriptionEngine.deepgram
+        let engineName = currentDeepgramMode.historyName
+        let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
+        activeRecordingSessionID = nil
+        activeTranscriptionSessionID = sessionID
+        appState = .processing
+        overlayManager.updateState(.transcribing)
+
+        Task { @MainActor in
+            do {
+                let result = try await deepgramFluxTranscriber.stop()
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                lastTranscription = result.transcript
+                PasteManager.copyToClipboard(result.transcript)
+                overlayManager.showCompleted(text: result.transcript, autoDismissAfter: 2.0)
+
+                if autoPasteEnabled {
+                    PasteManager.simulatePaste()
+                }
+
+                appState = .idle
+                activeTranscriptionSessionID = nil
+                if playSoundEnabled {
+                    SoundManager.shared.play(.success)
+                }
+
+                _ = persistHistoryEntry(
+                    from: result.audioURL,
+                    engine: engine,
+                    engineName: engineName,
+                    language: result.language,
+                    duration: result.duration,
+                    text: result.transcript,
+                    status: "completed"
+                )
+                audioRecorder.deleteRecording(at: result.audioURL)
+                lastFailedAudioURL = nil
+                lastFailedHistoryId = nil
+
+            } catch {
+                let captureResult = deepgramFluxTranscriber.lastCaptureResult
+                if let captureResult, self.activeTranscriptionSessionID != sessionID {
+                    self.handleStaleTranscriptionCompletion(audioURL: captureResult.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                appState = .error(error.localizedDescription)
+                activeTranscriptionSessionID = nil
+                overlayManager.showError(message: error.localizedDescription)
+                if playSoundEnabled {
+                    SoundManager.shared.play(.error)
+                }
+
+                if let captureResult {
+                    let persistedEntry = persistHistoryEntry(
+                        from: captureResult.audioURL,
+                        engine: engine,
+                        engineName: engineName,
+                        language: "auto",
+                        duration: captureResult.duration,
+                        text: "",
+                        status: "failed"
+                    )
+                    lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
+                    lastFailedAudioURL = persistedEntry.audioURL
+                    audioRecorder.deleteRecording(at: captureResult.audioURL)
+                }
+                print("❌ [flux] \(error)")
             }
         }
     }
@@ -869,6 +1079,57 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    private func startFluxRecordingSession(
+        sessionID: UInt64,
+        microphone: String,
+        playSound: Bool,
+        triggerTime: CFAbsoluteTime
+    ) {
+        deepgramFluxTranscriber.cancel()
+        startRecordingTask?.cancel()
+        startRecordingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            var recorderDidStart = false
+
+            defer {
+                self.isStartPending = false
+                self.startRecordingTask = nil
+                if didSuspendMonitor && !recorderDidStart {
+                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                }
+            }
+
+            do {
+                try await self.deepgramFluxTranscriber.start(microphone: microphone)
+                recorderDidStart = true
+                let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+                SapoLog.recording.info("Flux input ready in \(readyMs, privacy: .public)ms")
+                if playSound {
+                    SoundManager.shared.play(.startRecording)
+                }
+            } catch {
+                if error is CancellationError {
+                    return
+                }
+                guard self.activeRecordingSessionID == sessionID else {
+                    SapoLog.recording.warning(
+                        "Ignoring stale Flux start failure session=\(sessionID, privacy: .public)"
+                    )
+                    return
+                }
+                self.activeRecordingSessionID = nil
+                self.appState = .error(error.localizedDescription)
+                self.overlayManager.showError(message: error.localizedDescription)
+                if playSound {
+                    SoundManager.shared.play(.error)
+                }
+                SapoLog.recording.error("Flux failed to start: \(error.localizedDescription, privacy: .public)")
+                print("❌ [flux] failed to start: \(error)")
+            }
+        }
+    }
+
     private func startRecorderWithRecovery(microphone: String) async throws {
         let deadline = CFAbsoluteTimeGetCurrent() + Self.startRetryBudget
         var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
@@ -988,6 +1249,7 @@ class SapoWhisperViewModel: ObservableObject {
     private func persistHistoryEntry(
         from sourceURL: URL,
         engine: TranscriptionEngine,
+        engineName: String? = nil,
         language: String,
         duration: TimeInterval,
         text: String,
@@ -995,7 +1257,7 @@ class SapoWhisperViewModel: ObservableObject {
     ) -> PersistedHistoryEntry {
         let savedPath = historyManager.saveAudioFile(from: sourceURL)
         let historyID = historyManager.save(
-            engine: engine.displayName,
+            engine: engineName ?? engine.displayName,
             language: language,
             duration: duration,
             text: text,
@@ -1022,7 +1284,7 @@ class SapoWhisperViewModel: ObservableObject {
     
     /// Texto del botón de grabación
     var recordButtonText: String {
-        audioRecorder.isRecording ? "menu.stop_recording".localized : "menu.start_recording".localized
+        isAnyRecorderActive ? "menu.stop_recording".localized : "menu.start_recording".localized
     }
     
     /// Si el boton de grabar esta habilitado
@@ -1035,7 +1297,10 @@ class SapoWhisperViewModel: ObservableObject {
         case .googleCloud:
             return googleCloudTranscriber.isConfigured && !googleCloudTranscriber.isTranscribing
         case .deepgram:
-            return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing
+            return deepgramTranscriber.isConfigured &&
+                !deepgramTranscriber.isTranscribing &&
+                !deepgramFluxTranscriber.isStreaming &&
+                !deepgramFluxTranscriber.isStopping
         }
     }
     

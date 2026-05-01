@@ -273,10 +273,16 @@
 
 /* Deepgram Engine */
 "engine.deepgram.description" = "Deepgram Nova-3. Alta precision, requiere internet.";
+"config.deepgram_mode" = "Modo de transcripcion";
+"deepgram.mode_nova" = "Nova-3";
+"deepgram.mode_nova_desc" = "Modo clasico por lote. Mantiene tu idioma preferido.";
+"deepgram.mode_flux" = "Flux Live";
+"deepgram.mode_flux_desc" = "Streaming casi en tiempo real con deteccion automatica de idioma.";
 "config.deepgram_key_placeholder" = "Ingresa tu API key de Deepgram...";
 "config.deepgram_key_desc" = "Crea tu API key en deepgram.com > Dashboard > API Keys.\nSe guarda localmente.";
 "config.deepgram_key_missing" = "API key no configurada";
 "config.deepgram_key_configured" = "API key configurada";
+"settings.flux_language_locked" = "Flux Live usa idioma Auto.";
 
 /* Vocabulary */
 "config.vocabulary" = "Vocabulario";

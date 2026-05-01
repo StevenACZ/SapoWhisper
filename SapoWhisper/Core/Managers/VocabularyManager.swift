@@ -85,4 +85,29 @@ class VocabularyManager: ObservableObject {
     func replaceQueryItems() -> [URLQueryItem] {
         replacements.map { URLQueryItem(name: "replace", value: "\($0.key):\($0.value)") }
     }
+
+    /// Applies saved replacements locally for engines that do not expose replace in their API surface.
+    func applyingReplacements(to transcript: String) -> String {
+        replacements
+            .sorted { $0.key.count > $1.key.count }
+            .reduce(transcript) { current, replacement in
+                let escaped = NSRegularExpression.escapedPattern(for: replacement.key)
+                let pattern = "\\b\(escaped)\\b"
+                guard let regex = try? NSRegularExpression(
+                    pattern: pattern,
+                    options: [.caseInsensitive]
+                ) else {
+                    return current
+                }
+
+                let range = NSRange(current.startIndex..<current.endIndex, in: current)
+                let replacementTemplate = NSRegularExpression.escapedTemplate(for: replacement.value)
+                return regex.stringByReplacingMatches(
+                    in: current,
+                    options: [],
+                    range: range,
+                    withTemplate: replacementTemplate
+                )
+            }
+    }
 }
