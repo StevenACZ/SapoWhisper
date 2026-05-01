@@ -6,6 +6,21 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.1] - 2026-05-01
+
+> Patch release focused on recording overlay responsiveness, hotkey safety, and capture diagnostics after the SapoWhisper 2.0 launch.
+
+### Changed
+
+- **Recording overlay rendering** — Reduced high-frequency redraws by throttling audio meter updates and only refreshing the recording timer when the displayed second changes.
+- **Overlay presentation** — Kept the recording overlay visible through fast restart/reopen paths so the UI no longer appears to disappear during recorder recovery.
+- **Capture diagnostics** — Added lightweight timing logs for overlay presentation, hotkey handling, input setup, and first audio buffer arrival to make performance issues easier to diagnose.
+
+### Fixed
+
+- **Hotkey safety** — Blocked new recording starts while a transcription is still active, preventing accidental overlapping sessions and stale transcription completions.
+- **Input startup resilience** — Avoided unnecessary device refresh work when the selected microphone is already known, reducing startup overhead before recording begins.
+
 ## [2.0.0] - 2026-04-28
 
 > Public release for the Deepgram Nova-3 batch engine, transcription history, guided permissions, and long-run audio stability work.
