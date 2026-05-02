@@ -130,14 +130,14 @@ final class AutoDuckingManager {
             return
         }
 
-        // Verificar si el usuario cambió el volumen manualmente durante la grabación.
-        // Si el volumen actual es diferente al que nosotros pusimos, el usuario lo
-        // cambió — respetar su decisión y no sobrescribir.
+        // If the user raises the volume during recording, respect that choice.
+        // If the output still reports a low/ducked value (common with Bluetooth
+        // quantization), restore the original volume instead of leaving audio low.
         if let currentVolume = getDeviceVolume(deviceID: deviceID) {
             let expectedDuckedVolume = original * Float(1.0 - duckAmount)
             let tolerance: Float = 0.02 // ~2% de tolerancia
 
-            if abs(currentVolume - expectedDuckedVolume) > tolerance {
+            if currentVolume > expectedDuckedVolume + tolerance {
                 print("🔊 [auto-ducking] Usuario cambió volumen durante grabación (\(Int(currentVolume * 100))%), respetando su elección")
                 isDucked = false
                 originalVolume = nil

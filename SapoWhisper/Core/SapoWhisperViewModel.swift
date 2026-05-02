@@ -643,6 +643,7 @@ class SapoWhisperViewModel: ObservableObject {
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
         restoreMicMonitorAfterRecordingIfNeeded()
+        AutoDuckingManager.shared.restore()
         checkInitialState()
     }
 
@@ -926,7 +927,11 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
     func retryTranscription() {
-        guard let audioURL = lastFailedAudioURL else { return }
+        guard let audioURL = lastFailedAudioURL else {
+            guard canStartRecordingFromHotkey() else { return }
+            startRecording()
+            return
+        }
 
         appState = .processing
         overlayManager.updateState(.transcribing)
@@ -1070,7 +1075,8 @@ class SapoWhisperViewModel: ObservableObject {
                 self.activeRecordingSessionID = nil
                 self.appState = .error(error.localizedDescription)
                 self.overlayManager.showError(message: error.localizedDescription)
-                if playSound {
+                AutoDuckingManager.shared.restore()
+                if playSound && !self.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
                 SapoLog.recording.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
@@ -1121,7 +1127,8 @@ class SapoWhisperViewModel: ObservableObject {
                 self.activeRecordingSessionID = nil
                 self.appState = .error(error.localizedDescription)
                 self.overlayManager.showError(message: error.localizedDescription)
-                if playSound {
+                AutoDuckingManager.shared.restore()
+                if playSound && !self.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
                 SapoLog.recording.error("Flux failed to start: \(error.localizedDescription, privacy: .public)")
@@ -1222,6 +1229,21 @@ class SapoWhisperViewModel: ObservableObject {
             shouldResumeMicMonitorAfterRecording = true
         }
         return shouldResume
+    }
+
+    private func isRecoverableInputStartError(_ error: Error) -> Bool {
+        guard let recordingError = error as? RecordingError else { return false }
+
+        switch recordingError {
+        case .noInputAfterDeviceSwitch, .invalidFormat:
+            return true
+        case .engineCreationFailed,
+             .fileCreationFailed,
+             .converterCreationFailed,
+             .deviceSelectionFailed,
+             .permissionDenied:
+            return false
+        }
     }
 
     private func restoreMicMonitorAfterRecordingIfNeeded() {
