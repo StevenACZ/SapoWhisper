@@ -21,6 +21,7 @@ class SapoWhisperViewModel: ObservableObject {
     private struct PersistedHistoryEntry {
         let id: Int64
         let audioURL: URL?
+        let copiedAudioToHistory: Bool
     }
 
     // MARK: - Published Properties
@@ -733,7 +734,7 @@ class SapoWhisperViewModel: ObservableObject {
                     SoundManager.shared.play(.success)
                 }
 
-                _ = persistHistoryEntry(
+                let persistedEntry = persistHistoryEntry(
                     from: result.audioURL,
                     engine: engine,
                     engineName: engineName,
@@ -742,7 +743,7 @@ class SapoWhisperViewModel: ObservableObject {
                     text: result.transcript,
                     status: "completed"
                 )
-                audioRecorder.deleteRecording(at: result.audioURL)
+                cleanupSourceAudioIfSafe(sourceURL: result.audioURL, persistedEntry: persistedEntry)
                 lastFailedAudioURL = nil
                 lastFailedHistoryId = nil
 
@@ -771,8 +772,8 @@ class SapoWhisperViewModel: ObservableObject {
                         status: "failed"
                     )
                     lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
-                    lastFailedAudioURL = persistedEntry.audioURL
-                    audioRecorder.deleteRecording(at: captureResult.audioURL)
+                    lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
+                    cleanupSourceAudioIfSafe(sourceURL: captureResult.audioURL, persistedEntry: persistedEntry)
                 }
                 print("❌ [flux] \(error)")
             }
@@ -851,7 +852,7 @@ class SapoWhisperViewModel: ObservableObject {
                     SoundManager.shared.play(.success)
                 }
 
-                _ = persistHistoryEntry(
+                let persistedEntry = persistHistoryEntry(
                     from: audioURL,
                     engine: engine,
                     language: language,
@@ -859,7 +860,7 @@ class SapoWhisperViewModel: ObservableObject {
                     text: transcription,
                     status: "completed"
                 )
-                audioRecorder.deleteRecording(at: audioURL)
+                cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
                 lastFailedAudioURL = nil
                 lastFailedHistoryId = nil
 
@@ -884,8 +885,8 @@ class SapoWhisperViewModel: ObservableObject {
                     status: "failed"
                 )
                 lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
-                lastFailedAudioURL = persistedEntry.audioURL
-                audioRecorder.deleteRecording(at: audioURL)
+                lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
+                cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
                 print("❌ [transcription] \(engine.displayName): \(error)")
             }
         }
@@ -1278,19 +1279,33 @@ class SapoWhisperViewModel: ObservableObject {
         status: String
     ) -> PersistedHistoryEntry {
         let savedPath = historyManager.saveAudioFile(from: sourceURL)
+        let fallbackPath = FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL.path : nil
+        let audioPath = savedPath ?? fallbackPath
         let historyID = historyManager.save(
             engine: engineName ?? engine.displayName,
             language: language,
             duration: duration,
             text: text,
-            audioPath: savedPath,
+            audioPath: audioPath,
             status: status
         )
 
         return PersistedHistoryEntry(
             id: historyID,
-            audioURL: savedPath.map { URL(fileURLWithPath: $0) }
+            audioURL: audioPath.map { URL(fileURLWithPath: $0) },
+            copiedAudioToHistory: savedPath != nil
         )
+    }
+
+    private func cleanupSourceAudioIfSafe(sourceURL: URL, persistedEntry: PersistedHistoryEntry) {
+        guard persistedEntry.copiedAudioToHistory else {
+            SapoLog.recording.warning(
+                "Keeping source audio because history copy was unavailable path=\(sourceURL.path, privacy: .private)"
+            )
+            return
+        }
+
+        audioRecorder.deleteRecording(at: sourceURL)
     }
     
     /// Texto del estado actual
