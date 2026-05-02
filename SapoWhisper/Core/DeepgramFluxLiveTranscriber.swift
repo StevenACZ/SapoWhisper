@@ -149,7 +149,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func sendAudioChunk(_ data: Data) {
-        guard !data.isEmpty, isStreaming, !isStopping, let task = webSocketTask else { return }
+        guard !data.isEmpty, isStreaming, !isStopping, lastStreamingError == nil, let task = webSocketTask else { return }
         let previousSendTask = audioSendTask
         audioSendTask = Task { [weak self, previousSendTask] in
             await previousSendTask?.value
@@ -220,13 +220,17 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
         if isCancellation(error) { return }
         lastStreamingError = error
-        isStreaming = false
-        capture.discardRecording()
+        SapoLog.recording.warning(
+            "Flux stream failed while recording; keeping local audio for failed history entry"
+        )
     }
 
     private func handleStreamingError(_ error: Error) {
         guard !isStopping, !isCancellation(error) else { return }
         lastStreamingError = error
+        SapoLog.recording.warning(
+            "Flux audio send failed while recording; keeping local audio for failed history entry"
+        )
     }
 
     private func waitForFinalTranscript(timeout: TimeInterval) async throws -> String {
