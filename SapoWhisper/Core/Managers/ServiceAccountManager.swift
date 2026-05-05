@@ -139,8 +139,9 @@ private struct ADCredentials {
         }
 
         guard let clientID = json["client_id"] as? String,
-              let clientSecret = json["client_secret"] as? String,
-              let refreshToken = json["refresh_token"] as? String else {
+            let clientSecret = json["client_secret"] as? String,
+            let refreshToken = json["refresh_token"] as? String
+        else {
             throw ServiceAccountError.invalidFile("Missing required fields")
         }
 
@@ -177,7 +178,9 @@ private struct TokenResponse: Decodable {
 // MARK: - Errors
 
 enum ServiceAccountError: LocalizedError {
-    case notConfigured, invalidFile(String), tokenError(String)
+    case notConfigured
+    case invalidFile(String)
+    case tokenError(String)
 
     var errorDescription: String? {
         switch self {

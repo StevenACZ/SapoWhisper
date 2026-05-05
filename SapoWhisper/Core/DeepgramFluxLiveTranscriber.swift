@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import os
 
 @MainActor
 final class DeepgramFluxLiveTranscriber: ObservableObject {
@@ -25,6 +26,13 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private var transcriptAccumulator = DeepgramFluxTranscriptAccumulator()
     private var lastStreamingError: Error?
 
+    private enum StartRecovery {
+        static let maxAttempts = 3
+        static let firstInputTimeout: TimeInterval = 1.2
+        static let retryBudget: TimeInterval = 3.0
+        static let retryBackoffs: [TimeInterval] = [0.25, 0.60]
+    }
+
     var isConfigured: Bool {
         let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? ""
         return !key.isEmpty
@@ -36,7 +44,8 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     func start(microphone: String) async throws {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
-              !apiKey.isEmpty else {
+            !apiKey.isEmpty
+        else {
             throw DeepgramError.notConfigured
         }
 
@@ -51,23 +60,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         }
 
         do {
-            capture.selectedDeviceUID = microphone
-            let settleDelay = capture.prepareInputDeviceForRecording()
-            if settleDelay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
-            }
-
-            try await capture.startRecording { [weak self] data in
-                Task { @MainActor [weak self] in
-                    self?.sendAudioChunk(data)
-                }
-            }
-
-            let receivedInput = await capture.waitForFirstInputBuffer(timeout: 0.8)
-            if !receivedInput {
-                capture.discardRecording()
-                throw RecordingError.noInputAfterDeviceSwitch
-            }
+            try await startCaptureWithRecovery(microphone: microphone)
         } catch {
             cancel()
             throw error
@@ -157,7 +150,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func sendAudioChunk(_ data: Data) {
-        guard !data.isEmpty, isStreaming, !isStopping, let task = webSocketTask else { return }
+        guard !data.isEmpty, isStreaming, !isStopping, lastStreamingError == nil, let task = webSocketTask else { return }
         let previousSendTask = audioSendTask
         audioSendTask = Task { [weak self, previousSendTask] in
             await previousSendTask?.value
@@ -202,8 +195,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     private func handleJSONMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let type = json["type"] as? String
+        else {
             return
         }
 
@@ -228,13 +222,17 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
         if isCancellation(error) { return }
         lastStreamingError = error
-        isStreaming = false
-        capture.discardRecording()
+        SapoLog.recording.warning(
+            "Flux stream failed while recording; keeping local audio for failed history entry"
+        )
     }
 
     private func handleStreamingError(_ error: Error) {
         guard !isStopping, !isCancellation(error) else { return }
         lastStreamingError = error
+        SapoLog.recording.warning(
+            "Flux audio send failed while recording; keeping local audio for failed history entry"
+        )
     }
 
     private func waitForFinalTranscript(timeout: TimeInterval) async throws -> String {
@@ -278,6 +276,98 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         isPaused = false
         recordingDuration = 0
         audioLevel = 0
+    }
+
+    private func startCaptureWithRecovery(microphone: String) async throws {
+        let deadline = CFAbsoluteTimeGetCurrent() + StartRecovery.retryBudget
+        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
+
+        for attempt in 1...StartRecovery.maxAttempts {
+            guard !Task.isCancelled else { throw CancellationError() }
+
+            do {
+                let didStart = try await attemptCaptureStart(
+                    microphone: microphone,
+                    attempt: attempt,
+                    minimumDelay: attempt == 1 ? 0 : StartRecovery.retryBackoffs[attempt - 2]
+                )
+                if didStart {
+                    if attempt > 1 {
+                        SapoLog.recording.info("Flux recovered input on attempt=\(attempt, privacy: .public)")
+                    }
+                    return
+                }
+                lastFailure = RecordingError.noInputAfterDeviceSwitch
+            } catch {
+                if error is CancellationError {
+                    throw error
+                }
+                lastFailure = error
+            }
+
+            capture.discardRecording()
+
+            guard attempt < StartRecovery.maxAttempts else { break }
+
+            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
+            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
+            guard classification.isTransient else {
+                throw lastFailure
+            }
+
+            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
+            guard remainingBudget > 0 else { break }
+
+            let retryDelay = min(
+                remainingBudget,
+                max(StartRecovery.retryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
+            )
+            let delayMs = Int(retryDelay * 1000)
+            SapoLog.recording.info(
+                "Flux input not ready attempt=\(attempt, privacy: .public) reason=\(classification.reason, privacy: .public) retryDelay=\(delayMs, privacy: .public)ms"
+            )
+            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+        }
+
+        throw lastFailure
+    }
+
+    private func attemptCaptureStart(
+        microphone: String,
+        attempt: Int,
+        minimumDelay: TimeInterval
+    ) async throws -> Bool {
+        capture.selectedDeviceUID = microphone
+        let settleDelay = max(minimumDelay, capture.prepareInputDeviceForRecording())
+        if settleDelay > 0 {
+            let settleMs = Int(settleDelay * 1000)
+            SapoLog.recording.info(
+                "Delaying Flux capture start for route settle \(settleMs, privacy: .public)ms"
+            )
+            try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
+        }
+
+        guard !Task.isCancelled else { throw CancellationError() }
+
+        try await capture.startRecording { [weak self] data in
+            Task { @MainActor [weak self] in
+                self?.sendAudioChunk(data)
+            }
+        }
+
+        let receivedInput = await capture.waitForFirstInputBuffer(timeout: StartRecovery.firstInputTimeout)
+        if receivedInput {
+            return true
+        }
+
+        let diagnostics = capture.makeCaptureDiagnostics(
+            fileURL: capture.recordingURL,
+            referenceTime: CFAbsoluteTimeGetCurrent()
+        )
+        SapoLog.recording.warning(
+            "Flux attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
+        )
+        return false
     }
 
     private func cleanupWebSocket() {

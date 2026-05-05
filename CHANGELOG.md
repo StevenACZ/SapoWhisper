@@ -6,6 +6,20 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+## [2.1.1] - 2026-05-05
+
+### Changed
+
+- Release builds now target Apple Silicon only (`arm64`), reducing the Release `.app` from 29,624 KB to 20,624 KB (-30.38%) and the main executable from 17,708 KB to 8,712 KB (-50.80%).
+- Removed a stray source `Info.plist` that was being copied into `Contents/Resources` while Xcode already generated the real bundle Info.plist.
+- Removed the unused legacy `MenuBarIcon` asset set; state-specific menu bar icons remain unchanged.
+- Added `scripts/measure_release_bundle.sh` to repeat app size, resource, bundle, and architecture audits; the local arm64 test DMG is 13 MB after `create-dmg` compression.
+- Added a lightweight Swift formatting/linting workflow using Xcode's bundled `swift-format`, `make format`, `make lint`, `make ci-check`, and optional Lefthook pre-commit formatting.
+- Applied the new Swift formatting baseline across the source tree to keep future diffs focused.
+- Improved public repo hygiene by removing the tracked Apple Developer Team ID, documenting local ad-hoc signing, tightening ignored private artifacts, and adding concise contributor/security docs.
+
 ## [2.1.0] - 2026-05-01
 
 ### Added

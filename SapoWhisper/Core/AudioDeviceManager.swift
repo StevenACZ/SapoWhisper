@@ -4,10 +4,10 @@
 //
 //
 
-import Foundation
 import AVFoundation
-import CoreAudio
 import Combine
+import CoreAudio
+import Foundation
 import OSLog
 import os
 
@@ -18,14 +18,14 @@ struct AudioDevice: Identifiable, Hashable {
     let uid: String
 
     static let systemDefault = AudioDevice(id: 0, name: "Sistema (Por defecto)", uid: "default")
-    
+
     /// Lista de patrones de nombres de dispositivos a filtrar (dispositivos virtuales del sistema)
     static let filteredPatterns = [
         "CADefaultDeviceAggregate",
         "CADefaultDevice",
-        "Aggregate Device"
+        "Aggregate Device",
     ]
-    
+
     /// Verifica si este dispositivo debe ser filtrado
     var shouldBeFiltered: Bool {
         AudioDevice.filteredPatterns.contains { name.contains($0) || uid.contains($0) }
@@ -301,7 +301,7 @@ class AudioDeviceManager: ObservableObject {
             state.devicesByUID[uid]
         }
     }
-    
+
     /// Obtiene el dispositivo de entrada por defecto del sistema
     func getSystemDefaultInputDevice() -> AudioDeviceID? {
         var deviceID: AudioDeviceID = 0
@@ -310,7 +310,7 @@ class AudioDeviceManager: ObservableObject {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        
+
         var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
         let status = AudioObjectGetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
@@ -320,7 +320,7 @@ class AudioDeviceManager: ObservableObject {
             &dataSize,
             &deviceID
         )
-        
+
         return status == noErr ? deviceID : nil
     }
 
@@ -345,7 +345,7 @@ class AudioDeviceManager: ObservableObject {
 
         return status == noErr ? deviceID : nil
     }
-    
+
     /// Configura temporalmente un dispositivo como entrada por defecto del sistema
     /// Retorna true si tuvo éxito
     @discardableResult
@@ -364,7 +364,7 @@ class AudioDeviceManager: ObservableObject {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        
+
         let status = AudioObjectSetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
             &namePropertyAddress,
@@ -373,7 +373,7 @@ class AudioDeviceManager: ObservableObject {
             UInt32(MemoryLayout<AudioDeviceID>.size),
             &deviceIDValue
         )
-        
+
         if status == noErr {
             let timestamp = CFAbsoluteTimeGetCurrent()
             writeState { state in

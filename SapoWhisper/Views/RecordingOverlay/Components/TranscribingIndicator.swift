@@ -34,8 +34,8 @@ struct TranscribingIndicator: View {
             let delay = Double(i) * 0.2
             withAnimation(
                 .easeInOut(duration: 0.5)
-                .repeatForever(autoreverses: true)
-                .delay(delay)
+                    .repeatForever(autoreverses: true)
+                    .delay(delay)
             ) {
                 animatingDots[i] = true
             }

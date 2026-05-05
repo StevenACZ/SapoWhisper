@@ -16,13 +16,15 @@ struct WhisperModelButton: View {
     let onSelect: () -> Void
     let onDelete: (() -> Void)?
 
-    init(model: WhisperKitModel,
-         isSelected: Bool,
-         isLoading: Bool,
-         isDownloaded: Bool = false,
-         downloadedSize: Int64? = nil,
-         action: @escaping () -> Void,
-         onDelete: (() -> Void)? = nil) {
+    init(
+        model: WhisperKitModel,
+        isSelected: Bool,
+        isLoading: Bool,
+        isDownloaded: Bool = false,
+        downloadedSize: Int64? = nil,
+        action: @escaping () -> Void,
+        onDelete: (() -> Void)? = nil
+    ) {
         self.model = model
         self.isSelected = isSelected
         self.isLoading = isLoading

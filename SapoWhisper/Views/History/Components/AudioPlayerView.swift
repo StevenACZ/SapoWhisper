@@ -3,8 +3,8 @@
 //  SapoWhisper
 //
 
-import SwiftUI
 import AVFoundation
+import SwiftUI
 
 /// Mini inline audio player for playback of saved transcription audio
 struct AudioPlayerView: View {

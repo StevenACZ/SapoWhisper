@@ -121,7 +121,7 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
     var settingsURLs: [URL] {
         [
             URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(settingsAnchor)"),
-            URL(string: "x-apple.systempreferences:com.apple.preference.security?\(settingsAnchor)")
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?\(settingsAnchor)"),
         ]
         .compactMap { $0 }
     }

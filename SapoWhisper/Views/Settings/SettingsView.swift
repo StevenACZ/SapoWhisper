@@ -12,7 +12,7 @@ struct SettingsView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: SettingsTab = .general
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Contenido del tab seleccionado
@@ -32,7 +32,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 280)
             }
-            
+
             ToolbarItem(placement: .confirmationAction) {
                 Button("close".localized) {
                     dismiss()
@@ -40,9 +40,9 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // MARK: - Tab Content
-    
+
     @ViewBuilder
     private var selectedTabContent: some View {
         switch selectedTab {
@@ -65,9 +65,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case engine
     case hotkey
     case about
-    
+
     var id: String { rawValue }
-    
+
     var title: String {
         switch self {
         case .general:

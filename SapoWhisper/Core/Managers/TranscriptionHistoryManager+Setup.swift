@@ -16,18 +16,18 @@ extension TranscriptionHistoryManager {
 
     func createTable() {
         let sql = """
-        CREATE TABLE IF NOT EXISTS transcriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            engine TEXT NOT NULL,
-            language TEXT NOT NULL,
-            duration_seconds REAL NOT NULL,
-            transcription TEXT NOT NULL,
-            audio_path TEXT,
-            status TEXT NOT NULL DEFAULT 'completed',
-            is_favorite INTEGER NOT NULL DEFAULT 0
-        );
-        """
+            CREATE TABLE IF NOT EXISTS transcriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                engine TEXT NOT NULL,
+                language TEXT NOT NULL,
+                duration_seconds REAL NOT NULL,
+                transcription TEXT NOT NULL,
+                audio_path TEXT,
+                status TEXT NOT NULL DEFAULT 'completed',
+                is_favorite INTEGER NOT NULL DEFAULT 0
+            );
+            """
         sqlite3_exec(db, sql, nil, nil, nil)
     }
 
@@ -36,7 +36,8 @@ extension TranscriptionHistoryManager {
 
         let sql = "ALTER TABLE transcriptions ADD COLUMN is_favorite INTEGER DEFAULT 0;"
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK,
-           let message = sqlite3_errmsg(db) {
+            let message = sqlite3_errmsg(db)
+        {
             print("Failed to migrate history schema: \(String(cString: message))")
         }
     }
@@ -46,7 +47,7 @@ extension TranscriptionHistoryManager {
             "CREATE INDEX IF NOT EXISTS idx_transcriptions_timestamp ON transcriptions(timestamp DESC);",
             "CREATE INDEX IF NOT EXISTS idx_transcriptions_status ON transcriptions(status);",
             "CREATE INDEX IF NOT EXISTS idx_transcriptions_favorite_timestamp ON transcriptions(is_favorite, timestamp DESC);",
-            "CREATE INDEX IF NOT EXISTS idx_transcriptions_engine_timestamp ON transcriptions(engine, timestamp DESC);"
+            "CREATE INDEX IF NOT EXISTS idx_transcriptions_engine_timestamp ON transcriptions(engine, timestamp DESC);",
         ]
 
         for statement in statements {

@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import Carbon
+import SwiftUI
 
 /// Vista para grabar atajos de teclado personalizados
 struct HotkeyRecorderView: NSViewRepresentable {
@@ -68,7 +68,7 @@ class HotkeyRecorderNSView: NSView {
     }
 
     private var displayKeyCode: Int = 49
-    private var displayModifiers: Int = 2048 // optionKey
+    private var displayModifiers: Int = 2048  // optionKey
 
     private var currentModifiers: NSEvent.ModifierFlags = []
 
@@ -119,7 +119,7 @@ class HotkeyRecorderNSView: NSView {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .medium),
             .foregroundColor: textColor,
-            .paragraphStyle: paragraphStyle
+            .paragraphStyle: paragraphStyle,
         ]
 
         let textSize = text.size(withAttributes: attributes)

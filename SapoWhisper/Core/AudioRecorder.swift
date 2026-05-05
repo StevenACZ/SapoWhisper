@@ -4,11 +4,11 @@
 //
 //
 
-import Foundation
 import AVFoundation
-import CoreAudio
 import AudioToolbox
 import Combine
+import CoreAudio
+import Foundation
 import OSLog
 import os
 
@@ -145,8 +145,8 @@ class AudioRecorder: ObservableObject {
                     if let hwFormat, hwFormat.sampleRate != cachedFormat.sampleRate {
                         tapFormat = hwFormat
                         print(
-                            "🎙️ [capture] setup: format override: cached=\(Int(cachedFormat.sampleRate))Hz, " +
-                            "hw=\(Int(hwFormat.sampleRate))Hz → using hw format for tap"
+                            "🎙️ [capture] setup: format override: cached=\(Int(cachedFormat.sampleRate))Hz, "
+                                + "hw=\(Int(hwFormat.sampleRate))Hz → using hw format for tap"
                         )
                     } else if let hwFormat {
                         tapFormat = hwFormat
@@ -335,8 +335,8 @@ class AudioRecorder: ObservableObject {
             let captureDeviceUID = currentCaptureDeviceUID()
             let effectiveDevice = captureDeviceUID == "default" ? "system-default" : captureDeviceUID
             print(
-                "🎙️ [capture] first input buffer in \(String(format: "%.0f", elapsed))ms " +
-                "(\(buffer.frameLength) frames @ \(String(format: "%.0f", buffer.format.sampleRate))Hz, input: \(effectiveDevice))"
+                "🎙️ [capture] first input buffer in \(String(format: "%.0f", elapsed))ms "
+                    + "(\(buffer.frameLength) frames @ \(String(format: "%.0f", buffer.format.sampleRate))Hz, input: \(effectiveDevice))"
             )
             let elapsedMs = Int(elapsed)
             SapoLog.recording.info(
@@ -350,10 +350,10 @@ class AudioRecorder: ObservableObject {
         if converter == nil {
             let inputFmt = buffer.format
             print(
-                "🎙️ [capture] creating converter: \(String(format: "%.0f", inputFmt.sampleRate))Hz " +
-                "\(inputFmt.commonFormat == .pcmFormatFloat32 ? "Float32" : "Int16") → " +
-                "\(String(format: "%.0f", outputFormat.sampleRate))Hz " +
-                "\(outputFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "Float32")"
+                "🎙️ [capture] creating converter: \(String(format: "%.0f", inputFmt.sampleRate))Hz "
+                    + "\(inputFmt.commonFormat == .pcmFormatFloat32 ? "Float32" : "Int16") → "
+                    + "\(String(format: "%.0f", outputFormat.sampleRate))Hz "
+                    + "\(outputFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "Float32")"
             )
             converter = AVAudioConverter(from: inputFmt, to: outputFormat)
             if converter == nil {
@@ -546,13 +546,13 @@ class AudioRecorder: ObservableObject {
         if logSummary {
             if diagnostics.receivedInput {
                 print(
-                    "🎙️ [capture] recorded \(diagnostics.inputBufferCount) buffers, " +
-                    "\(diagnostics.writtenFrameCount) frames, \(diagnostics.fileSizeBytes) bytes"
+                    "🎙️ [capture] recorded \(diagnostics.inputBufferCount) buffers, "
+                        + "\(diagnostics.writtenFrameCount) frames, \(diagnostics.fileSizeBytes) bytes"
                 )
             } else {
                 print(
-                    "⚠️ [capture] stopped without input buffers " +
-                    "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
+                    "⚠️ [capture] stopped without input buffers "
+                        + "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
                 )
             }
         }
@@ -604,8 +604,9 @@ class AudioRecorder: ObservableObject {
     private func flushRemainingConvertedAudio() -> (chunks: Int, frames: AVAudioFrameCount, elapsedMs: Double) {
         let t0 = CFAbsoluteTimeGetCurrent()
         guard let converter = converter,
-              let outputFormat = converterOutputFormat,
-              let audioFile = audioFile else {
+            let outputFormat = converterOutputFormat,
+            let audioFile = audioFile
+        else {
             return (0, 0, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
         }
 
@@ -705,7 +706,8 @@ class AudioRecorder: ObservableObject {
         let lastBufferAgeMs = lastInputBufferTime > 0 ? (referenceTime - lastInputBufferTime) * 1000 : nil
         let fileSizeBytes: Int
         if let fileURL,
-           let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue {
+            let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue
+        {
             fileSizeBytes = size
         } else {
             fileSizeBytes = 0
@@ -822,7 +824,7 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
             let transientStatuses: Set<OSStatus> = [
                 kAudioUnitErr_FailedInitialization,
                 kAudioUnitErr_InvalidElement,
-                kAudioUnitErr_CannotDoInCurrentContext
+                kAudioUnitErr_CannotDoInCurrentContext,
             ]
             let isTransient = routeTransitionActive && transientStatuses.contains(status)
             return RecordingStartFailureClassification(
@@ -841,7 +843,7 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
     let transientCodes: Set<Int> = [
         Int(kAudioUnitErr_FailedInitialization),
         Int(kAudioUnitErr_InvalidElement),
-        Int(kAudioUnitErr_CannotDoInCurrentContext)
+        Int(kAudioUnitErr_CannotDoInCurrentContext),
     ]
 
     if transientCodes.contains(nsError.code) {
@@ -854,7 +856,8 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
     if errorDescription.contains("outputHWFormat")
         || errorDescription.contains("IsFormatSampleRateAndChannelCountValid")
         || userInfoDescription.contains("outputHWFormat")
-        || userInfoDescription.contains("IsFormatSampleRateAndChannelCountValid") {
+        || userInfoDescription.contains("IsFormatSampleRateAndChannelCountValid")
+    {
         return RecordingStartFailureClassification(isTransient: true, reason: "outputHWFormat invalid")
     }
 

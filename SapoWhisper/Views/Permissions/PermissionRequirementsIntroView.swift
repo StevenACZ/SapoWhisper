@@ -22,7 +22,7 @@ struct PermissionRequirementsIntroView: View {
                                 LinearGradient(
                                     colors: [
                                         accentColor.opacity(0.22),
-                                        accentColor.opacity(0.08)
+                                        accentColor.opacity(0.08),
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing

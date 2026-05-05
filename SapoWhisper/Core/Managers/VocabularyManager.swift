@@ -29,7 +29,8 @@ class VocabularyManager: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
 
         keyterms = (json["keyterms"] as? [String]) ?? []
         replacements = (json["replacements"] as? [String: String]) ?? [:]
@@ -38,7 +39,7 @@ class VocabularyManager: ObservableObject {
     private func save() {
         let json: [String: Any] = [
             "keyterms": keyterms,
-            "replacements": replacements
+            "replacements": replacements,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) else { return }
         try? data.write(to: fileURL)
@@ -93,10 +94,12 @@ class VocabularyManager: ObservableObject {
             .reduce(transcript) { current, replacement in
                 let escaped = NSRegularExpression.escapedPattern(for: replacement.key)
                 let pattern = "\\b\(escaped)\\b"
-                guard let regex = try? NSRegularExpression(
-                    pattern: pattern,
-                    options: [.caseInsensitive]
-                ) else {
+                guard
+                    let regex = try? NSRegularExpression(
+                        pattern: pattern,
+                        options: [.caseInsensitive]
+                    )
+                else {
                     return current
                 }
 

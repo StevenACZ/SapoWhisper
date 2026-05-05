@@ -4,21 +4,21 @@
 //
 //
 
-import Cocoa
 import Carbon
+import Cocoa
 import Combine
 import OSLog
 import os
 
 /// Maneja los hotkeys globales de la aplicación
 class HotkeyManager: ObservableObject {
-    
+
     static let shared = HotkeyManager()
-    
+
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
     private var hotkeyCallback: (() -> Void)?
-    
+
     // Hotkey por defecto: Option + Space
     @Published var currentKeyCode: UInt32
     @Published var currentModifiers: UInt32
@@ -31,17 +31,17 @@ class HotkeyManager: ObservableObject {
         self.currentKeyCode = savedKeyCode > 0 ? UInt32(savedKeyCode) : UInt32(kVK_Space)
         self.currentModifiers = savedModifiers > 0 ? UInt32(savedModifiers) : UInt32(optionKey)
     }
-    
+
     /// Registra el hotkey global
     func registerHotkey(callback: @escaping () -> Void) {
         self.hotkeyCallback = callback
-        
+
         // Desregistrar hotkey anterior si existe
         unregisterHotkey()
-        
+
         // Configurar el event handler
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        
+
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { (_, event, userData) -> OSStatus in
@@ -56,16 +56,16 @@ class HotkeyManager: ObservableObject {
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
-        
+
         if status != noErr {
             SapoLog.hotkey.error("Failed to install event handler status=\(status, privacy: .public)")
             print("❌ Error instalando event handler: \(status)")
             return
         }
-        
+
         // Registrar el hotkey
-        let hotkeyID = EventHotKeyID(signature: OSType(0x53575049), id: 1) // "SWPI"
-        
+        let hotkeyID = EventHotKeyID(signature: OSType(0x53575049), id: 1)  // "SWPI"
+
         let registerStatus = RegisterEventHotKey(
             currentKeyCode,
             currentModifiers,
@@ -74,7 +74,7 @@ class HotkeyManager: ObservableObject {
             0,
             &hotkeyRef
         )
-        
+
         if registerStatus != noErr {
             SapoLog.hotkey.error("Failed to register hotkey status=\(registerStatus, privacy: .public)")
             print("❌ Error registrando hotkey: \(registerStatus)")
@@ -83,20 +83,20 @@ class HotkeyManager: ObservableObject {
             print("✅ Hotkey registrado: \(hotkeyDescription)")
         }
     }
-    
+
     /// Desregistra el hotkey actual
     func unregisterHotkey() {
         if let hotkeyRef = hotkeyRef {
             UnregisterEventHotKey(hotkeyRef)
             self.hotkeyRef = nil
         }
-        
+
         if let eventHandler = eventHandler {
             RemoveEventHandler(eventHandler)
             self.eventHandler = nil
         }
     }
-    
+
     /// Cambia el hotkey manteniendo el callback existente
     func updateHotkey(keyCode: UInt32, modifiers: UInt32) {
         currentKeyCode = keyCode
@@ -118,16 +118,16 @@ class HotkeyManager: ObservableObject {
         currentModifiers = modifiers
         registerHotkey(callback: callback)
     }
-    
+
     /// Texto descriptivo del hotkey actual
     var hotkeyDescription: String {
         var parts: [String] = []
-        
+
         if currentModifiers & UInt32(controlKey) != 0 { parts.append("⌃") }
         if currentModifiers & UInt32(optionKey) != 0 { parts.append("⌥") }
         if currentModifiers & UInt32(shiftKey) != 0 { parts.append("⇧") }
         if currentModifiers & UInt32(cmdKey) != 0 { parts.append("⌘") }
-        
+
         // Agregar la tecla
         switch Int(currentKeyCode) {
         case kVK_Space: parts.append("Space")
@@ -135,10 +135,10 @@ class HotkeyManager: ObservableObject {
         case kVK_ANSI_S: parts.append("S")
         default: parts.append("Key\(currentKeyCode)")
         }
-        
+
         return parts.joined(separator: " + ")
     }
-    
+
     deinit {
         unregisterHotkey()
     }

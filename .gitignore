@@ -1,18 +1,13 @@
-# ==========================================
-# SapoWhisper - .gitignore
-# ==========================================
+# SapoWhisper - public repo hygiene
 
-# ------------------------------------------
-# DOCUMENTACIÓN PRIVADA (NO SUBIR AL REPO)
-# ------------------------------------------
+# Local/private documentation
 AGENTS.md
 CLAUDE.md
 FUTURE_FEATURES.md
 DMG/
+docs/
 
-# ------------------------------------------
-# macOS System Files
-# ------------------------------------------
+# macOS system files
 .DS_Store
 .AppleDouble
 .LSOverride
@@ -20,10 +15,7 @@ DMG/
 .Spotlight-V100
 .Trashes
 
-# ------------------------------------------
-# Xcode Build & Derived Data
-# ------------------------------------------
-## Build generated
+# Xcode build output and user state
 build/
 DerivedData/
 *.pbxuser
@@ -41,47 +33,46 @@ xcuserdata/
 *.moved-aside
 *.xcuserstate
 *.xcscmblueprint
-
-## Xcode Caches
 *.hmap
 *.ipa
 *.dSYM.zip
 *.dSYM
+*.xcarchive
+*.xcresult
+*.xcdistributionlogs
 
-# ------------------------------------------
+# Local signing/provisioning
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.p12
+*.xcconfig.local
+Local.xcconfig
+Signing.xcconfig
+
 # Swift Package Manager
-# ------------------------------------------
 .swiftpm/
 .build/
 Packages/
 Package.resolved
 !SapoWhisper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
-# ------------------------------------------
-# CocoaPods (si se usa)
-# ------------------------------------------
+# CocoaPods, if used later
 Pods/
 *.xcworkspace
 !*.xcodeproj/project.xcworkspace
 
-# ------------------------------------------
-# Carthage (si se usa)
-# ------------------------------------------
+# Carthage, if used later
 Carthage/Build/
 Carthage/Checkouts/
 
-# ------------------------------------------
-# Whisper.cpp Models (GRANDES - NO SUBIR)
-# ------------------------------------------
-# Los modelos pueden pesar hasta 3GB
+# Large local models
 Models/*.bin
 Models/*.ggml
 *.ggml-*.bin
 ggml-*.bin
 
-# ------------------------------------------
-# Whisper.cpp Build Artifacts
-# ------------------------------------------
+# Whisper.cpp build artifacts
 whisper.cpp/build/
 whisper.cpp/*.o
 whisper.cpp/*.a
@@ -89,63 +80,52 @@ whisper.cpp/main
 whisper.cpp/quantize
 whisper.cpp/server
 
-# ------------------------------------------
-# IDE & Editor Files
-# ------------------------------------------
+# IDE and editor files
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# ------------------------------------------
-# Sensitive Files (API Keys, Secrets)
-# ------------------------------------------
+# Sensitive files
 *.pem
 *.key
 .env
 .env.*
 secrets/
 credentials/
+*.credentials.json
+*credentials*.json
+*service-account*.json
 
-# ------------------------------------------
-# Crash Reports & Logs
-# ------------------------------------------
+# Crash reports and logs
 *.crash
 *.log
 logs/
 
-# ------------------------------------------
-# Archives & Distributions
-# ------------------------------------------
+# Archives and distribution artifacts
 *.app
 *.ipa
 *.zip
 *.tar.gz
 *.dmg
 
-# ------------------------------------------
-# Temporary Files
-# ------------------------------------------
+# Temporary files
 *.tmp
 *.temp
 tmp/
 temp/
 
-# ------------------------------------------
-# Audio Test Files (pueden ser grandes)
-# ------------------------------------------
+# Audio test/export files
 *.wav
 *.mp3
 *.m4a
 *.flac
 !SapoWhisper/Resources/Sounds/*.wav
 
-# ------------------------------------------
-# AI Context Files (privados)
-# ------------------------------------------
+# Local AI/editor context
 .agent/
+.codex/
 .cursor/
 .claude/
 .superpowers/
-docs/

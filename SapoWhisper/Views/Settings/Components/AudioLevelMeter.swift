@@ -9,19 +9,19 @@ import SwiftUI
 /// Componente visual de medidor de nivel de audio con barras animadas
 struct AudioLevelMeter: View {
     @ObservedObject var monitor: AudioLevelMonitor
-    
+
     /// Número de barras en el medidor
     let barCount: Int
-    
+
     /// Altura del medidor
     let height: CGFloat
-    
+
     init(monitor: AudioLevelMonitor = .shared, barCount: Int = 20, height: CGFloat = 20) {
         self.monitor = monitor
         self.barCount = barCount
         self.height = height
     }
-    
+
     var body: some View {
         GeometryReader { geometry in
             HStack(spacing: 2) {
@@ -36,24 +36,24 @@ struct AudioLevelMeter: View {
         }
         .frame(height: height)
     }
-    
+
     /// Determina si una barra debe estar activa basado en el nivel actual
     private func isBarActive(index: Int) -> Bool {
         let threshold = Float(index) / Float(barCount)
         return monitor.audioLevel >= threshold
     }
-    
+
     /// Determina si una barra es el pico actual
     private func isBarPeak(index: Int) -> Bool {
         let threshold = Float(index) / Float(barCount)
         let nextThreshold = Float(index + 1) / Float(barCount)
         return monitor.peakLevel >= threshold && monitor.peakLevel < nextThreshold
     }
-    
+
     /// Color de la barra basado en su posición (verde -> amarillo -> rojo)
     private func barColor(index: Int) -> Color {
         let position = Float(index) / Float(barCount)
-        
+
         if position < 0.6 {
             return .sapoGreen
         } else if position < 0.85 {
@@ -69,13 +69,13 @@ struct AudioBar: View {
     let isActive: Bool
     let isPeak: Bool
     let color: Color
-    
+
     var body: some View {
         RoundedRectangle(cornerRadius: 2)
             .fill(barFill)
             .animation(.easeOut(duration: 0.05), value: isActive)
     }
-    
+
     private var barFill: some ShapeStyle {
         if isActive {
             return AnyShapeStyle(color)
@@ -238,8 +238,9 @@ struct AudioLevelMeterView: View {
 
             // Sample players
             if let rawURL = monitor.rawSampleURL,
-               !monitor.isRecordingSample,
-               let rawMeta = monitor.rawSampleMetadata {
+                !monitor.isRecordingSample,
+                let rawMeta = monitor.rawSampleMetadata
+            {
                 VStack(spacing: 4) {
                     AudioSamplePlayerView(
                         url: rawURL,
@@ -248,7 +249,8 @@ struct AudioLevelMeterView: View {
                     )
 
                     if let compURL = monitor.compressedSampleURL,
-                       let compMeta = monitor.compressedSampleMetadata {
+                        let compMeta = monitor.compressedSampleMetadata
+                    {
                         AudioSamplePlayerView(
                             url: compURL,
                             label: "settings.sample_compressed".localized,

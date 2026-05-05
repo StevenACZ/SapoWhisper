@@ -4,11 +4,11 @@
 //
 //
 
-import Foundation
 import AVFoundation
-import CoreAudio
 import AudioToolbox
 import Combine
+import CoreAudio
+import Foundation
 
 /// Metadata for a recorded audio sample
 struct SampleMetadata {
@@ -73,7 +73,7 @@ class AudioLevelMonitor: ObservableObject {
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
         self.gain = savedGain > 0 ? Float(savedGain) : 1.0
     }
-    
+
     /// Inicia el monitoreo del micrófono
     func startMonitoring(deviceUID: String = "default") {
         scheduleMonitoringStart(deviceUID: deviceUID, minimumDelay: 0)
@@ -167,7 +167,7 @@ class AudioLevelMonitor: ObservableObject {
             self?.stopMonitoringOnQueue(clearIntent: true, logStop: true)
         }
     }
-    
+
     /// Limpia recursos sin cambiar el estado de monitoreo
     private func cleanupEngineOnQueue() {
         if let engine = audioEngine {
@@ -181,7 +181,7 @@ class AudioLevelMonitor: ObservableObject {
         sampleTapFormat = nil
         isMonitoring = false
     }
-    
+
     /// Reinicia el monitoreo con un nuevo dispositivo
     func restartMonitoring(deviceUID: String) {
         scheduleMonitoringStart(
@@ -282,7 +282,7 @@ class AudioLevelMonitor: ObservableObject {
             }
         }
     }
-    
+
     // MARK: - Sample Recording Methods
 
     /// Starts recording a sample using the already-running engine tap
@@ -389,22 +389,25 @@ class AudioLevelMonitor: ObservableObject {
         let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
         guard let converter = AVAudioConverter(from: inputFile.processingFormat, to: outputFormat) else { return false }
 
-        guard let outputFile = try? AVAudioFile(
-            forWriting: outputURL,
-            settings: outputFormat.settings,
-            commonFormat: outputFormat.commonFormat,
-            interleaved: outputFormat.isInterleaved
-        ) else { return false }
+        guard
+            let outputFile = try? AVAudioFile(
+                forWriting: outputURL,
+                settings: outputFormat.settings,
+                commonFormat: outputFormat.commonFormat,
+                interleaved: outputFormat.isInterleaved
+            )
+        else { return false }
 
         // Read entire input at once — sample recordings are short so memory is fine
         let totalFrames = AVAudioFrameCount(inputFile.length)
         guard totalFrames > 0,
-              let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFile.processingFormat, frameCapacity: totalFrames)
+            let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFile.processingFormat, frameCapacity: totalFrames)
         else { return false }
 
         do { try inputFile.read(into: inputBuffer) } catch { return false }
 
-        let outputFrameCount = AVAudioFrameCount(ceil(Double(totalFrames) * outputFormat.sampleRate / inputFile.processingFormat.sampleRate))
+        let outputFrameCount = AVAudioFrameCount(
+            ceil(Double(totalFrames) * outputFormat.sampleRate / inputFile.processingFormat.sampleRate))
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrameCount) else { return false }
 
         var error: NSError?
@@ -461,41 +464,41 @@ class AudioLevelMonitor: ObservableObject {
 
         guard let channelData = buffer.floatChannelData else { return }
         guard buffer.frameLength > 0 else { return }
-        
+
         let channelDataValue = channelData.pointee
         let channelDataValueArray = stride(from: 0, to: Int(buffer.frameLength), by: buffer.stride).map {
             channelDataValue[$0]
         }
-        
+
         guard !channelDataValueArray.isEmpty else { return }
-        
+
         // Calcular RMS (Root Mean Square) para un nivel más suave
         let rms = sqrt(channelDataValueArray.map { $0 * $0 }.reduce(0, +) / Float(channelDataValueArray.count))
-        
+
         // Aplicar gain
         let amplifiedRms = rms * gain
-        
+
         // Convertir a escala logarítmica para mejor visualización
-        let avgPower = 20 * log10(max(amplifiedRms, 0.0001)) // Evitar log(0)
-        
+        let avgPower = 20 * log10(max(amplifiedRms, 0.0001))  // Evitar log(0)
+
         // Normalizar a 0-1 (asumiendo rango de -60dB a 0dB)
         let minDb: Float = -60
         let maxDb: Float = 0
         let normalizedLevel = max(0, min(1, (avgPower - minDb) / (maxDb - minDb)))
-        
+
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            
+
             // Suavizar el nivel con interpolación
             self.audioLevel = self.audioLevel * 0.7 + normalizedLevel * 0.3
-            
+
             // Actualizar pico si es mayor
             if normalizedLevel > self.peakLevel {
                 self.peakLevel = normalizedLevel
             }
         }
     }
-    
+
     /// Establece un error
     private func setError(_ message: String) {
         DispatchQueue.main.async { [weak self] in
@@ -509,7 +512,7 @@ class AudioLevelMonitor: ObservableObject {
             self?.peakLevel = 0
         }
     }
-    
+
     deinit {
         stopMonitoring()
     }

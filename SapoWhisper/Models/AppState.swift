@@ -8,12 +8,12 @@ import SwiftUI
 
 /// Estados posibles de la aplicación
 enum AppState: Equatable {
-    case idle           // Verde - Listo para grabar
-    case recording      // Rojo - Grabando audio
-    case processing     // Amarillo - Transcribiendo
+    case idle  // Verde - Listo para grabar
+    case recording  // Rojo - Grabando audio
+    case processing  // Amarillo - Transcribiendo
     case error(String)  // Naranja - Error
-    case noModel        // Gris - Sin modelo instalado
-    
+    case noModel  // Gris - Sin modelo instalado
+
     var statusText: String {
         switch self {
         case .idle:
@@ -28,7 +28,7 @@ enum AppState: Equatable {
             return "status.no_model".localized
         }
     }
-    
+
     var iconName: String {
         switch self {
         case .idle:
@@ -43,7 +43,7 @@ enum AppState: Equatable {
             return "arrow.down.circle.fill"
         }
     }
-    
+
     var iconColor: Color {
         switch self {
         case .idle:
@@ -51,9 +51,9 @@ enum AppState: Equatable {
         case .recording:
             return Color(red: 0.957, green: 0.263, blue: 0.212)  // #F44336
         case .processing:
-            return Color(red: 1.0, green: 0.757, blue: 0.027)    // #FFC107
+            return Color(red: 1.0, green: 0.757, blue: 0.027)  // #FFC107
         case .error:
-            return Color(red: 1.0, green: 0.596, blue: 0.0)      // #FF9800
+            return Color(red: 1.0, green: 0.596, blue: 0.0)  // #FF9800
         case .noModel:
             return Color(red: 0.620, green: 0.620, blue: 0.620)  // #9E9E9E
         }

@@ -20,10 +20,11 @@ struct RecordingOverlayView: View {
         ZStack {
             contentForState
                 .id(stateCategory)
-                .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeOut(duration: 0.2)),
-                    removal: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeIn(duration: 0.15))
-                ))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeOut(duration: 0.2)),
+                        removal: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeIn(duration: 0.15))
+                    ))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)

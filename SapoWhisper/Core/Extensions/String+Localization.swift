@@ -11,7 +11,7 @@ extension String {
     var localized: String {
         LocalizationManager.shared.localizedString(self)
     }
-    
+
     /// Devuelve el string localizado con argumentos
     func localized(_ args: CVarArg...) -> String {
         LocalizationManager.shared.localizedString(self, arguments: args)

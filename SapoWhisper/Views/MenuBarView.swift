@@ -17,7 +17,7 @@ struct MenuBarView: View {
     var closeMenuBarAction: (() -> Void)?
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
             headerSection
@@ -43,9 +43,9 @@ struct MenuBarView: View {
         .frame(width: Constants.Sizes.menuBarWidth)
         .background(Color(NSColor.windowBackgroundColor))
     }
-    
+
     // MARK: - Header Section
-    
+
     private var headerSection: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -78,7 +78,7 @@ struct MenuBarView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("app_name".localized)
                     .font(.headline)
@@ -96,9 +96,9 @@ struct MenuBarView: View {
         .padding()
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
-    
+
     // MARK: - Recording Section
-    
+
     private var recordingSection: some View {
         VStack(spacing: 16) {
             if case .recording = viewModel.appState {
@@ -121,7 +121,7 @@ struct MenuBarView: View {
                             .font(.system(size: 18, weight: .semibold))
                             .symbolEffect(.bounce, value: viewModel.audioRecorder.isRecording)
                     }
-                    
+
                     Text(buttonText)
                         .font(.headline)
                         .fontWeight(.semibold)
@@ -153,7 +153,7 @@ struct MenuBarView: View {
         .padding()
         .animation(.spring(response: 0.3), value: viewModel.appState)
     }
-    
+
     private var buttonIcon: String {
         switch viewModel.appState {
         case .recording:
@@ -164,7 +164,7 @@ struct MenuBarView: View {
             return "mic.fill"
         }
     }
-    
+
     private var buttonText: String {
         switch viewModel.appState {
         case .recording:
@@ -177,7 +177,7 @@ struct MenuBarView: View {
             return "menu.start_recording".localized
         }
     }
-    
+
     private var buttonColor: Color {
         switch viewModel.appState {
         case .recording:
@@ -190,7 +190,7 @@ struct MenuBarView: View {
             return .sapoGreen
         }
     }
-    
+
     private var buttonBackground: some View {
         Group {
             if case .recording = viewModel.appState {
@@ -265,7 +265,7 @@ struct MenuBarView: View {
         }
         .padding(.vertical, 4)
     }
-    
+
 }
 
 #Preview("Menu Bar Popup") {

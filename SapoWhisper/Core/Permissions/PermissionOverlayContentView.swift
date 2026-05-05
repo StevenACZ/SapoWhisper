@@ -99,7 +99,7 @@ final class PermissionOverlayContentView: NSView {
 
             footnoteLabel.leadingAnchor.constraint(equalTo: helperView.leadingAnchor),
             footnoteLabel.trailingAnchor.constraint(equalTo: helperView.trailingAnchor),
-            footnoteLabel.topAnchor.constraint(equalTo: helperView.bottomAnchor, constant: 10)
+            footnoteLabel.topAnchor.constraint(equalTo: helperView.bottomAnchor, constant: 10),
         ])
     }
 
@@ -197,7 +197,7 @@ private final class PermissionOverlayInfoCardView: NSView {
 
             messageLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             messageLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
+            messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
         ])
 
         updateAppearance()

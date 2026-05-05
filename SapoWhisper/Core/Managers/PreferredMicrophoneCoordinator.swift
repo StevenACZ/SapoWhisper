@@ -5,9 +5,9 @@
 //  Created by Codex on 9/4/26.
 //
 
-import Foundation
 import Combine
 import CoreAudio
+import Foundation
 
 /// Keeps the app's preferred microphone aligned with the macOS global default input.
 final class PreferredMicrophoneCoordinator {
@@ -97,7 +97,8 @@ final class PreferredMicrophoneCoordinator {
 
         if currentDefaultDeviceID != preferredDeviceID {
             restoredPreferredInput = deviceManager.setSystemDefaultInputDevice(preferredDeviceID)
-            finalDefaultDeviceID = restoredPreferredInput
+            finalDefaultDeviceID =
+                restoredPreferredInput
                 ? preferredDeviceID
                 : deviceManager.getSystemDefaultInputDevice()
 

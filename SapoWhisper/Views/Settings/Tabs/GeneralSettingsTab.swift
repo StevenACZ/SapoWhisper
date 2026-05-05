@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import ServiceManagement
+import SwiftUI
 
 /// Tab de configuracion general con Form nativo (.grouped)
 struct GeneralSettingsTab: View {
@@ -32,8 +32,7 @@ struct GeneralSettingsTab: View {
     }
 
     private var isInputLanguageLocked: Bool {
-        selectedEngine == TranscriptionEngine.deepgram.rawValue &&
-            selectedDeepgramMode == DeepgramTranscriptionMode.fluxLive.rawValue
+        selectedEngine == TranscriptionEngine.deepgram.rawValue && selectedDeepgramMode == DeepgramTranscriptionMode.fluxLive.rawValue
     }
 
     private var inputLanguageBinding: Binding<String> {
