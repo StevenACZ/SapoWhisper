@@ -1,0 +1,15 @@
+pre-commit:
+  parallel: false
+  commands:
+    format:
+      glob: '*.swift'
+      run: scripts/swift_format_changed.sh format {staged_files}
+      stage_fixed: true
+
+    lint:
+      glob: '*.swift'
+      run: scripts/swift_format_changed.sh lint {staged_files}
+      fail_text: |
+        Swift format/lint failed. Run:
+          make format
+          make lint

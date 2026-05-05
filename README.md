@@ -1,193 +1,111 @@
-# 🐸 SapoWhisper
+# SapoWhisper
 
-**Transcribe your voice to text with a keyboard shortcut.**
+SapoWhisper is a macOS menu bar app that turns speech into text from a global shortcut.
+Press `Option + Space`, speak, stop, and the transcript is pasted into the frontmost app.
 
-A macOS menu bar app that instantly converts speech to text. Press `⌥ + Space`, speak, and the text is automatically pasted wherever you're typing.
+## Requirements
 
-![macOS](https://img.shields.io/badge/macOS-14.0+-black?logo=apple)
-![Swift](https://img.shields.io/badge/Swift-6.0-orange?logo=swift)
-![License](https://img.shields.io/badge/License-MIT-green)
+- macOS 14.0 or later
+- Apple Silicon Mac (`arm64`, M1 and newer)
+- Xcode with command line tools
+- Microphone permission
+- Accessibility permission for auto-paste
 
----
+## Features
 
-## ✨ Features
+- Global hotkey recording with a compact floating overlay.
+- Auto-paste into the current app.
+- Local transcription with WhisperKit.
+- Online transcription with Apple Speech, Google Cloud STT, Deepgram Nova-3, and Deepgram Flux Live.
+- Searchable transcription history with saved audio, replay, download, pinning, and re-transcription.
+- Guided permission setup for Microphone, Speech Recognition, and Accessibility.
+- Preferred microphone sync, route-change resilience, and optional auto-ducking while recording.
 
-- 🎤 **Instant transcription** — Press the shortcut, speak, done
-- 🔒 **100% private** — Local transcription option with WhisperKit (no internet needed)
-- 🎙️ **Deepgram Nova-3 + Flux Live** — High accuracy or near real-time cloud transcription
-- ☁️ **Google Cloud Chirp 3** — Maximum accuracy with Google's latest STT model
-- 📋 **Transcription history** — Browse, search, pin, replay, and re-transcribe past recordings
-- 🎛️ **Persistent preferred microphone** — Keep your chosen mic as the macOS global input even when switching between AirPods, speakers, or other output routes
-- ⌨️ **Auto-paste** — Text is automatically pasted where you're typing
-- 🌐 **Bilingual** — Supports Spanish and English
-- 🎨 **Visual overlay** — Compact floating pill shows recording status
-- 🔐 **Guided permissions** — Opens on launch when access is missing and guides you to the exact System Settings panel
-- 🔄 **Re-transcribe** — Re-process any saved recording with a different engine
-- 💾 **Audio download** — Export your recordings from history
-- 🔉 **Auto-ducking** — Automatically lowers system volume while recording so background audio doesn't interfere
+## Transcription Engines
 
----
+| Engine | Mode | Notes |
+|---|---|---|
+| Apple Speech | Online | No app-specific setup. |
+| WhisperKit | Local | Private offline transcription; models download in-app. |
+| Google Cloud | Online | Supports Chirp 3 via ADC and API-key fallback. |
+| Deepgram Nova-3 | Online | High-accuracy batch transcription. |
+| Deepgram Flux Live | Online | Near real-time streaming with local WAV history. |
 
-## 🚀 Installation
+Cloud API keys and Google credentials are stored locally on the user's Mac. Do not commit credentials, exported recordings, logs, DMGs, or local signing files.
 
-### Requirements
-
-- macOS 14.0 (Sonoma) or later
-- Apple Silicon (M1/M2/M3/M4/M5) recommended
-
-### Steps
-
-1. Download the latest version from the repository Releases page
-2. Drag `SapoWhisper.app` to your Applications folder
-3. Open the app — a 🐸 will appear in your menu bar
-4. If macOS needs access, SapoWhisper will open a guided **Missing Permissions** flow on launch and take you to the exact System Settings panel
-
----
-
-## 🎯 Usage
-
-1. **Press `⌥ + Space`** (Option + Space) — _customizable in Settings_
-2. **Speak** — You'll see a floating pill with the audio equalizer
-3. **Press the shortcut again** to stop
-4. ✨ **Text is automatically pasted**
-
-> 💡 You can change the shortcut in Settings → Hotkey
-
-### Guided Permissions
-
-If a required permission is missing, SapoWhisper opens a **Missing Permissions** window that:
-
-- appears automatically on launch when setup is incomplete
-- keeps every permission visible in one place
-- shows live status updates (`Pending` / `Active`)
-- opens the exact System Settings privacy panel for that permission
-- shows a floating helper overlay on top of System Settings
-- lets you drag the app into the Accessibility list if needed
-
-### Pause & Resume
-
-Click the pause button on the overlay pill to pause recording. Click again to resume — audio segments are concatenated seamlessly.
-
-### Multi-Monitor
-
-The overlay automatically appears on the screen where your mouse cursor is.
-
-### Preferred Microphone Sync
-
-If you choose a specific microphone in **Settings → General**, SapoWhisper keeps that device aligned with the macOS global input when audio routes change. If the microphone is unplugged or disappears, the app automatically falls back to **System Default**.
-
----
-
-## ⚙️ Transcription Engines
-
-Choose your preferred engine in **Settings → Engine**:
-
-### Apple Speech (Online)
-
-- ☁️ Requires internet connection
-- 📦 No download needed
-- 🔄 Uses Apple's servers
-
-### WhisperKit (Local) — Recommended for privacy
-
-- 🔒 **100% offline** — Your audio never leaves your Mac
-- 📥 Models download automatically inside the app
-- 🧠 Model memory released when switching to a cloud engine
-
-| Model                 | Size   | Speed     | Accuracy   |
-| --------------------- | ------ | --------- | ---------- |
-| Tiny                  | 77 MB  | Very fast | ⭐⭐       |
-| Base                  | 147 MB | Fast      | ⭐⭐⭐     |
-| **Small** ⭐          | 487 MB | Moderate  | ⭐⭐⭐⭐   |
-| Large V3              | 3.1 GB | Slow      | ⭐⭐⭐⭐⭐ |
-| **Large V3 Turbo** ⭐ | 3.2 GB | Fast      | ⭐⭐⭐⭐⭐ |
-
-> 💡 **Small** and **Large V3 Turbo** are recommended for best balance.
-
-### Google Cloud (Online) — Best accuracy
-
-- 🎯 **Chirp 3 (V2)** — Google's most accurate speech-to-text model
-- 🔑 **API Key (V1)** — Simple alternative with `latest_long` model
-- ☁️ Requires internet and a Google Cloud account
-
-#### Chirp 3 Setup (Recommended)
+## Quick Start
 
 ```bash
-# 1. Install gcloud CLI
-brew install google-cloud-sdk
-
-# 2. Authenticate
-gcloud auth application-default login
+git clone <repo-url>
+cd SapoWhisper
+make tools
+make ci-check
 ```
 
-SapoWhisper will automatically detect your credentials. That's it!
+Open `SapoWhisper.xcodeproj` in Xcode and run the `SapoWhisper` scheme.
 
-#### API Key Setup (Alternative)
+The tracked project defaults to local ad-hoc signing (`Sign to Run Locally`) so contributors can build without the maintainer's Apple Developer Team ID. Maintainers should configure Developer ID or Apple Development signing locally when creating release artifacts.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials
-2. Create an API Key and restrict it to **Cloud Speech-to-Text API**
-3. Paste the key in SapoWhisper Settings → Engine → Google Cloud → API Key
+## Daily Workflow
 
-### Deepgram — Fast cloud transcription
+```bash
+make format
+make lint
+make build
+```
 
-- 🎙️ **Nova-3** — High-accuracy batch transcription
-- ⚡ **Flux Live** — Near real-time streaming transcription
-- 📝 **Custom vocabulary** — Add keyterms and word replacements for better accuracy
-- ☁️ Requires internet and a Deepgram API key
+- `make format` formats changed Swift files with Xcode's bundled `swift-format`.
+- `make lint` checks changed Swift files without editing them.
+- `make ci-check` runs `lint + Debug build`.
+- `make release-check` runs `lint + Release build + size check`.
+- `make format-all` and `make lint-all` are explicit full-repo passes; use them only for a planned formatting migration.
 
-#### Setup
+Optional hooks:
 
-1. Create a free account at [deepgram.com](https://deepgram.com)
-2. Go to Dashboard → API Keys → Create Key
-3. Paste the key in SapoWhisper Settings → Engine → Deepgram → API Key
+```bash
+make hooks-install
+```
 
----
+## Release Size
 
-## 📋 Transcription History
+Release builds target Apple Silicon only. Measure a built app with:
 
-Access your past transcriptions from the menu bar → **History**.
+```bash
+scripts/measure_release_bundle.sh \
+  build/audit-release/Build/Products/Release/SapoWhisper.app
+```
 
-- **Browse** — Entries grouped by date (Today, Yesterday, This Week, etc.)
-- **Search** — Filter by text content (debounced, SQL-powered)
-- **Engine filter** — Show only entries from a specific engine with colored indicators
-- **Pin** — Mark important transcriptions for quick access
-- **Audio playback** — Replay saved audio recordings inline
-- **Re-transcribe** — Pick any engine and re-process a saved recording
-- **Download audio** — Export recordings to disk
-- **Inspector** — View metadata (engine, language, duration, word count)
-- **Real-time** — Window auto-refreshes after new transcriptions
+Current size baseline after the arm64 release cleanup:
 
-> 💡 Audio is saved for all transcriptions (success and failure), so you can always re-transcribe or download later. SapoWhisper automatically removes orphan recordings and trims old audio when the history storage cap is reached.
+- Release `.app`: 29,624 KB -> 20,624 KB (`-30.38%`)
+- Main executable: 17,708 KB -> 8,712 KB (`-50.80%`)
+- Local compressed test DMG: 13 MB
 
----
+## Public Repo Safety
 
-## ⚡ Performance
+Tracked and expected to be public:
 
-SapoWhisper is optimized for low-latency operation:
+- Source code, assets needed by the app, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, formatting config, scripts, README, changelog, contributing notes, and license.
 
-| Metric | Time |
-|--------|------|
-| Hotkey → overlay visible | ~30ms |
-| Overlay → audio recording | ~30ms |
-| Total startup | ~240ms |
-| Stop → text pasted | near-instant with Flux Live; ~1.9s with Deepgram Nova-3 |
+Ignored and intentionally private/local:
 
-Key optimizations:
-- Overlay window pre-warmed on app launch
-- Single `AVAudioEngine` for both recording and level metering
-- Sound effects pre-cached in memory
-- Audio recorded as int16 WAV (compact, no conversion needed for cloud upload)
-- Deterministic overlay animations avoid long-session redraw churn
-- Adaptive auto-paste (polls for target app instead of fixed delay)
+- `AGENTS.md`, `CLAUDE.md`, `DMG/`, `docs/`, `.codex/`, `xcuserdata/`, build products, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
 
----
+Before opening a PR, run:
 
-## 🤝 Contributing
+```bash
+make ci-check
+git diff --check
+```
 
-Contributions are welcome. If you find a bug or have an idea, open an issue in the repository.
+## Tests
 
----
+The `SapoWhisper` scheme currently has no configured test action. Use `make ci-check` as the current local gate.
 
-## 📄 License
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
 
 MIT
