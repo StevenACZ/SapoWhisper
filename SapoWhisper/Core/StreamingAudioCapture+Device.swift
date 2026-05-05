@@ -12,7 +12,8 @@ extension StreamingAudioCapture {
         guard deviceUID != AudioDevice.systemDefault.uid else { return nil }
         let deviceManager = AudioDeviceManager.shared
         guard let deviceID = deviceManager.getDeviceID(for: deviceUID),
-              let audioUnit = inputNode.audioUnit else {
+            let audioUnit = inputNode.audioUnit
+        else {
             throw RecordingError.deviceSelectionFailed(-1)
         }
 

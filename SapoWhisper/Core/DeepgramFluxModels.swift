@@ -40,7 +40,8 @@ struct DeepgramFluxTranscriptAccumulator {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        return fragments
+        return
+            fragments
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

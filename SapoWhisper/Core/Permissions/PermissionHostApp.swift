@@ -13,7 +13,8 @@ struct PermissionHostApp {
     let icon: NSImage
 
     static func current(bundle: Bundle = .main) -> PermissionHostApp {
-        let displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let displayName =
+            bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? bundle.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
             ?? bundle.bundleURL.deletingPathExtension().lastPathComponent
 

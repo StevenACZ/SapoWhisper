@@ -3,8 +3,8 @@
 //  SapoWhisper
 //
 
-import SwiftUI
 import AVFoundation
+import SwiftUI
 
 /// Compact inline player with metadata for mic test sample playback
 struct AudioSamplePlayerView: View {

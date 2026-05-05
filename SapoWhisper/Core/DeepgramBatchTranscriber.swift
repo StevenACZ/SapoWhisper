@@ -23,7 +23,8 @@ class DeepgramBatchTranscriber: ObservableObject {
     /// Transcribe audio file using Deepgram REST API (pre-recorded)
     func transcribe(audioURL: URL, language: String) async throws -> String {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
-              !apiKey.isEmpty else {
+            !apiKey.isEmpty
+        else {
             throw DeepgramError.notConfigured
         }
 
@@ -81,16 +82,17 @@ class DeepgramBatchTranscriber: ObservableObject {
 
         // Parse response
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [String: Any],
-              let channels = results["channels"] as? [[String: Any]],
-              let firstChannel = channels.first,
-              let alternatives = firstChannel["alternatives"] as? [[String: Any]],
-              let transcript = alternatives.first?["transcript"] as? String else {
+            let results = json["results"] as? [String: Any],
+            let channels = results["channels"] as? [[String: Any]],
+            let firstChannel = channels.first,
+            let alternatives = firstChannel["alternatives"] as? [[String: Any]],
+            let transcript = alternatives.first?["transcript"] as? String
+        else {
             let previewData = Data(data.prefix(400))
             let bodyPreview = String(data: previewData, encoding: .utf8) ?? "<non-utf8 response>"
             print(
-                "⚠️ [deepgram debug] parse failure " +
-                "(status: \(httpResponse.statusCode), bytes: \(audioData.count), body: \(bodyPreview))"
+                "⚠️ [deepgram debug] parse failure "
+                    + "(status: \(httpResponse.statusCode), bytes: \(audioData.count), body: \(bodyPreview))"
             )
             throw DeepgramError.apiError("Could not parse response")
         }
@@ -171,7 +173,7 @@ class DeepgramBatchTranscriber: ObservableObject {
         appendLE(riffChunkSize, to: &wav)
         wav.append("WAVE".data(using: .ascii)!)
         wav.append("fmt ".data(using: .ascii)!)
-        appendLE(UInt32(16), to: &wav) // PCM fmt chunk size
+        appendLE(UInt32(16), to: &wav)  // PCM fmt chunk size
         appendLE(UInt16(1), to: &wav)  // PCM format
         appendLE(channelCount, to: &wav)
         appendLE(sampleRate, to: &wav)

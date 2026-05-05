@@ -12,9 +12,9 @@ import Combine
 @MainActor
 final class DockIconManager: ObservableObject {
     static let shared = DockIconManager()
-    
+
     private var cancellables = Set<AnyCancellable>()
-    
+
     // Cache de imágenes
     // NOTA: Los nombres deben coincidir con los "Image Set" en Assets.xcassets
     // Hemos creado carpetas .imageset llamadas "DockIconIdle", "DockIconLoading", etc.
@@ -25,9 +25,9 @@ final class DockIconManager: ObservableObject {
     private let transcribingIcon = NSImage(named: "DockIconTranscribing")
     private var lastIconName: String?
     private let isMenuBarOnlyApp = Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool == true
-    
+
     private init() {}
-    
+
     /// Actualiza el icono del Dock basado en el estado de la app
     func updateIcon(for state: AppState, isModelLoading: Bool = false) {
         if isMenuBarOnlyApp {
@@ -36,7 +36,7 @@ final class DockIconManager: ObservableObject {
 
         let newIcon: NSImage?
         var iconName: String = ""
-        
+
         if isModelLoading {
             newIcon = loadingIcon
             iconName = "Loading"
@@ -53,22 +53,22 @@ final class DockIconManager: ObservableObject {
                 iconName = "Transcribing"
             }
         }
-        
+
         if lastIconName == iconName {
             return
         }
-        
+
         // Solo actualizar si la imagen es válida y diferente (aunque NSApp lo gestiona bien)
         if let icon = newIcon {
             NSApp.applicationIconImage = icon
             lastIconName = iconName
         } else {
             // Fallback al icono original de la app si algo falla
-            NSApp.applicationIconImage = nil 
+            NSApp.applicationIconImage = nil
             lastIconName = nil
         }
     }
-    
+
     /// Restaura el icono original (útil al cerrar la app)
     func restoreDefaultIcon() {
         NSApp.applicationIconImage = nil

@@ -18,7 +18,8 @@ extension TranscriptionHistoryManager {
         limit: Int? = 250,
         offset: Int = 0
     ) -> [HistoryEntry] {
-        var sql = "SELECT id, timestamp, engine, language, duration_seconds, transcription, audio_path, status, is_favorite FROM transcriptions"
+        var sql =
+            "SELECT id, timestamp, engine, language, duration_seconds, transcription, audio_path, status, is_favorite FROM transcriptions"
         var conditions: [String] = []
         var binders: [(OpaquePointer?, Int32) -> Void] = []
 
@@ -88,7 +89,8 @@ extension TranscriptionHistoryManager {
         let language = String(cString: sqlite3_column_text(stmt, 3))
         let duration = sqlite3_column_double(stmt, 4)
         let text = String(cString: sqlite3_column_text(stmt, 5))
-        let audioPath: String? = sqlite3_column_type(stmt, 6) != SQLITE_NULL
+        let audioPath: String? =
+            sqlite3_column_type(stmt, 6) != SQLITE_NULL
             ? String(cString: sqlite3_column_text(stmt, 6)) : nil
         let status = String(cString: sqlite3_column_text(stmt, 7))
         let isFavorite = sqlite3_column_int(stmt, 8) != 0

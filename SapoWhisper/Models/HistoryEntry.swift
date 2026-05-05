@@ -115,10 +115,23 @@ enum EngineFilter: String, CaseIterable, Identifiable {
 
 extension HistoryEntry {
     static let mockData: [HistoryEntry] = [
-        HistoryEntry(id: 1, timestamp: Date().addingTimeInterval(-300), engine: "Deepgram Nova-3", language: "es", duration: 8.5, text: "Hola, esta es una prueba de transcripción con el modelo Deepgram en tiempo real", audioPath: "/audio/test1.wav", status: "completed", isFavorite: false),
-        HistoryEntry(id: 2, timestamp: Date().addingTimeInterval(-3600), engine: "Google Chirp 3", language: "es", duration: 15.2, text: "El clima de hoy está muy agradable, perfecto para salir a caminar por el parque", audioPath: "/audio/test2.wav", status: "completed", isFavorite: false),
-        HistoryEntry(id: 3, timestamp: Date().addingTimeInterval(-7200), engine: "WhisperKit", language: "en", duration: 5.0, text: "This is a test of the local WhisperKit model running on Apple Silicon", audioPath: nil, status: "completed", isFavorite: false),
-        HistoryEntry(id: 4, timestamp: Date().addingTimeInterval(-86400), engine: "Deepgram Nova-3", language: "es", duration: 3.1, text: "", audioPath: "/audio/test4.wav", status: "failed", isFavorite: false),
-        HistoryEntry(id: 5, timestamp: Date().addingTimeInterval(-172800), engine: "Apple Speech", language: "es", duration: 12.0, text: "Recordar comprar leche, pan y huevos para la cena de esta noche", audioPath: nil, status: "completed", isFavorite: true),
+        HistoryEntry(
+            id: 1, timestamp: Date().addingTimeInterval(-300), engine: "Deepgram Nova-3", language: "es", duration: 8.5,
+            text: "Hola, esta es una prueba de transcripción con el modelo Deepgram en tiempo real", audioPath: "/audio/test1.wav",
+            status: "completed", isFavorite: false),
+        HistoryEntry(
+            id: 2, timestamp: Date().addingTimeInterval(-3600), engine: "Google Chirp 3", language: "es", duration: 15.2,
+            text: "El clima de hoy está muy agradable, perfecto para salir a caminar por el parque", audioPath: "/audio/test2.wav",
+            status: "completed", isFavorite: false),
+        HistoryEntry(
+            id: 3, timestamp: Date().addingTimeInterval(-7200), engine: "WhisperKit", language: "en", duration: 5.0,
+            text: "This is a test of the local WhisperKit model running on Apple Silicon", audioPath: nil, status: "completed",
+            isFavorite: false),
+        HistoryEntry(
+            id: 4, timestamp: Date().addingTimeInterval(-86400), engine: "Deepgram Nova-3", language: "es", duration: 3.1, text: "",
+            audioPath: "/audio/test4.wav", status: "failed", isFavorite: false),
+        HistoryEntry(
+            id: 5, timestamp: Date().addingTimeInterval(-172800), engine: "Apple Speech", language: "es", duration: 12.0,
+            text: "Recordar comprar leche, pan y huevos para la cena de esta noche", audioPath: nil, status: "completed", isFavorite: true),
     ]
 }

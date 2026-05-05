@@ -25,10 +25,12 @@ enum PermissionSettingsWindowLocator {
             return nil
         }
 
-        guard let windowInfo = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            .zero
-        ) as? [[String: Any]] else {
+        guard
+            let windowInfo = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements],
+                .zero
+            ) as? [[String: Any]]
+        else {
             return nil
         }
 
@@ -82,7 +84,8 @@ enum PermissionSettingsWindowLocator {
             )
         }
 
-        let matchedScreen = screens
+        let matchedScreen =
+            screens
             .filter { $0.cgBounds.intersects(cgFrame) }
             .max { lhs, rhs in
                 lhs.cgBounds.intersection(cgFrame).width * lhs.cgBounds.intersection(cgFrame).height

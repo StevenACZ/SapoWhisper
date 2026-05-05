@@ -4,9 +4,9 @@
 //
 //
 
-import Foundation
-import CoreAudio
 import AudioToolbox
+import CoreAudio
+import Foundation
 
 /// Gestiona el Auto-Ducking: reduce el volumen del sistema durante la grabación
 /// y lo restaura al terminar.
@@ -119,14 +119,17 @@ final class AutoDuckingManager {
 
         if setDeviceVolume(deviceID: deviceID, volume: clampedVolume) {
             isDucked = true
-            print("🔉 [auto-ducking] Volumen reducido: \(Int(currentVolume * 100))% → \(Int(clampedVolume * 100))% (duck: \(Int(duckAmount * 100))%)")
+            print(
+                "🔉 [auto-ducking] Volumen reducido: \(Int(currentVolume * 100))% → \(Int(clampedVolume * 100))% (duck: \(Int(duckAmount * 100))%)"
+            )
         }
     }
 
     private func _restore() {
         guard isDucked,
-              let original = originalVolume,
-              let deviceID = duckedDeviceID else {
+            let original = originalVolume,
+            let deviceID = duckedDeviceID
+        else {
             return
         }
 
@@ -135,7 +138,7 @@ final class AutoDuckingManager {
         // quantization), restore the original volume instead of leaving audio low.
         if let currentVolume = getDeviceVolume(deviceID: deviceID) {
             let expectedDuckedVolume = original * Float(1.0 - duckAmount)
-            let tolerance: Float = 0.02 // ~2% de tolerancia
+            let tolerance: Float = 0.02  // ~2% de tolerancia
 
             if currentVolume > expectedDuckedVolume + tolerance {
                 print("🔊 [auto-ducking] Usuario cambió volumen durante grabación (\(Int(currentVolume * 100))%), respetando su elección")
@@ -205,7 +208,7 @@ final class AutoDuckingManager {
 
         // Fallback: intentar con volumen del canal 1 (master)
         address.mSelector = kAudioDevicePropertyVolumeScalar
-        address.mElement = 1 // Canal izquierdo / master
+        address.mElement = 1  // Canal izquierdo / master
 
         if AudioObjectHasProperty(deviceID, &address) {
             let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume)
@@ -247,7 +250,7 @@ final class AutoDuckingManager {
         address.mSelector = kAudioDevicePropertyVolumeScalar
         var success = false
 
-        for channel: UInt32 in [1, 2] { // Canal izquierdo y derecho
+        for channel: UInt32 in [1, 2] {  // Canal izquierdo y derecho
             address.mElement = channel
             if AudioObjectHasProperty(deviceID, &address) {
                 let status = AudioObjectSetPropertyData(

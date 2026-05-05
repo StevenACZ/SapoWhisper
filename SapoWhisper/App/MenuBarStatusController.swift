@@ -161,7 +161,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         animation.timingFunctions = [
             CAMediaTimingFunction(name: .easeOut),
             CAMediaTimingFunction(name: .easeOut),
-            CAMediaTimingFunction(name: .easeInEaseOut)
+            CAMediaTimingFunction(name: .easeInEaseOut),
         ]
 
         button.layer?.add(animation, forKey: "sapoStatusPress")
@@ -176,11 +176,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func presentSettingsWindow() {
-        let controller = settingsWindowController ?? makeWindowController(
-            size: NSSize(width: 480, height: 500),
-            resizable: false,
-            rootView: SettingsWindowHost(viewModel: viewModel)
-        )
+        let controller =
+            settingsWindowController
+            ?? makeWindowController(
+                size: NSSize(width: 480, height: 500),
+                resizable: false,
+                rootView: SettingsWindowHost(viewModel: viewModel)
+            )
         settingsWindowController = controller
         show(controller)
     }
@@ -188,11 +190,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private func openHistoryWindow() {
         closePopover()
 
-        let controller = historyWindowController ?? makeWindowController(
-            size: NSSize(width: 900, height: 560),
-            resizable: true,
-            rootView: HistoryWindowHost(viewModel: viewModel)
-        )
+        let controller =
+            historyWindowController
+            ?? makeWindowController(
+                size: NSSize(width: 900, height: 560),
+                resizable: true,
+                rootView: HistoryWindowHost(viewModel: viewModel)
+            )
         historyWindowController = controller
         show(controller)
     }

@@ -2,7 +2,7 @@
 //  WhisperTranscriber.swift
 //  SapoWhisper
 //
-//  
+//
 //  Motor de transcripción usando Speech Recognition de Apple (Online).
 //  Este es el motor secundario que requiere internet pero no necesita configuración.
 //

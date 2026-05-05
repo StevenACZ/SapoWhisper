@@ -80,7 +80,8 @@ extension StreamingAudioCapture {
         let lastBufferAgeMs = lastInputBufferTime > 0 ? (referenceTime - lastInputBufferTime) * 1000 : nil
         let fileSizeBytes: Int
         if let fileURL,
-           let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue {
+            let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue
+        {
             fileSizeBytes = size
         } else {
             fileSizeBytes = 0

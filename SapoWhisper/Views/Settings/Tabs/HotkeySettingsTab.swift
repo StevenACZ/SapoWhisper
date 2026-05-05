@@ -4,16 +4,16 @@
 //
 //
 
-import SwiftUI
 import Carbon
+import SwiftUI
 
 /// Tab de configuración del atajo de teclado global
 struct HotkeySettingsTab: View {
     @AppStorage(Constants.StorageKeys.hotkeyKeyCode) private var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
     @AppStorage(Constants.StorageKeys.hotkeyModifiers) private var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
-    
+
     @State private var isRecordingHotkey = false
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -24,9 +24,9 @@ struct HotkeySettingsTab: View {
             .padding()
         }
     }
-    
+
     // MARK: - Hotkey Card
-    
+
     private var hotkeyCard: some View {
         SettingsCard(icon: "keyboard", title: "settings.hotkeys".localized) {
             VStack(alignment: .leading, spacing: 12) {
@@ -39,32 +39,32 @@ struct HotkeySettingsTab: View {
                     }
                 )
                 .frame(height: 36)
-                
+
                 Text("config.hotkey_instruction".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
     }
-    
+
     // MARK: - Presets Card
-    
+
     private var presetsCard: some View {
         SettingsCard(icon: "sparkles", title: "settings.presets".localized) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("settings.presets_desc".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
+
                 HStack(spacing: 10) {
                     HotkeyPresetButton("⌥ Space", isSelected: isHotkeySelected(keyCode: 49, modifiers: optionKey)) {
                         updateHotkey(keyCode: 49, modifiers: optionKey)
                     }
-                    
+
                     HotkeyPresetButton("⌘⇧ Space", isSelected: isHotkeySelected(keyCode: 49, modifiers: cmdKey | shiftKey)) {
                         updateHotkey(keyCode: 49, modifiers: cmdKey | shiftKey)
                     }
-                    
+
                     HotkeyPresetButton("⌃⌥ Space", isSelected: isHotkeySelected(keyCode: 49, modifiers: controlKey | optionKey)) {
                         updateHotkey(keyCode: 49, modifiers: controlKey | optionKey)
                     }
@@ -72,9 +72,9 @@ struct HotkeySettingsTab: View {
             }
         }
     }
-    
+
     // MARK: - Permissions Card
-    
+
     private var permissionsCard: some View {
         SettingsCard(icon: "hand.raised", title: "settings.permissions".localized) {
             VStack(alignment: .leading, spacing: 12) {
@@ -91,13 +91,13 @@ struct HotkeySettingsTab: View {
             }
         }
     }
-    
+
     // MARK: - Helpers
-    
+
     private func isHotkeySelected(keyCode: Int, modifiers: Int) -> Bool {
         hotkeyKeyCode == keyCode && hotkeyModifiers == modifiers
     }
-    
+
     private func updateHotkey(keyCode: Int, modifiers: Int) {
         hotkeyKeyCode = keyCode
         hotkeyModifiers = modifiers
@@ -111,13 +111,13 @@ struct HotkeyPresetButton: View {
     let label: String
     let isSelected: Bool
     let action: () -> Void
-    
+
     init(_ label: String, isSelected: Bool, action: @escaping () -> Void) {
         self.label = label
         self.isSelected = isSelected
         self.action = action
     }
-    
+
     var body: some View {
         Button(action: action) {
             Text(label)

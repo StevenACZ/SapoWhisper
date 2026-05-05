@@ -49,10 +49,12 @@ final class HistoryAudioStorage {
 
     private func audioFiles() -> [(url: URL, size: Int64)] {
         let keys: [URLResourceKey] = [.fileSizeKey, .isRegularFileKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: audioDir,
-            includingPropertiesForKeys: keys
-        ) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: audioDir,
+                includingPropertiesForKeys: keys
+            )
+        else {
             return []
         }
 

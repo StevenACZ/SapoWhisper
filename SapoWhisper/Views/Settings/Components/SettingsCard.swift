@@ -11,18 +11,18 @@ struct SettingsCard<Content: View>: View {
     let icon: String
     let title: String
     let content: () -> Content
-    
+
     init(icon: String, title: String, @ViewBuilder content: @escaping () -> Content) {
         self.icon = icon
         self.title = title
         self.content = content
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: icon)
                 .font(.headline)
-            
+
             content()
         }
         .padding()
@@ -37,12 +37,12 @@ struct InfoSection: View {
     let icon: String
     let title: String
     let content: String
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: icon)
                 .font(.headline)
-            
+
             Text(content)
                 .font(.subheadline)
                 .foregroundColor(.secondary)

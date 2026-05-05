@@ -6,9 +6,9 @@
 //
 
 import AppKit
-import SwiftUI
 import Combine
 import OSLog
+import SwiftUI
 import os
 
 /// Gestiona la ventana de overlay de grabacion
@@ -108,25 +108,27 @@ class OverlayWindowManager: ObservableObject {
         SapoLog.overlay.info("Overlay hide started")
 
         // Animacion de salida
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            window.animator().alphaValue = 0
-        }, completionHandler: {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                // Only clean up if this is still the current window
-                // (a new show() call may have replaced it already)
-                guard self.overlayWindow === window, self.presentationRevision == revisionAtHide else { return }
-                self.overlayWindow?.orderOut(nil)
-                self.state = .hidden
-                self.isAnimating = false
-                self.displayedRecordingSecond = nil
-                self.publishAudioLevel(0, force: true)
-                let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                SapoLog.overlay.info("Overlay hidden in \(elapsed, privacy: .public)ms")
-            }
-        })
+        NSAnimationContext.runAnimationGroup(
+            { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                window.animator().alphaValue = 0
+            },
+            completionHandler: {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    // Only clean up if this is still the current window
+                    // (a new show() call may have replaced it already)
+                    guard self.overlayWindow === window, self.presentationRevision == revisionAtHide else { return }
+                    self.overlayWindow?.orderOut(nil)
+                    self.state = .hidden
+                    self.isAnimating = false
+                    self.displayedRecordingSecond = nil
+                    self.publishAudioLevel(0, force: true)
+                    let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                    SapoLog.overlay.info("Overlay hidden in \(elapsed, privacy: .public)ms")
+                }
+            })
     }
 
     // MARK: - Private Methods
@@ -172,7 +174,8 @@ class OverlayWindowManager: ObservableObject {
         }
 
         if case .recording = state,
-           case .recording = newState {
+            case .recording = newState
+        {
             // Still recording; duration-only updates should not reset the meter session.
         } else if case .recording = state {
             finishMeterSession(reason: newState.stateCategory)
@@ -242,7 +245,6 @@ class OverlayWindowManager: ObservableObject {
             }
         }
     }
-
 
     /// Muestra un error
     func showError(message: String, autoDismissAfter delay: TimeInterval = 3.0) {

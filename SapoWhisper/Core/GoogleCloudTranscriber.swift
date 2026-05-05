@@ -77,13 +77,13 @@ class GoogleCloudTranscriber: ObservableObject {
                 "explicitDecodingConfig": [
                     "encoding": "LINEAR16",
                     "sampleRateHertz": 16000,
-                    "audioChannelCount": 1
+                    "audioChannelCount": 1,
                 ],
                 "languageCodes": [googleLanguageCode(for: language)],
                 "model": "chirp_3",
-                "features": ["enableAutomaticPunctuation": true]
+                "features": ["enableAutomaticPunctuation": true],
             ],
-            "content": base64Audio
+            "content": base64Audio,
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
@@ -109,7 +109,8 @@ class GoogleCloudTranscriber: ObservableObject {
 
     private func transcribeV1(audioURL: URL, language: String) async throws -> String {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.googleCloudAPIKey),
-              !apiKey.isEmpty else {
+            !apiKey.isEmpty
+        else {
             throw GoogleCloudError.noAPIKey
         }
 
@@ -132,9 +133,9 @@ class GoogleCloudTranscriber: ObservableObject {
                 "sampleRateHertz": 16000,
                 "languageCode": googleLanguageCode(for: language),
                 "model": "latest_long",
-                "enableAutomaticPunctuation": true
+                "enableAutomaticPunctuation": true,
             ],
-            "audio": ["content": base64Audio]
+            "audio": ["content": base64Audio],
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
@@ -189,8 +190,9 @@ class GoogleCloudTranscriber: ObservableObject {
 
     private func handleError(data: Data, statusCode: Int) throws -> String {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = json["error"] as? [String: Any],
-           let message = error["message"] as? String {
+            let error = json["error"] as? [String: Any],
+            let message = error["message"] as? String
+        {
             if statusCode == 403 || statusCode == 401 {
                 throw GoogleCloudError.invalidAPIKey(message)
             } else if statusCode == 429 {
@@ -203,7 +205,8 @@ class GoogleCloudTranscriber: ObservableObject {
 
     private func parseResults(data: Data, label: String) throws -> String {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [[String: Any]], !results.isEmpty else {
+            let results = json["results"] as? [[String: Any]], !results.isEmpty
+        else {
             throw GoogleCloudError.emptyTranscription
         }
         let transcript = results.compactMap { r -> String? in
@@ -219,7 +222,10 @@ class GoogleCloudTranscriber: ObservableObject {
 // MARK: - Errors
 
 enum GoogleCloudError: LocalizedError {
-    case noAPIKey, invalidAPIKey(String), quotaExceeded, invalidResponse, emptyTranscription, apiError(Int, String)
+    case noAPIKey
+    case invalidAPIKey(String)
+    case quotaExceeded, invalidResponse, emptyTranscription
+    case apiError(Int, String)
 
     var errorDescription: String? {
         switch self {

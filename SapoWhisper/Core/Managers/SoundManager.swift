@@ -33,8 +33,9 @@ class SoundManager {
     /// Load all sound files into memory on init so play() is instant
     private func preloadSounds() {
         for type in [SoundType.startRecording, .stopRecording, .success, .error] {
-            let url = Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds")
-                      ?? Bundle.main.url(forResource: type.rawValue, withExtension: "wav")
+            let url =
+                Bundle.main.url(forResource: type.rawValue, withExtension: "wav", subdirectory: "Sounds")
+                ?? Bundle.main.url(forResource: type.rawValue, withExtension: "wav")
             guard let url = url else { continue }
             guard let player = try? AVAudioPlayer(contentsOf: url) else { continue }
             player.prepareToPlay()
@@ -62,11 +63,11 @@ class SoundManager {
 
         playSystemFallback(type, volume: volume)
     }
-    
+
     /// Fallback a sonidos del sistema si no se encuentran los personalizados
     private func playSystemFallback(_ type: SoundType, volume: Float) {
         let soundName: NSSound.Name
-        
+
         switch type {
         case .startRecording:
             soundName = NSSound.Name("Morse")
@@ -77,7 +78,7 @@ class SoundManager {
         case .error:
             soundName = NSSound.Name("Basso")
         }
-        
+
         if let sound = NSSound(named: soundName) {
             sound.volume = volume
             sound.play()

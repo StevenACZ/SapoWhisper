@@ -126,8 +126,9 @@ extension TranscriptionHistoryManager {
         sqlite3_bind_int64(selectStmt, 1, id)
 
         guard sqlite3_step(selectStmt) == SQLITE_ROW,
-              sqlite3_column_type(selectStmt, 0) != SQLITE_NULL,
-              let cString = sqlite3_column_text(selectStmt, 0) else {
+            sqlite3_column_type(selectStmt, 0) != SQLITE_NULL,
+            let cString = sqlite3_column_text(selectStmt, 0)
+        else {
             return nil
         }
 

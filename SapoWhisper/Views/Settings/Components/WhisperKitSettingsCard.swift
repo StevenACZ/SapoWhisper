@@ -89,9 +89,10 @@ struct WhisperKitSettingsCard: View {
                         selectedWhisperModel = model.rawValue
                         viewModel.setWhisperKitModel(model)
                     },
-                    onDelete: isDownloaded ? {
-                        deleteModel(model)
-                    } : nil
+                    onDelete: isDownloaded
+                        ? {
+                            deleteModel(model)
+                        } : nil
                 )
             }
         }

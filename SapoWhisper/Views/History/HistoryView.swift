@@ -90,7 +90,6 @@ struct HistoryView: View {
                 }
             }
 
-
         }
         .onChange(of: selectedEntry) { _, newValue in
             showInspector = newValue != nil

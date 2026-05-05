@@ -4,9 +4,9 @@
 //
 //
 
-import SwiftUI
 import Combine
 import OSLog
+import SwiftUI
 import os
 
 /// ViewModel principal que coordina toda la funcionalidad de la app
@@ -67,7 +67,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     // Auto-stop timers
     private var autoStopTimer: Timer?
-    private static let googleCloudMaxDuration: TimeInterval = 58 // Stop before 60s limit
+    private static let googleCloudMaxDuration: TimeInterval = 58  // Stop before 60s limit
     private static let stopTailPadding: TimeInterval = 0.12
     private static let firstInputBufferTimeout: TimeInterval = 0.8
     private static let startRetryBudget: TimeInterval = 1.0
@@ -122,9 +122,9 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     // MARK: - Private Properties
-    
+
     private var cancellables = Set<AnyCancellable>()
-    
+
     // MARK: - Initialization
 
     init() {
@@ -168,7 +168,7 @@ class SapoWhisperViewModel: ObservableObject {
         hotkeyManager.currentKeyCode = UInt32(hotkeyKeyCode)
         hotkeyManager.currentModifiers = UInt32(hotkeyModifiers)
     }
-    
+
     private func setupBindings() {
         // Observar estado de grabacion
         audioRecorder.$isRecording
@@ -278,20 +278,20 @@ class SapoWhisperViewModel: ObservableObject {
                 AutoDuckingManager.shared.handleStateChange(state)
             }
             .store(in: &cancellables)
-        
+
         // Observar carga de modelos para el icono del Dock
         whisperKitTranscriber.$isLoading
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isLoading in
                 guard let self = self else { return }
-                
+
                 // Solo actualizar si estamos usando WhisperKit
                 if self.currentEngine == .whisperLocal {
                     DockIconManager.shared.updateIcon(for: self.appState, isModelLoading: isLoading)
                 }
             }
             .store(in: &cancellables)
-        
+
         // Observar cambios en modelos descargados (para actualizar UI al borrar)
         whisperKitTranscriber.$downloadedModels
             .receive(on: DispatchQueue.main)
@@ -341,7 +341,7 @@ class SapoWhisperViewModel: ObservableObject {
                 case .recording:
                     self.overlayManager.updateRecordingDuration(duration)
                 case .paused:
-                    break // Don't update timer during pause
+                    break  // Don't update timer during pause
                 default:
                     break
                 }
@@ -372,7 +372,7 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
     }
-    
+
     // MARK: - Initial State
 
     private func checkInitialState() {
@@ -411,23 +411,21 @@ class SapoWhisperViewModel: ObservableObject {
         } catch {
             let errorMsg = error.localizedDescription
             print("❌ Error cargando WhisperKit: \(errorMsg)")
-            
+
             // Verificar si es error de red
-            let isNetworkError = errorMsg.contains("network") ||
-                                errorMsg.contains("-1005") ||
-                                errorMsg.contains("connection") ||
-                                errorMsg.contains("NSURLErrorDomain") ||
-                                errorMsg.contains("lost")
-            
+            let isNetworkError =
+                errorMsg.contains("network") || errorMsg.contains("-1005") || errorMsg.contains("connection")
+                || errorMsg.contains("NSURLErrorDomain") || errorMsg.contains("lost")
+
             if isNetworkError {
                 // Fallback a Apple Speech
                 print("🔄 Haciendo fallback a Apple Speech por error de red...")
                 selectedEngine = TranscriptionEngine.appleOnline.rawValue
                 appState = .error("Error de conexión. Usando Apple Speech temporalmente.")
-                
+
                 // Pequeno delay para mostrar el error, luego limpiar
                 Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 segundos
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3 segundos
                     if case .error(_) = self.appState {
                         self.appState = .idle
                     }
@@ -494,9 +492,9 @@ class SapoWhisperViewModel: ObservableObject {
             deepgramPreviousLanguage = ""
         }
     }
-    
+
     // MARK: - Recording & Transcription
-    
+
     /// Toggle de grabación (llamado por hotkey o botón)
     func toggleRecording() {
         if isStartPending {
@@ -571,7 +569,7 @@ class SapoWhisperViewModel: ObservableObject {
             overlayManager.updateAudioLevel(0)
         }
     }
-    
+
     /// Inicia la grabacion
     func startRecording() {
         let triggerTime = CFAbsoluteTimeGetCurrent()
@@ -659,7 +657,7 @@ class SapoWhisperViewModel: ObservableObject {
         )
         audioRecorder.deleteRecording(at: audioURL)
     }
-    
+
     private func requestStopRecordingAndTranscribe() {
         guard !isStopPending else {
             SapoLog.hotkey.info("Hotkey ignored because stop is already pending")
@@ -812,8 +810,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
             print(
-                "⚠️ [capture] dropping empty recording after device switch " +
-                "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
+                "⚠️ [capture] dropping empty recording after device switch "
+                    + "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
             )
             audioRecorder.deleteRecording(at: audioURL)
             activeTranscriptionSessionID = nil
@@ -901,7 +899,7 @@ class SapoWhisperViewModel: ObservableObject {
         case .googleCloud:
             maxDuration = Self.googleCloudMaxDuration
         default:
-            return // No limit for Apple/WhisperKit
+            return  // No limit for Apple/WhisperKit
         }
 
         // Fix #18: Tighter check interval
@@ -1011,9 +1009,9 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
     }
-    
+
     // MARK: - Hotkey
-    
+
     private func setupHotkey() {
         hotkeyManager.registerHotkey { [weak self] in
             if Thread.isMainThread {
@@ -1184,8 +1182,8 @@ class SapoWhisperViewModel: ObservableObject {
             )
 
             print(
-                "🎙️ [capture] transient start failure (\(classification.reason)), " +
-                "retrying \(attempt + 1)/3 after \(Int(retryDelay * 1000))ms"
+                "🎙️ [capture] transient start failure (\(classification.reason)), "
+                    + "retrying \(attempt + 1)/3 after \(Int(retryDelay * 1000))ms"
             )
             try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
         }
@@ -1217,9 +1215,8 @@ class SapoWhisperViewModel: ObservableObject {
         let diagnostics = audioRecorder.currentCaptureDiagnostics()
         let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
         print(
-            "⚠️ [capture] attempt \(attempt) received no input buffer within " +
-            "\(Int(Self.firstInputBufferTimeout * 1000))ms " +
-            "(bytes: \(diagnostics.fileSizeBytes), input: \(inputDescription))"
+            "⚠️ [capture] attempt \(attempt) received no input buffer within " + "\(Int(Self.firstInputBufferTimeout * 1000))ms "
+                + "(bytes: \(diagnostics.fileSizeBytes), input: \(inputDescription))"
         )
         return false
     }
@@ -1239,10 +1236,10 @@ class SapoWhisperViewModel: ObservableObject {
         case .noInputAfterDeviceSwitch, .invalidFormat:
             return true
         case .engineCreationFailed,
-             .fileCreationFailed,
-             .converterCreationFailed,
-             .deviceSelectionFailed,
-             .permissionDenied:
+            .fileCreationFailed,
+            .converterCreationFailed,
+            .deviceSelectionFailed,
+            .permissionDenied:
             return false
         }
     }
@@ -1307,7 +1304,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         audioRecorder.deleteRecording(at: sourceURL)
     }
-    
+
     /// Texto del estado actual
     var statusText: String {
         switch appState {
@@ -1318,12 +1315,12 @@ class SapoWhisperViewModel: ObservableObject {
             return appState.statusText
         }
     }
-    
+
     /// Texto del botón de grabación
     var recordButtonText: String {
         isAnyRecorderActive ? "menu.stop_recording".localized : "menu.start_recording".localized
     }
-    
+
     /// Si el boton de grabar esta habilitado
     var canRecord: Bool {
         switch currentEngine {
@@ -1334,13 +1331,11 @@ class SapoWhisperViewModel: ObservableObject {
         case .googleCloud:
             return googleCloudTranscriber.isConfigured && !googleCloudTranscriber.isTranscribing
         case .deepgram:
-            return deepgramTranscriber.isConfigured &&
-                !deepgramTranscriber.isTranscribing &&
-                !deepgramFluxTranscriber.isStreaming &&
-                !deepgramFluxTranscriber.isStopping
+            return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing && !deepgramFluxTranscriber.isStreaming
+                && !deepgramFluxTranscriber.isStopping
         }
     }
-    
+
     /// Formatea la duración de grabación
     var formattedDuration: String {
         let minutes = Int(recordingDuration) / 60

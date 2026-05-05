@@ -60,11 +60,13 @@ final class AudioInputPreflightManager {
         guard generation == self.generation else { return }
 
         let t0 = CFAbsoluteTimeGetCurrent()
-        let selectedUID = UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
+        let selectedUID =
+            UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
             ?? AudioDevice.systemDefault.uid
 
         deviceManager.refreshDevices()
-        let deviceID = selectedUID == AudioDevice.systemDefault.uid
+        let deviceID =
+            selectedUID == AudioDevice.systemDefault.uid
             ? deviceManager.getSystemDefaultInputDevice()
             : deviceManager.getDeviceID(for: selectedUID)
 
@@ -82,8 +84,9 @@ final class AudioInputPreflightManager {
         let inputNode = engine.inputNode
 
         if selectedUID != AudioDevice.systemDefault.uid,
-           let deviceID,
-           let audioUnit = inputNode.audioUnit {
+            let deviceID,
+            let audioUnit = inputNode.audioUnit
+        {
             var targetDeviceID = deviceID
             AudioUnitSetProperty(
                 audioUnit,

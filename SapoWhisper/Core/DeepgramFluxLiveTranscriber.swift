@@ -44,7 +44,8 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     func start(microphone: String) async throws {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
-              !apiKey.isEmpty else {
+            !apiKey.isEmpty
+        else {
             throw DeepgramError.notConfigured
         }
 
@@ -194,8 +195,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     private func handleJSONMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let type = json["type"] as? String
+        else {
             return
         }
 

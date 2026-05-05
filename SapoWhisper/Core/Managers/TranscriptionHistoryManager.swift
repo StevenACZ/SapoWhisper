@@ -53,8 +53,11 @@ class TranscriptionHistoryManager {
 
     /// Save a transcription entry. Returns the row ID.
     @discardableResult
-    func save(engine: String, language: String, duration: TimeInterval, text: String, audioPath: String? = nil, status: String = "completed") -> Int64 {
-        let sql = "INSERT INTO transcriptions (timestamp, engine, language, duration_seconds, transcription, audio_path, status) VALUES (?, ?, ?, ?, ?, ?, ?);"
+    func save(
+        engine: String, language: String, duration: TimeInterval, text: String, audioPath: String? = nil, status: String = "completed"
+    ) -> Int64 {
+        let sql =
+            "INSERT INTO transcriptions (timestamp, engine, language, duration_seconds, transcription, audio_path, status) VALUES (?, ?, ?, ?, ?, ?, ?);"
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
 

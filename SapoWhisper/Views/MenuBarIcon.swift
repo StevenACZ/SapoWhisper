@@ -10,13 +10,15 @@ import SwiftUI
 /// Usa imágenes del sapo que cambian según el estado
 struct MenuBarIcon: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
-    
+
     var body: some View {
-        Image(nsImage: MenuBarIconImageProvider.image(
-            for: viewModel.appState,
-            isLoadingWhisperKit: viewModel.isLoadingWhisperKit
-        ))
-            .renderingMode(.original)
+        Image(
+            nsImage: MenuBarIconImageProvider.image(
+                for: viewModel.appState,
+                isLoadingWhisperKit: viewModel.isLoadingWhisperKit
+            )
+        )
+        .renderingMode(.original)
     }
 }
 

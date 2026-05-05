@@ -81,7 +81,7 @@ struct PermissionRequirementsView: View {
         LinearGradient(
             colors: [
                 Color(nsColor: .windowBackgroundColor),
-                Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.42 : 0.72)
+                Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.42 : 0.72),
             ],
             startPoint: .top,
             endPoint: .bottom
