@@ -6,6 +6,15 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Release builds now target Apple Silicon only (`arm64`), reducing the shipped app size and avoiding unnecessary Intel slices.
+- Removed a stray source `Info.plist` that was being copied into `Contents/Resources` while Xcode already generated the real bundle Info.plist.
+- Removed the unused legacy `MenuBarIcon` asset set; state-specific menu bar icons remain unchanged.
+- Added `scripts/measure_release_bundle.sh` to repeat app size, resource, bundle, and architecture audits.
+
 ## [2.1.0] - 2026-05-01
 
 ### Added
