@@ -613,10 +613,14 @@ class SapoWhisperViewModel: ObservableObject {
         let playSound = playSoundEnabled
         isStartPending = true
         if isDeepgramFluxLiveSelected {
+            if playSound {
+                SoundManager.shared.play(.startRecording)
+            }
+            SapoLog.flux.info("Flux UI feedback emitted before input startup")
             startFluxRecordingSession(
                 sessionID: sessionID,
                 microphone: mic,
-                playSound: playSound,
+                playSound: false,
                 triggerTime: triggerTime
             )
         } else {
@@ -683,10 +687,14 @@ class SapoWhisperViewModel: ObservableObject {
         isStopPending = true
 
         let tailPadding = Self.stopTailPadding
+        let stopRequestTime = CFAbsoluteTimeGetCurrent()
+        SapoLog.flux.info("Flux stop hotkey accepted tailPadding=\(Int(tailPadding * 1000), privacy: .public)ms")
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
             await MainActor.run {
+                let elapsed = Int((CFAbsoluteTimeGetCurrent() - stopRequestTime) * 1000)
+                SapoLog.flux.info("Flux stop tail elapsed=\(elapsed, privacy: .public)ms")
                 self.stopFluxRecordingAndTranscribe()
             }
         }
@@ -709,10 +717,16 @@ class SapoWhisperViewModel: ObservableObject {
         activeTranscriptionSessionID = sessionID
         appState = .processing
         overlayManager.updateState(.transcribing)
+        SapoLog.flux.info("Flux overlay switched to transcribing session=\(sessionID, privacy: .public)")
 
         Task { @MainActor in
             do {
+                let transcriptionStartedAt = CFAbsoluteTimeGetCurrent()
                 let result = try await deepgramFluxTranscriber.stop()
+                let transcriptionElapsed = Int((CFAbsoluteTimeGetCurrent() - transcriptionStartedAt) * 1000)
+                SapoLog.flux.info(
+                    "Flux stop/transcribe completed elapsed=\(transcriptionElapsed, privacy: .public)ms characters=\(result.transcript.count, privacy: .public)"
+                )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
                     return

@@ -11,8 +11,18 @@ extension StreamingAudioCapture {
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let audioFile, let outputFormat = converterOutputFormat else { return }
         let inputTime = CFAbsoluteTimeGetCurrent()
+        let bufferStats = registerInputBuffer(at: inputTime)
+        if let gapMs = bufferStats.gapMs, gapMs > 250 {
+            SapoLog.recording.warning(
+                "Flux input gap detected gap=\(Int(gapMs), privacy: .public)ms buffer=\(bufferStats.count, privacy: .public)"
+            )
+        }
+        if bufferStats.count % 100 == 0 {
+            SapoLog.recording.info(
+                "Flux input progress buffers=\(bufferStats.count, privacy: .public) frames=\(self.writtenFrameCount, privacy: .public)"
+            )
+        }
         lastInputBufferTime = inputTime
-        registerInputBuffer(at: inputTime)
         logFirstInputBufferIfNeeded(buffer: buffer, inputTime: inputTime)
 
         os_unfair_lock_lock(&converterLock)
@@ -67,6 +77,10 @@ extension StreamingAudioCapture {
             try audioFile.write(from: buffer)
             registerWrittenFrames(buffer.frameLength)
             if let data = pcmData(from: buffer) {
+                let chunkCount = registerEmittedChunk()
+                if chunkCount % 100 == 0 {
+                    SapoLog.flux.info("Flux local audio chunks emitted count=\(chunkCount, privacy: .public)")
+                }
                 chunkHandler?(data)
             }
         } catch {

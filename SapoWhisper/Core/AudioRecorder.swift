@@ -717,8 +717,10 @@ class AudioRecorder: ObservableObject {
             selectedDeviceUID: deviceUID,
             inputBufferCount: bufferCount,
             writtenFrameCount: frameCount,
+            emittedChunkCount: 0,
             firstInputLatencyMs: firstLatency,
             lastBufferAgeMs: lastBufferAgeMs,
+            maxInputGapMs: 0,
             fileSizeBytes: fileSizeBytes
         )
     }
@@ -766,8 +768,10 @@ struct RecordingCaptureDiagnostics {
     let selectedDeviceUID: String
     let inputBufferCount: Int
     let writtenFrameCount: AVAudioFramePosition
+    let emittedChunkCount: Int
     let firstInputLatencyMs: Double?
     let lastBufferAgeMs: Double?
+    let maxInputGapMs: Double
     let fileSizeBytes: Int
 
     var receivedInput: Bool {

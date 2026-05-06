@@ -13,4 +13,5 @@ enum SapoLog {
     static let hotkey = Logger(subsystem: subsystem, category: "Hotkey")
     static let overlay = Logger(subsystem: subsystem, category: "Overlay")
     static let recording = Logger(subsystem: subsystem, category: "Recording")
+    static let flux = Logger(subsystem: subsystem, category: "Flux")
 }

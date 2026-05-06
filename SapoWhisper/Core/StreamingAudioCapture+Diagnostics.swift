@@ -42,24 +42,41 @@ extension StreamingAudioCapture {
         os_unfair_lock_lock(&captureStateLock)
         inputBufferCount = 0
         writtenFrameCount = 0
+        emittedChunkCount = 0
         firstInputLatencyMs = nil
+        maxInputGapMs = 0
         captureDeviceUID = deviceUID
         os_unfair_lock_unlock(&captureStateLock)
     }
 
-    func registerInputBuffer(at timestamp: CFAbsoluteTime) {
+    func registerInputBuffer(at timestamp: CFAbsoluteTime) -> (count: Int, gapMs: Double?) {
         os_unfair_lock_lock(&captureStateLock)
+        let previousInputTime = lastInputBufferTime
         inputBufferCount += 1
+        let count = inputBufferCount
+        let gapMs = previousInputTime > 0 ? (timestamp - previousInputTime) * 1000 : nil
+        if let gapMs {
+            maxInputGapMs = max(maxInputGapMs, gapMs)
+        }
         if firstInputLatencyMs == nil {
             firstInputLatencyMs = (timestamp - startRecordingTime) * 1000
         }
         os_unfair_lock_unlock(&captureStateLock)
+        return (count, gapMs)
     }
 
     func registerWrittenFrames(_ frameCount: AVAudioFrameCount) {
         os_unfair_lock_lock(&captureStateLock)
         writtenFrameCount += AVAudioFramePosition(frameCount)
         os_unfair_lock_unlock(&captureStateLock)
+    }
+
+    func registerEmittedChunk() -> Int {
+        os_unfair_lock_lock(&captureStateLock)
+        emittedChunkCount += 1
+        let count = emittedChunkCount
+        os_unfair_lock_unlock(&captureStateLock)
+        return count
     }
 
     func hasReceivedInputBuffer() -> Bool {
@@ -73,7 +90,9 @@ extension StreamingAudioCapture {
         os_unfair_lock_lock(&captureStateLock)
         let bufferCount = inputBufferCount
         let frameCount = writtenFrameCount
+        let chunkCount = emittedChunkCount
         let firstLatency = firstInputLatencyMs
+        let maxGap = maxInputGapMs
         let deviceUID = captureDeviceUID
         os_unfair_lock_unlock(&captureStateLock)
 
@@ -91,8 +110,10 @@ extension StreamingAudioCapture {
             selectedDeviceUID: deviceUID,
             inputBufferCount: bufferCount,
             writtenFrameCount: frameCount,
+            emittedChunkCount: chunkCount,
             firstInputLatencyMs: firstLatency,
             lastBufferAgeMs: lastBufferAgeMs,
+            maxInputGapMs: maxGap,
             fileSizeBytes: fileSizeBytes
         )
     }
