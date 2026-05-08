@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import os
 
 /// NSPanel personalizado para la ventana de overlay de grabacion
 /// Pill horizontal posicionado en la parte inferior de la pantalla
@@ -52,6 +53,9 @@ class RecordingOverlayWindow: NSPanel {
         let y = screenFrame.minY + 60
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
+        SapoLog.overlay.info(
+            "Overlay positioned screen=\(PerformanceDiagnostics.describeScreen(screen), privacy: .public) origin=\(Int(x), privacy: .public),\(Int(y), privacy: .public)"
+        )
     }
 
     private func targetScreen() -> NSScreen? {

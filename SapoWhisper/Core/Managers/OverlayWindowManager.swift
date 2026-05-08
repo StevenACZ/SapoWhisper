@@ -95,6 +95,11 @@ class OverlayWindowManager: ObservableObject {
         SapoLog.overlay.info(
             "Overlay shown state=\(reuseState, privacy: .public) elapsed=\(Int(elapsed), privacy: .public)ms"
         )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "overlay-show",
+            context: "reuse=\(reuseState) elapsedMs=\(Int(elapsed))",
+            force: true
+        )
     }
 
     /// Oculta la ventana de overlay con animacion
@@ -127,6 +132,10 @@ class OverlayWindowManager: ObservableObject {
                     self.publishAudioLevel(0, force: true)
                     let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     SapoLog.overlay.info("Overlay hidden in \(elapsed, privacy: .public)ms")
+                    PerformanceDiagnostics.logRuntimeSnapshot(
+                        reason: "overlay-hidden",
+                        context: "elapsedMs=\(elapsed)"
+                    )
                 }
             })
     }

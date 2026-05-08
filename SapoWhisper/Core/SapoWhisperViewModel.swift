@@ -77,6 +77,7 @@ class SapoWhisperViewModel: ObservableObject {
     private var startRecordingTask: Task<Void, Never>?
     private var isStartPending = false
     private var recordingSessionCounter: UInt64 = 0
+    private var toggleRecordingCount: UInt64 = 0
     private var activeRecordingSessionID: UInt64?
     private var activeTranscriptionSessionID: UInt64?
     private var lastStartHotkeyTime: CFAbsoluteTime = 0
@@ -497,15 +498,31 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Toggle de grabación (llamado por hotkey o botón)
     func toggleRecording() {
+        toggleRecordingCount &+= 1
+        let toggleCount = toggleRecordingCount
+        SapoLog.hotkey.info(
+            "Recording toggle requested count=\(toggleCount, privacy: .public) \(self.diagnosticContext(), privacy: .public)"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-toggle",
+            context: "count=\(toggleCount) \(diagnosticContext())",
+            force: true
+        )
+
         if isStartPending {
+            SapoLog.hotkey.info("Recording toggle route=cancel-start count=\(toggleCount, privacy: .public)")
             cancelPendingRecordingStart()
         } else if deepgramFluxTranscriber.isStreaming {
+            SapoLog.hotkey.info("Recording toggle route=stop-flux count=\(toggleCount, privacy: .public)")
             requestStopFluxRecordingAndTranscribe()
         } else if audioRecorder.isRecording {
+            SapoLog.hotkey.info("Recording toggle route=stop-recorder count=\(toggleCount, privacy: .public)")
             requestStopRecordingAndTranscribe()
         } else if canStartRecordingFromHotkey() {
+            SapoLog.hotkey.info("Recording toggle route=start count=\(toggleCount, privacy: .public)")
             startRecording()
         } else {
+            SapoLog.hotkey.info("Recording toggle route=ignored count=\(toggleCount, privacy: .public)")
             return
         }
     }
@@ -580,6 +597,11 @@ class SapoWhisperViewModel: ObservableObject {
         SapoLog.hotkey.info(
             "Recording trigger accepted engine=\(engine.rawValue, privacy: .public) session=\(sessionID, privacy: .public)"
         )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-trigger-accepted",
+            context: diagnosticContext(extra: "session=\(sessionID)"),
+            force: true
+        )
         let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
 
         guard missingPermissions.isEmpty else {
@@ -608,6 +630,10 @@ class SapoWhisperViewModel: ObservableObject {
         overlayManager.updateState(.recording(duration: 0))
         let uiReadyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
         SapoLog.recording.info("Recording UI ready in \(uiReadyMs, privacy: .public)ms")
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-ui-ready",
+            context: diagnosticContext(extra: "session=\(sessionID) uiReadyMs=\(uiReadyMs)")
+        )
 
         let mic = selectedMicrophone
         let playSound = playSoundEnabled
@@ -655,6 +681,15 @@ class SapoWhisperViewModel: ObservableObject {
         return recordingSessionCounter
     }
 
+    private func diagnosticContext(extra: String = "") -> String {
+        let recordingSession = activeRecordingSessionID.map(String.init) ?? "none"
+        let transcriptionSession = activeTranscriptionSessionID.map(String.init) ?? "none"
+        let suffix = extra.isEmpty ? "" : " \(extra)"
+
+        return
+            "state=\(appState.diagnosticName) engine=\(currentEngine.rawValue) deepgramMode=\(currentDeepgramMode.rawValue) startPending=\(isStartPending) stopPending=\(isStopPending) audioRecording=\(audioRecorder.isRecording) fluxStreaming=\(deepgramFluxTranscriber.isStreaming) audioPaused=\(audioRecorder.isPaused) fluxPaused=\(deepgramFluxTranscriber.isPaused) duration=\(Int(recordingDuration)) recordingSession=\(recordingSession) transcriptionSession=\(transcriptionSession) mic=\(selectedMicrophone)\(suffix)"
+    }
+
     private func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64) {
         SapoLog.recording.warning(
             "Ignoring stale transcription completion session=\(sessionID, privacy: .public)"
@@ -670,6 +705,11 @@ class SapoWhisperViewModel: ObservableObject {
         isStopPending = true
 
         let tailPadding = Self.stopTailPadding
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-stop-requested",
+            context: diagnosticContext(extra: "tailPaddingMs=\(Int(tailPadding * 1000))"),
+            force: true
+        )
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
@@ -689,6 +729,11 @@ class SapoWhisperViewModel: ObservableObject {
         let tailPadding = Self.stopTailPadding
         let stopRequestTime = CFAbsoluteTimeGetCurrent()
         SapoLog.flux.info("Flux stop hotkey accepted tailPadding=\(Int(tailPadding * 1000), privacy: .public)ms")
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "flux-stop-requested",
+            context: diagnosticContext(extra: "tailPaddingMs=\(Int(tailPadding * 1000))"),
+            force: true
+        )
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
@@ -726,6 +771,14 @@ class SapoWhisperViewModel: ObservableObject {
                 let transcriptionElapsed = Int((CFAbsoluteTimeGetCurrent() - transcriptionStartedAt) * 1000)
                 SapoLog.flux.info(
                     "Flux stop/transcribe completed elapsed=\(transcriptionElapsed, privacy: .public)ms characters=\(result.transcript.count, privacy: .public)"
+                )
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-transcription-completed",
+                    context: self.diagnosticContext(
+                        extra:
+                            "session=\(sessionID) elapsedMs=\(transcriptionElapsed) characters=\(result.transcript.count)"
+                    ),
+                    force: true
                 )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
@@ -768,6 +821,11 @@ class SapoWhisperViewModel: ObservableObject {
 
                 appState = .error(error.localizedDescription)
                 activeTranscriptionSessionID = nil
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-transcription-failed",
+                    context: self.diagnosticContext(extra: "session=\(sessionID) error=\(error.localizedDescription)"),
+                    force: true
+                )
                 overlayManager.showError(message: error.localizedDescription)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
@@ -845,6 +903,13 @@ class SapoWhisperViewModel: ObservableObject {
         Task { @MainActor in
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "transcription-completed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) engine=\(engine.rawValue) characters=\(transcription.count)"
+                    ),
+                    force: true
+                )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
                     return
@@ -883,6 +948,13 @@ class SapoWhisperViewModel: ObservableObject {
                 }
                 appState = .error(error.localizedDescription)
                 activeTranscriptionSessionID = nil
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "transcription-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) engine=\(engine.rawValue) error=\(error.localizedDescription)"
+                    ),
+                    force: true
+                )
                 overlayManager.showError(message: error.localizedDescription)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
@@ -1071,6 +1143,11 @@ class SapoWhisperViewModel: ObservableObject {
                 recorderDidStart = true
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
                 SapoLog.recording.info("Recording input ready in \(readyMs, privacy: .public)ms")
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "recording-input-ready",
+                    context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
+                    force: true
+                )
                 self.startAutoStopTimer(for: engine)
                 if playSound {
                     SoundManager.shared.play(.startRecording)
@@ -1092,6 +1169,13 @@ class SapoWhisperViewModel: ObservableObject {
                 if playSound && !self.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "recording-input-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) error=\(error.localizedDescription)"
+                    ),
+                    force: true
+                )
                 SapoLog.recording.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
                 print("❌ [capture] failed to start recording: \(error)")
             }
@@ -1124,6 +1208,11 @@ class SapoWhisperViewModel: ObservableObject {
                 recorderDidStart = true
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
                 SapoLog.recording.info("Flux input ready in \(readyMs, privacy: .public)ms")
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-input-ready",
+                    context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
+                    force: true
+                )
                 if playSound {
                     SoundManager.shared.play(.startRecording)
                 }
@@ -1144,6 +1233,13 @@ class SapoWhisperViewModel: ObservableObject {
                 if playSound && !self.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-input-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) error=\(error.localizedDescription)"
+                    ),
+                    force: true
+                )
                 SapoLog.recording.error("Flux failed to start: \(error.localizedDescription, privacy: .public)")
                 print("❌ [flux] failed to start: \(error)")
             }

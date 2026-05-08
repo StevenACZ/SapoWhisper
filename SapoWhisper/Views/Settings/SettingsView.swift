@@ -4,7 +4,9 @@
 //
 //
 
+import Foundation
 import SwiftUI
+import os
 
 /// Vista principal de configuración con tabs
 /// Se abre desde el botón "Configuración" en el menú
@@ -12,11 +14,16 @@ struct SettingsView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: SettingsTab = .general
+    @State private var tabSwitchStartedAt: CFAbsoluteTime?
 
     var body: some View {
         VStack(spacing: 0) {
             // Contenido del tab seleccionado
             selectedTabContent
+                .id(selectedTab)
+                .onAppear {
+                    logTabRendered(selectedTab)
+                }
         }
         .frame(width: 480, height: 500)
         .background(Color(NSColor.windowBackgroundColor))
@@ -24,7 +31,7 @@ struct SettingsView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("", selection: $selectedTab) {
+                Picker("", selection: tabSelection) {
                     ForEach(SettingsTab.allCases) { tab in
                         Text(tab.title).tag(tab)
                     }
@@ -39,9 +46,28 @@ struct SettingsView: View {
                 }
             }
         }
+        .onAppear {
+            SapoLog.settings.info("Settings view appeared tab=\(selectedTab.rawValue, privacy: .public)")
+            PerformanceDiagnostics.logRuntimeSnapshot(reason: "settings-view-appear", force: true)
+        }
     }
 
     // MARK: - Tab Content
+
+    private var tabSelection: Binding<SettingsTab> {
+        Binding(
+            get: { selectedTab },
+            set: { newTab in
+                guard newTab != selectedTab else { return }
+                let previousTab = selectedTab
+                tabSwitchStartedAt = CFAbsoluteTimeGetCurrent()
+                SapoLog.settings.info(
+                    "Settings tab selected from=\(previousTab.rawValue, privacy: .public) to=\(newTab.rawValue, privacy: .public)"
+                )
+                selectedTab = newTab
+            }
+        )
+    }
 
     @ViewBuilder
     private var selectedTabContent: some View {
@@ -55,6 +81,19 @@ struct SettingsView: View {
         case .about:
             AboutSettingsTab()
         }
+    }
+
+    private func logTabRendered(_ tab: SettingsTab) {
+        let elapsed = tabSwitchStartedAt.map { Int((CFAbsoluteTimeGetCurrent() - $0) * 1000) } ?? 0
+        SapoLog.settings.info(
+            "Settings tab rendered tab=\(tab.rawValue, privacy: .public) elapsed=\(elapsed, privacy: .public)ms"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "settings-tab-rendered",
+            context: "tab=\(tab.rawValue) elapsedMs=\(elapsed)",
+            force: true
+        )
+        tabSwitchStartedAt = nil
     }
 }
 

@@ -29,6 +29,21 @@ enum AppState: Equatable {
         }
     }
 
+    var diagnosticName: String {
+        switch self {
+        case .idle:
+            return "idle"
+        case .recording:
+            return "recording"
+        case .processing:
+            return "processing"
+        case .error:
+            return "error"
+        case .noModel:
+            return "noModel"
+        }
+    }
+
     var iconName: String {
         switch self {
         case .idle:

@@ -4,8 +4,10 @@
 //
 //
 
+import Foundation
 import ServiceManagement
 import SwiftUI
+import os
 
 /// Tab de configuracion general con Form nativo (.grouped)
 struct GeneralSettingsTab: View {
@@ -58,7 +60,7 @@ struct GeneralSettingsTab: View {
         .scrollContentBackground(.hidden)
         .tint(Constants.Colors.sapoGreen)
         .onAppear {
-            audioDeviceManager.refreshDevices()
+            refreshAudioDevicesForAppearance()
             enforceFluxLanguageLock()
         }
         .onChange(of: selectedEngine) { _, _ in
@@ -91,6 +93,23 @@ struct GeneralSettingsTab: View {
     /// Reconciles the app selection with the macOS default input device
     private func syncSystemDefaultInput(uid: String) {
         preferredMicrophoneCoordinator.applyUserSelection(uid: uid)
+    }
+
+    private func refreshAudioDevicesForAppearance() {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        SapoLog.settings.info("General settings scheduled audio device refresh")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            AudioDeviceManager.shared.refreshDevices()
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            SapoLog.settings.info(
+                "General settings audio devices refreshed elapsed=\(elapsed, privacy: .public)ms"
+            )
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "settings-audio-devices-refreshed",
+                context: "elapsedMs=\(elapsed)"
+            )
+        }
     }
 
     // MARK: - Language (combined)

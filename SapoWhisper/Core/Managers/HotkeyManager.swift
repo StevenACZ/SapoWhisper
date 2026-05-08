@@ -18,6 +18,7 @@ class HotkeyManager: ObservableObject {
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
     private var hotkeyCallback: (() -> Void)?
+    private var hotkeyPressCount: UInt64 = 0
 
     // Hotkey por defecto: Option + Space
     @Published var currentKeyCode: UInt32
@@ -47,7 +48,16 @@ class HotkeyManager: ObservableObject {
             { (_, event, userData) -> OSStatus in
                 guard let userData = userData else { return noErr }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                SapoLog.hotkey.info("Global hotkey pressed")
+                manager.hotkeyPressCount &+= 1
+                let pressCount = manager.hotkeyPressCount
+                SapoLog.hotkey.info(
+                    "Global hotkey pressed count=\(pressCount, privacy: .public) hotkey=\(manager.hotkeyDescription, privacy: .public)"
+                )
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "hotkey-pressed",
+                    context: "count=\(pressCount) hotkey=\(manager.hotkeyDescription)",
+                    force: true
+                )
                 manager.hotkeyCallback?()
                 return noErr
             },
