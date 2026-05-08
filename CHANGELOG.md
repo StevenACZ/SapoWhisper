@@ -8,6 +8,37 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-05-08
+
+> Patch focused on long-run performance observability after multi-day menu bar, overlay, settings, and recording slowdowns.
+
+### Added
+
+- **Runtime diagnostics file** — Added a rotating JSONL diagnostics log at `~/Library/Application Support/SapoWhisper/Diagnostics/runtime.jsonl` with uptime, memory, screen layout, frontmost app, and contextual state snapshots.
+- **Long-run performance snapshots** — Added unified logging for app launch, activation, screen changes, hotkey presses, recording toggles, overlay show/hide, popover opens/closes, Settings opens, and Settings tab switches.
+- **Recording route context** — Recording diagnostics now include state, engine, Deepgram mode, pending start/stop flags, audio/Flux activity, paused state, duration, session identifiers, and selected microphone.
+- **Multi-monitor overlay diagnostics** — Overlay positioning logs now include the target screen geometry and final window origin so monitor-specific latency can be correlated later.
+
+### Changed
+
+- **Menu bar refresh behavior** — Hidden popover updates are now skipped and visible updates are coalesced, reducing unnecessary SwiftUI/AppKit layout work during long app sessions.
+- **Settings device refresh** — General Settings now refreshes audio devices from a background queue and logs refresh timing, avoiding main-thread work when opening Settings.
+
+## [2.1.2] - 2026-05-06
+
+> Patch focused on keeping Flux Live audio upload work off the main thread while preserving enough telemetry to debug long recordings.
+
+### Added
+
+- **Flux audio sender** — Added a dedicated Flux audio sender that serializes WebSocket audio chunk uploads off the main actor.
+- **Flux sender telemetry** — Added sender stats for enqueued, sent, failed, pending chunks, bytes sent, maximum queue depth, maximum send wait time, and send timeouts.
+- **Flux stop timing logs** — Added drain and stop timing diagnostics so long recordings can show whether audio upload, stream finalization, or transcription handling is the slow part.
+
+### Fixed
+
+- **Flux Live UI latency** — Audio chunks are no longer uploaded from the main-thread streaming path, reducing UI stalls while recording or stopping long Flux sessions.
+- **Flux completion resilience** — Flux stop handling now reports sender completeness and fallback context when the stream cannot finish cleanly.
+
 ## [2.1.1] - 2026-05-05
 
 ### Changed
