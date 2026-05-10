@@ -21,6 +21,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Deepgram settings layout** — Moved AI polish above Vocabulary so the post-processing toggle is easier to find immediately after Deepgram setup.
 - **AI prompt formatting** — Mode IA now avoids decorative Markdown emphasis by default, preferring compact plain labels, paragraphs, bullets, and backticks only where they improve readability.
 - **AI prompt grounding** — AI polish now treats vocabulary and replacements as recognition context only, avoiding added details that were not present in the raw transcript.
+- **Agent notes** — Documented AI polish output-language behavior, conservative prompt grounding, and the long-run performance diagnostics path.
 
 ### Fixed
 
