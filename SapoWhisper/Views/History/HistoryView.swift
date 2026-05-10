@@ -36,6 +36,7 @@ struct HistoryView: View {
     @State private var retranscribeEntry: HistoryEntry?
     @State private var selectedRetranscribeEngine: TranscriptionEngine = .appleOnline
     @State private var isRetranscribing = false
+    @State private var aiPolishingEntryID: Int64?
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
 
@@ -67,9 +68,11 @@ struct HistoryView: View {
                                 entry: entry,
                                 onCopy: { PasteManager.copyToClipboard(entry.text) },
                                 onRetranscribe: { handleRetranscribe(entry) },
+                                onPolishWithAI: { handlePolishWithAI(entry) },
                                 onDownloadAudio: { handleDownloadAudio(entry) },
                                 onTogglePin: { handleTogglePin(entry) },
-                                onDelete: { showDeleteConfirmation = true }
+                                onDelete: { showDeleteConfirmation = true },
+                                isAIPolishing: aiPolishingEntryID == entry.id
                             )
                             .inspectorColumnWidth(min: 200, ideal: 220, max: 260)
                         }
@@ -197,6 +200,24 @@ struct HistoryView: View {
                     engineFilter = .all
                 }
 
+                loadEntries()
+                selectedEntry = entries.first { $0.id == result.entryId }
+
+                if let errorMessage = result.errorMessage {
+                    presentActionError(errorMessage)
+                }
+            }
+        }
+    }
+
+    private func handlePolishWithAI(_ entry: HistoryEntry) {
+        aiPolishingEntryID = entry.id
+
+        Task {
+            let result = await viewModel.polishHistoryEntry(entry)
+
+            await MainActor.run {
+                aiPolishingEntryID = nil
                 loadEntries()
                 selectedEntry = entries.first { $0.id == result.entryId }
 

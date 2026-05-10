@@ -60,6 +60,7 @@ class SapoWhisperViewModel: ObservableObject {
     let deepgramTranscriber = DeepgramBatchTranscriber()
     let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
+    private let transcriptPostProcessor = TranscriptPostProcessor()
 
     // Retry support
     @Published var lastFailedAudioURL: URL?
@@ -785,9 +786,15 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                lastTranscription = result.transcript
-                PasteManager.copyToClipboard(result.transcript)
-                overlayManager.showCompleted(text: result.transcript, autoDismissAfter: 2.0)
+                let aiResult = await postProcessTranscript(result.transcript, source: "flux")
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
                     PasteManager.simulatePaste()
@@ -805,7 +812,7 @@ class SapoWhisperViewModel: ObservableObject {
                     engineName: engineName,
                     language: result.language,
                     duration: result.duration,
-                    text: result.transcript,
+                    aiResult: aiResult,
                     status: "completed"
                 )
                 cleanupSourceAudioIfSafe(sourceURL: result.audioURL, persistedEntry: persistedEntry)
@@ -838,7 +845,7 @@ class SapoWhisperViewModel: ObservableObject {
                         engineName: engineName,
                         language: "auto",
                         duration: captureResult.duration,
-                        text: "",
+                        aiResult: nil,
                         status: "failed"
                     )
                     lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
@@ -915,9 +922,15 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                lastTranscription = transcription
-                PasteManager.copyToClipboard(transcription)
-                overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
+                let aiResult = await postProcessTranscript(transcription, source: engine.rawValue)
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
+                    return
+                }
+
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
                     PasteManager.simulatePaste()
@@ -934,7 +947,7 @@ class SapoWhisperViewModel: ObservableObject {
                     engine: engine,
                     language: language,
                     duration: duration,
-                    text: transcription,
+                    aiResult: aiResult,
                     status: "completed"
                 )
                 cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
@@ -965,7 +978,7 @@ class SapoWhisperViewModel: ObservableObject {
                     engine: engine,
                     language: language,
                     duration: duration,
-                    text: "",
+                    aiResult: nil,
                     status: "failed"
                 )
                 lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
@@ -1027,10 +1040,11 @@ class SapoWhisperViewModel: ObservableObject {
         Task {
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
+                let aiResult = await postProcessTranscript(transcription, source: "retry")
 
-                lastTranscription = transcription
-                PasteManager.copyToClipboard(transcription)
-                overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
                     PasteManager.simulatePaste()
@@ -1041,7 +1055,15 @@ class SapoWhisperViewModel: ObservableObject {
 
                 // Update history entry
                 if let historyId = lastFailedHistoryId {
-                    historyManager.updateStatus(id: historyId, status: "completed", transcription: transcription)
+                    historyManager.updateAIProcessing(
+                        id: historyId,
+                        finalText: aiResult.finalText,
+                        rawText: aiResult.rawText,
+                        aiStatus: aiResult.status,
+                        aiModel: aiResult.model,
+                        aiMode: aiResult.mode,
+                        aiError: aiResult.error
+                    )
                 }
                 lastFailedAudioURL = nil
                 lastFailedHistoryId = nil
@@ -1066,12 +1088,13 @@ class SapoWhisperViewModel: ObservableObject {
 
         do {
             let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
+            let aiResult = await postProcessTranscript(transcription, source: "history-retranscribe")
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
                 engine: engine,
                 language: entry.language,
                 duration: entry.duration,
-                text: transcription,
+                aiResult: aiResult,
                 status: "completed"
             )
 
@@ -1085,7 +1108,7 @@ class SapoWhisperViewModel: ObservableObject {
                 engine: engine,
                 language: entry.language,
                 duration: entry.duration,
-                text: "",
+                aiResult: nil,
                 status: "failed"
             )
 
@@ -1094,6 +1117,35 @@ class SapoWhisperViewModel: ObservableObject {
                 errorMessage: error.localizedDescription
             )
         }
+    }
+
+    func polishHistoryEntry(_ entry: HistoryEntry) async -> HistoryRetranscriptionResult {
+        let sourceText = (entry.hasRawTranscript ? entry.rawText : entry.text)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !sourceText.isEmpty, entry.status == "completed" else {
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                errorMessage: "history.ai_polish_missing_text".localized
+            )
+        }
+
+        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, force: true)
+        logAIResult(aiResult, source: "history-polish")
+        historyManager.updateAIProcessing(
+            id: entry.id,
+            finalText: aiResult.finalText,
+            rawText: aiResult.rawText,
+            aiStatus: aiResult.status,
+            aiModel: aiResult.model,
+            aiMode: aiResult.mode,
+            aiError: aiResult.error
+        )
+
+        return HistoryRetranscriptionResult(
+            entryId: entry.id,
+            errorMessage: aiResult.status == .failed ? aiResult.error : nil
+        )
     }
 
     // MARK: - Hotkey
@@ -1376,25 +1428,46 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    private func postProcessTranscript(_ rawText: String, source: String) async -> TranscriptAIResult {
+        let result = await transcriptPostProcessor.process(rawText: rawText)
+        logAIResult(result, source: source)
+        return result
+    }
+
+    private func logAIResult(_ result: TranscriptAIResult, source: String) {
+        let mode = result.mode?.rawValue ?? "none"
+        let model = result.model ?? "none"
+        let fallbackReason = result.error ?? "none"
+        SapoLog.ai.info(
+            "AI polish source=\(source, privacy: .public) status=\(result.status.rawValue, privacy: .public) mode=\(mode, privacy: .public) model=\(model, privacy: .public) elapsed=\(result.elapsedMs, privacy: .public)ms rawChars=\(result.rawText.count, privacy: .public) finalChars=\(result.finalText.count, privacy: .public) fallback=\(fallbackReason, privacy: .public)"
+        )
+    }
+
     private func persistHistoryEntry(
         from sourceURL: URL,
         engine: TranscriptionEngine,
         engineName: String? = nil,
         language: String,
         duration: TimeInterval,
-        text: String,
+        aiResult: TranscriptAIResult?,
         status: String
     ) -> PersistedHistoryEntry {
         let savedPath = historyManager.saveAudioFile(from: sourceURL)
         let fallbackPath = FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL.path : nil
         let audioPath = savedPath ?? fallbackPath
+        let text = aiResult?.finalText ?? ""
         let historyID = historyManager.save(
             engine: engineName ?? engine.displayName,
             language: language,
             duration: duration,
             text: text,
+            rawText: aiResult?.rawText ?? text,
             audioPath: audioPath,
-            status: status
+            status: status,
+            aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
+            aiModel: aiResult?.model,
+            aiMode: aiResult?.mode?.rawValue,
+            aiError: aiResult?.error
         )
 
         return PersistedHistoryEntry(

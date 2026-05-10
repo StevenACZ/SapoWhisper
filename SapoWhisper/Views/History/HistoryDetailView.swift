@@ -18,6 +18,7 @@ struct HistoryDetailView: View {
                     failedSection
                 } else {
                     textSection
+                    originalTextSection
                 }
 
                 if entry.audioFileExists, let path = entry.audioPath {
@@ -80,11 +81,34 @@ struct HistoryDetailView: View {
     // MARK: - Text
 
     private var textSection: some View {
-        Text(entry.text)
-            .font(.title3)
-            .lineSpacing(10)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("history.final_text".localized)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            Text(entry.text)
+                .font(.title3)
+                .lineSpacing(10)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var originalTextSection: some View {
+        if entry.hasRawTranscript {
+            DisclosureGroup("history.original_text".localized) {
+                Text(entry.rawText)
+                    .font(.body)
+                    .lineSpacing(6)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+            }
+        }
     }
 
     // MARK: - Failed

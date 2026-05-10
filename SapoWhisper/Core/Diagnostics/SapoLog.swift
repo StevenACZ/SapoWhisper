@@ -19,6 +19,7 @@ enum SapoLog {
     static let recording = Logger(subsystem: subsystem, category: "Recording")
     static let settings = Logger(subsystem: subsystem, category: "Settings")
     static let flux = Logger(subsystem: subsystem, category: "Flux")
+    static let ai = Logger(subsystem: subsystem, category: "AI")
 }
 
 enum PerformanceDiagnostics {

@@ -74,6 +74,12 @@
 "history.filter_google" = "Google";
 "history.filter_whisper" = "Whisper";
 "history.filter_apple" = "Apple";
+"history.final_text" = "Texto final";
+"history.original_text" = "Texto original";
+"history.ai_polish" = "Mejora IA";
+"history.ai_polish_action" = "Mejorar con IA";
+"history.ai_polishing" = "Mejorando...";
+"history.ai_polish_missing_text" = "No hay texto disponible para mejorar con IA.";
 
 "common.cancel" = "Cancelar";
 "common.ok" = "OK";
@@ -167,6 +173,42 @@
 "config.service_account_remove" = "Eliminar";
 "config.service_account_detect" = "Detectar";
 "config.api_key_fallback" = "API Key (alternativa)";
+
+/* AI Polish */
+"ai.polish.title" = "Mejora por IA";
+"ai.polish.enable" = "Mejorar texto con IA";
+"ai.polish.mode" = "Modo";
+"ai.polish.mode_desc" = "Usa %@ para ordenar y limpiar el texto antes de copiarlo.";
+"ai.polish.desc" = "Usa Gemini 3.1 Flash-Lite en Vertex AI para corregir errores probables, ordenar ideas y mejorar legibilidad sin inventar detalles.";
+"ai.google_connected" = "Google Cloud conectado";
+"ai.google_missing" = "Google Cloud no conectado";
+"ai.google_connected_desc" = "Mejora por IA puede usar Gemini en Vertex AI con estas credenciales.";
+"ai.google_missing_desc" = "Primero conecta Google Cloud. La opcion recomendada es iniciar sesion con gcloud; importar JSON es solo para credenciales ya descargadas.";
+"ai.google_connect" = "Conectar Google Cloud";
+"ai.google_setup_intro" = "SapoWhisper usa las credenciales locales de Google Cloud para llamar a Vertex AI. Haz estos pasos una sola vez:";
+"ai.google_setup_desc" = "Para conectar: instala gcloud, ejecuta 'gcloud auth application-default login' y luego presiona Detectar. Tambien puedes importar el JSON de credenciales.";
+"ai.google_step1_title" = "Instala Google Cloud CLI";
+"ai.google_step1_detail" = "Si ya tienes gcloud instalado, puedes saltar este paso.";
+"ai.google_step2_title" = "Inicia sesion en Google";
+"ai.google_step2_detail" = "Este comando abre el navegador y guarda credenciales ADC locales para Vertex AI.";
+"ai.google_step3_title" = "Vuelve a SapoWhisper";
+"ai.google_step3_detail" = "Presiona Detectar login de gcloud. Si usas un archivo de credenciales, recien ahi importa el JSON.";
+"ai.google_detect_adc" = "Detectar login de gcloud";
+"ai.google_import_json" = "Importar JSON de credenciales";
+"ai.google_change_json" = "Cambiar JSON";
+"ai.google_json_hint" = "Importar JSON no inicia sesion en Google. Usalo solo si ya tienes un archivo de credenciales de Google Cloud.";
+"ai.google_copy_command" = "Copiar comando";
+"ai.google_import_panel_desc" = "Selecciona un JSON de credenciales de Google Cloud. Para login normal, cancela y usa gcloud auth application-default login.";
+"ai.google_required" = "Conecta Google Cloud para activar Mejora por IA.";
+"ai.google_not_detected" = "No se detectaron credenciales ADC. Ejecuta gcloud auth application-default login o importa el JSON.";
+"ai.mode.automatic" = "Automático";
+"ai.mode.ai" = "Modo IA";
+"ai.mode.work" = "Trabajo";
+"ai.mode.translate_english" = "Traducir a inglés";
+"ai.status.none" = "No aplicada";
+"ai.status.applied" = "Aplicada";
+"ai.status.skipped_short" = "Saltada por texto corto";
+"ai.status.failed" = "Falló";
 
 /* Badges & Labels */
 "badge.recommended" = "Recomendado";

@@ -74,6 +74,12 @@
 "history.filter_google" = "Google";
 "history.filter_whisper" = "Whisper";
 "history.filter_apple" = "Apple";
+"history.final_text" = "Final text";
+"history.original_text" = "Original text";
+"history.ai_polish" = "AI polish";
+"history.ai_polish_action" = "Polish with AI";
+"history.ai_polishing" = "Polishing...";
+"history.ai_polish_missing_text" = "No text is available to polish with AI.";
 
 "common.cancel" = "Cancel";
 "common.ok" = "OK";
@@ -167,6 +173,42 @@
 "config.service_account_remove" = "Remove";
 "config.service_account_detect" = "Detect";
 "config.api_key_fallback" = "API Key (alternative)";
+
+/* AI Polish */
+"ai.polish.title" = "AI Polish";
+"ai.polish.enable" = "Improve text with AI";
+"ai.polish.mode" = "Mode";
+"ai.polish.mode_desc" = "Uses %@ to organize and clean the text before copying it.";
+"ai.polish.desc" = "Uses Gemini 3.1 Flash-Lite on Vertex AI to fix likely mistakes, organize ideas, and improve readability without inventing details.";
+"ai.google_connected" = "Google Cloud connected";
+"ai.google_missing" = "Google Cloud not connected";
+"ai.google_connected_desc" = "AI Polish can use Gemini on Vertex AI with these credentials.";
+"ai.google_missing_desc" = "Connect Google Cloud first. The recommended path is signing in with gcloud; JSON import is only for credentials you already downloaded.";
+"ai.google_connect" = "Connect Google Cloud";
+"ai.google_setup_intro" = "SapoWhisper uses local Google Cloud credentials to call Vertex AI. Do these steps once:";
+"ai.google_setup_desc" = "To connect: install gcloud, run 'gcloud auth application-default login', then press Detect. You can also import the credentials JSON.";
+"ai.google_step1_title" = "Install Google Cloud CLI";
+"ai.google_step1_detail" = "If gcloud is already installed, skip this step.";
+"ai.google_step2_title" = "Sign in to Google";
+"ai.google_step2_detail" = "This command opens the browser and stores local ADC credentials for Vertex AI.";
+"ai.google_step3_title" = "Return to SapoWhisper";
+"ai.google_step3_detail" = "Press Detect gcloud login. If you use a credentials file, import the JSON here instead.";
+"ai.google_detect_adc" = "Detect gcloud login";
+"ai.google_import_json" = "Import credentials JSON";
+"ai.google_change_json" = "Change JSON";
+"ai.google_json_hint" = "Importing JSON does not sign in to Google. Use it only if you already have a Google Cloud credentials file.";
+"ai.google_copy_command" = "Copy command";
+"ai.google_import_panel_desc" = "Select a Google Cloud credentials JSON. For normal sign-in, cancel and run gcloud auth application-default login.";
+"ai.google_required" = "Connect Google Cloud to enable AI Polish.";
+"ai.google_not_detected" = "No ADC credentials were detected. Run gcloud auth application-default login or import the JSON.";
+"ai.mode.automatic" = "Automatic";
+"ai.mode.ai" = "AI Mode";
+"ai.mode.work" = "Work";
+"ai.mode.translate_english" = "Translate to English";
+"ai.status.none" = "Not applied";
+"ai.status.applied" = "Applied";
+"ai.status.skipped_short" = "Skipped for short text";
+"ai.status.failed" = "Failed";
 
 /* Badges & Labels */
 "badge.recommended" = "Recommended";

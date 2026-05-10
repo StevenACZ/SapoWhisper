@@ -8,6 +8,20 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **AI transcript polish** — Added an optional post-processing step that can refine completed transcripts with Gemini 3.1 Flash-Lite on Vertex AI after any transcription engine.
+- **AI polish history metadata** — History now keeps the raw transcript, final transcript, AI status, model, mode, and error metadata, with an action to run AI polish later.
+- **Google Cloud guided setup** — Engine settings now show a clearer step-by-step Google Cloud setup flow with gcloud login detection and JSON import as a secondary credentials path.
+
+### Changed
+
+- **Deepgram settings layout** — Moved AI polish above Vocabulary so the post-processing toggle is easier to find immediately after Deepgram setup.
+
+### Fixed
+
+- **Vertex model routing** — Moved Gemini 3.1 Flash-Lite calls to the Vertex AI `us` multi-region endpoint so enabled polish does not fall back to the raw transcript because of a regional 404.
+
 ## [2.1.3] - 2026-05-08
 
 > Patch focused on long-run performance observability after multi-day menu bar, overlay, settings, and recording slowdowns.

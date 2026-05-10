@@ -25,6 +25,11 @@ struct EngineSettingsTab: View {
 
                 if currentEngine == .deepgram {
                     DeepgramSettingsCard(viewModel: viewModel)
+                }
+
+                AIPolishSettingsCard()
+
+                if currentEngine == .deepgram {
                     VocabularySettingsCard()
                 }
             }

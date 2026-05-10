@@ -12,8 +12,13 @@ struct HistoryEntry: Identifiable, Hashable {
     let language: String
     let duration: TimeInterval
     let text: String
+    let rawText: String
     let audioPath: String?
     let status: String
+    let aiStatus: String
+    let aiModel: String?
+    let aiMode: String?
+    let aiError: String?
     var isFavorite: Bool
 
     var wordCount: Int {
@@ -29,6 +34,19 @@ struct HistoryEntry: Identifiable, Hashable {
     var audioFileExists: Bool {
         guard let path = audioPath else { return false }
         return FileManager.default.fileExists(atPath: path)
+    }
+
+    var transcriptAIStatus: TranscriptAIStatus {
+        TranscriptAIStatus(rawValue: aiStatus) ?? .none
+    }
+
+    var transcriptAIMode: TranscriptPolishMode? {
+        guard let aiMode else { return nil }
+        return TranscriptPolishMode(rawValue: aiMode)
+    }
+
+    var hasRawTranscript: Bool {
+        !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var displayEngineName: String {
@@ -117,21 +135,29 @@ extension HistoryEntry {
     static let mockData: [HistoryEntry] = [
         HistoryEntry(
             id: 1, timestamp: Date().addingTimeInterval(-300), engine: "Deepgram Nova-3", language: "es", duration: 8.5,
-            text: "Hola, esta es una prueba de transcripción con el modelo Deepgram en tiempo real", audioPath: "/audio/test1.wav",
-            status: "completed", isFavorite: false),
+            text: "Hola, esta es una prueba de transcripción con el modelo Deepgram en tiempo real",
+            rawText: "hola esta es una prueba de transcripción con el modelo deep green en tiempo real",
+            audioPath: "/audio/test1.wav", status: "completed", aiStatus: "applied",
+            aiModel: "gemini-3.1-flash-lite", aiMode: "automatic", aiError: nil, isFavorite: false),
         HistoryEntry(
             id: 2, timestamp: Date().addingTimeInterval(-3600), engine: "Google Chirp 3", language: "es", duration: 15.2,
-            text: "El clima de hoy está muy agradable, perfecto para salir a caminar por el parque", audioPath: "/audio/test2.wav",
-            status: "completed", isFavorite: false),
-        HistoryEntry(
-            id: 3, timestamp: Date().addingTimeInterval(-7200), engine: "WhisperKit", language: "en", duration: 5.0,
-            text: "This is a test of the local WhisperKit model running on Apple Silicon", audioPath: nil, status: "completed",
+            text: "El clima de hoy está muy agradable, perfecto para salir a caminar por el parque",
+            rawText: "El clima de hoy está muy agradable perfecto para salir a caminar por el parque",
+            audioPath: "/audio/test2.wav", status: "completed", aiStatus: "none", aiModel: nil, aiMode: nil, aiError: nil,
             isFavorite: false),
         HistoryEntry(
+            id: 3, timestamp: Date().addingTimeInterval(-7200), engine: "WhisperKit", language: "en", duration: 5.0,
+            text: "This is a test of the local WhisperKit model running on Apple Silicon",
+            rawText: "This is a test of the local WhisperKit model running on Apple Silicon", audioPath: nil,
+            status: "completed", aiStatus: "none", aiModel: nil, aiMode: nil, aiError: nil, isFavorite: false),
+        HistoryEntry(
             id: 4, timestamp: Date().addingTimeInterval(-86400), engine: "Deepgram Nova-3", language: "es", duration: 3.1, text: "",
-            audioPath: "/audio/test4.wav", status: "failed", isFavorite: false),
+            rawText: "", audioPath: "/audio/test4.wav", status: "failed", aiStatus: "none", aiModel: nil, aiMode: nil,
+            aiError: nil, isFavorite: false),
         HistoryEntry(
             id: 5, timestamp: Date().addingTimeInterval(-172800), engine: "Apple Speech", language: "es", duration: 12.0,
-            text: "Recordar comprar leche, pan y huevos para la cena de esta noche", audioPath: nil, status: "completed", isFavorite: true),
+            text: "Recordar comprar leche, pan y huevos para la cena de esta noche",
+            rawText: "Recordar comprar leche pan y huevos para la cena de esta noche", audioPath: nil, status: "completed",
+            aiStatus: "skipped_short", aiModel: nil, aiMode: "automatic", aiError: nil, isFavorite: true),
     ]
 }
