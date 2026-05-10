@@ -30,19 +30,19 @@ enum TranscriptPolishMode: String, CaseIterable, Identifiable {
         switch self {
         case .automatic:
             return """
-                Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names.
+                Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.
                 """
         case .ai:
             return """
-                Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements.
+                Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels such as "Tasks:" or "Goal:" only when the transcript clearly contains those ideas.
                 """
         case .work:
             return """
-                Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone.
+                Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown.
                 """
         case .translateEnglish:
             return """
-                Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise.
+                Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability.
                 """
         }
     }

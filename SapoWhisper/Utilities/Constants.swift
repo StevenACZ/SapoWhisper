@@ -26,6 +26,7 @@ enum Constants {
         // Estados
         static let recording = Color(red: 0.957, green: 0.263, blue: 0.212)  // #F44336
         static let processing = Color(red: 1.0, green: 0.757, blue: 0.027)  // #FFC107
+        static let aiPolish = Color(red: 0.173, green: 0.557, blue: 0.859)  // #2C8EDB
         static let error = Color(red: 1.0, green: 0.596, blue: 0.0)  // #FF9800
         static let disabled = Color(red: 0.620, green: 0.620, blue: 0.620)  // #9E9E9E
 
@@ -126,6 +127,7 @@ extension Color {
     static let sapoGreenLight = Constants.Colors.sapoGreenLight
     static let recording = Constants.Colors.recording
     static let processing = Constants.Colors.processing
+    static let aiPolish = Constants.Colors.aiPolish
     static let sapoError = Constants.Colors.error
     static let disabled = Constants.Colors.disabled
 }

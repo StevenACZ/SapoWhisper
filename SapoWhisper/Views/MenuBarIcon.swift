@@ -49,7 +49,7 @@ enum MenuBarIconImageProvider {
         switch appState {
         case .recording:
             return "MenuBarIconRecording"
-        case .processing:
+        case .processing, .polishing:
             return "MenuBarIconTranscribing"
         case .idle, .error, .noModel:
             return "MenuBarIconIdle"
@@ -62,6 +62,8 @@ enum MenuBarIconImageProvider {
             return "mic.circle.fill"
         case .processing:
             return "ellipsis.circle.fill"
+        case .polishing:
+            return "wand.and.stars"
         case .error:
             return "exclamationmark.circle.fill"
         case .noModel:

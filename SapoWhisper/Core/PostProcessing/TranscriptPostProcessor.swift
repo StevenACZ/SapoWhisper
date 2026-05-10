@@ -92,6 +92,16 @@ final class TranscriptPostProcessor {
         return simpleUtterances.contains(normalized)
     }
 
+    func willAttemptPolish(rawText: String, force: Bool = false) -> Bool {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
+        guard enabled || force else { return false }
+
+        return force || !Self.shouldSkipPolish(trimmed)
+    }
+
     private func makeResult(
         rawText: String,
         finalText: String,

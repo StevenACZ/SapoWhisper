@@ -112,7 +112,7 @@ struct MenuBarView: View {
                 }
             }) {
                 HStack(spacing: 12) {
-                    if case .processing = viewModel.appState {
+                    if viewModel.appState.isBusyProcessing {
                         ProgressView()
                             .scaleEffect(0.8)
                             .tint(.white)
@@ -160,6 +160,8 @@ struct MenuBarView: View {
             return "stop.fill"
         case .processing:
             return "hourglass"
+        case .polishing:
+            return "wand.and.stars"
         default:
             return "mic.fill"
         }
@@ -171,6 +173,8 @@ struct MenuBarView: View {
             return "menu.stop_recording".localized
         case .processing:
             return "menu.transcribing".localized
+        case .polishing:
+            return "menu.ai_polishing".localized
         case .noModel:
             return "menu.no_model".localized
         default:
@@ -184,6 +188,8 @@ struct MenuBarView: View {
             return .recording
         case .processing:
             return .processing
+        case .polishing:
+            return .aiPolish
         case .noModel, .error:
             return .disabled
         default:
@@ -202,6 +208,12 @@ struct MenuBarView: View {
             } else if case .processing = viewModel.appState {
                 LinearGradient(
                     colors: [Color.processing, Color.processing.opacity(0.8)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            } else if case .polishing = viewModel.appState {
+                LinearGradient(
+                    colors: [Color.aiPolish, Color.aiPolish.opacity(0.8)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )

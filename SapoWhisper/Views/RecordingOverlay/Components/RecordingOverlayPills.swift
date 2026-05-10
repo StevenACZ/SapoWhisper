@@ -88,6 +88,20 @@ struct TranscribingPillView: View {
     }
 }
 
+struct AIPolishingPillView: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            FloatingSapoIcon(state: .polishing, size: 32)
+            PillDivider()
+            TranscribingIndicator(color: .aiPolish)
+
+            Text("overlay.ai_polishing".localized)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+        }
+    }
+}
+
 struct CompletedPillView: View {
     let text: String
 

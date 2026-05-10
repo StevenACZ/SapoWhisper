@@ -239,7 +239,7 @@ class OverlayWindowManager: ObservableObject {
     func showDeviceDetected(deviceName: String, autoDismissAfter delay: TimeInterval = 2.5) {
         // Don't interrupt active recording/transcribing states
         switch state {
-        case .recording, .transcribing, .paused:
+        case .recording, .transcribing, .polishing, .paused:
             return
         default:
             break

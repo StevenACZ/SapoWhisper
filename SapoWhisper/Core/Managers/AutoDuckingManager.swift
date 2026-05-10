@@ -57,7 +57,7 @@ final class AutoDuckingManager {
         switch state {
         case .recording:
             duck()
-        case .processing:
+        case .processing, .polishing:
             // Restaurar volumen al transcribir — el mic ya no está activo,
             // y la transcripción puede tardar 3-30s. Que el usuario siga
             // escuchando su música mientras espera.

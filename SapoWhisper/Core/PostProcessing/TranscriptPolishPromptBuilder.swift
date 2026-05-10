@@ -37,6 +37,8 @@ enum TranscriptPolishPromptBuilder {
             - Fix likely speech-to-text mistakes only when the surrounding context makes the intended word clear.
             - Preserve commands, filenames, branch names, APIs, product names, and mixed Spanish/English technical terms.
             - Use paragraphs, bullets, or inline backticks only when they make the original idea easier to understand.
+            - Do not use Markdown bold, italic, decorative headings, or emojis unless the raw transcript explicitly asks for them.
+            - If headings help, use short plain labels ending with ":" instead of Markdown emphasis.
             - Avoid tables unless the original text is clearly comparing structured data.
             - Return only the final polished text.
 

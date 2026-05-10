@@ -11,6 +11,7 @@
 "menu.ready" = "Ready to record";
 "menu.recording" = "Recording... %@s";
 "menu.transcribing" = "Transcribing...";
+"menu.ai_polishing" = "Improving with AI...";
 "menu.no_model" = "Configure";
 "menu.start_recording" = "Start Recording";
 "menu.stop_recording" = "Stop Recording";
@@ -301,6 +302,7 @@
 "overlay.recording" = "Recording...";
 "overlay.paused" = "Paused";
 "overlay.transcribing" = "Transcribing...";
+"overlay.ai_polishing" = "Improving with AI...";
 "overlay.completed" = "Done!";
 "overlay.copied" = "Copied";
 "overlay.device_ready" = "Ready to record";

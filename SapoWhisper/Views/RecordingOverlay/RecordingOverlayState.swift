@@ -13,6 +13,7 @@ enum RecordingOverlayState: Equatable {
     case recording(duration: TimeInterval)
     case paused(duration: TimeInterval)
     case transcribing
+    case polishing
     case completed(text: String)
     case error(message: String)
     case deviceDetected(deviceName: String)
@@ -23,6 +24,7 @@ enum RecordingOverlayState: Equatable {
         case .recording: return "recording"
         case .paused: return "paused"
         case .transcribing: return "transcribing"
+        case .polishing: return "polishing"
         case .completed: return "completed"
         case .error: return "error"
         case .deviceDetected: return "deviceDetected"
@@ -48,6 +50,8 @@ enum RecordingOverlayState: Equatable {
             return "overlay.paused".localized
         case .transcribing:
             return "overlay.transcribing".localized
+        case .polishing:
+            return "overlay.ai_polishing".localized
         case .completed:
             return "overlay.completed".localized
         case .error(let message):

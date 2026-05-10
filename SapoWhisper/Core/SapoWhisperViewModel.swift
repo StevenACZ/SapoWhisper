@@ -536,8 +536,8 @@ class SapoWhisperViewModel: ObservableObject {
             return false
         }
 
-        if case .processing = appState {
-            SapoLog.hotkey.info("Hotkey ignored while app is processing")
+        if appState.isBusyProcessing {
+            SapoLog.hotkey.info("Hotkey ignored while app is processing or polishing")
             return false
         }
 
@@ -1429,8 +1429,32 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func postProcessTranscript(_ rawText: String, source: String) async -> TranscriptAIResult {
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText)
+        if willAttemptPolish {
+            appState = .polishing
+            overlayManager.updateState(.polishing)
+            SapoLog.ai.info(
+                "AI polish started source=\(source, privacy: .public) rawChars=\(rawText.count, privacy: .public)"
+            )
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "ai-polish-start",
+                context: diagnosticContext(extra: "source=\(source) rawChars=\(rawText.count)"),
+                force: true
+            )
+        }
+
         let result = await transcriptPostProcessor.process(rawText: rawText)
         logAIResult(result, source: source)
+        if willAttemptPolish {
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "ai-polish-finished",
+                context: diagnosticContext(
+                    extra:
+                        "source=\(source) status=\(result.status.rawValue) elapsedMs=\(result.elapsedMs) rawChars=\(result.rawText.count) finalChars=\(result.finalText.count)"
+                ),
+                force: true
+            )
+        }
         return result
     }
 
@@ -1506,6 +1530,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Si el boton de grabar esta habilitado
     var canRecord: Bool {
+        guard activeTranscriptionSessionID == nil, !appState.isBusyProcessing else {
+            return false
+        }
+
         switch currentEngine {
         case .appleOnline:
             return !transcriber.isTranscribing
