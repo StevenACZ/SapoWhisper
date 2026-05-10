@@ -9,6 +9,7 @@ enum TranscriptPolishPromptBuilder {
     static func makePrompt(
         rawText: String,
         mode: TranscriptPolishMode,
+        outputLanguage: TranscriptPolishOutputLanguage,
         keyterms: [String],
         replacements: [String: String]
     ) -> String {
@@ -33,6 +34,9 @@ enum TranscriptPolishPromptBuilder {
             - Do not add requirements, facts, examples, assumptions, or conclusions.
             - Do not invent missing details.
             - Do not answer the user; only rewrite the transcript.
+            - Use only the raw transcript plus the user vocabulary and replacement hints below.
+            - Treat vocabulary as recognition context for correcting likely STT mistakes, not as extra content to insert.
+            - Never introduce a vocabulary term unless the transcript context clearly points to that term.
             - If the text is short, keep it short.
             - Fix likely speech-to-text mistakes only when the surrounding context makes the intended word clear.
             - Preserve commands, filenames, branch names, APIs, product names, and mixed Spanish/English technical terms.
@@ -44,6 +48,9 @@ enum TranscriptPolishPromptBuilder {
 
             Mode:
             \(mode.promptInstruction)
+
+            Output language:
+            \(outputLanguage.promptInstruction)
 
             User vocabulary keyterms:
             \(keytermBlock)

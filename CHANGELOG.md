@@ -13,12 +13,14 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **AI transcript polish** — Added an optional post-processing step that can refine completed transcripts with Gemini 3.1 Flash-Lite on Vertex AI after any transcription engine.
 - **AI polish progress state** — The recording overlay and menu bar now distinguish transcription from AI polishing so users can see when local/STT work has finished and Gemini formatting has started.
 - **AI polish history metadata** — History now keeps the raw transcript, final transcript, AI status, model, mode, and error metadata, with an action to run AI polish later.
+- **AI polish output language** — Added an output language selector so polish can keep the transcript language, force Spanish, or force English.
 - **Google Cloud guided setup** — Engine settings now show a clearer step-by-step Google Cloud setup flow with gcloud login detection and JSON import as a secondary credentials path.
 
 ### Changed
 
 - **Deepgram settings layout** — Moved AI polish above Vocabulary so the post-processing toggle is easier to find immediately after Deepgram setup.
 - **AI prompt formatting** — Mode IA now avoids decorative Markdown emphasis by default, preferring compact plain labels, paragraphs, bullets, and backticks only where they improve readability.
+- **AI prompt grounding** — AI polish now treats vocabulary and replacements as recognition context only, avoiding added details that were not present in the raw transcript.
 
 ### Fixed
 

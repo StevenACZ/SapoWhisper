@@ -34,7 +34,7 @@ enum TranscriptPolishMode: String, CaseIterable, Identifiable {
                 """
         case .ai:
             return """
-                Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels such as "Tasks:" or "Goal:" only when the transcript clearly contains those ideas.
+                Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas. Labels must follow the selected output language, for example "Objetivo:" and "Tareas:" in Spanish, or "Goal:" and "Tasks:" in English.
                 """
         case .work:
             return """

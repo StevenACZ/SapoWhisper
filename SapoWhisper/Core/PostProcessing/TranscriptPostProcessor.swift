@@ -28,6 +28,13 @@ final class TranscriptPostProcessor {
 
         let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
         let mode = TranscriptPolishMode(rawValue: modeValue) ?? .automatic
+        let outputLanguageValue =
+            defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
+            ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
+        var outputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
+        if mode == .translateEnglish {
+            outputLanguage = .english
+        }
 
         guard force || !Self.shouldSkipPolish(trimmed) else {
             return makeResult(
@@ -42,6 +49,7 @@ final class TranscriptPostProcessor {
         let prompt = TranscriptPolishPromptBuilder.makePrompt(
             rawText: trimmed,
             mode: mode,
+            outputLanguage: outputLanguage,
             keyterms: VocabularyManager.shared.keyterms,
             replacements: VocabularyManager.shared.replacements
         )

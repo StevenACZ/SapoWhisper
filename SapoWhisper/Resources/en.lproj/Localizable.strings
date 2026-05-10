@@ -180,6 +180,8 @@
 "ai.polish.enable" = "Improve text with AI";
 "ai.polish.mode" = "Mode";
 "ai.polish.mode_desc" = "Uses %@ to organize and clean the text before copying it.";
+"ai.polish.output_language" = "Output language";
+"ai.polish.output_language_desc" = "Generates the text in %@.";
 "ai.polish.desc" = "Uses Gemini 3.1 Flash-Lite on Vertex AI to fix likely mistakes, organize ideas, and improve readability without inventing details.";
 "ai.google_connected" = "Google Cloud connected";
 "ai.google_missing" = "Google Cloud not connected";
@@ -206,6 +208,9 @@
 "ai.mode.ai" = "AI Mode";
 "ai.mode.work" = "Work";
 "ai.mode.translate_english" = "Translate to English";
+"ai.output_language.same" = "Same as audio";
+"ai.output_language.spanish" = "Spanish";
+"ai.output_language.english" = "English";
 "ai.status.none" = "Not applied";
 "ai.status.applied" = "Applied";
 "ai.status.skipped_short" = "Skipped for short text";

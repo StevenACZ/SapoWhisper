@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+        TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
     @State private var isGoogleConfigured = ServiceAccountManager.shared.isConfigured
     @State private var projectID = ServiceAccountManager.shared.projectID
@@ -17,6 +19,13 @@ struct AIPolishSettingsCard: View {
 
     private var currentMode: TranscriptPolishMode {
         TranscriptPolishMode(rawValue: aiPolishMode) ?? .automatic
+    }
+
+    private var currentOutputLanguage: TranscriptPolishOutputLanguage {
+        if currentMode == .translateEnglish {
+            return .english
+        }
+        return TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
     }
 
     var body: some View {
@@ -78,6 +87,18 @@ struct AIPolishSettingsCard: View {
             .disabled(!isGoogleConfigured || !aiPolishEnabled)
 
             Text("ai.polish.mode_desc".localized(currentMode.displayName))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
+                ForEach(TranscriptPolishOutputLanguage.allCases) { language in
+                    Text(language.displayName).tag(language.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .disabled(!isGoogleConfigured || !aiPolishEnabled || currentMode == .translateEnglish)
+
+            Text("ai.polish.output_language_desc".localized(currentOutputLanguage.displayName))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
