@@ -273,7 +273,6 @@ class SapoWhisperViewModel: ObservableObject {
         $appState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                self?.objectWillChange.send()
                 // Actualizar icono del Dock usando el manager
                 DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingWhisperKit ?? false)
                 // Auto-Ducking: reducir/restaurar volumen del sistema

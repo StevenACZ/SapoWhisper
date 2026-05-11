@@ -81,10 +81,35 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
-        viewModel.objectWillChange
+        let appStateRefreshes = viewModel.$appState
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "app-state" }
+            .eraseToAnyPublisher()
+
+        let transcriptionRefreshes = viewModel.$lastTranscription
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "last-transcription" }
+            .eraseToAnyPublisher()
+
+        let loadingRefreshes = viewModel.$isLoadingWhisperKit
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "whisper-loading" }
+            .eraseToAnyPublisher()
+
+        Publishers.Merge3(appStateRefreshes, transcriptionRefreshes, loadingRefreshes)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] reason in
+                self?.schedulePopoverRefresh(reason: reason)
+            }
+            .store(in: &cancellables)
+
+        localizationManager.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.schedulePopoverRefresh(reason: "view-model-change")
+                self?.schedulePopoverRefresh(reason: "localization")
             }
             .store(in: &cancellables)
     }

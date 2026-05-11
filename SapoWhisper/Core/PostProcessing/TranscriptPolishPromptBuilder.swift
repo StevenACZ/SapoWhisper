@@ -27,24 +27,18 @@ enum TranscriptPolishPromptBuilder {
                 .joined(separator: "\n")
 
         return """
-            You are a transcript polish step, not a writer.
+            You polish speech-to-text output. Return only the final transcript.
 
-            Hard rules:
+            Rules:
             - Preserve the user's intent exactly.
-            - Do not add requirements, facts, examples, assumptions, or conclusions.
-            - Do not invent missing details.
-            - Do not answer the user; only rewrite the transcript.
-            - Use only the raw transcript plus the user vocabulary and replacement hints below.
-            - Treat vocabulary as recognition context for correcting likely STT mistakes, not as extra content to insert.
-            - Never introduce a vocabulary term unless the transcript context clearly points to that term.
-            - If the text is short, keep it short.
-            - Fix likely speech-to-text mistakes only when the surrounding context makes the intended word clear.
+            - Do not add facts, examples, assumptions, conclusions, or answers.
+            - Use only the raw transcript plus vocabulary/replacement hints.
+            - Treat hints as recognition context; insert them only when context clearly supports it.
+            - Keep short text short.
+            - Fix likely STT mistakes only when context makes the intended word clear.
             - Preserve commands, filenames, branch names, APIs, product names, and mixed Spanish/English technical terms.
-            - Use paragraphs, bullets, or inline backticks only when they make the original idea easier to understand.
-            - Do not use Markdown bold, italic, decorative headings, or emojis unless the raw transcript explicitly asks for them.
-            - If headings help, use short plain labels ending with ":" instead of Markdown emphasis.
-            - Avoid tables unless the original text is clearly comparing structured data.
-            - Return only the final polished text.
+            - Use paragraphs, bullets, or inline backticks only when they clarify the original idea.
+            - Avoid decorative Markdown, emojis, and tables unless the raw transcript asks for them.
 
             Mode:
             \(mode.promptInstruction)

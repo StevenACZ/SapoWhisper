@@ -11,7 +11,7 @@ import os
 /// Vista principal de configuración con tabs
 /// Se abre desde el botón "Configuración" en el menú
 struct SettingsView: View {
-    @ObservedObject var viewModel: SapoWhisperViewModel
+    let viewModel: SapoWhisperViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: SettingsTab = .general
     @State private var tabSwitchStartedAt: CFAbsoluteTime?
@@ -20,10 +20,6 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // Contenido del tab seleccionado
             selectedTabContent
-                .id(selectedTab)
-                .onAppear {
-                    logTabRendered(selectedTab)
-                }
         }
         .frame(width: 480, height: 500)
         .background(Color(NSColor.windowBackgroundColor))
@@ -49,6 +45,11 @@ struct SettingsView: View {
         .onAppear {
             SapoLog.settings.info("Settings view appeared tab=\(selectedTab.rawValue, privacy: .public)")
             PerformanceDiagnostics.logRuntimeSnapshot(reason: "settings-view-appear", force: true)
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            DispatchQueue.main.async {
+                logTabRendered(newTab)
+            }
         }
     }
 
