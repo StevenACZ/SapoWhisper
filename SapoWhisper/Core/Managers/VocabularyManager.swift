@@ -60,6 +60,11 @@ class VocabularyManager: ObservableObject {
         save()
     }
 
+    func removeKeyterm(_ term: String) {
+        keyterms.removeAll { $0 == term }
+        save()
+    }
+
     // MARK: - Replacements CRUD
 
     func addReplacement(from original: String, to replacement: String) {
@@ -72,6 +77,29 @@ class VocabularyManager: ObservableObject {
 
     func removeReplacement(forKey key: String) {
         replacements.removeValue(forKey: key)
+        save()
+    }
+
+    // MARK: - Import / Export
+
+    func snapshot() -> VocabularySnapshot {
+        VocabularySnapshot(keyterms: keyterms, replacements: replacements)
+    }
+
+    func merge(snapshot: VocabularySnapshot) {
+        for term in snapshot.keyterms {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !keyterms.contains(trimmed) else { continue }
+            keyterms.append(trimmed)
+        }
+
+        for (original, replacement) in snapshot.replacements {
+            let key = original.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let value = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty, !value.isEmpty else { continue }
+            replacements[key] = value
+        }
+
         save()
     }
 

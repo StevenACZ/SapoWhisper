@@ -28,12 +28,10 @@ struct EngineSettingsTab: View {
                 }
 
                 AIPolishSettingsCard()
-
-                if currentEngine == .deepgram {
-                    VocabularySettingsCard()
-                }
             }
-            .padding()
+            .frame(maxWidth: 660)
+            .frame(maxWidth: .infinity)
+            .padding(16)
         }
     }
 

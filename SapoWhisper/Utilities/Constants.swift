@@ -85,6 +85,7 @@ enum Constants {
         static let autoPaste = "autoPaste"
         static let playSound = "playSound"
         static let soundVolume = "soundVolume"  // Volumen de 0.0 a 1.0
+        static let appLanguage = "appLanguage"
         static let language = "language"
         static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"

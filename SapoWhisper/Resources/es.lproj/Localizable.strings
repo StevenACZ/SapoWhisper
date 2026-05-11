@@ -4,6 +4,7 @@
 "made_by" = "Creado con cuidado para macOS";
 "about.open_source" = "Proyecto open source listo para compartirse publicamente.";
 "close" = "Cerrar";
+"cancel" = "Cancelar";
 "quit" = "Salir de SapoWhisper";
 "about" = "Acerca de";
 
@@ -231,6 +232,8 @@
 /* Settings Tabs */
 "tab.general" = "General";
 "tab.engine" = "Motor";
+"tab.vocabulary" = "Vocabulario";
+"tab.vocabulary_short" = "Vocab.";
 "tab.hotkey" = "Atajo";
 "tab.about" = "Info";
 
@@ -294,6 +297,10 @@
 "permissions.speech.denied_error" = "Permisos de reconocimiento de voz denegados";
 "settings.permissions_guided_footer" = "Puedes abrir el onboarding guiado para cada permiso y ver el estado en vivo mientras vuelves desde Ajustes del Sistema.";
 "settings.permissions_guided_desc" = "Accesibilidad sigue siendo clave para auto-pegar y para un flujo cómodo desde cualquier app. Si quieres ver todos los permisos juntos, abre el onboarding guiado.";
+"settings.permissions_all_active" = "Todos los permisos activos";
+"settings.permissions_all_active_desc" = "Micrófono, reconocimiento de voz y accesibilidad listos.";
+"settings.permissions_all_active_badge" = "%d activos";
+"settings.permissions_all_active_footer" = "Abre el detalle solo si quieres revisar cada permiso o reabrir el onboarding guiado.";
 "settings.test_microphone" = "Probar micrófono";
 "settings.gain" = "Ganancia";
 "settings.listening" = "Escuchando...";
@@ -343,6 +350,44 @@
 "config.replace_to" = "Corregir a";
 "config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
 "config.add" = "Agregar";
+"settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes usadas por Deepgram y el pulido con IA.";
+"settings.vocabulary.search" = "Buscar vocabulario o correcciones";
+"settings.vocabulary.counts" = "%d palabras · %d correcciones";
+"settings.vocabulary.empty" = "No hay resultados";
+"settings.vocabulary.export" = "Exportar";
+"settings.vocabulary.import" = "Importar";
+"settings.vocabulary.export_panel_message" = "Guarda tu vocabulario como JSON.";
+"settings.vocabulary.import_panel_message" = "Selecciona un JSON de vocabulario o configuración de SapoWhisper.";
+"settings.vocabulary.export_success" = "Vocabulario exportado.";
+"settings.vocabulary.import_success" = "Vocabulario importado.";
+
+/* Settings Transfer */
+"settings.transfer.title" = "Migrar configuración";
+"settings.transfer.desc" = "Exporta un JSON portable para mover preferencias y vocabulario a otra Mac. El micrófono, permisos del sistema y credenciales Google importadas como archivo no se incluyen.";
+"settings.transfer.include_api_keys" = "Incluir API keys guardadas en este Mac";
+"settings.transfer.export" = "Exportar configuración";
+"settings.transfer.import" = "Importar configuración";
+"settings.transfer.export_panel_message" = "Guarda la configuración portable de SapoWhisper.";
+"settings.transfer.import_panel_message" = "Selecciona un JSON exportado desde SapoWhisper.";
+"settings.transfer.export_success" = "Configuración exportada.";
+"settings.transfer.import_success" = "Configuración importada.";
+"settings.transfer.import_options_title" = "Qué quieres importar";
+"settings.transfer.import_options_desc" = "El archivo puede traer todo, pero solo se aplicarán las categorías seleccionadas.";
+"settings.transfer.import_selected" = "Importar seleccionado";
+"settings.transfer.section_behavior" = "Comportamiento e idioma";
+"settings.transfer.section_behavior_desc" = "Idioma de la app, idioma de transcripción y auto-pegar.";
+"settings.transfer.section_audio" = "Audio";
+"settings.transfer.section_audio_desc" = "Sonidos, volumen, ganancia y auto-ducking.";
+"settings.transfer.section_engine" = "Motor";
+"settings.transfer.section_engine_desc" = "Motor de transcripción, modelo local y modo Deepgram.";
+"settings.transfer.section_hotkey" = "Atajo";
+"settings.transfer.section_hotkey_desc" = "Tecla global para iniciar o detener grabación.";
+"settings.transfer.section_ai" = "Pulido con IA";
+"settings.transfer.section_ai_desc" = "Modo de pulido y lenguaje de salida.";
+"settings.transfer.section_vocabulary" = "Vocabulario";
+"settings.transfer.section_vocabulary_desc" = "Palabras clave y correcciones automáticas.";
+"settings.transfer.section_api_keys" = "API keys";
+"settings.transfer.section_api_keys_desc" = "Deepgram y Google API key si el archivo las contiene.";
 
 "overlay.no_speech" = "No se detecto voz";
 

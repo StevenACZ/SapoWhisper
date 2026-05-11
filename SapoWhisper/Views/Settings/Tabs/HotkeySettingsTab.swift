@@ -21,7 +21,9 @@ struct HotkeySettingsTab: View {
                 presetsCard
                 permissionsCard
             }
-            .padding()
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
+            .padding(16)
         }
     }
 

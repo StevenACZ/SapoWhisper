@@ -273,7 +273,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let controller =
             settingsWindowController
             ?? makeWindowController(
-                size: NSSize(width: 480, height: 500),
+                size: NSSize(width: 780, height: 560),
                 resizable: false,
                 rootView: SettingsWindowHost(viewModel: viewModel)
             )

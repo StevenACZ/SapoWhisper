@@ -4,6 +4,7 @@
 "made_by" = "Built with care for macOS";
 "about.open_source" = "Open-source project prepared for public sharing.";
 "close" = "Close";
+"cancel" = "Cancel";
 "quit" = "Quit SapoWhisper";
 "about" = "About";
 
@@ -231,6 +232,8 @@
 /* Settings Tabs */
 "tab.general" = "General";
 "tab.engine" = "Engine";
+"tab.vocabulary" = "Vocabulary";
+"tab.vocabulary_short" = "Vocab.";
 "tab.hotkey" = "Hotkey";
 "tab.about" = "About";
 
@@ -294,6 +297,10 @@
 "permissions.speech.denied_error" = "Speech recognition permission was denied";
 "settings.permissions_guided_footer" = "You can open the guided onboarding for each permission and watch the live status update when you return from System Settings.";
 "settings.permissions_guided_desc" = "Accessibility is still key for auto-paste and for the smoothest flow from any app. If you want to review all permissions together, open the guided onboarding.";
+"settings.permissions_all_active" = "All permissions active";
+"settings.permissions_all_active_desc" = "Microphone, speech recognition, and accessibility are ready.";
+"settings.permissions_all_active_badge" = "%d active";
+"settings.permissions_all_active_footer" = "Open the details only if you want to review each permission or reopen guided onboarding.";
 "settings.test_microphone" = "Test microphone";
 "settings.gain" = "Gain";
 "settings.listening" = "Listening...";
@@ -343,6 +350,44 @@
 "config.replace_to" = "Replace with";
 "config.replacements_desc" = "Automatically correct words in the transcription output";
 "config.add" = "Add";
+"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by Deepgram and AI polish.";
+"settings.vocabulary.search" = "Search vocabulary or corrections";
+"settings.vocabulary.counts" = "%d words · %d corrections";
+"settings.vocabulary.empty" = "No results";
+"settings.vocabulary.export" = "Export";
+"settings.vocabulary.import" = "Import";
+"settings.vocabulary.export_panel_message" = "Save your vocabulary as JSON.";
+"settings.vocabulary.import_panel_message" = "Choose a SapoWhisper vocabulary or settings JSON.";
+"settings.vocabulary.export_success" = "Vocabulary exported.";
+"settings.vocabulary.import_success" = "Vocabulary imported.";
+
+/* Settings Transfer */
+"settings.transfer.title" = "Migrate settings";
+"settings.transfer.desc" = "Export a portable JSON file to move preferences and vocabulary to another Mac. Microphone selection, system permissions, and Google credentials imported as a file are not included.";
+"settings.transfer.include_api_keys" = "Include API keys stored on this Mac";
+"settings.transfer.export" = "Export settings";
+"settings.transfer.import" = "Import settings";
+"settings.transfer.export_panel_message" = "Save SapoWhisper portable settings.";
+"settings.transfer.import_panel_message" = "Choose a JSON file exported from SapoWhisper.";
+"settings.transfer.export_success" = "Settings exported.";
+"settings.transfer.import_success" = "Settings imported.";
+"settings.transfer.import_options_title" = "What do you want to import?";
+"settings.transfer.import_options_desc" = "The file can include everything, but only selected categories will be applied.";
+"settings.transfer.import_selected" = "Import selected";
+"settings.transfer.section_behavior" = "Behavior and language";
+"settings.transfer.section_behavior_desc" = "App language, transcription language, and auto-paste.";
+"settings.transfer.section_audio" = "Audio";
+"settings.transfer.section_audio_desc" = "Sounds, volume, gain, and auto-ducking.";
+"settings.transfer.section_engine" = "Engine";
+"settings.transfer.section_engine_desc" = "Transcription engine, local model, and Deepgram mode.";
+"settings.transfer.section_hotkey" = "Hotkey";
+"settings.transfer.section_hotkey_desc" = "Global key used to start or stop recording.";
+"settings.transfer.section_ai" = "AI polish";
+"settings.transfer.section_ai_desc" = "Polish mode and output language.";
+"settings.transfer.section_vocabulary" = "Vocabulary";
+"settings.transfer.section_vocabulary_desc" = "Keywords and automatic corrections.";
+"settings.transfer.section_api_keys" = "API keys";
+"settings.transfer.section_api_keys_desc" = "Deepgram and Google API key if the file contains them.";
 
 "overlay.no_speech" = "No speech detected";
 

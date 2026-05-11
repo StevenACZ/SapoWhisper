@@ -21,7 +21,7 @@ struct SettingsView: View {
             // Contenido del tab seleccionado
             selectedTabContent
         }
-        .frame(width: 480, height: 500)
+        .frame(width: 780, height: 560)
         .background(Color(NSColor.windowBackgroundColor))
         .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
@@ -29,11 +29,11 @@ struct SettingsView: View {
             ToolbarItem(placement: .principal) {
                 Picker("", selection: tabSelection) {
                     ForEach(SettingsTab.allCases) { tab in
-                        Text(tab.title).tag(tab)
+                        Text(tab.toolbarTitle).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 280)
+                .frame(width: 360)
             }
 
             ToolbarItem(placement: .confirmationAction) {
@@ -74,9 +74,11 @@ struct SettingsView: View {
     private var selectedTabContent: some View {
         switch selectedTab {
         case .general:
-            GeneralSettingsTab()
+            GeneralSettingsTab(viewModel: viewModel)
         case .engine:
             EngineSettingsTab(viewModel: viewModel)
+        case .vocabulary:
+            VocabularySettingsTab()
         case .hotkey:
             HotkeySettingsTab()
         case .about:
@@ -103,6 +105,7 @@ struct SettingsView: View {
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case engine
+    case vocabulary
     case hotkey
     case about
 
@@ -114,10 +117,21 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             return "tab.general".localized
         case .engine:
             return "tab.engine".localized
+        case .vocabulary:
+            return "tab.vocabulary".localized
         case .hotkey:
             return "tab.hotkey".localized
         case .about:
             return "tab.about".localized
+        }
+    }
+
+    var toolbarTitle: String {
+        switch self {
+        case .vocabulary:
+            return "tab.vocabulary_short".localized
+        default:
+            return title
         }
     }
 }

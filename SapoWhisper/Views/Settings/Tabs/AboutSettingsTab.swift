@@ -21,7 +21,9 @@ struct AboutSettingsTab: View {
                 permissionsSection
                 creditsSection
             }
-            .padding()
+            .frame(maxWidth: 580)
+            .frame(maxWidth: .infinity)
+            .padding(16)
         }
     }
 
