@@ -2,29 +2,43 @@ import SwiftUI
 
 struct WhisperKitSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
+    let isEmbedded: Bool
 
     @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
+
+    init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
+        self.viewModel = viewModel
+        self.isEmbedded = isEmbedded
+    }
 
     private var currentWhisperKitModel: WhisperKitModel {
         WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
     }
 
     var body: some View {
-        SettingsCard(icon: "square.stack.3d.up", title: "config.whisper_model".localized) {
-            VStack(alignment: .leading, spacing: 12) {
-                loadedModelStatus
-
-                if viewModel.isLoadingWhisperKit {
-                    loadingProgressView
-                }
-
-                modelsList
-                storageInfo
-
-                Text("config.models_download_auto".localized)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+        if isEmbedded {
+            cardContent
+        } else {
+            SettingsCard(icon: "square.stack.3d.up", title: "config.whisper_model".localized) {
+                cardContent
             }
+        }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            loadedModelStatus
+
+            if viewModel.isLoadingWhisperKit {
+                loadingProgressView
+            }
+
+            modelsList
+            storageInfo
+
+            Text("config.models_download_auto".localized)
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
 

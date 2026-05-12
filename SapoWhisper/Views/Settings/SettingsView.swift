@@ -21,7 +21,7 @@ struct SettingsView: View {
             // Contenido del tab seleccionado
             selectedTabContent
         }
-        .frame(width: 780, height: 560)
+        .frame(width: 800, height: 560)
         .background(Color(NSColor.windowBackgroundColor))
         .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
