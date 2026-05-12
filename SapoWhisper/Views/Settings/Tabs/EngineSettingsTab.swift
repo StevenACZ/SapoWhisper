@@ -84,3 +84,44 @@ extension TranscriptionEngine {
     EngineSettingsTab(viewModel: SapoWhisperViewModel())
         .frame(width: 700, height: 600)
 }
+
+#Preview("Permissions States") {
+    HStack(alignment: .top, spacing: 20) {
+        PermissionStatePreviewColumn(
+            title: "Needs Permissions",
+            grantedPermissions: []
+        )
+
+        PermissionStatePreviewColumn(
+            title: "All Granted",
+            grantedPermissions: Set(AppPermission.allCases)
+        )
+    }
+    .padding(20)
+    .frame(width: 1120, height: 720)
+    .background(Color(nsColor: .windowBackgroundColor))
+    .preferredColorScheme(.dark)
+}
+
+private struct PermissionStatePreviewColumn: View {
+    let title: String
+    let grantedPermissions: Set<AppPermission>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            PermissionRequirementsView(
+                previewGrantedPermissions: grantedPermissions,
+                onActivate: { _ in },
+                onClose: {}
+            )
+            .frame(
+                width: PermissionRequirementsView.windowSize.width,
+                height: PermissionRequirementsView.windowSize.height
+            )
+        }
+    }
+}
