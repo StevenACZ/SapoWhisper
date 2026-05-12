@@ -132,7 +132,7 @@
 "info.how_to_title" = "¿Cómo funciona?";
 "info.how_to_body" = "1. Presiona el atajo de teclado para iniciar\n2. Habla claramente al micrófono\n3. Presiona el atajo otra vez para detener\n4. El texto se copia automáticamente\n5. Con \"Auto-pegar\" activado, se pega donde tengas el cursor";
 "info.privacy_title" = "Privacidad";
-"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Google Cloud Speech-to-Text. Usa el modelo Chirp 3 (V2) para maxima precision. Requiere cuenta de Google Cloud.";
+"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Speech-to-Text con Chirp 3 para maxima precision. Requiere cuenta Google Cloud.\n\nDeepgram: Usa Nova-3 o Flux Live para transcripcion en la nube. Requiere API key.\n\nMejora por IA: Opcional. Usa Gemini en Vertex AI para ordenar, corregir y mejorar legibilidad sin inventar detalles.";
 "info.permissions_title" = "Permisos necesarios";
 "info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Reconocimiento de voz: Para transcribir el audio\n• Accesibilidad: Para el atajo de teclado global";
 
@@ -148,7 +148,7 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Descarga un modelo primero";
 "status.recording_generic" = "Grabando...";
-"config.subtitle_info" = "Speech-to-Text con WhisperKit, Apple Speech y Google Cloud";
+"config.subtitle_info" = "Speech-to-Text con WhisperKit, Apple, Google Cloud, Deepgram y Mejora por IA";
 "app.description" = "Speech-to-Text local y en la nube";
 "config.coming_soon" = "Próximamente";
 "config.whisper_coming_soon_desc" = "En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.";
@@ -177,6 +177,7 @@
 "config.api_key_fallback" = "API Key (alternativa)";
 
 /* AI Polish */
+"ai.google_ai.title" = "Google Cloud y Mejora por IA";
 "ai.polish.title" = "Mejora por IA";
 "ai.polish.enable" = "Mejorar texto con IA";
 "ai.polish.mode" = "Modo";
@@ -184,12 +185,14 @@
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_desc" = "Genera el texto en %@.";
 "ai.polish.desc" = "Usa Gemini 3.1 Flash-Lite en Vertex AI para corregir errores probables, ordenar ideas y mejorar legibilidad sin inventar detalles.";
+"ai.polish.vertex_info_title" = "Gemini en Vertex AI";
+"ai.polish.requires_google" = "Requiere Google Cloud conectado.";
 "ai.google_connected" = "Google Cloud conectado";
 "ai.google_missing" = "Google Cloud no conectado";
-"ai.google_connected_desc" = "Mejora por IA puede usar Gemini en Vertex AI con estas credenciales.";
-"ai.google_missing_desc" = "Primero conecta Google Cloud. La opcion recomendada es iniciar sesion con gcloud; importar JSON es solo para credenciales ya descargadas.";
+"ai.google_connected_desc" = "Estas credenciales activan Chirp 3 y tambien habilitan Gemini en Vertex AI.";
+"ai.google_missing_desc" = "Conecta Google Cloud para usar Chirp 3 y activar Mejora por IA.";
 "ai.google_connect" = "Conectar Google Cloud";
-"ai.google_setup_intro" = "SapoWhisper usa las credenciales locales de Google Cloud para llamar a Vertex AI. Haz estos pasos una sola vez:";
+"ai.google_setup_intro" = "SapoWhisper usa las credenciales locales de Google Cloud para Chirp 3 y Vertex AI. Haz estos pasos una sola vez:";
 "ai.google_setup_desc" = "Para conectar: instala gcloud, ejecuta 'gcloud auth application-default login' y luego presiona Detectar. Tambien puedes importar el JSON de credenciales.";
 "ai.google_step1_title" = "Instala Google Cloud CLI";
 "ai.google_step1_detail" = "Si ya tienes gcloud instalado, puedes saltar este paso.";

@@ -55,14 +55,14 @@ struct GeneralSettingsTab: View {
                 VStack(spacing: 12) {
                     microphoneCard
                     languageCard
-                    soundCard
+                    behaviorCard
+                    transferCard
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
 
                 VStack(spacing: 12) {
                     autoDuckingCard
-                    behaviorCard
-                    transferCard
+                    soundCard
                     permissionsCard
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
