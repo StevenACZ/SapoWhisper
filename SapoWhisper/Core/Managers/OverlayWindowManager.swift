@@ -66,10 +66,14 @@ class OverlayWindowManager: ObservableObject {
 
     /// Muestra la ventana de overlay con animacion
     func show() {
+        let signpostState = SapoSignpost.begin(SapoSignpost.Name.hotkeyToOverlay)
         let t0 = CFAbsoluteTimeGetCurrent()
         let reusedWindow = overlayWindow != nil
         ensureWindow()
-        guard let window = overlayWindow else { return }
+        guard let window = overlayWindow else {
+            SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
+            return
+        }
         presentationRevision &+= 1
         let revision = presentationRevision
         isAnimating = false
@@ -87,7 +91,10 @@ class OverlayWindowManager: ObservableObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1.0
         }
-        guard revision == presentationRevision else { return }
+        guard revision == presentationRevision else {
+            SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
+            return
+        }
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         let reuseState = reusedWindow ? "reused" : "created"
         SapoLog.overlay.info(
@@ -98,6 +105,7 @@ class OverlayWindowManager: ObservableObject {
             context: "reuse=\(reuseState) elapsedMs=\(Int(elapsed))",
             force: true
         )
+        SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
     }
 
     /// Oculta la ventana de overlay con animacion

@@ -13,6 +13,8 @@ final class TranscriptPostProcessor {
     }
 
     func process(rawText: String, force: Bool = false) async -> TranscriptAIResult {
+        let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
+        defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
         let startedAt = CFAbsoluteTimeGetCurrent()
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
 

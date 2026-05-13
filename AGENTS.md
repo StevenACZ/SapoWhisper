@@ -21,9 +21,33 @@ Project-local operating notes for coding agents. Keep this compact, operational,
 - AI polish has an output-language selector; default behavior should preserve the transcript's dominant language unless the user explicitly chooses Spanish, English, or Translate to English.
 - History: SQLite via `TranscriptionHistoryManager*`; audio retention via `HistoryAudioStorage`.
 - Permissions: `PermissionService` plus guided permission windows/overlays.
-- Diagnostics: prefer `SapoLog` categories `Overlay`, `Hotkey`, `Recording`, `AudioRoute`, `Flux`, and `AI`.
+- Diagnostics: prefer `SapoLog` categories `Overlay`, `Hotkey`, `Recording`, `AudioRoute`, `Flux`, `AI`, `Gemini`, `Lifecycle`, `MenuBar`, `Settings`, and `Performance`.
 - Long-run slowdown investigations should start from unified logs plus
   `~/Library/Application Support/SapoWhisper/Diagnostics/runtime.jsonl`, especially after 3-4 day sessions.
+
+## Diagnostics access
+
+The app logs to Apple's unified logging system under the bundle id (`oli.SapoWhisper`) plus a rotating JSONL file capped at 2 MB.
+
+Tail logs live in another terminal while the app runs:
+
+```bash
+log stream --predicate 'subsystem == "oli.SapoWhisper"' --info
+```
+
+Inspect the persistent diagnostics file (rotates to `runtime.previous.jsonl`):
+
+```bash
+tail -f ~/Library/Application\ Support/SapoWhisper/Diagnostics/runtime.jsonl | jq
+```
+
+Three OSSignpost intervals appear under the `Signpost` category for Instruments and `log stream`:
+
+- `hotkey-to-overlay` — time from `show()` start to the overlay being visible.
+- `polish` — end-to-end Gemini transcript polish span.
+- `transcription` — reserved; not yet wrapped around the engine calls.
+
+Never log raw transcripts, prompts, Gemini responses, API keys, OAuth tokens, or service-account JSON. Prefer `chars=`/`bytes=` summaries over the actual content.
 
 ## Guardrails
 

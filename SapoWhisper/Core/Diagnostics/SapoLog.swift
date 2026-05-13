@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 enum SapoLog {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "oli.SapoWhisper"
+    static let subsystem = Bundle.main.bundleIdentifier ?? "oli.SapoWhisper"
 
     static let audioRoute = Logger(subsystem: subsystem, category: "AudioRoute")
     static let menuBar = Logger(subsystem: subsystem, category: "MenuBar")
@@ -20,6 +20,28 @@ enum SapoLog {
     static let settings = Logger(subsystem: subsystem, category: "Settings")
     static let flux = Logger(subsystem: subsystem, category: "Flux")
     static let ai = Logger(subsystem: subsystem, category: "AI")
+    static let gemini = Logger(subsystem: subsystem, category: "Gemini")
+    static let lifecycle = Logger(subsystem: subsystem, category: "Lifecycle")
+}
+
+/// OSSignposter wrappers for the three latency-critical pipelines so the spans show
+/// up in Console.app and Instruments without spamming the unified log with raw text.
+enum SapoSignpost {
+    static let signposter = OSSignposter(subsystem: SapoLog.subsystem, category: "Signpost")
+
+    enum Name {
+        static let hotkeyToOverlay: StaticString = "hotkey-to-overlay"
+        static let transcription: StaticString = "transcription"
+        static let polish: StaticString = "polish"
+    }
+
+    static func begin(_ name: StaticString) -> OSSignpostIntervalState {
+        signposter.beginInterval(name)
+    }
+
+    static func end(_ name: StaticString, state: OSSignpostIntervalState) {
+        signposter.endInterval(name, state)
+    }
 }
 
 enum PerformanceDiagnostics {

@@ -7,6 +7,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import os
 
 /// Transcriber using Google Cloud Speech-to-Text
 /// - V2 + Chirp 3 when service account is configured
@@ -64,7 +65,9 @@ class GoogleCloudTranscriber: ObservableObject {
         let base64Audio = pcmData.base64EncodedString()
         let estimate = Double(pcmData.count) / (16000.0 * 2.0)
 
-        print("🌐 Google Cloud STT V2 (Chirp 3): sending \(pcmData.count) bytes (~\(String(format: "%.1f", estimate))s)")
+        SapoLog.recording.info(
+            "Google Cloud V2 sending bytes=\(pcmData.count, privacy: .public) estimatedSec=\(estimate, privacy: .public)"
+        )
 
         let endpoint = GoogleCloudConfig.v2Endpoint(projectID: projectID)
         var request = URLRequest(url: URL(string: endpoint)!)
@@ -90,9 +93,9 @@ class GoogleCloudTranscriber: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw GoogleCloudError.invalidResponse }
 
-        if let str = String(data: data, encoding: .utf8) {
-            print("🌐 V2 response (\(http.statusCode)): \(str.prefix(500))")
-        }
+        SapoLog.recording.info(
+            "Google Cloud V2 response status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public)"
+        )
 
         // Retry once on 401
         if http.statusCode == 401 && !isRetry {
@@ -121,7 +124,9 @@ class GoogleCloudTranscriber: ObservableObject {
         let base64Audio = pcmData.base64EncodedString()
         let secs = Double(pcmData.count) / (16000.0 * 2.0)
 
-        print("🌐 Google Cloud STT V1 (latest_long): sending \(pcmData.count) bytes (~\(String(format: "%.1f", secs))s)")
+        SapoLog.recording.info(
+            "Google Cloud V1 sending bytes=\(pcmData.count, privacy: .public) estimatedSec=\(secs, privacy: .public)"
+        )
 
         var request = URLRequest(url: URL(string: "\(v1BaseURL)?key=\(apiKey)")!)
         request.httpMethod = "POST"
@@ -142,9 +147,9 @@ class GoogleCloudTranscriber: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw GoogleCloudError.invalidResponse }
 
-        if let str = String(data: data, encoding: .utf8) {
-            print("🌐 V1 response (\(http.statusCode)): \(str.prefix(500))")
-        }
+        SapoLog.recording.info(
+            "Google Cloud V1 response status=\(http.statusCode, privacy: .public) bytes=\(data.count, privacy: .public)"
+        )
 
         if http.statusCode != 200 {
             return try handleError(data: data, statusCode: http.statusCode)
@@ -214,7 +219,9 @@ class GoogleCloudTranscriber: ObservableObject {
         }.joined(separator: " ")
 
         guard !transcript.isEmpty else { throw GoogleCloudError.emptyTranscription }
-        print("🌐 Google Cloud STT \(label) result: \(transcript.prefix(80))...")
+        SapoLog.recording.info(
+            "Google Cloud STT label=\(label, privacy: .public) chars=\(transcript.count, privacy: .public)"
+        )
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

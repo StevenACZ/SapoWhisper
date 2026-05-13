@@ -5,6 +5,7 @@
 
 import AVFoundation
 import SwiftUI
+import os
 
 /// Compact inline player with metadata for mic test sample playback
 struct AudioSamplePlayerView: View {
@@ -78,7 +79,9 @@ struct AudioSamplePlayerView: View {
             player?.prepareToPlay()
             duration = player?.duration ?? 0
         } catch {
-            print("AudioSamplePlayerView: Failed to load: \(error)")
+            SapoLog.settings.warning(
+                "AudioSamplePlayer load failed error=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 

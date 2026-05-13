@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import os
 
 final class HistoryAudioStorage {
     static let maxAudioStorageBytes: Int64 = 500 * 1024 * 1024
@@ -24,7 +25,9 @@ final class HistoryAudioStorage {
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
             return destURL.path
         } catch {
-            print("Failed to save audio: \(error)")
+            SapoLog.recording.error(
+                "History audio save failed error=\(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
     }

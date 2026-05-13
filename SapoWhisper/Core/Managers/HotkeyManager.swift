@@ -69,7 +69,6 @@ class HotkeyManager: ObservableObject {
 
         if status != noErr {
             SapoLog.hotkey.error("Failed to install event handler status=\(status, privacy: .public)")
-            print("❌ Error instalando event handler: \(status)")
             return
         }
 
@@ -87,10 +86,8 @@ class HotkeyManager: ObservableObject {
 
         if registerStatus != noErr {
             SapoLog.hotkey.error("Failed to register hotkey status=\(registerStatus, privacy: .public)")
-            print("❌ Error registrando hotkey: \(registerStatus)")
         } else {
             SapoLog.hotkey.info("Global hotkey registered \(self.hotkeyDescription, privacy: .public)")
-            print("✅ Hotkey registrado: \(hotkeyDescription)")
         }
     }
 

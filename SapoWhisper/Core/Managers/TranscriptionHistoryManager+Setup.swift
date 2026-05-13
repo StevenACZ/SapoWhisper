@@ -5,6 +5,7 @@
 
 import Foundation
 import SQLite3
+import os
 
 extension TranscriptionHistoryManager {
     func configureDatabase() {
@@ -53,7 +54,10 @@ extension TranscriptionHistoryManager {
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK,
             let message = sqlite3_errmsg(db)
         {
-            print("Failed to migrate history schema column \(columnName): \(String(cString: message))")
+            let messageString = String(cString: message)
+            SapoLog.recording.error(
+                "History migrate failed column=\(columnName, privacy: .public) error=\(messageString, privacy: .public)"
+            )
         }
     }
 

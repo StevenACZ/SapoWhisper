@@ -9,6 +9,7 @@ import AudioToolbox
 import Combine
 import CoreAudio
 import Foundation
+import os
 
 /// Metadata for a recorded audio sample
 struct SampleMetadata {
@@ -113,7 +114,7 @@ class AudioLevelMonitor: ObservableObject {
                 self.errorMessage = nil
                 self.isActive = true
                 self.startPeakDecayTimer()
-                print("🎤 Monitoreo de nivel iniciado")
+                SapoLog.audioRoute.info("Audio level monitoring started")
             }
         } catch {
             setError("Error al iniciar: \(error.localizedDescription)")
@@ -140,7 +141,9 @@ class AudioLevelMonitor: ObservableObject {
         )
 
         if status != noErr {
-            print("⚠️ [audio monitor] failed to bind device (status: \(status))")
+            SapoLog.audioRoute.warning(
+                "Monitor bind failed status=\(status, privacy: .public)"
+            )
             return nil
         }
 
@@ -206,7 +209,7 @@ class AudioLevelMonitor: ObservableObject {
             self.resumeAfterRecorder = self.monitoringRequested
             self.bumpRestartGeneration()
             self.stopMonitoringOnQueue(clearIntent: false, logStop: false)
-            print("🎤 [audio monitor] suspended for recorder")
+            SapoLog.audioRoute.info("Monitor suspended for recorder")
         }
         return true
     }
@@ -233,7 +236,9 @@ class AudioLevelMonitor: ObservableObject {
 
             let settleDelay = max(0, minimumDelay)
             if settleDelay > 0 {
-                print("🎤 [audio monitor] waiting \(Int(settleDelay * 1000))ms for route to settle")
+                SapoLog.audioRoute.info(
+                    "Monitor waiting for route settle delayMs=\(Int(settleDelay * 1000), privacy: .public)"
+                )
             }
 
             self.monitorQueue.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
@@ -262,7 +267,7 @@ class AudioLevelMonitor: ObservableObject {
             self.audioLevel = 0
             self.peakLevel = 0
             if logStop && wasMonitoring {
-                print("🎤 Monitoreo de nivel detenido")
+                SapoLog.audioRoute.info("Audio level monitoring stopped")
             }
         }
     }
@@ -312,9 +317,11 @@ class AudioLevelMonitor: ObservableObject {
                 self.sampleRecordingDuration = Date().timeIntervalSince(start)
             }
 
-            print("🎤 [sample] recording started")
+            SapoLog.audioRoute.info("Mic sample recording started")
         } catch {
-            print("❌ [sample] failed to create file: \(error)")
+            SapoLog.audioRoute.error(
+                "Mic sample file create failed error=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -339,9 +346,9 @@ class AudioLevelMonitor: ObservableObject {
         if convertToCompressed(from: rawURL, to: compressedURL) {
             self.compressedSampleURL = compressedURL
             self.compressedSampleMetadata = buildMetadata(for: compressedURL)
-            print("🎤 [sample] recording stopped, raw + compressed ready")
+            SapoLog.audioRoute.info("Mic sample stopped raw+compressed=true")
         } else {
-            print("⚠️ [sample] compression failed, raw-only available")
+            SapoLog.audioRoute.warning("Mic sample compression failed, raw-only available")
         }
     }
 
@@ -423,7 +430,9 @@ class AudioLevelMonitor: ObservableObject {
         }
 
         guard status == .haveData, outputBuffer.frameLength > 0 else {
-            print("❌ [sample] conversion failed: \(error?.localizedDescription ?? "no output")")
+            SapoLog.audioRoute.error(
+                "Mic sample conversion failed error=\(error?.localizedDescription ?? "no output", privacy: .public)"
+            )
             return false
         }
 
@@ -458,7 +467,9 @@ class AudioLevelMonitor: ObservableObject {
                     try sampleFile.write(from: buffer)
                 }
             } catch {
-                print("❌ [sample] write failed: \(error)")
+                SapoLog.audioRoute.error(
+                    "Mic sample write failed error=\(error.localizedDescription, privacy: .public)"
+                )
             }
         }
 
@@ -502,7 +513,9 @@ class AudioLevelMonitor: ObservableObject {
     /// Establece un error
     private func setError(_ message: String) {
         DispatchQueue.main.async { [weak self] in
-            print("❌ AudioLevelMonitor: \(message)")
+            SapoLog.audioRoute.error(
+                "AudioLevelMonitor error message=\(message, privacy: .public)"
+            )
             self?.hasError = true
             self?.errorMessage = message
             self?.isActive = false

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import os
 
 // MARK: - Service Account Manager
 
@@ -33,7 +34,7 @@ class ServiceAccountManager {
         cachedToken = nil
         tokenExpiry = nil
         UserDefaults.standard.set(true, forKey: Constants.StorageKeys.serviceAccountConfigured)
-        print("🔑 Credentials imported: \(creds.type)")
+        SapoLog.gemini.info("Credentials imported type=\(String(describing: creds.type), privacy: .public)")
     }
 
     /// Remove stored credentials
@@ -43,7 +44,7 @@ class ServiceAccountManager {
         cachedToken = nil
         tokenExpiry = nil
         UserDefaults.standard.set(false, forKey: Constants.StorageKeys.serviceAccountConfigured)
-        print("🔑 Credentials removed")
+        SapoLog.gemini.info("Credentials removed")
     }
 
     /// Reload credentials (e.g. after user runs gcloud auth)
@@ -68,7 +69,9 @@ class ServiceAccountManager {
         let storedPath = Self.storagePath()
         if let creds = try? ADCredentials(url: storedPath) {
             credentials = creds
-            print("🔑 Loaded credentials from App Support: \(creds.type)")
+            SapoLog.gemini.info(
+                "Credentials loaded source=appSupport type=\(String(describing: creds.type), privacy: .public)"
+            )
             return
         }
 
@@ -77,7 +80,9 @@ class ServiceAccountManager {
             .appendingPathComponent(".config/gcloud/application_default_credentials.json")
         if let creds = try? ADCredentials(url: adcPath) {
             credentials = creds
-            print("🔑 Loaded ADC from gcloud: \(creds.type)")
+            SapoLog.gemini.info(
+                "Credentials loaded source=gcloudADC type=\(String(describing: creds.type), privacy: .public)"
+            )
             return
         }
     }

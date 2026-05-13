@@ -8,6 +8,7 @@
 import Combine
 import CoreAudio
 import Foundation
+import os
 
 /// Keeps the app's preferred microphone aligned with the macOS global default input.
 final class PreferredMicrophoneCoordinator {
@@ -82,7 +83,7 @@ final class PreferredMicrophoneCoordinator {
         }
 
         guard let preferredDeviceID = deviceManager.getDeviceID(for: preferredUID) else {
-            print("🎙️ [preferred mic] preferred input missing, reverting to system default")
+            SapoLog.audioRoute.warning("Preferred input missing, reverting to system default")
             userDefaults.set(AudioDevice.systemDefault.uid, forKey: Constants.StorageKeys.selectedMicrophone)
             updateResolvedInputDevice(
                 currentDefaultDeviceID,
@@ -104,9 +105,13 @@ final class PreferredMicrophoneCoordinator {
 
             let preferredDeviceName = deviceManager.getDeviceName(for: preferredDeviceID) ?? preferredUID
             if restoredPreferredInput {
-                print("🎙️ [preferred mic] restored system input -> \(preferredDeviceName)")
+                SapoLog.audioRoute.info(
+                    "Preferred input restored device=\(preferredDeviceName, privacy: .public)"
+                )
             } else {
-                print("⚠️ [preferred mic] failed to restore system input -> \(preferredDeviceName)")
+                SapoLog.audioRoute.warning(
+                    "Preferred input restore failed device=\(preferredDeviceName, privacy: .public)"
+                )
             }
         } else {
             finalDefaultDeviceID = preferredDeviceID

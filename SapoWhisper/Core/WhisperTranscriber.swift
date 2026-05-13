@@ -11,6 +11,7 @@ import AppKit
 import Combine
 import Foundation
 import Speech
+import os
 
 /// Maneja la transcripción de audio usando Speech Recognition de Apple
 @MainActor
@@ -116,7 +117,9 @@ class WhisperTranscriber: ObservableObject {
 
         progress = 1.0
         lastTranscription = transcription
-        print("✅ Transcripción completada: \(transcription.prefix(100))...")
+        SapoLog.recording.info(
+            "Apple Speech transcription complete chars=\(transcription.count, privacy: .public)"
+        )
 
         return transcription
     }

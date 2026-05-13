@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+import os
 
 /// Icono personalizado para el Menu Bar que muestra el estado de la app
 /// Usa imágenes del sapo que cambian según el estado
@@ -32,7 +33,9 @@ enum MenuBarIconImageProvider {
             return statusImage
         }
 
-        print("⚠️ MenuBarIcon: Failed to load \(imageName), using fallback")
+        SapoLog.menuBar.warning(
+            "MenuBarIcon failed to load image=\(imageName, privacy: .public), using fallback"
+        )
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
         return NSImage(systemSymbolName: fallbackIconName(for: appState), accessibilityDescription: nil)?
             .withSymbolConfiguration(config) ?? NSImage()

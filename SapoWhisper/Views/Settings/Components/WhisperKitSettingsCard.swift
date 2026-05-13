@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 struct WhisperKitSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
@@ -136,9 +137,13 @@ struct WhisperKitSettingsCard: View {
 
         let success = viewModel.whisperKitTranscriber.deleteDownloadedModel(model)
         if success {
-            print("WhisperKit model deleted: \(model.displayName)")
+            SapoLog.settings.info(
+                "WhisperKit model deleted=\(model.rawValue, privacy: .public)"
+            )
         } else {
-            print("Failed to delete WhisperKit model: \(model.displayName)")
+            SapoLog.settings.error(
+                "WhisperKit model delete failed=\(model.rawValue, privacy: .public)"
+            )
         }
     }
 }

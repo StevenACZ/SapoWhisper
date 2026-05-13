@@ -8,6 +8,7 @@
 
 import Combine
 import Foundation
+import os
 
 #if canImport(WhisperKit)
     import WhisperKit
@@ -55,7 +56,7 @@ class WhisperKitTranscriber: ObservableObject {
     // MARK: - Initialization
 
     init() {
-        print("WhisperKitTranscriber inicializado")
+        SapoLog.recording.info("WhisperKitTranscriber initialized")
         loadDownloadedModelsFromStorage()
     }
 
@@ -67,7 +68,9 @@ class WhisperKitTranscriber: ObservableObject {
                     downloadedModels.insert(model)
                 }
             }
-            print("📦 Modelos descargados cargados: \(downloadedModels.map { $0.displayName })")
+            SapoLog.recording.info(
+                "WhisperKit downloaded models loaded count=\(self.downloadedModels.count, privacy: .public)"
+            )
         }
     }
 
@@ -93,7 +96,7 @@ class WhisperKitTranscriber: ObservableObject {
 
             // Cancelar tarea anterior si existe
             if let existingTask = loadTask {
-                print("🛑 Cancelando carga anterior de WhisperKit...")
+                SapoLog.recording.info("Cancelling previous WhisperKit load")
                 existingTask.cancel()
                 loadTask = nil
                 // Esperar un momento a que limpie
@@ -140,7 +143,9 @@ class WhisperKitTranscriber: ObservableObject {
 
         for attempt in 1...maxRetries {
             do {
-                print("Cargando modelo WhisperKit: \(model.rawValue) (intento \(attempt)/\(maxRetries))")
+                SapoLog.recording.info(
+                    "Loading WhisperKit model=\(model.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)/\(maxRetries, privacy: .public)"
+                )
 
                 if attempt > 1 {
                     loadingState = .downloading
@@ -224,7 +229,9 @@ class WhisperKitTranscriber: ObservableObject {
                                             self.loadingMessage = msg
 
                                             if Int(currentProgress * 100) % 5 == 0 {
-                                                print("⬇️ \(msg)")
+                                                SapoLog.recording.debug(
+                                                    "WhisperKit download progress percent=\(Int(currentProgress * 100), privacy: .public)"
+                                                )
                                             }
                                         }
                                     }
@@ -271,7 +278,9 @@ class WhisperKitTranscriber: ObservableObject {
                 // Marcar como descargado para actualizar la UI
                 markAsDownloaded(model)
 
-                print("Modelo WhisperKit cargado exitosamente: \(model.displayName)")
+                SapoLog.recording.info(
+                    "WhisperKit model loaded model=\(model.rawValue, privacy: .public)"
+                )
                 return  // Exito, salir del bucle
 
             } catch {
@@ -284,7 +293,9 @@ class WhisperKitTranscriber: ObservableObject {
                     || errorDesc.contains("NSURLErrorDomain") || errorDesc.contains("offline")
 
                 if isNetworkError && attempt < maxRetries {
-                    print("Error de red, reintentando... (intento \(attempt)/\(maxRetries))")
+                    SapoLog.recording.warning(
+                        "WhisperKit network error retry=\(attempt, privacy: .public)/\(maxRetries, privacy: .public)"
+                    )
                     loadingMessage = "Problema de conexión. Reintentando (\(attempt)/\(maxRetries))..."
                     continue  // Reintentar
                 } else {
@@ -306,7 +317,9 @@ class WhisperKitTranscriber: ObservableObject {
         }
 
         errorMessage = "Error cargando modelo: \(userFriendlyError)"
-        print("Error cargando WhisperKit despues de \(maxRetries) intentos: \(errorMsg)")
+        SapoLog.recording.error(
+            "WhisperKit load failed after \(maxRetries, privacy: .public) attempts: \(errorMsg, privacy: .public)"
+        )
         throw WhisperKitError.modelLoadFailed(userFriendlyError)
     }
 
@@ -325,7 +338,7 @@ class WhisperKitTranscriber: ObservableObject {
         loadingState = .idle
         currentModel = nil
         currentModelName = nil
-        print("Modelo WhisperKit descargado de memoria")
+        SapoLog.recording.info("WhisperKit model unloaded")
     }
 
     // MARK: - Transcription
@@ -347,7 +360,9 @@ class WhisperKitTranscriber: ObservableObject {
             }
 
             do {
-                print("Iniciando transcripcion WhisperKit: \(audioURL.lastPathComponent)")
+                SapoLog.recording.info(
+                    "WhisperKit transcription started file=\(audioURL.lastPathComponent, privacy: .public)"
+                )
                 progress = 0.1
 
                 // Configurar opciones de decodificacion
@@ -370,12 +385,16 @@ class WhisperKitTranscriber: ObservableObject {
                 lastTranscription = transcription
                 progress = 1.0
 
-                print("Transcripcion WhisperKit completada: \(transcription.prefix(100))...")
+                SapoLog.recording.info(
+                    "WhisperKit transcription complete chars=\(transcription.count, privacy: .public)"
+                )
                 return transcription
 
             } catch {
                 errorMessage = "Error en transcripcion: \(error.localizedDescription)"
-                print("Error en transcripcion WhisperKit: \(error)")
+                SapoLog.recording.error(
+                    "WhisperKit transcription failed error=\(error.localizedDescription, privacy: .public)"
+                )
                 throw WhisperKitError.transcriptionFailed(error.localizedDescription)
             }
         #else
@@ -477,7 +496,9 @@ class WhisperKitTranscriber: ObservableObject {
     func markAsDownloaded(_ model: WhisperKitModel) {
         downloadedModels.insert(model)
         saveDownloadedModelsToStorage()
-        print("📦 Modelo marcado como descargado: \(model.displayName)")
+        SapoLog.recording.info(
+            "WhisperKit model marked downloaded=\(model.rawValue, privacy: .public)"
+        )
     }
 
     /// Actualiza la lista de modelos descargados
@@ -587,7 +608,9 @@ class WhisperKitTranscriber: ObservableObject {
         // Buscamos algo que coincida con "whisperkit" y el nombre del modelo (ej: "small")
         // Los folders de HF son tipo: models--argmaxinc--whisperkit-coreml-openai-whisper-small
 
-        print("🔍 Intentando borrar modelo: \(model.displayName) (buscando keywords: 'whisperkit' + '\(modelName)')")
+        SapoLog.recording.info(
+            "WhisperKit delete model=\(model.rawValue, privacy: .public) keyword=\(modelName, privacy: .public)"
+        )
 
         var foundAndDeleted = false
 
@@ -598,15 +621,11 @@ class WhisperKitTranscriber: ObservableObject {
                 continue
             }
 
-            print("📁 Escaneando directorio: \(modelsDir.path)")
-
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
 
                 for url in contents {
                     let name = url.lastPathComponent.lowercased()
-                    // Debug log
-                    // print("   - Encontrado: \(name)")
 
                     // La coincidencia debe ser mas flexible
                     // Si contiene "models--" y ("whisper" + modelName)
@@ -615,21 +634,28 @@ class WhisperKitTranscriber: ObservableObject {
                     if matches {
                         do {
                             try FileManager.default.removeItem(at: url)
-                            print("✅ BORRADO: \(url.lastPathComponent)")
+                            SapoLog.recording.info(
+                                "WhisperKit deleted file=\(url.lastPathComponent, privacy: .public)"
+                            )
                             foundAndDeleted = true
                         } catch {
-                            print("❌ Error borrando \(url.lastPathComponent): \(error.localizedDescription)")
+                            SapoLog.recording.error(
+                                "WhisperKit delete failed file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                            )
                         }
                     }
                 }
             } catch {
-                print("⚠️ Error leyendo directorio \(modelsDir.path): \(error.localizedDescription)")
+                SapoLog.recording.warning(
+                    "WhisperKit scan failed error=\(error.localizedDescription, privacy: .public)"
+                )
             }
         }
 
         if !foundAndDeleted {
-            print("⚠️ No se encontraron archivos para borrar del modelo \(model.displayName)")
-            print("   Rutas chequeadas: \(possibleModelDirectories.map { $0.path })")
+            SapoLog.recording.warning(
+                "WhisperKit no files found to delete for model=\(model.rawValue, privacy: .public)"
+            )
         }
 
         // Crear nuevo Set sin el modelo (fuerza actualizacion de SwiftUI)
@@ -639,7 +665,9 @@ class WhisperKitTranscriber: ObservableObject {
 
         saveDownloadedModelsToStorage()
 
-        print("🗑️ Modelo desmarcado de la lista interna: \(model.displayName)")
+        SapoLog.recording.info(
+            "WhisperKit model unmarked model=\(model.rawValue, privacy: .public)"
+        )
 
         return true
     }

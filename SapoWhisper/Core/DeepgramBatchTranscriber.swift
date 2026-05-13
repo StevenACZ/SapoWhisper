@@ -6,6 +6,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import os
 
 /// Batch transcription via Deepgram Nova-3 REST API
 class DeepgramBatchTranscriber: ObservableObject {
@@ -88,11 +89,8 @@ class DeepgramBatchTranscriber: ObservableObject {
             let alternatives = firstChannel["alternatives"] as? [[String: Any]],
             let transcript = alternatives.first?["transcript"] as? String
         else {
-            let previewData = Data(data.prefix(400))
-            let bodyPreview = String(data: previewData, encoding: .utf8) ?? "<non-utf8 response>"
-            print(
-                "⚠️ [deepgram debug] parse failure "
-                    + "(status: \(httpResponse.statusCode), bytes: \(audioData.count), body: \(bodyPreview))"
+            SapoLog.recording.warning(
+                "Deepgram batch parse failure status=\(httpResponse.statusCode, privacy: .public) audioBytes=\(audioData.count, privacy: .public)"
             )
             throw DeepgramError.apiError("Could not parse response")
         }
@@ -153,7 +151,9 @@ class DeepgramBatchTranscriber: ObservableObject {
             )
             return (wavData, "audio/wav")
         } catch {
-            print("⚠️ [deepgram debug] audio compression fallback: \(error)")
+            SapoLog.recording.warning(
+                "Deepgram batch compression fallback error=\(error.localizedDescription, privacy: .public)"
+            )
             let data = (try? Data(contentsOf: wavURL)) ?? Data()
             return (data, "audio/wav")
         }

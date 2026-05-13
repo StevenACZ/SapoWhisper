@@ -60,7 +60,9 @@ extension StreamingAudioCapture {
             case .inputRanDry, .endOfStream:
                 return
             case .error:
-                print("Flux capture conversion failed: \(error?.localizedDescription ?? "unknown")")
+                SapoLog.flux.error(
+                    "Capture conversion failed error=\(error?.localizedDescription ?? "unknown", privacy: .public)"
+                )
                 return
             @unknown default:
                 return
@@ -84,7 +86,9 @@ extension StreamingAudioCapture {
                 chunkHandler?(data)
             }
         } catch {
-            print("Flux capture write failed: \(error)")
+            SapoLog.flux.error(
+                "Capture write failed error=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -150,7 +154,9 @@ extension StreamingAudioCapture {
             case .endOfStream, .inputRanDry:
                 return frames
             case .error:
-                print("Flux capture converter flush failed: \(error?.localizedDescription ?? "unknown")")
+                SapoLog.flux.error(
+                    "Capture converter flush failed error=\(error?.localizedDescription ?? "unknown", privacy: .public)"
+                )
                 return frames
             @unknown default:
                 return frames

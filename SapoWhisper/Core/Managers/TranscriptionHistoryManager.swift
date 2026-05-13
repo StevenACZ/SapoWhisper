@@ -5,6 +5,7 @@
 
 import Foundation
 import SQLite3
+import os
 
 /// Manages transcription history using SQLite
 /// DB at ~/Library/Application Support/SapoWhisper/history.db
@@ -28,9 +29,9 @@ class TranscriptionHistoryManager {
             createTable()
             migrateSchema()
             createIndexes()
-            print("History DB opened: \(dbPath)")
+            SapoLog.recording.info("History DB opened")
         } else {
-            print("Failed to open history DB")
+            SapoLog.recording.error("Failed to open history DB")
         }
     }
 

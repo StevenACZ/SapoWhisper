@@ -10,6 +10,9 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Editable AI prompts and personal context** — Settings now has a Prompts tab where users can create per-destination prompts (Codex, Slack, custom) and a personal context block reused by every AI polish run.
+- **OSSignpost intervals** — `hotkey-to-overlay` and `polish` spans now show in Console.app and Instruments for live latency inspection.
+- **Lifecycle and Gemini logging categories** — New `SapoLog.lifecycle` and `SapoLog.gemini` channels.
 - **AI transcript polish** — Added an optional post-processing step that can refine completed transcripts with Gemini 3.1 Flash-Lite on Vertex AI after any transcription engine.
 - **AI polish progress state** — The recording overlay and menu bar now distinguish transcription from AI polishing so users can see when local/STT work has finished and Gemini formatting has started.
 - **AI polish history metadata** — History now keeps the raw transcript, final transcript, AI status, model, mode, and error metadata, with an action to run AI polish later.
@@ -18,6 +21,10 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Overlay performance** — Removed the `.id(stateCategory)` subtree rebuild so recording → transcribing → polishing transitions no longer recreate the pill on every state change.
+- **Settings tab churn** — Tabs stay alive in a single ZStack toggled by opacity; switching segments no longer rebuilds the entire tab subtree.
+- **Vocabulary filtering** — Keyterm and replacement filters are cached in `@State` and only recomputed on data or query changes, not on every body redraw.
+- **Logging unification** — Migrated every `print()` to `SapoLog`; only metadata gets `privacy: .public`. Google Cloud STT no longer logs response bodies, and `TranscriptAIResult.mode` is now a single `String?` instead of the previous dual enum/id path.
 - **Deepgram settings layout** — Moved AI polish above Vocabulary so the post-processing toggle is easier to find immediately after Deepgram setup.
 - **AI prompt formatting** — Mode IA now avoids decorative Markdown emphasis by default, preferring compact plain labels, paragraphs, bullets, and backticks only where they improve readability.
 - **AI prompt grounding** — AI polish now treats vocabulary and replacements as recognition context only, avoiding added details that were not present in the raw transcript.
