@@ -16,6 +16,7 @@ struct SettingsTransferDocument: Codable, Identifiable {
     var exportedAt: Date
     var preferences: SettingsTransferPreferences?
     var vocabulary: VocabularySnapshot?
+    var promptContext: PromptContextSnapshot?
     var apiKeys: SettingsTransferAPIKeys?
 
     var id: String {
@@ -58,6 +59,7 @@ enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
     case hotkey
     case aiPolish
     case vocabulary
+    case promptContext
     case apiKeys
 
     var id: String { rawValue }
@@ -76,6 +78,8 @@ enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
             return "settings.transfer.section_ai"
         case .vocabulary:
             return "settings.transfer.section_vocabulary"
+        case .promptContext:
+            return "settings.transfer.section_prompt_context"
         case .apiKeys:
             return "settings.transfer.section_api_keys"
         }
@@ -95,6 +99,8 @@ enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
             return "settings.transfer.section_ai_desc"
         case .vocabulary:
             return "settings.transfer.section_vocabulary_desc"
+        case .promptContext:
+            return "settings.transfer.section_prompt_context_desc"
         case .apiKeys:
             return "settings.transfer.section_api_keys_desc"
         }
@@ -149,6 +155,7 @@ struct SettingsTransferManager {
             exportedAt: Date(),
             preferences: nil,
             vocabulary: VocabularyManager.shared.snapshot(),
+            promptContext: nil,
             apiKeys: nil
         )
         return try encoder.encode(document)
@@ -169,6 +176,9 @@ struct SettingsTransferManager {
         }
         if document.vocabulary != nil {
             sections.append(.vocabulary)
+        }
+        if document.promptContext != nil {
+            sections.append(.promptContext)
         }
         if let apiKeys = document.apiKeys, !apiKeys.isEmpty {
             sections.append(.apiKeys)
@@ -196,6 +206,10 @@ struct SettingsTransferManager {
             VocabularyManager.shared.merge(snapshot: vocabulary)
         }
 
+        if sections.contains(.promptContext), let promptContext = document.promptContext {
+            PromptContextManager.shared.replace(with: promptContext)
+        }
+
         if sections.contains(.apiKeys), let apiKeys = document.apiKeys {
             importAPIKeys(apiKeys)
         }
@@ -216,6 +230,7 @@ struct SettingsTransferManager {
             exportedAt: Date(),
             preferences: currentPreferences(),
             vocabulary: VocabularyManager.shared.snapshot(),
+            promptContext: PromptContextManager.shared.snapshot(),
             apiKeys: apiKeys?.isEmpty == true ? nil : apiKeys
         )
     }

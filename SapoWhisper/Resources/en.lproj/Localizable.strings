@@ -237,6 +237,8 @@
 "tab.engine" = "Engine";
 "tab.vocabulary" = "Vocabulary";
 "tab.vocabulary_short" = "Vocab.";
+"tab.prompts" = "Prompts";
+"tab.prompts_short" = "Prompts";
 "tab.hotkey" = "Hotkey";
 "tab.about" = "About";
 
@@ -364,9 +366,32 @@
 "settings.vocabulary.export_success" = "Vocabulary exported.";
 "settings.vocabulary.import_success" = "Vocabulary imported.";
 
+/* Prompts & Context */
+"prompts.title" = "Prompts and context";
+"prompts.personal_context" = "Personal context";
+"prompts.personal_context_desc" = "Applies to every AI mode so Gemini can understand your profile, tools, and style without inventing details.";
+"prompts.context_level" = "Context level";
+"prompt.context.level.basic" = "Basic";
+"prompt.context.level.general" = "General";
+"prompt.context.level.super_general" = "Super General";
+"prompts.personal_context_hint" = "Example: I am a mobile developer, I mix Spanish with technical English, and I work with SwiftUI, KMP, and Xcode.";
+"prompts.save_context" = "Save context";
+"prompts.project_prompts" = "Project or destination prompts";
+"prompts.project_prompts_desc" = "Create editable modes for Codex, Claude Code, Slack, issues, or any dictation workflow.";
+"prompts.add_prompt" = "Add prompt";
+"prompts.name" = "Name";
+"prompts.description" = "Description";
+"prompts.force_english" = "Force English output";
+"prompts.instruction_hint" = "This instruction is sent to Gemini together with personal context, vocabulary, and the raw transcript.";
+"prompts.save_prompt" = "Save";
+"prompts.delete_prompt" = "Delete";
+"prompts.context_saved" = "Personal context saved.";
+"prompts.prompt_saved" = "Prompt saved.";
+"prompts.prompt_deleted" = "Prompt deleted.";
+
 /* Settings Transfer */
 "settings.transfer.title" = "Migrate settings";
-"settings.transfer.desc" = "Export a portable JSON file to move preferences and vocabulary to another Mac. Microphone selection, system permissions, and Google credentials imported as a file are not included.";
+"settings.transfer.desc" = "Export a portable JSON file to move preferences, vocabulary, prompts, and context to another Mac. Microphone selection, system permissions, and Google credentials imported as a file are not included.";
 "settings.transfer.include_api_keys" = "Include API keys stored on this Mac";
 "settings.transfer.export" = "Export settings";
 "settings.transfer.import" = "Import settings";
@@ -389,6 +414,8 @@
 "settings.transfer.section_ai_desc" = "Polish mode and output language.";
 "settings.transfer.section_vocabulary" = "Vocabulary";
 "settings.transfer.section_vocabulary_desc" = "Keywords and automatic corrections.";
+"settings.transfer.section_prompt_context" = "Prompts and context";
+"settings.transfer.section_prompt_context_desc" = "Personal context and editable AI modes.";
 "settings.transfer.section_api_keys" = "API keys";
 "settings.transfer.section_api_keys_desc" = "Deepgram and Google API key if the file contains them.";
 

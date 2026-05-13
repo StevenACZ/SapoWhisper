@@ -27,12 +27,12 @@ final class TranscriptPostProcessor {
         }
 
         let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
-        let mode = TranscriptPolishMode(rawValue: modeValue) ?? .automatic
+        let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
         let outputLanguageValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
         var outputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
-        if mode == .translateEnglish {
+        if promptProfile.forcesEnglish {
             outputLanguage = .english
         }
 
@@ -41,14 +41,15 @@ final class TranscriptPostProcessor {
                 rawText: rawText,
                 finalText: trimmed,
                 status: .skippedShort,
-                mode: mode,
+                mode: promptProfile.id,
                 startedAt: startedAt
             )
         }
 
         let prompt = TranscriptPolishPromptBuilder.makePrompt(
             rawText: trimmed,
-            mode: mode,
+            promptProfile: promptProfile,
+            personalContext: PromptContextManager.shared.makePersonalContextBlock(),
             outputLanguage: outputLanguage,
             keyterms: VocabularyManager.shared.keyterms,
             replacements: VocabularyManager.shared.replacements
@@ -64,7 +65,7 @@ final class TranscriptPostProcessor {
                 finalText: finalText.isEmpty ? trimmed : finalText,
                 status: .applied,
                 model: response.model,
-                mode: mode,
+                mode: promptProfile.id,
                 startedAt: startedAt
             )
         } catch {
@@ -73,7 +74,7 @@ final class TranscriptPostProcessor {
                 finalText: trimmed,
                 status: .failed,
                 model: GoogleCloudConfig.vertexGeminiModel,
-                mode: mode,
+                mode: promptProfile.id,
                 error: error.localizedDescription,
                 startedAt: startedAt
             )
@@ -115,7 +116,7 @@ final class TranscriptPostProcessor {
         finalText: String,
         status: TranscriptAIStatus,
         model: String? = nil,
-        mode: TranscriptPolishMode? = nil,
+        mode: String? = nil,
         error: String? = nil,
         startedAt: CFAbsoluteTime
     ) -> TranscriptAIResult {

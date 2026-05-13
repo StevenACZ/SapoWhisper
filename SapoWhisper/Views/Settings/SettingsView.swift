@@ -21,7 +21,7 @@ struct SettingsView: View {
             // Contenido del tab seleccionado
             selectedTabContent
         }
-        .frame(width: 800, height: 560)
+        .frame(width: 860, height: 620)
         .background(Color(NSColor.windowBackgroundColor))
         .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
@@ -33,7 +33,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 360)
+                .frame(width: 470)
             }
 
             ToolbarItem(placement: .confirmationAction) {
@@ -79,6 +79,8 @@ struct SettingsView: View {
             EngineSettingsTab(viewModel: viewModel)
         case .vocabulary:
             VocabularySettingsTab()
+        case .prompts:
+            PromptSettingsTab()
         case .hotkey:
             HotkeySettingsTab()
         case .about:
@@ -106,6 +108,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case engine
     case vocabulary
+    case prompts
     case hotkey
     case about
 
@@ -119,6 +122,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             return "tab.engine".localized
         case .vocabulary:
             return "tab.vocabulary".localized
+        case .prompts:
+            return "tab.prompts".localized
         case .hotkey:
             return "tab.hotkey".localized
         case .about:
@@ -130,6 +135,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .vocabulary:
             return "tab.vocabulary_short".localized
+        case .prompts:
+            return "tab.prompts_short".localized
         default:
             return title
         }

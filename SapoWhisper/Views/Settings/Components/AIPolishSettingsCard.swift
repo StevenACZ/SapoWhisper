@@ -8,6 +8,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AIPolishSettingsCard: View {
+    @ObservedObject private var promptContextManager = PromptContextManager.shared
+
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
@@ -17,12 +19,12 @@ struct AIPolishSettingsCard: View {
     @State private var projectID = ServiceAccountManager.shared.projectID
     @State private var connectionMessage: String?
 
-    private var currentMode: TranscriptPolishMode {
-        TranscriptPolishMode(rawValue: aiPolishMode) ?? .automatic
+    private var currentPrompt: PromptProfile {
+        promptContextManager.promptProfile(for: aiPolishMode)
     }
 
     private var currentOutputLanguage: TranscriptPolishOutputLanguage {
-        if currentMode == .translateEnglish {
+        if currentPrompt.forcesEnglish {
             return .english
         }
         return TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
@@ -135,11 +137,11 @@ struct AIPolishSettingsCard: View {
     private var modePicker: some View {
         AIPolishSettingRow(
             title: "ai.polish.mode".localized,
-            detail: "ai.polish.mode_desc".localized(currentMode.displayName)
+            detail: "ai.polish.mode_desc".localized(currentPrompt.trimmedName)
         ) {
             Picker("ai.polish.mode".localized, selection: $aiPolishMode) {
-                ForEach(TranscriptPolishMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode.rawValue)
+                ForEach(promptContextManager.prompts) { prompt in
+                    Text(prompt.trimmedName).tag(prompt.id)
                 }
             }
             .labelsHidden()
@@ -154,7 +156,7 @@ struct AIPolishSettingsCard: View {
             title: "ai.polish.output_language".localized,
             detail: "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
         ) {
-            if currentMode == .translateEnglish {
+            if currentPrompt.forcesEnglish {
                 FixedValuePill(text: currentOutputLanguage.displayName)
                     .frame(width: 230, alignment: .leading)
             } else {

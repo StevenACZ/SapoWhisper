@@ -124,8 +124,8 @@ struct HistoryInspectorView: View {
 
     private var aiStatusText: String {
         var parts = [entry.transcriptAIStatus.displayName]
-        if let mode = entry.transcriptAIMode {
-            parts.append(mode.displayName)
+        if let modeName = entry.aiModeDisplayName {
+            parts.append(modeName)
         }
         if let model = entry.aiModel, !model.isEmpty {
             parts.append(model)

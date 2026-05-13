@@ -40,9 +40,15 @@ struct HistoryEntry: Identifiable, Hashable {
         TranscriptAIStatus(rawValue: aiStatus) ?? .none
     }
 
-    var transcriptAIMode: TranscriptPolishMode? {
-        guard let aiMode else { return nil }
-        return TranscriptPolishMode(rawValue: aiMode)
+    var aiModeDisplayName: String? {
+        guard let aiMode, !aiMode.isEmpty else { return nil }
+        if let mode = TranscriptPolishMode(rawValue: aiMode) {
+            return mode.displayName
+        }
+        if let prompt = PromptContextManager.shared.prompts.first(where: { $0.id == aiMode }) {
+            return prompt.trimmedName
+        }
+        return aiMode
     }
 
     var hasRawTranscript: Bool {

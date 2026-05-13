@@ -1458,7 +1458,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func logAIResult(_ result: TranscriptAIResult, source: String) {
-        let mode = result.mode?.rawValue ?? "none"
+        let mode = result.mode ?? "none"
         let model = result.model ?? "none"
         let fallbackReason = result.error ?? "none"
         SapoLog.ai.info(
@@ -1489,7 +1489,7 @@ class SapoWhisperViewModel: ObservableObject {
             status: status,
             aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
             aiModel: aiResult?.model,
-            aiMode: aiResult?.mode?.rawValue,
+            aiMode: aiResult?.mode,
             aiError: aiResult?.error
         )
 

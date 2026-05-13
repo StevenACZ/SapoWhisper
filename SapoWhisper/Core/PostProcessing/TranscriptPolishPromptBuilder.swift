@@ -8,7 +8,8 @@ import Foundation
 enum TranscriptPolishPromptBuilder {
     static func makePrompt(
         rawText: String,
-        mode: TranscriptPolishMode,
+        promptProfile: PromptProfile,
+        personalContext: String,
         outputLanguage: TranscriptPolishOutputLanguage,
         keyterms: [String],
         replacements: [String: String]
@@ -26,6 +27,12 @@ enum TranscriptPolishPromptBuilder {
                 .map { "- \"\($0.key)\" -> \"\($0.value)\"" }
                 .joined(separator: "\n")
 
+        let trimmedPersonalContext = personalContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        let personalContextSection =
+            trimmedPersonalContext.isEmpty
+            ? ""
+            : "\n\nPersonal context:\n\(trimmedPersonalContext)"
+
         return """
             You polish speech-to-text output. Return only the final transcript.
 
@@ -39,12 +46,17 @@ enum TranscriptPolishPromptBuilder {
             - Preserve commands, filenames, branch names, APIs, product names, and mixed Spanish/English technical terms.
             - Use paragraphs, bullets, or inline backticks only when they clarify the original idea.
             - Avoid decorative Markdown, emojis, and tables unless the raw transcript asks for them.
+            - Use personal context only to disambiguate wording, tools, tone, and likely technical terms.
+            - Do not add personal-context details unless the raw transcript clearly asks for them.
 
-            Mode:
-            \(mode.promptInstruction)
+            Selected user prompt:
+            Name: \(promptProfile.trimmedName)
+            Details: \(promptProfile.details)
+            Instruction:
+            \(promptProfile.instruction)
 
             Output language:
-            \(outputLanguage.promptInstruction)
+            \(outputLanguage.promptInstruction)\(personalContextSection)
 
             User vocabulary keyterms:
             \(keytermBlock)

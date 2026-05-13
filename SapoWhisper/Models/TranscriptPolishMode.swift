@@ -73,7 +73,7 @@ struct TranscriptAIResult {
     let finalText: String
     let status: TranscriptAIStatus
     let model: String?
-    let mode: TranscriptPolishMode?
+    let mode: String?
     let error: String?
     let elapsedMs: Int
 }

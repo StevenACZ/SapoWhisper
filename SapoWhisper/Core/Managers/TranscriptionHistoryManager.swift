@@ -148,7 +148,7 @@ class TranscriptionHistoryManager {
         rawText: String,
         aiStatus: TranscriptAIStatus,
         aiModel: String?,
-        aiMode: TranscriptPolishMode?,
+        aiMode: String?,
         aiError: String?
     ) {
         let sql = """
@@ -170,7 +170,7 @@ class TranscriptionHistoryManager {
             sqlite3_bind_null(stmt, 4)
         }
         if let aiMode {
-            bindText(stmt, 5, aiMode.rawValue)
+            bindText(stmt, 5, aiMode)
         } else {
             sqlite3_bind_null(stmt, 5)
         }
