@@ -33,7 +33,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 470)
+                .fixedSize()
             }
 
             ToolbarItem(placement: .confirmationAction) {

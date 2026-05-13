@@ -6,41 +6,14 @@
 import Combine
 import Foundation
 
-enum PersonalContextLevel: String, Codable, CaseIterable, Identifiable {
-    case basic
-    case general
-    case superGeneral = "super_general"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .basic:
-            return "prompt.context.level.basic".localized
-        case .general:
-            return "prompt.context.level.general".localized
-        case .superGeneral:
-            return "prompt.context.level.super_general".localized
-        }
-    }
-
-    var promptInstruction: String {
-        switch self {
-        case .basic:
-            return "Use this as light identity and vocabulary context only."
-        case .general:
-            return "Use this to disambiguate domain, tools, tone, and likely technical terms."
-        case .superGeneral:
-            return "Use this as full personal working context for parsing intent, terms, and destination style."
-        }
-    }
-}
-
 struct PersonalPromptContext: Codable, Equatable {
-    var level: PersonalContextLevel
     var details: String
 
-    static let empty = PersonalPromptContext(level: .basic, details: "")
+    static let empty = PersonalPromptContext(details: "")
+
+    private enum CodingKeys: String, CodingKey {
+        case details
+    }
 }
 
 struct PromptProfile: Codable, Identifiable, Equatable {
@@ -77,9 +50,8 @@ final class PromptContextManager: ObservableObject {
         load()
     }
 
-    func updatePersonalContext(level: PersonalContextLevel, details: String) {
+    func updatePersonalContext(details: String) {
         personalContext = PersonalPromptContext(
-            level: level,
             details: Self.sanitizedMultiline(details, limit: 2_000)
         )
         save()
@@ -124,7 +96,6 @@ final class PromptContextManager: ObservableObject {
 
     func replace(with snapshot: PromptContextSnapshot) {
         personalContext = PersonalPromptContext(
-            level: snapshot.personalContext.level,
             details: Self.sanitizedMultiline(snapshot.personalContext.details, limit: 2_000)
         )
 
@@ -148,8 +119,6 @@ final class PromptContextManager: ObservableObject {
         guard !details.isEmpty else { return "" }
 
         return """
-            Context level: \(personalContext.level.rawValue)
-            Guidance: \(personalContext.level.promptInstruction)
             User profile:
             \(details)
             """

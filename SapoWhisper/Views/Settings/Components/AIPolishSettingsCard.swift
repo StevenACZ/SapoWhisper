@@ -38,7 +38,7 @@ struct AIPolishSettingsCard: View {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
 
                     Divider()
-                        .frame(height: isGoogleConfigured ? 188 : 156)
+                        .frame(height: isGoogleConfigured ? 222 : 190)
 
                     aiPolishPanel
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -111,9 +111,10 @@ struct AIPolishSettingsCard: View {
 
     private var aiPolishPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("ai.polish.enable".localized, isOn: aiPolishBinding)
-                .font(.subheadline.weight(.semibold))
-                .disabled(!isGoogleConfigured)
+            AIPolishHeroToggle(
+                isOn: aiPolishBinding,
+                isEnabled: isGoogleConfigured
+            )
 
             VStack(alignment: .leading, spacing: 10) {
                 modePicker
@@ -417,28 +418,98 @@ private struct AIPolishInfoCallout: View {
     let detail: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.sapoGreen)
-                .frame(width: 16)
-
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.sapoGreen)
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.sapoGreen)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
+            }
+
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.sapoGreen.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.sapoGreen.opacity(0.16), lineWidth: 1)
+        )
+    }
+}
+
+private struct AIPolishHeroToggle: View {
+    @Binding var isOn: Bool
+    let isEnabled: Bool
+
+    var body: some View {
+        HStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(iconBackground)
+                    .frame(width: 34, height: 34)
+                    .shadow(color: isOn ? Color.sapoGreen.opacity(0.35) : .clear, radius: 4, y: 1)
+
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(isOn ? Color.white : Color.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("ai.polish.enable".localized)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text(detail)
-                    .font(.caption)
+                Text(isOn ? "ai.polish.enable_active".localized : "ai.polish.enable_subtitle".localized)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Spacer(minLength: 8)
+
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(Color.sapoGreen)
+                .disabled(!isEnabled)
         }
-        .padding(10)
-        .background(Color.sapoGreen.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isOn ? Color.sapoGreen.opacity(0.12) : Color.secondary.opacity(0.06))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.sapoGreen.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(isOn ? Color.sapoGreen.opacity(0.38) : Color.secondary.opacity(0.18), lineWidth: 1)
+        )
+        .opacity(isEnabled ? 1 : 0.55)
+        .animation(.easeInOut(duration: 0.18), value: isOn)
+    }
+
+    private var iconBackground: LinearGradient {
+        if isOn {
+            return LinearGradient(
+                colors: [Color.purple, Color.sapoGreen],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        return LinearGradient(
+            colors: [Color.secondary.opacity(0.22), Color.secondary.opacity(0.14)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
         )
     }
 }

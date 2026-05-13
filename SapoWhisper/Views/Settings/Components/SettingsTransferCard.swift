@@ -20,7 +20,7 @@ struct SettingsTransferCard: View {
     private let transferManager = SettingsTransferManager.shared
 
     var body: some View {
-        SettingsCard(icon: "arrow.up.arrow.down.doc", title: "settings.transfer.title".localized) {
+        SettingsCard(icon: "arrow.up.arrow.down.square.fill", title: "settings.transfer.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("settings.transfer.desc".localized)
                     .font(.caption)

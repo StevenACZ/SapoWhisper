@@ -20,7 +20,6 @@ private struct PromptContextSettingsCard: View {
     @ObservedObject private var promptManager = PromptContextManager.shared
 
     @State private var selectedPromptID: String?
-    @State private var personalLevel: PersonalContextLevel = .basic
     @State private var personalDetails = ""
     @State private var draftName = ""
     @State private var draftDetails = ""
@@ -62,20 +61,7 @@ private struct PromptContextSettingsCard: View {
                 subtitle: "prompts.personal_context_desc".localized
             )
 
-            Picker("prompts.context_level".localized, selection: $personalLevel) {
-                ForEach(PersonalContextLevel.allCases) { level in
-                    Text(level.displayName).tag(level)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            TextEditor(text: $personalDetails)
-                .font(.system(size: 12))
-                .frame(minHeight: 82)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.18))
-                )
+            paddedTextEditor(text: $personalDetails, minHeight: 180)
 
             HStack {
                 Text("prompts.personal_context_hint".localized)
@@ -155,13 +141,7 @@ private struct PromptContextSettingsCard: View {
             Toggle("prompts.force_english".localized, isOn: $draftForcesEnglish)
                 .font(.caption)
 
-            TextEditor(text: $draftInstruction)
-                .font(.system(size: 12))
-                .frame(minHeight: 120)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.18))
-                )
+            paddedTextEditor(text: $draftInstruction, minHeight: 130)
 
             HStack {
                 Text("prompts.instruction_hint".localized)
@@ -193,7 +173,6 @@ private struct PromptContextSettingsCard: View {
     }
 
     private func loadPersonalContext() {
-        personalLevel = promptManager.personalContext.level
         personalDetails = promptManager.personalContext.details
     }
 
@@ -213,7 +192,7 @@ private struct PromptContextSettingsCard: View {
     }
 
     private func savePersonalContext() {
-        promptManager.updatePersonalContext(level: personalLevel, details: personalDetails)
+        promptManager.updatePersonalContext(details: personalDetails)
         feedbackMessage = "prompts.context_saved".localized
     }
 
@@ -247,6 +226,25 @@ private struct PromptContextSettingsCard: View {
         promptManager.removePrompt(id: id)
         selectedPromptID = promptManager.prompts.first?.id
         feedbackMessage = "prompts.prompt_deleted".localized
+    }
+
+    @ViewBuilder
+    private func paddedTextEditor(text: Binding<String>, minHeight: CGFloat) -> some View {
+        TextEditor(text: text)
+            .font(.system(size: 12))
+            .lineSpacing(4)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(minHeight: minHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18))
+            )
     }
 }
 

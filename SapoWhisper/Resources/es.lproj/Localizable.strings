@@ -180,6 +180,8 @@
 "ai.google_ai.title" = "Google Cloud y Mejora por IA";
 "ai.polish.title" = "Mejora por IA";
 "ai.polish.enable" = "Mejorar texto con IA";
+"ai.polish.enable_subtitle" = "Polish, corrige y formatea cada transcript con Gemini.";
+"ai.polish.enable_active" = "Activo — Gemini reescribe cada transcript.";
 "ai.polish.mode" = "Modo";
 "ai.polish.mode_desc" = "Usa %@ para ordenar y limpiar el texto antes de copiarlo.";
 "ai.polish.output_language" = "Idioma de salida";
@@ -370,10 +372,6 @@
 "prompts.title" = "Prompts y contexto";
 "prompts.personal_context" = "Contexto personal";
 "prompts.personal_context_desc" = "Se aplica a todos los modos de IA para entender tu perfil, herramientas y estilo sin inventar detalles.";
-"prompts.context_level" = "Nivel de contexto";
-"prompt.context.level.basic" = "Básico";
-"prompt.context.level.general" = "General";
-"prompt.context.level.super_general" = "Supergeneral";
 "prompts.personal_context_hint" = "Ej: soy desarrollador mobile, mezclo español con términos técnicos y trabajo con SwiftUI, KMP y Xcode.";
 "prompts.save_context" = "Guardar contexto";
 "prompts.project_prompts" = "Prompts por proyecto o destino";
