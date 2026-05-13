@@ -411,7 +411,7 @@ class SapoWhisperViewModel: ObservableObject {
             appState = .idle
         } catch {
             let errorMsg = error.localizedDescription
-            print("❌ Error cargando WhisperKit: \(errorMsg)")
+            SapoLog.recording.error("WhisperKit load failed error=\(errorMsg, privacy: .public)")
 
             // Verificar si es error de red
             let isNetworkError =
@@ -420,7 +420,7 @@ class SapoWhisperViewModel: ObservableObject {
 
             if isNetworkError {
                 // Fallback a Apple Speech
-                print("🔄 Haciendo fallback a Apple Speech por error de red...")
+                SapoLog.recording.warning("WhisperKit network error — falling back to Apple Speech")
                 selectedEngine = TranscriptionEngine.appleOnline.rawValue
                 appState = .error("Error de conexión. Usando Apple Speech temporalmente.")
 
@@ -559,7 +559,7 @@ class SapoWhisperViewModel: ObservableObject {
                     try deepgramFluxTranscriber.resumeRecording()
                     overlayManager.updateState(.recording(duration: deepgramFluxTranscriber.recordingDuration))
                 } catch {
-                    print("❌ [flux] failed to resume recording: \(error)")
+                    SapoLog.flux.error("Resume failed error=\(error.localizedDescription, privacy: .public)")
                 }
             } else {
                 deepgramFluxTranscriber.pauseRecording()
@@ -577,7 +577,7 @@ class SapoWhisperViewModel: ObservableObject {
                 try audioRecorder.resumeRecording()
                 overlayManager.updateState(.recording(duration: audioRecorder.recordingDuration))
             } catch {
-                print("❌ [capture] failed to resume recording: \(error)")
+                SapoLog.recording.error("Capture resume failed error=\(error.localizedDescription, privacy: .public)")
             }
         } else {
             // Pause
@@ -851,7 +851,7 @@ class SapoWhisperViewModel: ObservableObject {
                     lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
                     cleanupSourceAudioIfSafe(sourceURL: captureResult.audioURL, persistedEntry: persistedEntry)
                 }
-                print("❌ [flux] \(error)")
+                SapoLog.flux.error("Streaming error=\(error.localizedDescription, privacy: .public)")
             }
         }
     }
@@ -887,9 +887,8 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
-            print(
-                "⚠️ [capture] dropping empty recording after device switch "
-                    + "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
+            SapoLog.recording.warning(
+                "Dropping empty recording after device switch bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .public)"
             )
             audioRecorder.deleteRecording(at: audioURL)
             activeTranscriptionSessionID = nil
@@ -983,7 +982,9 @@ class SapoWhisperViewModel: ObservableObject {
                 lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
                 lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
                 cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
-                print("❌ [transcription] \(engine.displayName): \(error)")
+                SapoLog.recording.error(
+                    "Transcription failed engine=\(engine.displayName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
             }
         }
     }
@@ -1228,7 +1229,6 @@ class SapoWhisperViewModel: ObservableObject {
                     force: true
                 )
                 SapoLog.recording.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
-                print("❌ [capture] failed to start recording: \(error)")
             }
         }
     }
@@ -1292,7 +1292,6 @@ class SapoWhisperViewModel: ObservableObject {
                     force: true
                 )
                 SapoLog.recording.error("Flux failed to start: \(error.localizedDescription, privacy: .public)")
-                print("❌ [flux] failed to start: \(error)")
             }
         }
     }
@@ -1312,7 +1311,7 @@ class SapoWhisperViewModel: ObservableObject {
                 )
                 if didStart {
                     if attempt > 1 {
-                        print("✅ [capture] recovered on retry after route transition")
+                        SapoLog.recording.info("Capture recovered on retry after route transition")
                     }
                     return
                 }
@@ -1342,9 +1341,8 @@ class SapoWhisperViewModel: ObservableObject {
                 max(Self.startRetryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
             )
 
-            print(
-                "🎙️ [capture] transient start failure (\(classification.reason)), "
-                    + "retrying \(attempt + 1)/3 after \(Int(retryDelay * 1000))ms"
+            SapoLog.recording.warning(
+                "Capture transient start failure reason=\(classification.reason, privacy: .public) attempt=\(attempt + 1, privacy: .public)/3 retryAfterMs=\(Int(retryDelay * 1000), privacy: .public)"
             )
             try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
         }
@@ -1375,9 +1373,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         let diagnostics = audioRecorder.currentCaptureDiagnostics()
         let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
-        print(
-            "⚠️ [capture] attempt \(attempt) received no input buffer within " + "\(Int(Self.firstInputBufferTimeout * 1000))ms "
-                + "(bytes: \(diagnostics.fileSizeBytes), input: \(inputDescription))"
+        SapoLog.recording.warning(
+            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(Self.firstInputBufferTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .public)"
         )
         return false
     }

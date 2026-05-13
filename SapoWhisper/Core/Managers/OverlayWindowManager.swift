@@ -61,7 +61,6 @@ class OverlayWindowManager: ObservableObject {
         overlayWindow?.orderOut(nil)
         overlayWindow?.alphaValue = 0
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        print("⏱️ [overlay prewarm] ready in \(String(format: "%.0f", elapsed))ms")
         SapoLog.overlay.info("Overlay prewarmed in \(Int(elapsed), privacy: .public)ms")
     }
 
@@ -90,7 +89,6 @@ class OverlayWindowManager: ObservableObject {
         }
         guard revision == presentationRevision else { return }
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        print("⏱️ [overlay show] \(reusedWindow ? "reused" : "created") in \(String(format: "%.0f", elapsed))ms")
         let reuseState = reusedWindow ? "reused" : "created"
         SapoLog.overlay.info(
             "Overlay shown state=\(reuseState, privacy: .public) elapsed=\(Int(elapsed), privacy: .public)ms"
@@ -170,7 +168,6 @@ class OverlayWindowManager: ObservableObject {
         overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
         isAnimating = false
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        print("⏱️ [overlay build] window created in \(String(format: "%.0f", elapsed))ms")
         SapoLog.overlay.info("Overlay window created in \(Int(elapsed), privacy: .public)ms")
     }
 
