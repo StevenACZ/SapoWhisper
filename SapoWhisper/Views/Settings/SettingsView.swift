@@ -70,22 +70,39 @@ struct SettingsView: View {
         )
     }
 
-    @ViewBuilder
+    /// Each tab is kept alive in a ZStack and toggled via opacity so SwiftUI does not
+    /// rebuild the subtree when the user switches tabs. This preserves scroll positions,
+    /// pickers, drafts, and avoids re-running heavy init paths (vocabulary search, prompt
+    /// editor state) every time the toolbar selection changes.
     private var selectedTabContent: some View {
-        switch selectedTab {
-        case .general:
-            GeneralSettingsTab(viewModel: viewModel)
-        case .engine:
-            EngineSettingsTab(viewModel: viewModel)
-        case .vocabulary:
-            VocabularySettingsTab()
-        case .prompts:
-            PromptSettingsTab()
-        case .hotkey:
-            HotkeySettingsTab()
-        case .about:
-            AboutSettingsTab()
+        ZStack {
+            tabContent(for: .general) {
+                GeneralSettingsTab(viewModel: viewModel)
+            }
+            tabContent(for: .engine) {
+                EngineSettingsTab(viewModel: viewModel)
+            }
+            tabContent(for: .vocabulary) {
+                VocabularySettingsTab()
+            }
+            tabContent(for: .prompts) {
+                PromptSettingsTab()
+            }
+            tabContent(for: .hotkey) {
+                HotkeySettingsTab()
+            }
+            tabContent(for: .about) {
+                AboutSettingsTab()
+            }
         }
+    }
+
+    @ViewBuilder
+    private func tabContent<Content: View>(for tab: SettingsTab, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .opacity(selectedTab == tab ? 1 : 0)
+            .allowsHitTesting(selectedTab == tab)
+            .accessibilityHidden(selectedTab != tab)
     }
 
     private func logTabRendered(_ tab: SettingsTab) {

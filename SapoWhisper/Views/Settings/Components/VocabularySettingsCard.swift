@@ -12,22 +12,10 @@ struct VocabularySettingsCard: View {
     @State private var searchText = ""
     @State private var transferMessage: String?
     @State private var transferMessageIsError = false
+    @State private var filteredKeyterms: [String] = []
+    @State private var filteredReplacements: [(key: String, value: String)] = []
 
     private let transferManager = SettingsTransferManager.shared
-
-    private var filteredKeyterms: [String] {
-        guard !normalizedSearchText.isEmpty else { return vocabularyManager.keyterms }
-        return vocabularyManager.keyterms.filter { $0.localizedCaseInsensitiveContains(normalizedSearchText) }
-    }
-
-    private var filteredReplacements: [(key: String, value: String)] {
-        let replacements = vocabularyManager.replacements.sorted { $0.key < $1.key }
-        guard !normalizedSearchText.isEmpty else { return replacements }
-        return replacements.filter {
-            $0.key.localizedCaseInsensitiveContains(normalizedSearchText)
-                || $0.value.localizedCaseInsensitiveContains(normalizedSearchText)
-        }
-    }
 
     private var normalizedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,6 +35,31 @@ struct VocabularySettingsCard: View {
                         .font(.caption)
                         .foregroundColor(transferMessageIsError ? .red : .secondary)
                 }
+            }
+        }
+        .onAppear(perform: recomputeFilters)
+        .onChange(of: searchText) { _, _ in recomputeFilters() }
+        .onChange(of: vocabularyManager.keyterms) { _, _ in recomputeFilters() }
+        .onChange(of: vocabularyManager.replacements) { _, _ in recomputeFilters() }
+    }
+
+    private func recomputeFilters() {
+        let query = normalizedSearchText
+        if query.isEmpty {
+            filteredKeyterms = vocabularyManager.keyterms
+        } else {
+            filteredKeyterms = vocabularyManager.keyterms.filter {
+                $0.localizedCaseInsensitiveContains(query)
+            }
+        }
+
+        let sorted = vocabularyManager.replacements.sorted { $0.key < $1.key }
+        if query.isEmpty {
+            filteredReplacements = sorted
+        } else {
+            filteredReplacements = sorted.filter {
+                $0.key.localizedCaseInsensitiveContains(query)
+                    || $0.value.localizedCaseInsensitiveContains(query)
             }
         }
     }
