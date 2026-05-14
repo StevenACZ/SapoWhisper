@@ -13,37 +13,26 @@ struct EngineSettingsTab: View {
     }
 
     var body: some View {
-        ScrollView {
-            HStack(alignment: .top, spacing: Self.columnSpacing) {
-                VStack(spacing: 16) {
-                    transcriptionEngineCard
-                    GoogleCloudCredentialsCard(credentials: googleCredentials)
-                }
-                .containerRelativeFrame(.horizontal, alignment: .topLeading) { length, _ in
-                    Self.motorColumnWidth(for: length)
-                }
-
-                AIPolishSettingsCard(credentials: googleCredentials)
-                    .containerRelativeFrame(.horizontal, alignment: .topLeading) { length, _ in
-                        Self.aiColumnWidth(for: length)
+        GeometryReader { proxy in
+            ScrollView {
+                let inner = max(0, proxy.size.width - Self.outerPadding - Self.columnSpacing)
+                HStack(alignment: .top, spacing: Self.columnSpacing) {
+                    VStack(spacing: 16) {
+                        transcriptionEngineCard
+                        GoogleCloudCredentialsCard(credentials: googleCredentials)
                     }
+                    .frame(width: inner * 0.60, alignment: .topLeading)
+
+                    AIPolishSettingsCard(credentials: googleCredentials)
+                        .frame(width: inner * 0.40, alignment: .topLeading)
+                }
+                .padding(16)
             }
-            .padding(16)
         }
     }
 
     private static let columnSpacing: CGFloat = 16
     private static let outerPadding: CGFloat = 32
-
-    private static func motorColumnWidth(for containerWidth: CGFloat) -> CGFloat {
-        let inner = max(0, containerWidth - outerPadding - columnSpacing)
-        return inner * 0.60
-    }
-
-    private static func aiColumnWidth(for containerWidth: CGFloat) -> CGFloat {
-        let inner = max(0, containerWidth - outerPadding - columnSpacing)
-        return inner * 0.40
-    }
 
     private var transcriptionEngineCard: some View {
         SettingsCard(icon: "cpu", title: "config.engine".localized) {
