@@ -107,10 +107,6 @@ struct GoogleCloudCredentialsCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            if credentials.isConfigured {
-                connectedActions
-            }
         }
     }
 
@@ -118,6 +114,11 @@ struct GoogleCloudCredentialsCard: View {
         HStack(spacing: 6) {
             CredentialScopePill(icon: "waveform", text: "Chirp 3", tint: .blue)
             CredentialScopePill(icon: "sparkles", text: "Vertex AI", tint: .purple)
+
+            if credentials.isConfigured {
+                Spacer(minLength: 8)
+                connectedActions
+            }
         }
     }
 
