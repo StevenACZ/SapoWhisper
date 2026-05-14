@@ -178,6 +178,7 @@
 
 /* AI Polish */
 "ai.google_ai.title" = "Google Cloud y Mejora por IA";
+"ai.google_credentials.title" = "Credenciales de Google Cloud";
 "ai.polish.title" = "Mejora por IA";
 "ai.polish.enable" = "Mejorar texto con IA";
 "ai.polish.enable_subtitle" = "Polish, corrige y formatea cada transcript con Gemini.";

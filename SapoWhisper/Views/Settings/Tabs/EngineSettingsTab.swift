@@ -6,6 +6,7 @@ struct EngineSettingsTab: View {
 
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
+    @StateObject private var googleCredentials = GoogleCredentialsState()
 
     private var currentEngine: TranscriptionEngine {
         TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
@@ -13,15 +14,35 @@ struct EngineSettingsTab: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                transcriptionEngineCard
+            HStack(alignment: .top, spacing: Self.columnSpacing) {
+                VStack(spacing: 16) {
+                    transcriptionEngineCard
+                    GoogleCloudCredentialsCard(credentials: googleCredentials)
+                }
+                .containerRelativeFrame(.horizontal, alignment: .topLeading) { length, _ in
+                    Self.motorColumnWidth(for: length)
+                }
 
-                AIPolishSettingsCard()
+                AIPolishSettingsCard(credentials: googleCredentials)
+                    .containerRelativeFrame(.horizontal, alignment: .topLeading) { length, _ in
+                        Self.aiColumnWidth(for: length)
+                    }
             }
-            .frame(maxWidth: 700)
-            .frame(maxWidth: .infinity)
             .padding(16)
         }
+    }
+
+    private static let columnSpacing: CGFloat = 16
+    private static let outerPadding: CGFloat = 32
+
+    private static func motorColumnWidth(for containerWidth: CGFloat) -> CGFloat {
+        let inner = max(0, containerWidth - outerPadding - columnSpacing)
+        return inner * 0.60
+    }
+
+    private static func aiColumnWidth(for containerWidth: CGFloat) -> CGFloat {
+        let inner = max(0, containerWidth - outerPadding - columnSpacing)
+        return inner * 0.40
     }
 
     private var transcriptionEngineCard: some View {
@@ -82,7 +103,7 @@ extension TranscriptionEngine {
 
 #Preview("Engine Settings") {
     EngineSettingsTab(viewModel: SapoWhisperViewModel())
-        .frame(width: 700, height: 600)
+        .frame(width: 860, height: 620)
 }
 
 #Preview("Permissions States") {
