@@ -150,6 +150,7 @@ struct VocabularySettingsCard: View {
         [
             GridItem(.flexible(), spacing: 6),
             GridItem(.flexible(), spacing: 6),
+            GridItem(.flexible(), spacing: 6),
         ]
     }
 
@@ -289,12 +290,9 @@ private struct VocabularyTermRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(term)
-                .font(.system(size: 12, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VocabularyMonospacedText(text: term)
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Button(action: onDelete) {
                 Image(systemName: "xmark.circle.fill")
@@ -317,22 +315,15 @@ private struct VocabularyReplacementRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(original)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VocabularyMonospacedText(text: original, foregroundColor: .secondary)
 
             Image(systemName: "arrow.right")
                 .font(.caption2)
                 .foregroundColor(.secondary)
 
-            Text(replacement)
-                .font(.system(size: 12, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VocabularyMonospacedText(text: replacement)
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Button(action: onDelete) {
                 Image(systemName: "xmark.circle.fill")
@@ -345,5 +336,45 @@ private struct VocabularyReplacementRow: View {
         .padding(.vertical, 6)
         .background(Color(NSColor.windowBackgroundColor))
         .cornerRadius(7)
+    }
+}
+
+private struct VocabularyMonospacedText: View {
+    let text: String
+    var foregroundColor: Color = .primary
+
+    @State private var availableWidth: CGFloat = 0
+
+    private static let measurementFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+    private var isTruncated: Bool {
+        guard availableWidth > 0 else { return false }
+        let intrinsicWidth = (text as NSString).size(withAttributes: [
+            .font: Self.measurementFont
+        ]).width
+        return intrinsicWidth > availableWidth + 0.5
+    }
+
+    var body: some View {
+        let label = Text(text)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundColor(foregroundColor)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { availableWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { _, newValue in
+                            availableWidth = newValue
+                        }
+                }
+            )
+
+        if isTruncated {
+            label.help(text)
+        } else {
+            label
+        }
     }
 }
