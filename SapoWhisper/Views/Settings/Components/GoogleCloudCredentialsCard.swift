@@ -65,9 +65,7 @@ struct GoogleCloudCredentialsCard: View {
 
                 credentialScopePills
 
-                if credentials.isConfigured {
-                    connectedActions
-                } else {
+                if !credentials.isConfigured {
                     Divider()
                     setupGuide
                 }
@@ -108,6 +106,11 @@ struct GoogleCloudCredentialsCard: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if credentials.isConfigured {
+                connectedActions
+            }
         }
     }
 
@@ -119,23 +122,11 @@ struct GoogleCloudCredentialsCard: View {
     }
 
     private var connectedActions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                detectButton
-                changeButton
-                removeButton
-            }
-
-            VStack(alignment: .center, spacing: 8) {
-                HStack(spacing: 8) {
-                    detectButton
-                    changeButton
-                }
-
-                removeButton
-            }
+        HStack(spacing: 6) {
+            detectButton
+            changeButton
+            removeButton
         }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var detectButton: some View {
