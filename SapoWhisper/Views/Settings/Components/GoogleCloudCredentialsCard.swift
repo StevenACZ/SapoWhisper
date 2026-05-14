@@ -116,7 +116,6 @@ struct GoogleCloudCredentialsCard: View {
             CredentialScopePill(icon: "waveform", text: "Chirp 3", tint: .blue)
             CredentialScopePill(icon: "sparkles", text: "Vertex AI", tint: .purple)
         }
-        .padding(.leading, 52)
     }
 
     private var connectedActions: some View {
