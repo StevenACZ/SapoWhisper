@@ -128,4 +128,6 @@ temp/
 .codex/
 .cursor/
 .claude/
+# Keep the .claude/skills symlink so Claude Code discovers shared skills
+!.claude
 .superpowers/
