@@ -13,9 +13,11 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     @Published var isTranscribing: Bool = false
 
-    /// ElevenLabs Scribe v2 keyterm biasing limits.
-    private static let maxKeyterms = 1000
+    /// ElevenLabs Scribe v2 keyterm biasing limits: up to 100 terms,
+    /// each ≤50 characters and ≤5 words.
+    private static let maxKeyterms = 100
     private static let maxKeytermLength = 50
+    private static let maxKeytermWords = 5
 
     /// Check if the ElevenLabs API key is configured.
     var isConfigured: Bool {
@@ -87,9 +89,10 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         let finalText = VocabularyManager.shared.applyingReplacements(to: transcript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let requestID = httpResponse.value(forHTTPHeaderField: "request-id") ?? "n/a"
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.recording.info(
-            "ElevenLabs Scribe finished elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(audioData.count, privacy: .public) chars=\(finalText.count, privacy: .public)"
+            "ElevenLabs Scribe finished requestID=\(requestID, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(audioData.count, privacy: .public) chars=\(finalText.count, privacy: .public)"
         )
 
         return finalText
@@ -129,10 +132,16 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     }
 
     /// Keyterms from the shared vocabulary, capped to the Scribe v2 limits.
+    /// An out-of-bounds keyterm would make the API reject the whole request,
+    /// so terms over the length/word limits are dropped rather than truncated.
     private func sanitizedKeyterms() -> [String] {
         VocabularyManager.shared.keyterms
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && $0.count <= Self.maxKeytermLength }
+            .filter { term in
+                !term.isEmpty
+                    && term.count <= Self.maxKeytermLength
+                    && term.split(separator: " ").count <= Self.maxKeytermWords
+            }
             .prefix(Self.maxKeyterms)
             .map { $0 }
     }
