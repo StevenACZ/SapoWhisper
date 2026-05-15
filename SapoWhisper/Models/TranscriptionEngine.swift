@@ -13,6 +13,7 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
     case googleCloud = "google"
     case deepgram = "deepgram"
     case geminiAudio = "gemini_audio"
+    case elevenLabsScribe = "elevenlabs_scribe"
 
     var id: String { rawValue }
 
@@ -28,6 +29,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "Deepgram"
         case .geminiAudio:
             return "Gemini Audio"
+        case .elevenLabsScribe:
+            return "ElevenLabs Scribe v2"
         }
     }
 
@@ -43,6 +46,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "engine.deepgram.description".localized
         case .geminiAudio:
             return "engine.gemini_audio.description".localized
+        case .elevenLabsScribe:
+            return "engine.elevenlabs_scribe.description".localized
         }
     }
 
@@ -58,6 +63,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
             return "waveform.badge.mic"
         case .geminiAudio:
             return "sparkles"
+        case .elevenLabsScribe:
+            return "waveform.badge.magnifyingglass"
         }
     }
 
@@ -65,9 +72,14 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
         switch self {
         case .whisperLocal:
             return false
-        case .appleOnline, .googleCloud, .deepgram, .geminiAudio:
+        case .appleOnline, .googleCloud, .deepgram, .geminiAudio, .elevenLabsScribe:
             return true
         }
+    }
+
+    /// Engine surfaced as the recommended high-accuracy option in the picker.
+    var isRecommended: Bool {
+        self == .elevenLabsScribe
     }
 }
 

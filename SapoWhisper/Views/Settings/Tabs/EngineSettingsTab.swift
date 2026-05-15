@@ -77,6 +77,8 @@ struct EngineSettingsTab: View {
             DeepgramSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .geminiAudio:
             GeminiAudioSettingsCard(credentials: googleCredentials, isEmbedded: true)
+        case .elevenLabsScribe:
+            ElevenLabsSettingsCard(viewModel: viewModel, isEmbedded: true)
         }
     }
 }
@@ -86,7 +88,7 @@ extension TranscriptionEngine {
         switch self {
         case .appleOnline:
             return false
-        case .whisperLocal, .googleCloud, .deepgram, .geminiAudio:
+        case .whisperLocal, .googleCloud, .deepgram, .geminiAudio, .elevenLabsScribe:
             return true
         }
     }

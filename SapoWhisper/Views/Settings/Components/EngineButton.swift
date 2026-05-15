@@ -78,7 +78,7 @@ struct EngineOptionRow<Details: View>: View {
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
 
-            if engine == .whisperLocal {
+            if engine.isRecommended {
                 Text("badge.recommended".localized)
                     .font(.caption2)
                     .foregroundColor(.white)

@@ -48,9 +48,11 @@ struct SettingsTransferPreferences: Codable, Equatable {
 struct SettingsTransferAPIKeys: Codable, Equatable {
     var deepgramAPIKey: String?
     var googleCloudAPIKey: String?
+    var elevenLabsAPIKey: String?
 
     var isEmpty: Bool {
         (deepgramAPIKey ?? "").isEmpty && (googleCloudAPIKey ?? "").isEmpty
+            && (elevenLabsAPIKey ?? "").isEmpty
     }
 }
 
@@ -270,7 +272,8 @@ struct SettingsTransferManager {
     private func currentAPIKeys() -> SettingsTransferAPIKeys {
         SettingsTransferAPIKeys(
             deepgramAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey)),
-            googleCloudAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.googleCloudAPIKey))
+            googleCloudAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.googleCloudAPIKey)),
+            elevenLabsAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey))
         )
     }
 
@@ -326,6 +329,9 @@ struct SettingsTransferManager {
         }
         if let googleCloudAPIKey = apiKeys.googleCloudAPIKey {
             defaults.set(googleCloudAPIKey, forKey: Constants.StorageKeys.googleCloudAPIKey)
+        }
+        if let elevenLabsAPIKey = apiKeys.elevenLabsAPIKey {
+            defaults.set(elevenLabsAPIKey, forKey: Constants.StorageKeys.elevenLabsAPIKey)
         }
     }
 

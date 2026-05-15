@@ -62,6 +62,7 @@ class SapoWhisperViewModel: ObservableObject {
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
     let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
+    let elevenLabsTranscriber = ElevenLabsScribeTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
     private let transcriptPostProcessor = TranscriptPostProcessor()
 
@@ -129,6 +130,8 @@ class SapoWhisperViewModel: ObservableObject {
             return deepgramTranscriber.isConfigured
         case .geminiAudio:
             return geminiAudioTranscriber.isConfigured
+        case .elevenLabsScribe:
+            return elevenLabsTranscriber.isConfigured
         }
     }
 
@@ -242,6 +245,15 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Observar estado de transcripcion (Gemini Audio)
         geminiAudioTranscriber.$isTranscribing
+            .sink { [weak self] isTranscribing in
+                if isTranscribing {
+                    self?.appState = .processing
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observar estado de transcripcion (ElevenLabs Scribe)
+        elevenLabsTranscriber.$isTranscribing
             .sink { [weak self] isTranscribing in
                 if isTranscribing {
                     self?.appState = .processing
@@ -418,6 +430,12 @@ class SapoWhisperViewModel: ObservableObject {
             }
         case .geminiAudio:
             if geminiAudioTranscriber.isConfigured {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
+        case .elevenLabsScribe:
+            if elevenLabsTranscriber.isConfigured {
                 appState = .idle
             } else {
                 appState = .noModel
@@ -1462,6 +1480,8 @@ class SapoWhisperViewModel: ObservableObject {
                 language: language,
                 model: currentGeminiAudioModel
             )
+        case .elevenLabsScribe:
+            return try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
         }
     }
 
@@ -1596,6 +1616,8 @@ class SapoWhisperViewModel: ObservableObject {
                 && !deepgramFluxTranscriber.isStopping
         case .geminiAudio:
             return geminiAudioTranscriber.isConfigured && !geminiAudioTranscriber.isTranscribing
+        case .elevenLabsScribe:
+            return elevenLabsTranscriber.isConfigured && !elevenLabsTranscriber.isTranscribing
         }
     }
 

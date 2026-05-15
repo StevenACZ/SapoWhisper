@@ -360,6 +360,13 @@
 "config.deepgram_key_configured" = "API key configurada";
 "settings.flux_language_locked" = "Flux Live usa idioma Auto.";
 
+/* ElevenLabs Engine */
+"engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Maxima precision, requiere internet y una API key.";
+"config.elevenlabs_key_placeholder" = "Ingresa tu API key de ElevenLabs...";
+"config.elevenlabs_key_desc" = "Crea tu API key en elevenlabs.io > API Keys.\nSe guarda localmente.";
+"config.elevenlabs_key_missing" = "API key no configurada";
+"config.elevenlabs_key_configured" = "API key configurada";
+
 /* Gemini Audio Engine */
 "gemini.audio.title" = "Gemini Audio";
 "gemini.audio.model" = "Modelo de audio";
@@ -447,6 +454,7 @@
 
 /* Errors */
 "error.deepgram_auth" = "Deepgram: API key invalida o expirada. Verifica en Settings.";
+"error.elevenlabs_auth" = "ElevenLabs: API key invalida o expirada. Verifica en Settings.";
 "error.no_audio" = "No se pudo obtener el audio";
 "error.input_not_ready" = "Microfono no disponible. Reintenta o elige otro.";
 "overlay.retry" = "Reintentar";
