@@ -144,6 +144,8 @@ extension TranscriptionHistoryManager {
             return nil
         case .deepgram:
             return "%deepgram%"
+        case .gemini:
+            return "%gemini%"
         case .google:
             return "%google%"
         case .whisper:

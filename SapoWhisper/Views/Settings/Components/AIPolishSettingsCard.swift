@@ -16,6 +16,8 @@ struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishMinimumDuration) private var aiPolishMinimumDuration =
+        TranscriptPolishMinimumDuration.defaultPolicy.rawValue
 
     private var currentPrompt: PromptProfile {
         promptContextManager.promptProfile(for: aiPolishMode)
@@ -32,17 +34,32 @@ struct AIPolishSettingsCard: View {
         credentials.isConfigured && aiPolishEnabled
     }
 
+    private var currentMinimumDuration: TranscriptPolishMinimumDuration {
+        TranscriptPolishMinimumDuration(rawValue: aiPolishMinimumDuration) ?? .defaultPolicy
+    }
+
+    private var activeSubtitle: String {
+        switch currentMinimumDuration {
+        case .always:
+            return "ai.polish.enable_active_always".localized
+        case .seconds20, .seconds30:
+            return "ai.polish.enable_active_after".localized(currentMinimumDuration.displayName)
+        }
+    }
+
     var body: some View {
         SettingsCard(icon: "sparkles", title: "ai.polish.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
                 AIPolishHeroToggle(
                     isOn: aiPolishBinding,
-                    isEnabled: credentials.isConfigured
+                    isEnabled: credentials.isConfigured,
+                    activeSubtitle: activeSubtitle
                 )
 
                 VStack(alignment: .leading, spacing: 10) {
                     modePicker
                     outputLanguagePicker
+                    minimumDurationPicker
                 }
                 .opacity(canEditPolish ? 1 : 0.62)
 
@@ -96,6 +113,25 @@ struct AIPolishSettingsCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .disabled(!canEditPolish)
             }
+        }
+    }
+
+    private var minimumDurationPicker: some View {
+        let policy = TranscriptPolishMinimumDuration(rawValue: aiPolishMinimumDuration) ?? .defaultPolicy
+
+        return AIPolishSettingRow(
+            title: "ai.polish.minimum_duration".localized,
+            detail: policy.description
+        ) {
+            Picker("ai.polish.minimum_duration".localized, selection: $aiPolishMinimumDuration) {
+                ForEach(TranscriptPolishMinimumDuration.allCases) { policy in
+                    Text(policy.displayName).tag(policy.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .disabled(!canEditPolish)
         }
     }
 
@@ -190,6 +226,7 @@ private struct AIPolishInfoCallout: View {
 private struct AIPolishHeroToggle: View {
     @Binding var isOn: Bool
     let isEnabled: Bool
+    let activeSubtitle: String
 
     var body: some View {
         HStack(spacing: 11) {
@@ -209,7 +246,7 @@ private struct AIPolishHeroToggle: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text(isOn ? "ai.polish.enable_active".localized : "ai.polish.enable_subtitle".localized)
+                Text(isOn ? activeSubtitle : "ai.polish.enable_subtitle".localized)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

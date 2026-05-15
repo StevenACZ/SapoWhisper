@@ -38,9 +38,13 @@ enum TranscriptPolishPromptBuilder {
 
             Rules:
             - Preserve the user's intent exactly.
+            - Do not summarize, over-compress, simplify away constraints, or remove supporting details.
             - Do not add facts, examples, assumptions, conclusions, or answers.
-            - Use only the raw transcript plus vocabulary/replacement hints.
-            - Treat hints as recognition context; insert them only when context clearly supports it.
+            - Use only the raw transcript plus optional vocabulary/replacement hints.
+            - Treat hints as optional recognition context, never as mandatory substitutions.
+            - Apply a keyterm or replacement only when nearby words and the topic clearly support that exact term.
+            - Ignore unrelated hints. If the transcript is about medicine, finance, personal plans, or another non-coding topic, do not introduce coding or AI terms from the hint lists.
+            - Do not replace ordinary Spanish words with acronyms, product names, or technical abbreviations unless the raw transcript clearly points to that technical term.
             - Keep short text short.
             - Fix likely STT mistakes only when context makes the intended word clear.
             - Preserve commands, filenames, branch names, APIs, product names, and mixed Spanish/English technical terms.
@@ -58,10 +62,10 @@ enum TranscriptPolishPromptBuilder {
             Output language:
             \(outputLanguage.promptInstruction)\(personalContextSection)
 
-            User vocabulary keyterms:
+            Optional user vocabulary keyterms:
             \(keytermBlock)
 
-            User replacement hints:
+            Optional user replacement hints:
             \(replacementBlock)
 
             Raw transcript:

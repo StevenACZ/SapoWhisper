@@ -142,7 +142,7 @@ struct HistoryInspectorView: View {
             return .sapoGreen
         case .failed:
             return .orange
-        case .skippedShort, .none:
+        case .skippedShort, .skippedDuration, .none:
             return .secondary
         }
     }

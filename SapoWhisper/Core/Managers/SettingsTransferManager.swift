@@ -35,12 +35,14 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var transcriptionEngine: String
     var whisperKitModel: String
     var deepgramTranscriptionMode: String
+    var geminiAudioModel: String?
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
     var audioGain: Double
     var aiPolishEnabled: Bool
     var aiPolishMode: String
     var aiPolishOutputLanguage: String
+    var aiPolishMinimumDuration: String?
 }
 
 struct SettingsTransferAPIKeys: Codable, Equatable {
@@ -250,6 +252,8 @@ struct SettingsTransferManager {
                 ?? WhisperKitModel.small.rawValue,
             deepgramTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
+            geminiAudioModel: defaults.string(forKey: Constants.StorageKeys.geminiAudioModel)
+                ?? GeminiAudioModel.defaultModel.rawValue,
             hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
             hotkeyModifiers: intValue(forKey: Constants.StorageKeys.hotkeyModifiers, defaultValue: Int(Constants.Hotkey.defaultModifiers)),
             audioGain: doubleValue(forKey: Constants.StorageKeys.audioGain, defaultValue: 1.0),
@@ -257,7 +261,9 @@ struct SettingsTransferManager {
             aiPolishMode: defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
                 ?? TranscriptPolishMode.automatic.rawValue,
             aiPolishOutputLanguage: defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
-                ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
+                ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue,
+            aiPolishMinimumDuration: defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration)
+                ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue
         )
     }
 
@@ -288,6 +294,10 @@ struct SettingsTransferManager {
             defaults.set(preferences.transcriptionEngine, forKey: Constants.StorageKeys.transcriptionEngine)
             defaults.set(preferences.whisperKitModel, forKey: Constants.StorageKeys.whisperKitModel)
             defaults.set(preferences.deepgramTranscriptionMode, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+            defaults.set(
+                preferences.geminiAudioModel ?? GeminiAudioModel.defaultModel.rawValue,
+                forKey: Constants.StorageKeys.geminiAudioModel
+            )
         }
 
         if sections.contains(.hotkey) {
@@ -303,6 +313,10 @@ struct SettingsTransferManager {
             defaults.set(preferences.aiPolishEnabled, forKey: Constants.StorageKeys.aiPolishEnabled)
             defaults.set(preferences.aiPolishMode, forKey: Constants.StorageKeys.aiPolishMode)
             defaults.set(preferences.aiPolishOutputLanguage, forKey: Constants.StorageKeys.aiPolishOutputLanguage)
+            defaults.set(
+                preferences.aiPolishMinimumDuration ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue,
+                forKey: Constants.StorageKeys.aiPolishMinimumDuration
+            )
         }
     }
 

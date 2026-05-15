@@ -103,6 +103,8 @@ enum Constants {
         static let aiPolishEnabled = "aiPolishEnabled"
         static let aiPolishMode = "aiPolishMode"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
+        static let aiPolishMinimumDuration = "aiPolishMinimumDuration"
+        static let geminiAudioModel = "geminiAudioModel"
 
         // Deepgram
         static let deepgramAPIKey = "deepgramAPIKey"

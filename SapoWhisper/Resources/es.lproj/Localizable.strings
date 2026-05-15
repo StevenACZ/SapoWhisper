@@ -73,6 +73,7 @@
 "history.pause" = "Pausar";
 "history.filter_all" = "Todos";
 "history.filter_deepgram" = "Deepgram";
+"history.filter_gemini" = "Gemini";
 "history.filter_google" = "Google";
 "history.filter_whisper" = "Whisper";
 "history.filter_apple" = "Apple";
@@ -132,7 +133,7 @@
 "info.how_to_title" = "¿Cómo funciona?";
 "info.how_to_body" = "1. Presiona el atajo de teclado para iniciar\n2. Habla claramente al micrófono\n3. Presiona el atajo otra vez para detener\n4. El texto se copia automáticamente\n5. Con \"Auto-pegar\" activado, se pega donde tengas el cursor";
 "info.privacy_title" = "Privacidad";
-"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Speech-to-Text con Chirp 3 para maxima precision. Requiere cuenta Google Cloud.\n\nDeepgram: Usa Nova-3 o Flux Live para transcripcion en la nube. Requiere API key.\n\nMejora por IA: Opcional. Usa Gemini en Vertex AI para ordenar, corregir y mejorar legibilidad sin inventar detalles.";
+"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Speech-to-Text con Chirp 3 para maxima precision. Requiere cuenta Google Cloud.\n\nDeepgram: Usa Nova-3 o Flux Live para transcripcion en la nube. Requiere API key.\n\nGemini Audio: Envia el WAV guardado directo a Gemini en Vertex AI para transcripcion nativa de audio.\n\nMejora por IA: Opcional. Usa Gemini en Vertex AI para ordenar, corregir y mejorar legibilidad sin inventar detalles.";
 "info.permissions_title" = "Permisos necesarios";
 "info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Reconocimiento de voz: Para transcribir el audio\n• Accesibilidad: Para el atajo de teclado global";
 
@@ -181,13 +182,22 @@
 "ai.google_credentials.title" = "Credenciales de Google Cloud";
 "ai.polish.title" = "Mejora por IA";
 "ai.polish.enable" = "Mejorar texto con IA";
-"ai.polish.enable_subtitle" = "Polish, corrige y formatea cada transcript con Gemini.";
-"ai.polish.enable_active" = "Activo — Gemini reescribe cada transcript.";
+"ai.polish.enable_subtitle" = "Refina dictados largos con Gemini.";
+"ai.polish.enable_active" = "Activo — Gemini refina dictados largos.";
+"ai.polish.enable_active_after" = "Activo — se aplica despues de %@ de hablar.";
+"ai.polish.enable_active_always" = "Activo — se aplica a cada transcript elegible.";
 "ai.polish.mode" = "Modo";
 "ai.polish.mode_desc" = "Usa %@ para ordenar y limpiar el texto antes de copiarlo.";
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_desc" = "Genera el texto en %@.";
-"ai.polish.desc" = "Usa Gemini 3.1 Flash-Lite en Vertex AI para corregir errores probables, ordenar ideas y mejorar legibilidad sin inventar detalles.";
+"ai.polish.minimum_duration" = "Activar desde";
+"ai.polish.minimum_duration.always" = "Siempre";
+"ai.polish.minimum_duration.20" = "20 segundos";
+"ai.polish.minimum_duration.30" = "30 segundos";
+"ai.polish.minimum_duration_desc.always" = "Corre en cualquier transcript que no sea trivialmente corto.";
+"ai.polish.minimum_duration_desc.20" = "Salta la mejora en grabaciones menores de 20 segundos.";
+"ai.polish.minimum_duration_desc.30" = "Salta la mejora en grabaciones menores de 30 segundos.";
+"ai.polish.desc" = "Usa Gemini 3.1 Flash-Lite en Vertex AI para corregir errores probables, preservar la intención y mejorar legibilidad sin forzar vocabulario no relacionado.";
 "ai.polish.vertex_info_title" = "Gemini en Vertex AI";
 "ai.polish.requires_google" = "Requiere Google Cloud conectado.";
 "ai.google_connected" = "Google Cloud conectado";
@@ -221,6 +231,7 @@
 "ai.status.none" = "No aplicada";
 "ai.status.applied" = "Aplicada";
 "ai.status.skipped_short" = "Saltada por texto corto";
+"ai.status.skipped_duration" = "Saltada por grabacion corta";
 "ai.status.failed" = "Falló";
 
 /* Badges & Labels */
@@ -337,6 +348,7 @@
 
 /* Deepgram Engine */
 "engine.deepgram.description" = "Deepgram Nova-3. Alta precision, requiere internet.";
+"engine.gemini_audio.description" = "Audio nativo de Gemini a texto en Vertex AI. Requiere Google Cloud.";
 "config.deepgram_mode" = "Modo de transcripcion";
 "deepgram.mode_nova" = "Nova-3";
 "deepgram.mode_nova_desc" = "Modo clasico por lote. Mantiene tu idioma preferido.";
@@ -347,6 +359,19 @@
 "config.deepgram_key_missing" = "API key no configurada";
 "config.deepgram_key_configured" = "API key configurada";
 "settings.flux_language_locked" = "Flux Live usa idioma Auto.";
+
+/* Gemini Audio Engine */
+"gemini.audio.title" = "Gemini Audio";
+"gemini.audio.model" = "Modelo de audio";
+"gemini.audio.requires_google" = "Requiere credenciales de Google Cloud.";
+"gemini.audio.cost_title" = "Aprox. 4 min: %@";
+"gemini.audio.cost_desc" = "Estimacion con audio input mas un transcript corto. El cobro real viene del uso de tokens en Vertex.";
+"gemini.audio.elevenlabs_note" = "ElevenLabs no esta incluido en esta version; este motor solo compara modelos de audio Gemini.";
+"gemini.audio.model_31_pro_desc" = "Calidad premium para audio dificil y dictado tecnico.";
+"gemini.audio.model_3_flash_desc" = "Opcion Flash mas costosa para pruebas rapidas de alta calidad.";
+"gemini.audio.model_25_flash_desc" = "Baseline Flash estable para comparar.";
+"gemini.audio.model_31_lite_desc" = "Default recomendado: bajo costo con buen entendimiento de audio.";
+"gemini.audio.model_25_lite_desc" = "Opcion Flash-Lite legacy mas barata para experimentos.";
 
 /* Vocabulary */
 "config.vocabulary" = "Vocabulario";

@@ -30,7 +30,7 @@ enum TranscriptPolishMode: String, CaseIterable, Identifiable {
         switch self {
         case .automatic:
             return """
-                Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.
+                Choose the most natural readable format for the text. Preserve the user's main idea, constraints, and relevant supporting details. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.
                 """
         case .ai:
             return """
@@ -48,10 +48,54 @@ enum TranscriptPolishMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum TranscriptPolishMinimumDuration: String, CaseIterable, Identifiable {
+    case always
+    case seconds20 = "20"
+    case seconds30 = "30"
+
+    static let defaultPolicy: TranscriptPolishMinimumDuration = .seconds30
+
+    var id: String { rawValue }
+
+    var minimumSeconds: TimeInterval? {
+        switch self {
+        case .always:
+            return nil
+        case .seconds20:
+            return 20
+        case .seconds30:
+            return 30
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .always:
+            return "ai.polish.minimum_duration.always".localized
+        case .seconds20:
+            return "ai.polish.minimum_duration.20".localized
+        case .seconds30:
+            return "ai.polish.minimum_duration.30".localized
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .always:
+            return "ai.polish.minimum_duration_desc.always".localized
+        case .seconds20:
+            return "ai.polish.minimum_duration_desc.20".localized
+        case .seconds30:
+            return "ai.polish.minimum_duration_desc.30".localized
+        }
+    }
+}
+
 enum TranscriptAIStatus: String {
     case none
     case applied
     case skippedShort = "skipped_short"
+    case skippedDuration = "skipped_duration"
     case failed
 
     var displayName: String {
@@ -62,6 +106,8 @@ enum TranscriptAIStatus: String {
             return "ai.status.applied".localized
         case .skippedShort:
             return "ai.status.skipped_short".localized
+        case .skippedDuration:
+            return "ai.status.skipped_duration".localized
         case .failed:
             return "ai.status.failed".localized
         }

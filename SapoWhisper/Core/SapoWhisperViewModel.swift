@@ -48,6 +48,8 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.deepgramPreviousLanguage) var deepgramPreviousLanguage: String = ""
+    @AppStorage(Constants.StorageKeys.geminiAudioModel) var selectedGeminiAudioModel: String =
+        GeminiAudioModel.defaultModel.rawValue
 
     // MARK: - Managers
 
@@ -55,6 +57,7 @@ class SapoWhisperViewModel: ObservableObject {
     let transcriber = WhisperTranscriber()
     let whisperKitTranscriber = WhisperKitTranscriber()
     let googleCloudTranscriber = GoogleCloudTranscriber()
+    let geminiAudioTranscriber = GeminiAudioTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
@@ -98,6 +101,10 @@ class SapoWhisperViewModel: ObservableObject {
         DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3
     }
 
+    var currentGeminiAudioModel: GeminiAudioModel {
+        GeminiAudioModel(rawValue: selectedGeminiAudioModel) ?? .defaultModel
+    }
+
     private var isDeepgramFluxLiveSelected: Bool {
         currentEngine == .deepgram && currentDeepgramMode == .fluxLive
     }
@@ -120,6 +127,8 @@ class SapoWhisperViewModel: ObservableObject {
             return googleCloudTranscriber.isConfigured
         case .deepgram:
             return deepgramTranscriber.isConfigured
+        case .geminiAudio:
+            return geminiAudioTranscriber.isConfigured
         }
     }
 
@@ -224,6 +233,15 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Observar estado de transcripcion (Google Cloud)
         googleCloudTranscriber.$isTranscribing
+            .sink { [weak self] isTranscribing in
+                if isTranscribing {
+                    self?.appState = .processing
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observar estado de transcripcion (Gemini Audio)
+        geminiAudioTranscriber.$isTranscribing
             .sink { [weak self] isTranscribing in
                 if isTranscribing {
                     self?.appState = .processing
@@ -394,6 +412,12 @@ class SapoWhisperViewModel: ObservableObject {
             }
         case .deepgram:
             if deepgramTranscriber.isConfigured {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
+        case .geminiAudio:
+            if geminiAudioTranscriber.isConfigured {
                 appState = .idle
             } else {
                 appState = .noModel
@@ -785,7 +809,7 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                let aiResult = await postProcessTranscript(result.transcript, source: "flux")
+                let aiResult = await postProcessTranscript(result.transcript, source: "flux", duration: result.duration)
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
                     return
@@ -920,7 +944,7 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                let aiResult = await postProcessTranscript(transcription, source: engine.rawValue)
+                let aiResult = await postProcessTranscript(transcription, source: engine.rawValue, duration: duration)
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
                     return
@@ -943,6 +967,7 @@ class SapoWhisperViewModel: ObservableObject {
                 let persistedEntry = persistHistoryEntry(
                     from: audioURL,
                     engine: engine,
+                    engineName: historyEngineName(for: engine),
                     language: language,
                     duration: duration,
                     aiResult: aiResult,
@@ -974,6 +999,7 @@ class SapoWhisperViewModel: ObservableObject {
                 let persistedEntry = persistHistoryEntry(
                     from: audioURL,
                     engine: engine,
+                    engineName: historyEngineName(for: engine),
                     language: language,
                     duration: duration,
                     aiResult: nil,
@@ -1036,11 +1062,14 @@ class SapoWhisperViewModel: ObservableObject {
 
         let engine = currentEngine
         let language = selectedLanguage
+        let duration = lastFailedHistoryId.flatMap { historyId in
+            historyManager.fetchAll().first { $0.id == historyId }?.duration
+        }
 
         Task {
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
-                let aiResult = await postProcessTranscript(transcription, source: "retry")
+                let aiResult = await postProcessTranscript(transcription, source: "retry", duration: duration)
 
                 lastTranscription = aiResult.finalText
                 PasteManager.copyToClipboard(aiResult.finalText)
@@ -1088,10 +1117,15 @@ class SapoWhisperViewModel: ObservableObject {
 
         do {
             let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
-            let aiResult = await postProcessTranscript(transcription, source: "history-retranscribe")
+            let aiResult = await postProcessTranscript(
+                transcription,
+                source: "history-retranscribe",
+                duration: entry.duration
+            )
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
                 engine: engine,
+                engineName: historyEngineName(for: engine),
                 language: entry.language,
                 duration: entry.duration,
                 aiResult: aiResult,
@@ -1106,6 +1140,7 @@ class SapoWhisperViewModel: ObservableObject {
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
                 engine: engine,
+                engineName: historyEngineName(for: engine),
                 language: entry.language,
                 duration: entry.duration,
                 aiResult: nil,
@@ -1130,7 +1165,7 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
 
-        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, force: true)
+        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, duration: entry.duration, force: true)
         logAIResult(aiResult, source: "history-polish")
         historyManager.updateAIProcessing(
             id: entry.id,
@@ -1421,11 +1456,30 @@ class SapoWhisperViewModel: ObservableObject {
             return try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .geminiAudio:
+            return try await geminiAudioTranscriber.transcribe(
+                audioURL: audioURL,
+                language: language,
+                model: currentGeminiAudioModel
+            )
         }
     }
 
-    private func postProcessTranscript(_ rawText: String, source: String) async -> TranscriptAIResult {
-        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText)
+    private func historyEngineName(for engine: TranscriptionEngine) -> String {
+        switch engine {
+        case .geminiAudio:
+            return "Gemini Audio · \(currentGeminiAudioModel.displayName)"
+        default:
+            return engine.displayName
+        }
+    }
+
+    private func postProcessTranscript(
+        _ rawText: String,
+        source: String,
+        duration: TimeInterval?
+    ) async -> TranscriptAIResult {
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText, duration: duration)
         if willAttemptPolish {
             appState = .polishing
             overlayManager.updateState(.polishing)
@@ -1439,7 +1493,7 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
 
-        let result = await transcriptPostProcessor.process(rawText: rawText)
+        let result = await transcriptPostProcessor.process(rawText: rawText, duration: duration)
         logAIResult(result, source: source)
         if willAttemptPolish {
             PerformanceDiagnostics.logRuntimeSnapshot(
@@ -1540,6 +1594,8 @@ class SapoWhisperViewModel: ObservableObject {
         case .deepgram:
             return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing && !deepgramFluxTranscriber.isStreaming
                 && !deepgramFluxTranscriber.isStopping
+        case .geminiAudio:
+            return geminiAudioTranscriber.isConfigured && !geminiAudioTranscriber.isTranscribing
         }
     }
 

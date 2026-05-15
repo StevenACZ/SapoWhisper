@@ -61,6 +61,8 @@ struct HistoryEntry: Identifiable, Hashable {
             return "Deepgram"
         case let value where value.contains("google"):
             return "Google Cloud"
+        case let value where value.contains("gemini"):
+            return "Gemini Audio"
         case let value where value.contains("whisper"):
             return "Whisper"
         case let value where value.contains("apple"):
@@ -98,6 +100,7 @@ enum DateGroup: String, CaseIterable {
 enum EngineFilter: String, CaseIterable, Identifiable {
     case all
     case deepgram
+    case gemini
     case google
     case whisper
     case apple
@@ -108,6 +111,7 @@ enum EngineFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return "history.filter_all".localized
         case .deepgram: return "history.filter_deepgram".localized
+        case .gemini: return "history.filter_gemini".localized
         case .google: return "history.filter_google".localized
         case .whisper: return "history.filter_whisper".localized
         case .apple: return "history.filter_apple".localized
@@ -118,6 +122,7 @@ enum EngineFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return "line.3.horizontal.decrease.circle"
         case .deepgram: return "waveform.badge.mic"
+        case .gemini: return "sparkles"
         case .google: return "cloud"
         case .whisper: return "waveform"
         case .apple: return "apple.logo"
@@ -128,6 +133,7 @@ enum EngineFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return true
         case .deepgram: return engine.lowercased().contains("deepgram")
+        case .gemini: return engine.lowercased().contains("gemini")
         case .google: return engine.lowercased().contains("google")
         case .whisper: return engine.lowercased().contains("whisper")
         case .apple: return engine.lowercased().contains("apple")

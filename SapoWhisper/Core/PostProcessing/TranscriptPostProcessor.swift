@@ -12,7 +12,7 @@ final class TranscriptPostProcessor {
         self.polisher = polisher
     }
 
-    func process(rawText: String, force: Bool = false) async -> TranscriptAIResult {
+    func process(rawText: String, duration: TimeInterval? = nil, force: Bool = false) async -> TranscriptAIResult {
         let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
         defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
         let startedAt = CFAbsoluteTimeGetCurrent()
@@ -36,6 +36,16 @@ final class TranscriptPostProcessor {
         var outputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
         if promptProfile.forcesEnglish {
             outputLanguage = .english
+        }
+
+        guard force || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
+            return makeResult(
+                rawText: rawText,
+                finalText: trimmed,
+                status: .skippedDuration,
+                mode: promptProfile.id,
+                startedAt: startedAt
+            )
         }
 
         guard force || !Self.shouldSkipPolish(trimmed) else {
@@ -103,14 +113,27 @@ final class TranscriptPostProcessor {
         return simpleUtterances.contains(normalized)
     }
 
-    func willAttemptPolish(rawText: String, force: Bool = false) -> Bool {
+    static func shouldSkipPolishForDuration(_ duration: TimeInterval?, defaults: UserDefaults = .standard) -> Bool {
+        let value =
+            defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration)
+            ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue
+        let policy = TranscriptPolishMinimumDuration(rawValue: value) ?? .defaultPolicy
+
+        guard let minimumSeconds = policy.minimumSeconds, let duration else {
+            return false
+        }
+
+        return duration < minimumSeconds
+    }
+
+    func willAttemptPolish(rawText: String, duration: TimeInterval? = nil, force: Bool = false) -> Bool {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
         let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
         guard enabled || force else { return false }
 
-        return force || !Self.shouldSkipPolish(trimmed)
+        return force || (!Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(trimmed))
     }
 
     private func makeResult(
