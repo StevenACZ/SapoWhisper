@@ -362,6 +362,11 @@
 
 /* ElevenLabs Engine */
 "engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Highest accuracy, requires internet and an API key.";
+"config.elevenlabs_mode" = "Transcription mode";
+"elevenlabs.mode_batch" = "Scribe v2";
+"elevenlabs.mode_batch_desc" = "Classic batch mode. Highest accuracy after recording stops.";
+"elevenlabs.mode_realtime" = "Realtime v2";
+"elevenlabs.mode_realtime_desc" = "Low-latency streaming. Pastes only after recording stops.";
 "config.elevenlabs_key_placeholder" = "Enter your ElevenLabs API key...";
 "config.elevenlabs_key_desc" = "Create your API key at elevenlabs.io > API Keys.\nStored locally.";
 "config.elevenlabs_key_missing" = "API key not configured";
@@ -384,7 +389,7 @@
 "config.vocabulary" = "Vocabulary";
 "config.keyterms" = "Keywords";
 "config.keyterm_placeholder" = "e.g. Claude Code";
-"config.keyterms_desc" = "Words that Deepgram will prioritize when transcribing";
+"config.keyterms_desc" = "Words that supported cloud engines will prioritize when transcribing";
 "config.replacements" = "Auto-corrections";
 "config.replace_from" = "Original";
 "config.replace_to" = "Replace with";

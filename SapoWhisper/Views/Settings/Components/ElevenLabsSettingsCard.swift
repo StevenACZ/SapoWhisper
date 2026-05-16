@@ -10,10 +10,16 @@ struct ElevenLabsSettingsCard: View {
     let isEmbedded: Bool
 
     @AppStorage(Constants.StorageKeys.elevenLabsAPIKey) private var elevenLabsAPIKey = ""
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedMode =
+        ElevenLabsTranscriptionMode.defaultMode.rawValue
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
         self.viewModel = viewModel
         self.isEmbedded = isEmbedded
+    }
+
+    private var currentMode: ElevenLabsTranscriptionMode {
+        ElevenLabsTranscriptionMode(rawValue: selectedMode) ?? .defaultMode
     }
 
     var body: some View {
@@ -29,10 +35,17 @@ struct ElevenLabsSettingsCard: View {
         .onChange(of: elevenLabsAPIKey) { _, _ in
             viewModel.setEngine(.elevenLabsScribe)
         }
+        .onAppear {
+            viewModel.setElevenLabsMode(currentMode)
+        }
     }
 
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 14) {
+            modeSelector
+
+            Divider()
+
             apiKeyStatus
 
             SecureField("config.elevenlabs_key_placeholder".localized, text: $elevenLabsAPIKey)
@@ -43,6 +56,28 @@ struct ElevenLabsSettingsCard: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var modeSelector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("config.elevenlabs_mode".localized)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 8) {
+                ForEach(ElevenLabsTranscriptionMode.allCases) { mode in
+                    ElevenLabsModeButton(
+                        mode: mode,
+                        isSelected: currentMode == mode
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedMode = mode.rawValue
+                            viewModel.setElevenLabsMode(mode)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -58,6 +93,50 @@ struct ElevenLabsSettingsCard: View {
             .font(.caption)
             .foregroundColor(.secondary)
         }
+    }
+}
+
+private struct ElevenLabsModeButton: View {
+    let mode: ElevenLabsTranscriptionMode
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(isSelected ? .sapoGreen : .secondary)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mode.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+
+                    Text(mode.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 16))
+                    .foregroundColor(isSelected ? .sapoGreen : .secondary.opacity(0.5))
+            }
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? Color.sapoGreen.opacity(0.1) : Color(NSColor.windowBackgroundColor))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.sapoGreen.opacity(0.5) : Color.secondary.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

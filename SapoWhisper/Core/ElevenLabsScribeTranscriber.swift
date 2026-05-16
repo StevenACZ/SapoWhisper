@@ -16,9 +16,9 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     /// Brand name surfaced in user-facing failures and logs.
     private static let engineName = "ElevenLabs"
 
-    /// ElevenLabs Scribe v2 keyterm biasing limits: up to 100 terms,
+    /// ElevenLabs Scribe v2 batch keyterm biasing limits: up to 1000 terms,
     /// each ≤50 characters and ≤5 words.
-    private static let maxKeyterms = 100
+    private static let maxKeyterms = 1000
     private static let maxKeytermLength = 50
     private static let maxKeytermWords = 5
 
@@ -56,13 +56,26 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: audioData.count)
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = makeMultipartBody(
+        let keytermPayload = sanitizedKeytermPayload()
+        let keyterms = keytermPayload.terms
+        let body = makeMultipartBody(
             boundary: boundary,
             audioData: audioData,
-            language: language
+            language: language,
+            keyterms: keyterms
         )
+        request.httpBody = body
 
         let startedAt = CFAbsoluteTimeGetCurrent()
+        SapoLog.recording.info(
+            "ElevenLabs Scribe batch started audioBytes=\(audioData.count, privacy: .public) bodyBytes=\(body.count, privacy: .public) keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public) timeout=\(Int(request.timeoutInterval), privacy: .public)s"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "elevenlabs-batch-start",
+            context:
+                "audioBytes=\(audioData.count) bodyBytes=\(body.count) keyterms=\(keyterms.count) keytermsDropped=\(keytermPayload.droppedCount)",
+            force: true
+        )
         let data: Data
         let response: URLResponse
         do {
@@ -79,8 +92,15 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         guard httpResponse.statusCode == 200 else {
             let failure = TranscriptionFailure.fromHTTP(
                 engine: Self.engineName, statusCode: httpResponse.statusCode, body: data)
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
             SapoLog.recording.error(
-                "ElevenLabs Scribe HTTP failure \(failure.logSummary, privacy: .public)")
+                "ElevenLabs Scribe HTTP failure elapsed=\(elapsedMs, privacy: .public)ms \(failure.logSummary, privacy: .public)")
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "elevenlabs-batch-failed",
+                context:
+                    "elapsedMs=\(elapsedMs) status=\(httpResponse.statusCode) audioBytes=\(audioData.count) failure=\(failure.diagnosticCode)",
+                force: true
+            )
             throw failure
         }
 
@@ -104,13 +124,19 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         SapoLog.recording.info(
             "ElevenLabs Scribe finished requestID=\(requestID, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(audioData.count, privacy: .public) chars=\(finalText.count, privacy: .public)"
         )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "elevenlabs-batch-finished",
+            context:
+                "requestID=\(requestID) elapsedMs=\(elapsedMs) audioBytes=\(audioData.count) responseBytes=\(data.count) chars=\(finalText.count)",
+            force: true
+        )
 
         return finalText
     }
 
     // MARK: - Multipart Body
 
-    private func makeMultipartBody(boundary: String, audioData: Data, language: String) -> Data {
+    private func makeMultipartBody(boundary: String, audioData: Data, language: String, keyterms: [String]) -> Data {
         var body = Data()
 
         func appendField(_ name: String, _ value: String) {
@@ -127,7 +153,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             appendField("language_code", languageCode)
         }
 
-        for keyterm in sanitizedKeyterms() {
+        for keyterm in keyterms {
             appendField("keyterms", keyterm)
         }
 
@@ -144,16 +170,19 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     /// Keyterms from the shared vocabulary, capped to the Scribe v2 limits.
     /// An out-of-bounds keyterm would make the API reject the whole request,
     /// so terms over the length/word limits are dropped rather than truncated.
-    private func sanitizedKeyterms() -> [String] {
-        VocabularyManager.shared.keyterms
+    private func sanitizedKeytermPayload() -> (terms: [String], droppedCount: Int) {
+        let candidates = VocabularyManager.shared.keyterms
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let terms =
+            candidates
             .filter { term in
-                !term.isEmpty
-                    && term.count <= Self.maxKeytermLength
+                term.count <= Self.maxKeytermLength
                     && term.split(separator: " ").count <= Self.maxKeytermWords
             }
             .prefix(Self.maxKeyterms)
             .map { $0 }
+        return (terms, max(0, candidates.count - terms.count))
     }
 
     // MARK: - Language Mapping

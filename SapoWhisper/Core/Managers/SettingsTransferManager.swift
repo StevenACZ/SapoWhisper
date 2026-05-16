@@ -35,6 +35,7 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var transcriptionEngine: String
     var whisperKitModel: String
     var deepgramTranscriptionMode: String
+    var elevenLabsTranscriptionMode: String?
     var geminiAudioModel: String?
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
@@ -254,6 +255,8 @@ struct SettingsTransferManager {
                 ?? WhisperKitModel.small.rawValue,
             deepgramTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
+            elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
+                ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
             geminiAudioModel: defaults.string(forKey: Constants.StorageKeys.geminiAudioModel)
                 ?? GeminiAudioModel.defaultModel.rawValue,
             hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
@@ -297,6 +300,10 @@ struct SettingsTransferManager {
             defaults.set(preferences.transcriptionEngine, forKey: Constants.StorageKeys.transcriptionEngine)
             defaults.set(preferences.whisperKitModel, forKey: Constants.StorageKeys.whisperKitModel)
             defaults.set(preferences.deepgramTranscriptionMode, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+            defaults.set(
+                preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
+                forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
+            )
             defaults.set(
                 preferences.geminiAudioModel ?? GeminiAudioModel.defaultModel.rawValue,
                 forKey: Constants.StorageKeys.geminiAudioModel

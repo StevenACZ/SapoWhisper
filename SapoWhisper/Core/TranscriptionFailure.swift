@@ -146,7 +146,7 @@ extension TranscriptionFailure {
         let kind: Kind
         switch statusCode {
         case 401:
-            kind = mentionsCredits && !mentionsKey ? .outOfCredits : .auth
+            kind = mentionsCredits ? .outOfCredits : .auth
         case 402:
             kind = .outOfCredits
         case 403:

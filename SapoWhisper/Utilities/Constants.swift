@@ -113,6 +113,7 @@ enum Constants {
 
         // ElevenLabs
         static let elevenLabsAPIKey = "elevenLabsAPIKey"
+        static let elevenLabsTranscriptionMode = "elevenLabsTranscriptionMode"
 
         // Audio
         static let audioGain = "audioGain"
