@@ -867,14 +867,17 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                appState = .error(error.localizedDescription)
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
                 activeTranscriptionSessionID = nil
                 PerformanceDiagnostics.logRuntimeSnapshot(
                     reason: "flux-transcription-failed",
-                    context: self.diagnosticContext(extra: "session=\(sessionID) error=\(error.localizedDescription)"),
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) failure=\(failure.diagnosticCode)"),
                     force: true
                 )
-                overlayManager.showError(message: error.localizedDescription)
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
@@ -893,7 +896,7 @@ class SapoWhisperViewModel: ObservableObject {
                     lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
                     cleanupSourceAudioIfSafe(sourceURL: captureResult.audioURL, persistedEntry: persistedEntry)
                 }
-                SapoLog.flux.error("Streaming error=\(error.localizedDescription, privacy: .public)")
+                SapoLog.flux.error("Flux transcription failed \(failure.logSummary, privacy: .public)")
             }
         }
     }
@@ -920,8 +923,12 @@ class SapoWhisperViewModel: ObservableObject {
         // All engines: stop recording, get audio file, transcribe
         guard let audioURL = audioRecorder.stopRecording() else {
             activeTranscriptionSessionID = nil
-            appState = .error("error.no_audio".localized)
-            overlayManager.showError(message: "error.no_audio".localized)
+            let failure = TranscriptionFailure(kind: .audioEmpty)
+            let message = failure.errorDescription ?? "error.no_audio".localized
+            appState = .error(message)
+            overlayManager.showError(message: message, isRetryable: failure.isRetryable)
+            SapoLog.recording.error(
+                "Recording produced no audio file \(failure.diagnosticCode, privacy: .public)")
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -934,8 +941,10 @@ class SapoWhisperViewModel: ObservableObject {
             )
             audioRecorder.deleteRecording(at: audioURL)
             activeTranscriptionSessionID = nil
-            appState = .error("error.no_audio".localized)
-            overlayManager.showError(message: "error.no_audio".localized)
+            let failure = TranscriptionFailure(kind: .recordingInterrupted)
+            let message = failure.errorDescription ?? "error.no_audio".localized
+            appState = .error(message)
+            overlayManager.showError(message: message, isRetryable: failure.isRetryable)
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -1000,16 +1009,18 @@ class SapoWhisperViewModel: ObservableObject {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
                     return
                 }
-                appState = .error(error.localizedDescription)
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
                 activeTranscriptionSessionID = nil
                 PerformanceDiagnostics.logRuntimeSnapshot(
                     reason: "transcription-failed",
                     context: self.diagnosticContext(
-                        extra: "session=\(sessionID) engine=\(engine.rawValue) error=\(error.localizedDescription)"
+                        extra: "session=\(sessionID) engine=\(engine.rawValue) failure=\(failure.diagnosticCode)"
                     ),
                     force: true
                 )
-                overlayManager.showError(message: error.localizedDescription)
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
@@ -1027,7 +1038,7 @@ class SapoWhisperViewModel: ObservableObject {
                 lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
                 cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
                 SapoLog.recording.error(
-                    "Transcription failed engine=\(engine.displayName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                    "Transcription failed engine=\(engine.displayName, privacy: .public) \(failure.logSummary, privacy: .public)"
                 )
             }
         }
@@ -1116,8 +1127,12 @@ class SapoWhisperViewModel: ObservableObject {
                 lastFailedHistoryId = nil
 
             } catch {
-                appState = .error(error.localizedDescription)
-                overlayManager.showError(message: error.localizedDescription)
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
+                SapoLog.recording.error(
+                    "Retry transcription failed \(failure.logSummary, privacy: .public)")
                 if playSoundEnabled { SoundManager.shared.play(.error) }
             }
         }
@@ -1462,6 +1477,8 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
+        // Fail fast with a clear message if the recording is missing, empty, or corrupt.
+        try AudioFileValidator.validate(audioURL)
         switch engine {
         case .appleOnline:
             guard PermissionService.shared.isGranted(.speechRecognition) else {

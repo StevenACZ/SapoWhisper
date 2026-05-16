@@ -453,11 +453,25 @@
 "overlay.no_speech" = "No se detecto voz";
 
 /* Errors */
-"error.deepgram_auth" = "Deepgram: API key invalida o expirada. Verifica en Settings.";
-"error.elevenlabs_auth" = "ElevenLabs: API key invalida o expirada. Verifica en Settings.";
 "error.no_audio" = "No se pudo obtener el audio";
 "error.input_not_ready" = "Microfono no disponible. Reintenta o elige otro.";
 "overlay.retry" = "Reintentar";
+
+/* Transcription failures (unified, engine-agnostic) */
+"failure.generic_engine" = "El motor de transcripción";
+"failure.not_configured" = "%@ no está configurado. Agregá tu API key en Ajustes.";
+"failure.auth" = "%@: API key inválida o expirada. Revisala en Ajustes.";
+"failure.out_of_credits" = "%@: te quedaste sin créditos. Revisá tu plan o saldo.";
+"failure.rate_limited" = "%@: límite de uso alcanzado. Esperá unos segundos y reintentá.";
+"failure.plan_restricted" = "%@: tu plan no permite esta función.";
+"failure.server_error" = "%@: el servicio falló temporalmente. Reintentá.";
+"failure.network" = "Sin conexión a internet. Revisá tu red y reintentá.";
+"failure.timed_out" = "La transcripción tardó demasiado. Reintentá.";
+"failure.audio_empty" = "No se grabó audio. Revisá tu micrófono.";
+"failure.audio_corrupt" = "La grabación se dañó y no se pudo procesar.";
+"failure.recording_interrupted" = "La grabación se interrumpió (cambio de micrófono). Reintentá.";
+"failure.empty_transcription" = "No se detectó voz en el audio.";
+"failure.unknown" = "%@: ocurrió un error inesperado. Reintentá.";
 
 /* Google Cloud Warning */
 "config.google_60s_warning" = "Limitado a 60 segundos por grabacion";

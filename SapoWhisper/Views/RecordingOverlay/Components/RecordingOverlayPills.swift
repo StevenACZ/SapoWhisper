@@ -163,8 +163,9 @@ struct ErrorPillView: View {
             Text(message)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
 
             Spacer()
 

@@ -260,9 +260,13 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Muestra un error
-    func showError(message: String, autoDismissAfter delay: TimeInterval = 3.0) {
-        updateState(.error(message: message))
+    /// Muestra un error. `isRetryable` controla si se ofrece el boton de reintento.
+    func showError(
+        message: String,
+        isRetryable: Bool = true,
+        autoDismissAfter delay: TimeInterval = 5.0
+    ) {
+        updateState(.error(message: message, isRetryable: isRetryable))
 
         // Auto-ocultar despues del delay
         Task {

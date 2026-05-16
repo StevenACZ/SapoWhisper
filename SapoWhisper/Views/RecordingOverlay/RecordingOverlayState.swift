@@ -15,7 +15,7 @@ enum RecordingOverlayState: Equatable {
     case transcribing
     case polishing
     case completed(text: String)
-    case error(message: String)
+    case error(message: String, isRetryable: Bool)
     case deviceDetected(deviceName: String)
     /// Identifies the state type (ignoring associated values) for animation triggers
     var stateCategory: String {
@@ -54,7 +54,7 @@ enum RecordingOverlayState: Equatable {
             return "overlay.ai_polishing".localized
         case .completed:
             return "overlay.completed".localized
-        case .error(let message):
+        case .error(let message, _):
             return message
         case .deviceDetected(let name):
             return name

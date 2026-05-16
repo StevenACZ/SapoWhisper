@@ -81,8 +81,8 @@ struct RecordingOverlayView: View {
         case .completed(let text):
             CompletedPillView(text: text)
 
-        case .error(let message):
-            ErrorPillView(message: message, onRetry: manager.onRetry)
+        case .error(let message, let isRetryable):
+            ErrorPillView(message: message, onRetry: isRetryable ? manager.onRetry : nil)
 
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)

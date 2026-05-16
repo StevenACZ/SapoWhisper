@@ -11,7 +11,6 @@ final class GeminiAudioTranscriber: ObservableObject {
     @Published var isTranscribing = false
 
     private let client: VertexGenerateContentClient
-    private let timeout: TimeInterval = 45
 
     init(client: VertexGenerateContentClient = VertexGenerateContentClient()) {
         self.client = client
@@ -65,7 +64,9 @@ final class GeminiAudioTranscriber: ObservableObject {
                 "app": "sapowhisper",
                 "feature": "gemini-audio",
             ],
-            timeout: timeout
+            // Scale the timeout to the clip length so long recordings are not aborted early.
+            timeout: TranscriptionFailure.requestTimeout(
+                forEstimatedSeconds: Double(estimatedSeconds))
         )
 
         let transcript = response.text.trimmingCharacters(in: .whitespacesAndNewlines)

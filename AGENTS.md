@@ -15,7 +15,8 @@ Project-local operating notes for coding agents. Keep this compact, operational,
 - `SapoWhisperViewModel`: recording, transcription, history, overlay, and paste orchestration.
 - `AudioRecorder`: batch 16 kHz mono int16 WAV capture.
 - `StreamingAudioCapture*`: Flux Live WAV history plus ordered LINEAR16 streaming.
-- Engines: Apple Speech, WhisperKit, Google Cloud STT, Deepgram Nova-3, Deepgram Flux Live.
+- Engines: Apple Speech, WhisperKit, Google Cloud STT, Deepgram Nova-3, Deepgram Flux Live, Gemini Audio, ElevenLabs Scribe v2.
+- Engine failures map to a shared `TranscriptionFailure` (`Core/TranscriptionFailure.swift`): a semantic `Kind` (auth, outOfCredits, rateLimited, timedOut, network, audioEmpty, audioCorrupt, ...), a user-facing localized message, an `isRetryable` flag, and a log-only `technicalDetail`. `AudioFileValidator` rejects missing/empty/corrupt recordings before they reach an engine.
 - Transcript post-processing: optional AI polish through Vertex AI Gemini 3.1 Flash-Lite after any engine.
 - AI polish has its own `polishing` UI state after transcription; keep it visually distinct from `processing/transcribing`.
 - AI polish has an output-language selector; default behavior should preserve the transcript's dominant language unless the user explicitly chooses Spanish, English, or Translate to English.
@@ -47,12 +48,15 @@ Three OSSignpost intervals appear under the `Signpost` category for Instruments 
 - `polish` — end-to-end Gemini transcript polish span.
 - `transcription` — reserved; not yet wrapped around the engine calls.
 
+Transcription failures log one line tagged `failure=<Engine>/<kind>` with a `detail=` field carrying the HTTP status and a short response-body snippet; grep unified logs for `failure=` to triage engine errors.
+
 Never log raw transcripts, prompts, Gemini responses, API keys, OAuth tokens, or service-account JSON. Prefer `chars=`/`bytes=` summaries over the actual content.
 
 ## Guardrails
 
 - Do not remove engines, history, permission onboarding, auto-paste, auto-ducking, or saved WAV history.
 - Keep Flux Live resilient to device route churn; inspect logs before changing startup/retry behavior.
+- Map every engine failure to `TranscriptionFailure`; do not reintroduce per-engine error enums or collapse distinct HTTP statuses (401 auth vs. 401 out-of-credits vs. 403 plan vs. 429 rate) into a single "invalid API key" message.
 - Keep AI polish non-blocking: if Gemini fails, the app must paste/save the raw transcript and record AI metadata.
 - Keep AI polish prompts conservative: no invented details, no decorative Markdown emphasis by default, preserve technical terms, and use vocabulary/replacements only as recognition context.
 - Do not log raw transcript content, credentials, access tokens, or service-account JSON.

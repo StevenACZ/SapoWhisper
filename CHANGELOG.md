@@ -18,6 +18,10 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **AI polish history metadata** — History now keeps the raw transcript, final transcript, AI status, model, mode, and error metadata, with an action to run AI polish later.
 - **AI polish output language** — Added an output language selector so polish can keep the transcript language, force Spanish, or force English.
 - **Google Cloud guided setup** — Engine settings now show a clearer step-by-step Google Cloud setup flow with gcloud login detection and JSON import as a secondary credentials path.
+- **Unified transcription failure model** — New `TranscriptionFailure` type maps every engine's raw failure (HTTP status, `URLError`, decode error, audio problems) into 13 semantic kinds, each with a localized message, a retryable flag, and a log-only technical detail.
+- **Engine HTTP failure diagnostics** — Every transcription engine now logs the real HTTP status and a response-body snippet on failure (`failure=<Engine>/<kind> detail=...`), instead of swallowing 401/403/429 with no log line.
+- **Recording pre-flight validation** — `AudioFileValidator` rejects missing, empty, or corrupt recordings with a clear message before they reach an engine.
+- **Localized failure strings** — Added `failure.*` keys (ES/EN) for the unified failure messages.
 
 ### Changed
 
@@ -29,11 +33,16 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **AI prompt formatting** — Mode IA now avoids decorative Markdown emphasis by default, preferring compact plain labels, paragraphs, bullets, and backticks only where they improve readability.
 - **AI prompt grounding** — AI polish now treats vocabulary and replacements as recognition context only, avoiding added details that were not present in the raw transcript.
 - **Agent notes** — Documented AI polish output-language behavior, conservative prompt grounding, and the long-run performance diagnostics path.
+- **Honest transcription errors** — Failures now distinguish invalid API key, exhausted credits, rate limit, plan restriction, network loss, request timeout, server error, empty/corrupt audio, and interrupted recording, instead of labeling every `401` as "API key inválida".
+- **Adaptive engine timeouts** — Request timeouts for ElevenLabs, Deepgram batch, Google Cloud, and Gemini now scale with the clip length (120–600 s) instead of a fixed value.
+- **Overlay retry affordance** — The error pill only offers "Retry" for retryable failures (network, timeout, rate limit, server error, interrupted recording) and its message can span two lines.
+- **Per-engine error enums removed** — Replaced `ElevenLabsError`, `DeepgramError`, and `GoogleCloudError` with the shared `TranscriptionFailure`.
 
 ### Fixed
 
 - **Vertex model routing** — Moved Gemini 3.1 Flash-Lite calls to the Vertex AI `us` multi-region endpoint so enabled polish does not fall back to the raw transcript because of a regional 404.
 - **AI polish diagnostics** — Added `ai-polish-start` and `ai-polish-finished` runtime snapshots so multi-day slowdown investigations can correlate transcription, Gemini latency, memory, and overlay state.
+- **ElevenLabs long-recording timeouts** — ElevenLabs Scribe used a fixed 30 s request timeout that could abort longer recordings before the API responded; the timeout now scales with the audio length.
 
 ## [2.1.3] - 2026-05-08
 

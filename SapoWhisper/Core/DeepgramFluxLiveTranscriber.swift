@@ -28,6 +28,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private var sessionStartedAt: CFAbsoluteTime = 0
     private var stopStartedAt: CFAbsoluteTime = 0
 
+    /// Brand name surfaced in user-facing failures and logs.
+    private static let engineName = "Deepgram"
+
     private enum StartRecovery {
         static let maxAttempts = 3
         static let firstInputTimeout: TimeInterval = 1.2
@@ -48,7 +51,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
             !apiKey.isEmpty
         else {
-            throw DeepgramError.notConfigured
+            throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
 
         resetSessionState()
@@ -74,7 +77,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     func stop() async throws -> DeepgramFluxLiveResult {
         guard isStreaming || isStopping else {
-            throw DeepgramError.apiError("Flux stream is not active")
+            throw TranscriptionFailure(
+                kind: .unknown, engine: Self.engineName,
+                technicalDetail: "Flux stream is not active")
         }
 
         isStopping = true
@@ -140,7 +145,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !cleanedTranscript.isEmpty else {
-            throw DeepgramError.apiError("No transcript returned")
+            throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
         }
 
         return DeepgramFluxLiveResult(
@@ -233,7 +238,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             transcriptAccumulator.update(with: json)
         case "FatalError":
             let description = (json["description"] as? String) ?? "Unknown Flux error"
-            let error = DeepgramError.apiError(description)
+            let error = TranscriptionFailure(
+                kind: .unknown, engine: Self.engineName,
+                technicalDetail: "Flux FatalError: \(description)")
             lastStreamingError = error
             finishStopIfNeeded(error: error)
         default:
@@ -282,7 +289,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !cleanedTranscript.isEmpty else {
-            throw DeepgramError.apiError("No fallback transcript returned")
+            throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
         }
 
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)

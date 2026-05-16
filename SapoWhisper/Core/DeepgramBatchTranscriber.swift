@@ -13,6 +13,9 @@ class DeepgramBatchTranscriber: ObservableObject {
 
     @Published var isTranscribing: Bool = false
 
+    /// Brand name surfaced in user-facing failures and logs.
+    private static let engineName = "Deepgram"
+
     /// Check if Deepgram API key is configured
     var isConfigured: Bool {
         let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? ""
@@ -26,7 +29,7 @@ class DeepgramBatchTranscriber: ObservableObject {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
             !apiKey.isEmpty
         else {
-            throw DeepgramError.notConfigured
+            throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
 
         await MainActor.run { isTranscribing = true }
@@ -51,34 +54,39 @@ class DeepgramBatchTranscriber: ObservableObject {
         components.queryItems = queryItems
 
         guard let url = components.url else {
-            throw DeepgramError.invalidURL
+            throw TranscriptionFailure(
+                kind: .unknown, engine: Self.engineName, technicalDetail: "invalid endpoint URL")
         }
 
         // Build request
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        // Scale the timeout to the clip length so long recordings are not aborted early.
+        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: audioData.count)
         request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = audioData
 
         // Send request
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw DeepgramError.apiError("Invalid response")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw TranscriptionFailure.from(error, engine: Self.engineName)
         }
 
-        // Handle HTTP errors
-        switch httpResponse.statusCode {
-        case 200:
-            break
-        case 401, 403:
-            throw DeepgramError.invalidAPIKey
-        case 429:
-            throw DeepgramError.quotaExceeded
-        default:
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw DeepgramError.apiError("HTTP \(httpResponse.statusCode): \(body)")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw TranscriptionFailure(
+                kind: .unknown, engine: Self.engineName, technicalDetail: "non-HTTP response")
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let failure = TranscriptionFailure.fromHTTP(
+                engine: Self.engineName, statusCode: httpResponse.statusCode, body: data)
+            SapoLog.recording.error(
+                "Deepgram batch HTTP failure \(failure.logSummary, privacy: .public)")
+            throw failure
         }
 
         // Parse response
@@ -92,7 +100,9 @@ class DeepgramBatchTranscriber: ObservableObject {
             SapoLog.recording.warning(
                 "Deepgram batch parse failure status=\(httpResponse.statusCode, privacy: .public) audioBytes=\(audioData.count, privacy: .public)"
             )
-            throw DeepgramError.apiError("Could not parse response")
+            throw TranscriptionFailure(
+                kind: .unknown, engine: Self.engineName,
+                technicalDetail: "could not parse 200 response bytes=\(data.count)")
         }
 
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,7 +130,9 @@ class DeepgramBatchTranscriber: ObservableObject {
             let sampleRate = UInt32(format.sampleRate)
             let frameCapacity: AVAudioFrameCount = 4096
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else {
-                throw DeepgramError.apiError("Failed to create audio buffer")
+                throw TranscriptionFailure(
+                    kind: .audioCorrupt, engine: Self.engineName,
+                    technicalDetail: "failed to create audio buffer")
             }
 
             let estimatedPCMBytes = max(0, Int(int16File.length)) * channelCount * 2
@@ -130,7 +142,9 @@ class DeepgramBatchTranscriber: ObservableObject {
             while int16File.framePosition < int16File.length {
                 try int16File.read(into: buffer)
                 guard let channels = buffer.int16ChannelData else {
-                    throw DeepgramError.apiError("Failed to access int16 channel data")
+                    throw TranscriptionFailure(
+                        kind: .audioCorrupt, engine: Self.engineName,
+                        technicalDetail: "failed to access int16 channel data")
                 }
 
                 let frameLength = Int(buffer.frameLength)
@@ -202,31 +216,6 @@ class DeepgramBatchTranscriber: ObservableObject {
         case "en": return "en"
         case "auto": return "multi"
         default: return "es"
-        }
-    }
-}
-
-// MARK: - Errors
-
-enum DeepgramError: LocalizedError {
-    case notConfigured
-    case invalidURL
-    case invalidAPIKey
-    case quotaExceeded
-    case apiError(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .notConfigured:
-            return "Deepgram API key not configured"
-        case .invalidURL:
-            return "Invalid Deepgram URL"
-        case .invalidAPIKey:
-            return "error.deepgram_auth".localized
-        case .quotaExceeded:
-            return "Deepgram: Quota exceeded"
-        case .apiError(let message):
-            return "Deepgram: \(message)"
         }
     }
 }
