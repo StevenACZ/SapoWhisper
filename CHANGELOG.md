@@ -10,6 +10,9 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **ElevenLabs Scribe Realtime v2 mode** — Added a low-latency ElevenLabs mode that opens a WebSocket at recording start, streams PCM 16 kHz mono while saving a local WAV backup, buffers committed transcript segments only, and pastes once after stop.
+- **ElevenLabs mode selector** — Settings now lets users choose between `ElevenLabs Scribe v2` batch mode and `ElevenLabs Scribe Realtime v2`, with batch kept as the default.
+- **ElevenLabs batch/realtime diagnostics** — Added runtime snapshots and logs for ElevenLabs batch start/finish/failure, realtime session open/finish, chunk counts, committed segment counts, final wait time, request/session id, audio bytes, and transcript character counts.
 - **Editable AI prompts and personal context** — Settings now has a Prompts tab where users can create per-destination prompts (Codex, Slack, custom) and a personal context block reused by every AI polish run.
 - **OSSignpost intervals** — `hotkey-to-overlay` and `polish` spans now show in Console.app and Instruments for live latency inspection.
 - **Lifecycle and Gemini logging categories** — New `SapoLog.lifecycle` and `SapoLog.gemini` channels.
@@ -25,6 +28,9 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **ElevenLabs realtime paste behavior** — Partial transcripts are never typed into the active input; realtime mode only pastes the final buffered text once recording ends.
+- **ElevenLabs vocabulary limits** — Scribe batch now accepts up to 1000 keyterms with the current Scribe v2 limits, while realtime uses the stricter 50-term / 20-character limit. Replacements still run locally after transcription.
+- **ElevenLabs realtime failure behavior** — Realtime failures keep the saved WAV in failed history and show manual retry without automatically falling back to batch.
 - **Overlay performance** — Removed the `.id(stateCategory)` subtree rebuild so recording → transcribing → polishing transitions no longer recreate the pill on every state change.
 - **Settings tab churn** — Tabs stay alive in a single ZStack toggled by opacity; switching segments no longer rebuilds the entire tab subtree.
 - **Vocabulary filtering** — Keyterm and replacement filters are cached in `@State` and only recomputed on data or query changes, not on every body redraw.
@@ -40,6 +46,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **ElevenLabs quota messaging** — `quota_exceeded` responses that mention API key quota now map to `outOfCredits` instead of the invalid API key/auth message.
 - **Vertex model routing** — Moved Gemini 3.1 Flash-Lite calls to the Vertex AI `us` multi-region endpoint so enabled polish does not fall back to the raw transcript because of a regional 404.
 - **AI polish diagnostics** — Added `ai-polish-start` and `ai-polish-finished` runtime snapshots so multi-day slowdown investigations can correlate transcription, Gemini latency, memory, and overlay state.
 - **ElevenLabs long-recording timeouts** — ElevenLabs Scribe used a fixed 30 s request timeout that could abort longer recordings before the API responded; the timeout now scales with the audio length.
