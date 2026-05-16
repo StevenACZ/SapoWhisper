@@ -69,6 +69,8 @@ enum Constants {
     enum Hotkey {
         static let defaultKeyCode: UInt32 = 49  // Space
         static let defaultModifiers: UInt32 = 2048  // Option key
+        static let defaultTriggerKind = "keyCombination"
+        static let defaultDoubleTapModifier: UInt32 = 2048  // Option key
     }
 
     // MARK: - Audio Settings
@@ -89,8 +91,10 @@ enum Constants {
         static let language = "language"
         static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"
+        static let hotkeyTriggerKind = "hotkeyTriggerKind"
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
+        static let hotkeyDoubleTapModifier = "hotkeyDoubleTapModifier"
         static let selectedMicrophone = "selectedMicrophone"
 
         // Motor de transcripcion

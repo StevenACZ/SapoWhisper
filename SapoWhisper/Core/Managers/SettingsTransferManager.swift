@@ -37,8 +37,10 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var deepgramTranscriptionMode: String
     var elevenLabsTranscriptionMode: String?
     var geminiAudioModel: String?
+    var hotkeyTriggerKind: String?
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
+    var hotkeyDoubleTapModifier: Int?
     var audioGain: Double
     var aiPolishEnabled: Bool
     var aiPolishMode: String
@@ -259,8 +261,14 @@ struct SettingsTransferManager {
                 ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
             geminiAudioModel: defaults.string(forKey: Constants.StorageKeys.geminiAudioModel)
                 ?? GeminiAudioModel.defaultModel.rawValue,
+            hotkeyTriggerKind: defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
+                ?? Constants.Hotkey.defaultTriggerKind,
             hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
             hotkeyModifiers: intValue(forKey: Constants.StorageKeys.hotkeyModifiers, defaultValue: Int(Constants.Hotkey.defaultModifiers)),
+            hotkeyDoubleTapModifier: intValue(
+                forKey: Constants.StorageKeys.hotkeyDoubleTapModifier,
+                defaultValue: Int(Constants.Hotkey.defaultDoubleTapModifier)
+            ),
             audioGain: doubleValue(forKey: Constants.StorageKeys.audioGain, defaultValue: 1.0),
             aiPolishEnabled: boolValue(forKey: Constants.StorageKeys.aiPolishEnabled, defaultValue: false),
             aiPolishMode: defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
@@ -311,11 +319,18 @@ struct SettingsTransferManager {
         }
 
         if sections.contains(.hotkey) {
+            let triggerKindRaw = preferences.hotkeyTriggerKind ?? Constants.Hotkey.defaultTriggerKind
+            let triggerKind = HotkeyTriggerKind(rawValue: triggerKindRaw) ?? .keyCombination
+            let doubleTapModifier = preferences.hotkeyDoubleTapModifier ?? Int(Constants.Hotkey.defaultDoubleTapModifier)
+            defaults.set(triggerKind.rawValue, forKey: Constants.StorageKeys.hotkeyTriggerKind)
             defaults.set(preferences.hotkeyKeyCode, forKey: Constants.StorageKeys.hotkeyKeyCode)
             defaults.set(preferences.hotkeyModifiers, forKey: Constants.StorageKeys.hotkeyModifiers)
-            HotkeyManager.shared.updateHotkey(
+            defaults.set(doubleTapModifier, forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
+            HotkeyManager.shared.updateConfiguration(
+                triggerKind: triggerKind,
                 keyCode: UInt32(preferences.hotkeyKeyCode),
-                modifiers: UInt32(preferences.hotkeyModifiers)
+                modifiers: UInt32(preferences.hotkeyModifiers),
+                doubleTapModifier: UInt32(doubleTapModifier)
             )
         }
 

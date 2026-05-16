@@ -258,6 +258,12 @@
 
 /* Hotkey Settings */
 "settings.presets_desc" = "Select a preset hotkey or customize your own";
+"settings.hotkey_activation_mode" = "Activation mode";
+"settings.hotkey_mode_combination" = "Combination";
+"settings.hotkey_mode_double_modifier" = "Double press";
+"settings.hotkey_double_modifier_desc" = "Press the same modifier twice quickly.";
+"settings.hotkey_presets_combinations" = "Combinations";
+"settings.hotkey_presets_double_tap" = "Double press";
 
 /* Microphone Level Meter */
 

@@ -395,19 +395,22 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
 
         resetSessionState()
-        let keyterms = Self.sanitizedKeyterms()
-        let droppedKeytermCount = Self.droppedKeytermCount(sanitizedCount: keyterms.count)
+        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
+            maxCount: Self.maxRealtimeKeyterms,
+            maxLength: Self.maxRealtimeKeytermLength
+        )
+        let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
         webSocketTask = task
         audioSender.start(task: task)
         task.resume()
         isStreaming = true
         SapoLog.recording.info(
-            "ElevenLabs realtime stream opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(droppedKeytermCount, privacy: .public)"
+            "ElevenLabs realtime stream opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public)"
         )
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "elevenlabs-realtime-opened",
-            context: "language=\(language) keyterms=\(keyterms.count) keytermsDropped=\(droppedKeytermCount)",
+            context: "language=\(language) keyterms=\(keyterms.count) keytermsDropped=\(keytermPayload.droppedCount)",
             force: true
         )
 
@@ -480,7 +483,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let stopElapsedMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
 
         let cleanedTranscript = VocabularyManager.shared
-            .applyingReplacements(to: transcript)
+            .applyingRecognitionCorrections(to: transcript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         SapoLog.recording.info(
@@ -515,14 +518,17 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
         resetSessionState()
         isStopping = true
-        let keyterms = Self.sanitizedKeyterms()
-        let droppedKeytermCount = Self.droppedKeytermCount(sanitizedCount: keyterms.count)
+        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
+            maxCount: Self.maxRealtimeKeyterms,
+            maxLength: Self.maxRealtimeKeytermLength
+        )
+        let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
         webSocketTask = task
         audioSender.start(task: task)
         task.resume()
         SapoLog.recording.info(
-            "ElevenLabs realtime file replay opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(droppedKeytermCount, privacy: .public)"
+            "ElevenLabs realtime file replay opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public)"
         )
 
         receiveTask = Task { [weak self] in
@@ -549,7 +555,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
         )
         let cleanedTranscript = VocabularyManager.shared
-            .applyingReplacements(to: transcript)
+            .applyingRecognitionCorrections(to: transcript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.recording.info(
@@ -604,25 +610,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         request.timeoutInterval = 15
         return URLSession.shared.webSocketTask(with: request)
-    }
-
-    private static func sanitizedKeyterms() -> [String] {
-        VocabularyManager.shared.keyterms
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { term in
-                !term.isEmpty
-                    && term.count <= maxRealtimeKeytermLength
-            }
-            .prefix(maxRealtimeKeyterms)
-            .map { $0 }
-    }
-
-    private static func droppedKeytermCount(sanitizedCount: Int) -> Int {
-        let candidateCount = VocabularyManager.shared.keyterms
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .count
-        return max(0, candidateCount - sanitizedCount)
     }
 
     private static func scribeLanguageCode(for appLanguage: String) -> String? {

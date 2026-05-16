@@ -6,7 +6,7 @@
 import Combine
 import Foundation
 
-/// Manages keyterms and replacements for Deepgram speech recognition
+/// Manages keyterms and replacements for speech recognition engines.
 /// Persists to ~/Library/Application Support/SapoWhisper/vocabulary.json
 class VocabularyManager: ObservableObject {
 
@@ -140,5 +140,123 @@ class VocabularyManager: ObservableObject {
                     withTemplate: replacementTemplate
                 )
             }
+    }
+
+    /// Returns keyterms shaped for engines that accept server-side recognition hints.
+    func recognitionKeytermPayload(maxCount: Int, maxLength: Int, maxWords: Int? = nil) -> (terms: [String], droppedCount: Int) {
+        let candidates =
+            keyterms
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var seen = Set<String>()
+        var expandedTerms: [String] = []
+
+        for candidate in candidates {
+            for variant in Self.recognitionVariants(for: candidate) {
+                let normalized = variant.lowercased()
+                guard !seen.contains(normalized) else { continue }
+                seen.insert(normalized)
+                expandedTerms.append(variant)
+            }
+        }
+
+        let validTerms = expandedTerms.filter { term in
+            term.count <= maxLength && (maxWords.map { term.split(separator: " ").count <= $0 } ?? true)
+        }
+        let terms = Array(validTerms.prefix(maxCount))
+        return (terms, max(0, expandedTerms.count - terms.count))
+    }
+
+    /// Applies saved replacements and high-confidence vocabulary spelling corrections.
+    func applyingRecognitionCorrections(to transcript: String) -> String {
+        let replacedTranscript = applyingReplacements(to: transcript)
+        let correctionPairs =
+            keyterms
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .flatMap { keyterm in
+                Self.correctionVariants(for: keyterm).map { variant in
+                    (variant: variant, canonical: keyterm)
+                }
+            }
+            .filter { $0.variant.compare($0.canonical, options: [.caseInsensitive]) != .orderedSame }
+            .sorted { $0.variant.count > $1.variant.count }
+
+        return correctionPairs.reduce(replacedTranscript) { current, pair in
+            let pattern = Self.wholeTermPattern(for: pair.variant)
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return current
+            }
+
+            let range = NSRange(current.startIndex..<current.endIndex, in: current)
+            let replacementTemplate = NSRegularExpression.escapedTemplate(for: pair.canonical)
+            return regex.stringByReplacingMatches(
+                in: current,
+                options: [],
+                range: range,
+                withTemplate: replacementTemplate
+            )
+        }
+    }
+
+    private static func recognitionVariants(for keyterm: String) -> [String] {
+        uniqueVariants([
+            keyterm,
+            spokenForm(for: keyterm),
+        ])
+    }
+
+    private static func correctionVariants(for keyterm: String) -> [String] {
+        recognitionVariants(for: keyterm)
+    }
+
+    private static func spokenForm(for keyterm: String) -> String {
+        let separated = keyterm.replacingOccurrences(of: #"[-_]+"#, with: " ", options: .regularExpression)
+        let characters = Array(separated)
+        guard characters.count > 1 else { return separated }
+
+        var result = ""
+        for index in characters.indices {
+            let character = characters[index]
+            if index > characters.startIndex {
+                let previous = characters[characters.index(before: index)]
+                let nextIndex = characters.index(after: index)
+                let next = nextIndex < characters.endIndex ? characters[nextIndex] : nil
+                if shouldInsertSpeechSpace(previous: previous, current: character, next: next) {
+                    result.append(" ")
+                }
+            }
+            result.append(character)
+        }
+
+        return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+    }
+
+    private static func shouldInsertSpeechSpace(previous: Character, current: Character, next: Character?) -> Bool {
+        guard current.isUppercase else { return false }
+        if previous.isLowercase || previous.isNumber { return true }
+        if previous.isUppercase, next?.isLowercase == true { return true }
+        return false
+    }
+
+    private static func wholeTermPattern(for term: String) -> String {
+        let escaped = NSRegularExpression.escapedPattern(for: term)
+        return "(?<![A-Za-z0-9])\(escaped)(?![A-Za-z0-9])"
+    }
+
+    private static func uniqueVariants(_ variants: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+
+        for variant in variants {
+            let trimmed = variant.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let normalized = trimmed.lowercased()
+            guard !seen.contains(normalized) else { continue }
+            seen.insert(normalized)
+            result.append(trimmed)
+        }
+
+        return result
     }
 }

@@ -41,8 +41,12 @@ class SapoWhisperViewModel: ObservableObject {
 
     @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "es"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
     @AppStorage(Constants.StorageKeys.hotkeyKeyCode) var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
     @AppStorage(Constants.StorageKeys.hotkeyModifiers) var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
+    @AppStorage(Constants.StorageKeys.hotkeyDoubleTapModifier) var hotkeyDoubleTapModifier: Int = Int(
+        Constants.Hotkey.defaultDoubleTapModifier
+    )
     @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
     @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.appleOnline.rawValue
     @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
@@ -190,8 +194,10 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.selectedDeviceUID = selectedMicrophone
 
         // Aplicar hotkey guardado
+        hotkeyManager.currentTriggerKind = HotkeyTriggerKind(rawValue: hotkeyTriggerKind) ?? .keyCombination
         hotkeyManager.currentKeyCode = UInt32(hotkeyKeyCode)
         hotkeyManager.currentModifiers = UInt32(hotkeyModifiers)
+        hotkeyManager.currentDoubleTapModifier = UInt32(hotkeyDoubleTapModifier)
     }
 
     private func setupBindings() {

@@ -10,6 +10,58 @@ import Combine
 import OSLog
 import os
 
+enum HotkeyTriggerKind: String, CaseIterable, Identifiable {
+    case keyCombination
+    case doubleModifier
+
+    var id: String { rawValue }
+}
+
+enum HotkeyDoubleTapModifier: Int, CaseIterable, Identifiable {
+    case option = 2048
+    case command = 256
+    case control = 4096
+    case shift = 512
+
+    var id: Int { rawValue }
+    var carbonValue: UInt32 { UInt32(rawValue) }
+
+    var symbol: String {
+        switch self {
+        case .command: return "⌘"
+        case .shift: return "⇧"
+        case .option: return "⌥"
+        case .control: return "⌃"
+        }
+    }
+
+    var cgFlag: CGEventFlags {
+        switch self {
+        case .command: return .maskCommand
+        case .shift: return .maskShift
+        case .option: return .maskAlternate
+        case .control: return .maskControl
+        }
+    }
+
+    var keyCodes: Set<Int64> {
+        switch self {
+        case .command:
+            return [Int64(kVK_Command), Int64(kVK_RightCommand)]
+        case .shift:
+            return [Int64(kVK_Shift), Int64(kVK_RightShift)]
+        case .option:
+            return [Int64(kVK_Option), Int64(kVK_RightOption)]
+        case .control:
+            return [Int64(kVK_Control), Int64(kVK_RightControl)]
+        }
+    }
+
+    static func option(for carbonValue: UInt32) -> HotkeyDoubleTapModifier {
+        HotkeyDoubleTapModifier(rawValue: Int(carbonValue)) ?? .option
+    }
+}
+
 /// Maneja los hotkeys globales de la aplicación
 class HotkeyManager: ObservableObject {
 
@@ -17,20 +69,37 @@ class HotkeyManager: ObservableObject {
 
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
+    private var eventTap: CFMachPort?
+    private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
     private var hotkeyPressCount: UInt64 = 0
+    private var isDoubleTapModifierPressed = false
+    private var isSuppressingCurrentDoubleTapPress = false
+    private var currentDoubleTapPressStartedAt: CFAbsoluteTime?
+    private var lastDoubleTapReleaseAt: CFAbsoluteTime?
+    private static let doubleTapInterval: CFTimeInterval = 0.45
+    private static let doubleTapMaxHoldDuration: CFTimeInterval = 0.40
+    private static let relevantModifierFlags: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
 
     // Hotkey por defecto: Option + Space
+    @Published var currentTriggerKind: HotkeyTriggerKind
     @Published var currentKeyCode: UInt32
     @Published var currentModifiers: UInt32
+    @Published var currentDoubleTapModifier: UInt32
 
     private init() {
         // Cargar valores guardados o usar defaults
+        let savedTriggerKind = UserDefaults.standard.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
         let savedKeyCode = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyKeyCode)
         let savedModifiers = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyModifiers)
+        let savedDoubleTapModifier = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
 
+        self.currentTriggerKind =
+            HotkeyTriggerKind(rawValue: savedTriggerKind ?? Constants.Hotkey.defaultTriggerKind) ?? .keyCombination
         self.currentKeyCode = savedKeyCode > 0 ? UInt32(savedKeyCode) : UInt32(kVK_Space)
         self.currentModifiers = savedModifiers > 0 ? UInt32(savedModifiers) : UInt32(optionKey)
+        self.currentDoubleTapModifier =
+            savedDoubleTapModifier > 0 ? UInt32(savedDoubleTapModifier) : UInt32(optionKey)
     }
 
     /// Registra el hotkey global
@@ -40,6 +109,15 @@ class HotkeyManager: ObservableObject {
         // Desregistrar hotkey anterior si existe
         unregisterHotkey()
 
+        switch currentTriggerKind {
+        case .keyCombination:
+            registerKeyCombinationHotkey()
+        case .doubleModifier:
+            registerDoubleModifierHotkey()
+        }
+    }
+
+    private func registerKeyCombinationHotkey() {
         // Configurar el event handler
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
 
@@ -48,17 +126,7 @@ class HotkeyManager: ObservableObject {
             { (_, event, userData) -> OSStatus in
                 guard let userData = userData else { return noErr }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                manager.hotkeyPressCount &+= 1
-                let pressCount = manager.hotkeyPressCount
-                SapoLog.hotkey.info(
-                    "Global hotkey pressed count=\(pressCount, privacy: .public) hotkey=\(manager.hotkeyDescription, privacy: .public)"
-                )
-                PerformanceDiagnostics.logRuntimeSnapshot(
-                    reason: "hotkey-pressed",
-                    context: "count=\(pressCount) hotkey=\(manager.hotkeyDescription)",
-                    force: true
-                )
-                manager.hotkeyCallback?()
+                manager.handleHotkeyPressed(source: "key-combination")
                 return noErr
             },
             1,
@@ -91,6 +159,49 @@ class HotkeyManager: ObservableObject {
         }
     }
 
+    private func registerDoubleModifierHotkey() {
+        let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        guard
+            let tap = CGEvent.tapCreate(
+                tap: .cgSessionEventTap,
+                place: .headInsertEventTap,
+                options: .listenOnly,
+                eventsOfInterest: eventMask,
+                callback: { _, type, event, userData in
+                    guard let userData = userData else {
+                        return Unmanaged.passUnretained(event)
+                    }
+
+                    let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+                    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                        manager.enableEventTap()
+                        return Unmanaged.passUnretained(event)
+                    }
+
+                    guard type == .flagsChanged else {
+                        return Unmanaged.passUnretained(event)
+                    }
+
+                    manager.handleFlagsChanged(event)
+                    return Unmanaged.passUnretained(event)
+                },
+                userInfo: Unmanaged.passUnretained(self).toOpaque()
+            )
+        else {
+            SapoLog.hotkey.error("Failed to register double modifier hotkey")
+            return
+        }
+
+        eventTap = tap
+        eventTapRunLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        if let eventTapRunLoopSource {
+            CFRunLoopAddSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
+        }
+        enableEventTap()
+        resetDoubleTapState()
+        SapoLog.hotkey.info("Double modifier hotkey registered \(self.hotkeyDescription, privacy: .public)")
+    }
+
     /// Desregistra el hotkey actual
     func unregisterHotkey() {
         if let hotkeyRef = hotkeyRef {
@@ -102,32 +213,82 @@ class HotkeyManager: ObservableObject {
             RemoveEventHandler(eventHandler)
             self.eventHandler = nil
         }
+
+        if let eventTapRunLoopSource = eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
+            self.eventTapRunLoopSource = nil
+        }
+
+        if let eventTap = eventTap {
+            CFMachPortInvalidate(eventTap)
+            self.eventTap = nil
+        }
+
+        resetDoubleTapState()
     }
 
     /// Cambia el hotkey manteniendo el callback existente
     func updateHotkey(keyCode: UInt32, modifiers: UInt32) {
+        updateConfiguration(
+            triggerKind: .keyCombination,
+            keyCode: keyCode,
+            modifiers: modifiers,
+            doubleTapModifier: currentDoubleTapModifier
+        )
+    }
+
+    /// Cambia el hotkey con un nuevo callback
+    func updateHotkey(keyCode: UInt32, modifiers: UInt32, callback: @escaping () -> Void) {
+        hotkeyCallback = callback
+        updateHotkey(keyCode: keyCode, modifiers: modifiers)
+    }
+
+    func updateTriggerKind(_ triggerKind: HotkeyTriggerKind) {
+        updateConfiguration(
+            triggerKind: triggerKind,
+            keyCode: currentKeyCode,
+            modifiers: currentModifiers,
+            doubleTapModifier: currentDoubleTapModifier
+        )
+    }
+
+    func updateDoubleTapModifier(_ modifier: UInt32) {
+        updateConfiguration(
+            triggerKind: .doubleModifier,
+            keyCode: currentKeyCode,
+            modifiers: currentModifiers,
+            doubleTapModifier: modifier
+        )
+    }
+
+    func updateConfiguration(
+        triggerKind: HotkeyTriggerKind,
+        keyCode: UInt32,
+        modifiers: UInt32,
+        doubleTapModifier: UInt32
+    ) {
+        currentTriggerKind = triggerKind
         currentKeyCode = keyCode
         currentModifiers = modifiers
+        currentDoubleTapModifier = HotkeyDoubleTapModifier.option(for: doubleTapModifier).carbonValue
 
-        // Guardar en UserDefaults
+        UserDefaults.standard.set(triggerKind.rawValue, forKey: Constants.StorageKeys.hotkeyTriggerKind)
         UserDefaults.standard.set(Int(keyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
         UserDefaults.standard.set(Int(modifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
+        UserDefaults.standard.set(Int(currentDoubleTapModifier), forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
 
-        // Re-registrar con el callback existente
         if let callback = hotkeyCallback {
             registerHotkey(callback: callback)
         }
     }
 
-    /// Cambia el hotkey con un nuevo callback
-    func updateHotkey(keyCode: UInt32, modifiers: UInt32, callback: @escaping () -> Void) {
-        currentKeyCode = keyCode
-        currentModifiers = modifiers
-        registerHotkey(callback: callback)
-    }
-
     /// Texto descriptivo del hotkey actual
     var hotkeyDescription: String {
+        if currentTriggerKind == .doubleModifier {
+            let option = HotkeyDoubleTapModifier.option(for: currentDoubleTapModifier)
+            return "\(option.symbol) \(option.symbol)"
+        }
+
         var parts: [String] = []
 
         if currentModifiers & UInt32(controlKey) != 0 { parts.append("⌃") }
@@ -135,15 +296,118 @@ class HotkeyManager: ObservableObject {
         if currentModifiers & UInt32(shiftKey) != 0 { parts.append("⇧") }
         if currentModifiers & UInt32(cmdKey) != 0 { parts.append("⌘") }
 
-        // Agregar la tecla
-        switch Int(currentKeyCode) {
-        case kVK_Space: parts.append("Space")
-        case kVK_Return: parts.append("Return")
-        case kVK_ANSI_S: parts.append("S")
-        default: parts.append("Key\(currentKeyCode)")
-        }
+        parts.append(keyName(for: Int(currentKeyCode)))
 
         return parts.joined(separator: " + ")
+    }
+
+    private func handleFlagsChanged(_ event: CGEvent) {
+        let option = HotkeyDoubleTapModifier.option(for: currentDoubleTapModifier)
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard option.keyCodes.contains(keyCode) else { return }
+
+        let modifierFlags = event.flags.intersection(Self.relevantModifierFlags)
+        let isTargetOnlyDown = modifierFlags == option.cgFlag
+        let isTargetUp = !modifierFlags.contains(option.cgFlag)
+        let now = CFAbsoluteTimeGetCurrent()
+
+        if isTargetOnlyDown && !isDoubleTapModifierPressed {
+            isDoubleTapModifierPressed = true
+            currentDoubleTapPressStartedAt = now
+
+            if let lastDoubleTapReleaseAt, now - lastDoubleTapReleaseAt <= Self.doubleTapInterval {
+                isSuppressingCurrentDoubleTapPress = true
+                self.lastDoubleTapReleaseAt = nil
+                SapoLog.hotkey.info(
+                    "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
+                )
+                DispatchQueue.main.async { [weak self] in
+                    self?.handleHotkeyPressed(source: "double-modifier")
+                }
+            }
+        } else if isTargetUp && isDoubleTapModifierPressed {
+            let pressDuration = now - (currentDoubleTapPressStartedAt ?? now)
+            isDoubleTapModifierPressed = false
+            currentDoubleTapPressStartedAt = nil
+
+            if isSuppressingCurrentDoubleTapPress {
+                isSuppressingCurrentDoubleTapPress = false
+                lastDoubleTapReleaseAt = nil
+            } else {
+                lastDoubleTapReleaseAt = pressDuration <= Self.doubleTapMaxHoldDuration ? now : nil
+            }
+        } else if modifierFlags != option.cgFlag {
+            resetDoubleTapState()
+        }
+    }
+
+    private func handleHotkeyPressed(source: String) {
+        hotkeyPressCount &+= 1
+        let pressCount = hotkeyPressCount
+        let description = hotkeyDescription
+        SapoLog.hotkey.info(
+            "Global hotkey pressed source=\(source, privacy: .public) count=\(pressCount, privacy: .public) hotkey=\(description, privacy: .public)"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "hotkey-pressed",
+            context: "source=\(source) count=\(pressCount) hotkey=\(description)",
+            force: true
+        )
+        hotkeyCallback?()
+    }
+
+    private func enableEventTap() {
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+        }
+    }
+
+    private func resetDoubleTapState() {
+        isDoubleTapModifierPressed = false
+        isSuppressingCurrentDoubleTapPress = false
+        currentDoubleTapPressStartedAt = nil
+        lastDoubleTapReleaseAt = nil
+    }
+
+    private func keyName(for keyCode: Int) -> String {
+        switch keyCode {
+        case kVK_Space: return "Space"
+        case kVK_Return: return "Return"
+        case kVK_Tab: return "Tab"
+        case kVK_Delete: return "Delete"
+        case kVK_Escape: return "Esc"
+        case kVK_LeftArrow: return "←"
+        case kVK_RightArrow: return "→"
+        case kVK_DownArrow: return "↓"
+        case kVK_UpArrow: return "↑"
+        case kVK_ANSI_A: return "A"
+        case kVK_ANSI_S: return "S"
+        case kVK_ANSI_D: return "D"
+        case kVK_ANSI_F: return "F"
+        case kVK_ANSI_H: return "H"
+        case kVK_ANSI_G: return "G"
+        case kVK_ANSI_Z: return "Z"
+        case kVK_ANSI_X: return "X"
+        case kVK_ANSI_C: return "C"
+        case kVK_ANSI_V: return "V"
+        case kVK_ANSI_B: return "B"
+        case kVK_ANSI_Q: return "Q"
+        case kVK_ANSI_W: return "W"
+        case kVK_ANSI_E: return "E"
+        case kVK_ANSI_R: return "R"
+        case kVK_ANSI_Y: return "Y"
+        case kVK_ANSI_T: return "T"
+        case kVK_ANSI_O: return "O"
+        case kVK_ANSI_U: return "U"
+        case kVK_ANSI_I: return "I"
+        case kVK_ANSI_P: return "P"
+        case kVK_ANSI_L: return "L"
+        case kVK_ANSI_J: return "J"
+        case kVK_ANSI_K: return "K"
+        case kVK_ANSI_N: return "N"
+        case kVK_ANSI_M: return "M"
+        default: return "Key\(keyCode)"
+        }
     }
 
     deinit {

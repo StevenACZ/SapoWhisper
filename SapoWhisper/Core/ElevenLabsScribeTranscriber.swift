@@ -56,7 +56,11 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: audioData.count)
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        let keytermPayload = sanitizedKeytermPayload()
+        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
+            maxCount: Self.maxKeyterms,
+            maxLength: Self.maxKeytermLength,
+            maxWords: Self.maxKeytermWords
+        )
         let keyterms = keytermPayload.terms
         let body = makeMultipartBody(
             boundary: boundary,
@@ -115,8 +119,8 @@ class ElevenLabsScribeTranscriber: ObservableObject {
                 technicalDetail: "could not parse 200 response bytes=\(data.count)")
         }
 
-        // Scribe v2 has no server-side replace; apply saved replacements locally.
-        let finalText = VocabularyManager.shared.applyingReplacements(to: transcript)
+        // Scribe v2 has no server-side replace; apply saved vocabulary corrections locally.
+        let finalText = VocabularyManager.shared.applyingRecognitionCorrections(to: transcript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         let requestID = httpResponse.value(forHTTPHeaderField: "request-id") ?? "n/a"
@@ -165,24 +169,6 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
         body.append("--\(boundary)--\r\n")
         return body
-    }
-
-    /// Keyterms from the shared vocabulary, capped to the Scribe v2 limits.
-    /// An out-of-bounds keyterm would make the API reject the whole request,
-    /// so terms over the length/word limits are dropped rather than truncated.
-    private func sanitizedKeytermPayload() -> (terms: [String], droppedCount: Int) {
-        let candidates = VocabularyManager.shared.keyterms
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let terms =
-            candidates
-            .filter { term in
-                term.count <= Self.maxKeytermLength
-                    && term.split(separator: " ").count <= Self.maxKeytermWords
-            }
-            .prefix(Self.maxKeyterms)
-            .map { $0 }
-        return (terms, max(0, candidates.count - terms.count))
     }
 
     // MARK: - Language Mapping
