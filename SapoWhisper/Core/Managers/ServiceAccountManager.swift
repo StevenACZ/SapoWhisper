@@ -108,9 +108,11 @@ class ServiceAccountManager {
         request.httpBody = body.data(using: .utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? "Unknown"
-            throw ServiceAccountError.tokenError(msg)
+        guard let http = response as? HTTPURLResponse else {
+            throw ServiceAccountError.tokenError("invalid response")
+        }
+        guard http.statusCode == 200 else {
+            throw ServiceAccountError.tokenError("HTTP \(http.statusCode)")
         }
 
         let tokenResp = try JSONDecoder().decode(TokenResponse.self, from: data)

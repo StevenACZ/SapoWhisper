@@ -36,9 +36,8 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 ## Diagnostics
 
 - Prefer `SapoLog` categories: `Overlay`, `Hotkey`, `Recording`, `AudioRoute`, `Flux`, `AI`, `Gemini`, `Lifecycle`, `MenuBar`, `Settings`, `Performance`.
-- Runtime snapshots live at `~/Library/Application Support/SapoWhisper/Diagnostics/runtime.jsonl`.
 - Unified logs use subsystem `oli.SapoWhisper`.
-- Long-run slowdown triage starts with runtime JSONL plus unified logs before code changes.
+- Runtime JSONL snapshots are not active in release code; use sanitized unified logs for triage before code changes.
 - Transcription failures should log `failure=<Engine>/<kind>` with HTTP status/body snippet in `detail=`.
 - Never log raw transcripts, prompts, API keys, OAuth tokens, service-account JSON, or Gemini responses.
 - Prefer `chars=`, `bytes=`, `requestID=`, `sessionID=`, and timing summaries.
@@ -51,7 +50,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Keep AI polish non-blocking: if Gemini fails, paste/save the raw transcript and record AI metadata.
 - Keep AI prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.
-- Do not force-add ignored local docs or packaging assets (`docs/`, `DMG/`) without explicit approval.
+- Do not force-add ignored local docs, agent caches, or packaging assets (`docs/`, `.agents/`, `DMG/`) without explicit approval.
 - Ask before `git add`, `git commit`, `git push`, PR creation, merge, rebase, reset, or destructive git operations.
 
 ## Verification

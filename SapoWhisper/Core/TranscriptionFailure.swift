@@ -117,19 +117,14 @@ struct TranscriptionFailure: LocalizedError, Equatable {
 
 extension TranscriptionFailure {
 
-    /// Classifies a non-2xx HTTP response, capturing a trimmed body snippet for logs.
+    /// Classifies a non-2xx HTTP response, capturing a redacted body snippet for logs.
     ///
     /// The body is only used for keyword hints (e.g. "quota" vs "api key") and a short
     /// log snippet — it is never shown to the user.
     static func fromHTTP(engine: String, statusCode: Int, body: Data) -> TranscriptionFailure {
         let bodyText = String(data: body, encoding: .utf8) ?? ""
         let lower = bodyText.lowercased()
-        let snippet =
-            bodyText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\n", with: " ")
-            .prefix(300)
-        let detail = "HTTP \(statusCode) body=\(snippet)"
+        let detail = "HTTP \(statusCode) body=\(redactedLogSnippet(from: bodyText))"
 
         let mentionsCredits =
             lower.contains("quota") || lower.contains("credit")
@@ -167,6 +162,29 @@ extension TranscriptionFailure {
             kind = .unknown
         }
         return TranscriptionFailure(kind: kind, engine: engine, technicalDetail: detail)
+    }
+
+    private static func redactedLogSnippet(from bodyText: String) -> String {
+        let normalized =
+            bodyText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+
+        let redacted = [
+            #"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization)\s*[:=]\s*["']?[^"',\s}]{6,}"#:
+                "$1=[redacted]",
+            #"(?i)Bearer\s+[A-Za-z0-9._-]{10,}"#: "Bearer [redacted]",
+            #"(?i)sk-[A-Za-z0-9._-]{10,}"#: "[redacted-key]",
+            #"AIza[0-9A-Za-z_-]{10,}"#: "[redacted-key]",
+        ].reduce(normalized) { partial, replacement in
+            partial.replacingOccurrences(
+                of: replacement.key,
+                with: replacement.value,
+                options: .regularExpression
+            )
+        }
+
+        return String(redacted.prefix(300))
     }
 
     /// Normalizes any caught error into a `TranscriptionFailure`.

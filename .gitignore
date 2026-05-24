@@ -125,9 +125,9 @@ temp/
 
 # Local AI/editor context
 .agent/
+.agents/
 .codex/
 .cursor/
 .claude/
-# Keep the .claude/skills symlink so Claude Code discovers shared skills
-!.claude
 .superpowers/
+skills-lock.json
