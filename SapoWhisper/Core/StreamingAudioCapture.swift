@@ -46,7 +46,9 @@ final class StreamingAudioCapture: ObservableObject {
     var lastInputBufferTime: CFAbsoluteTime = 0
     var inputBufferCount = 0
     var writtenFrameCount: AVAudioFramePosition = 0
+    var emittedChunkCount = 0
     var firstInputLatencyMs: Double?
+    var maxInputGapMs: Double = 0
     var captureDeviceUID = AudioDevice.systemDefault.uid
 
     let tapBufferSize: AVAudioFrameCount = 1024

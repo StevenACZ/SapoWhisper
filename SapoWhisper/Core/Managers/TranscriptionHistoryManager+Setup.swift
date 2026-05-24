@@ -5,6 +5,7 @@
 
 import Foundation
 import SQLite3
+import os
 
 extension TranscriptionHistoryManager {
     func configureDatabase() {
@@ -23,8 +24,13 @@ extension TranscriptionHistoryManager {
                 language TEXT NOT NULL,
                 duration_seconds REAL NOT NULL,
                 transcription TEXT NOT NULL,
+                raw_transcription TEXT,
                 audio_path TEXT,
                 status TEXT NOT NULL DEFAULT 'completed',
+                ai_status TEXT NOT NULL DEFAULT 'none',
+                ai_model TEXT,
+                ai_mode TEXT,
+                ai_error TEXT,
                 is_favorite INTEGER NOT NULL DEFAULT 0
             );
             """
@@ -32,14 +38,36 @@ extension TranscriptionHistoryManager {
     }
 
     func migrateSchema() {
-        guard !columnExists(named: "is_favorite", in: "transcriptions") else { return }
+        addColumnIfNeeded(named: "is_favorite", definition: "INTEGER DEFAULT 0")
+        addColumnIfNeeded(named: "raw_transcription", definition: "TEXT")
+        addColumnIfNeeded(named: "ai_status", definition: "TEXT NOT NULL DEFAULT 'none'")
+        addColumnIfNeeded(named: "ai_model", definition: "TEXT")
+        addColumnIfNeeded(named: "ai_mode", definition: "TEXT")
+        addColumnIfNeeded(named: "ai_error", definition: "TEXT")
+        backfillRawTranscriptions()
+    }
 
-        let sql = "ALTER TABLE transcriptions ADD COLUMN is_favorite INTEGER DEFAULT 0;"
+    private func addColumnIfNeeded(named columnName: String, definition: String) {
+        guard !columnExists(named: columnName, in: "transcriptions") else { return }
+
+        let sql = "ALTER TABLE transcriptions ADD COLUMN \(columnName) \(definition);"
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK,
             let message = sqlite3_errmsg(db)
         {
-            print("Failed to migrate history schema: \(String(cString: message))")
+            let messageString = String(cString: message)
+            SapoLog.recording.error(
+                "History migrate failed column=\(columnName, privacy: .public) error=\(messageString, privacy: .public)"
+            )
         }
+    }
+
+    private func backfillRawTranscriptions() {
+        let sql = """
+            UPDATE transcriptions
+            SET raw_transcription = transcription
+            WHERE raw_transcription IS NULL OR raw_transcription = '';
+            """
+        sqlite3_exec(db, sql, nil, nil, nil)
     }
 
     func createIndexes() {

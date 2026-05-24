@@ -31,7 +31,7 @@ struct MenuBarPopoverHost: View {
 }
 
 struct SettingsWindowHost: View {
-    @ObservedObject var viewModel: SapoWhisperViewModel
+    let viewModel: SapoWhisperViewModel
     @ObservedObject private var localizationManager = LocalizationManager.shared
 
     var body: some View {

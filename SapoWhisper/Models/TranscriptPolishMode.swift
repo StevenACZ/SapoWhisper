@@ -1,0 +1,125 @@
+//
+//  TranscriptPolishMode.swift
+//  SapoWhisper
+//
+
+import Foundation
+
+enum TranscriptPolishMode: String, CaseIterable, Identifiable {
+    case automatic
+    case ai
+    case work
+    case translateEnglish = "translate_english"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .automatic:
+            return "ai.mode.automatic".localized
+        case .ai:
+            return "ai.mode.ai".localized
+        case .work:
+            return "ai.mode.work".localized
+        case .translateEnglish:
+            return "ai.mode.translate_english".localized
+        }
+    }
+
+    var promptInstruction: String {
+        switch self {
+        case .automatic:
+            return """
+                Choose the most natural readable format for the text. Preserve the user's main idea, constraints, and relevant supporting details. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.
+                """
+        case .ai:
+            return """
+                Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas. Labels must follow the selected output language, for example "Objetivo:" and "Tareas:" in Spanish, or "Goal:" and "Tasks:" in English.
+                """
+        case .work:
+            return """
+                Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown.
+                """
+        case .translateEnglish:
+            return """
+                Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability.
+                """
+        }
+    }
+}
+
+enum TranscriptPolishMinimumDuration: String, CaseIterable, Identifiable {
+    case always
+    case seconds20 = "20"
+    case seconds30 = "30"
+
+    static let defaultPolicy: TranscriptPolishMinimumDuration = .seconds30
+
+    var id: String { rawValue }
+
+    var minimumSeconds: TimeInterval? {
+        switch self {
+        case .always:
+            return nil
+        case .seconds20:
+            return 20
+        case .seconds30:
+            return 30
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .always:
+            return "ai.polish.minimum_duration.always".localized
+        case .seconds20:
+            return "ai.polish.minimum_duration.20".localized
+        case .seconds30:
+            return "ai.polish.minimum_duration.30".localized
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .always:
+            return "ai.polish.minimum_duration_desc.always".localized
+        case .seconds20:
+            return "ai.polish.minimum_duration_desc.20".localized
+        case .seconds30:
+            return "ai.polish.minimum_duration_desc.30".localized
+        }
+    }
+}
+
+enum TranscriptAIStatus: String {
+    case none
+    case applied
+    case skippedShort = "skipped_short"
+    case skippedDuration = "skipped_duration"
+    case failed
+
+    var displayName: String {
+        switch self {
+        case .none:
+            return "ai.status.none".localized
+        case .applied:
+            return "ai.status.applied".localized
+        case .skippedShort:
+            return "ai.status.skipped_short".localized
+        case .skippedDuration:
+            return "ai.status.skipped_duration".localized
+        case .failed:
+            return "ai.status.failed".localized
+        }
+    }
+}
+
+struct TranscriptAIResult {
+    let rawText: String
+    let finalText: String
+    let status: TranscriptAIStatus
+    let model: String?
+    let mode: String?
+    let error: String?
+    let elapsedMs: Int
+}

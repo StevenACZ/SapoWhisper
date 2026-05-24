@@ -4,19 +4,33 @@ import UniformTypeIdentifiers
 
 struct GoogleCloudSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
+    let isEmbedded: Bool
 
     @AppStorage(Constants.StorageKeys.googleCloudAPIKey) private var googleCloudAPIKey = ""
     @State private var showAPIKeySection = false
     @State private var serviceAccountError: String?
 
+    init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
+        self.viewModel = viewModel
+        self.isEmbedded = isEmbedded
+    }
+
     var body: some View {
-        SettingsCard(icon: "cloud", title: "Google Cloud") {
-            VStack(alignment: .leading, spacing: 12) {
-                recordingLimitWarning
-                serviceAccountSection
-                Divider()
-                apiKeyFallbackSection
+        if isEmbedded {
+            cardContent
+        } else {
+            SettingsCard(icon: "cloud", title: "Google Cloud") {
+                cardContent
             }
+        }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            recordingLimitWarning
+            serviceAccountSection
+            Divider()
+            apiKeyFallbackSection
         }
     }
 

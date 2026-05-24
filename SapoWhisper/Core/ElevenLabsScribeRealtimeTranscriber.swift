@@ -1,0 +1,969 @@
+//
+//  ElevenLabsScribeRealtimeTranscriber.swift
+//  SapoWhisper
+//
+
+import AVFoundation
+import Combine
+import Foundation
+import os
+
+struct ElevenLabsScribeRealtimeResult {
+    let transcript: String
+    let audioURL: URL
+    let duration: TimeInterval
+    let language: String
+    let diagnostics: RecordingCaptureDiagnostics
+}
+
+struct ElevenLabsRealtimeAudioSenderStats {
+    let enqueuedChunks: Int
+    let sentMessages: Int
+    let failedMessages: Int
+    let enqueuedBytes: Int
+    let sentAudioBytes: Int
+    let maxBufferedBytes: Int
+    let maxSendWaitMs: Int
+    let timedOutSends: Int
+
+    var pendingChunks: Int {
+        max(0, enqueuedChunks - sentMessages - failedMessages)
+    }
+}
+
+private struct ElevenLabsRealtimeTranscriptAccumulator {
+    private(set) var latestPartial: String = ""
+    private(set) var committedSegments: [String] = []
+    private(set) var sessionID: String?
+
+    var committedCount: Int { committedSegments.count }
+    var hasUncommittedPartial: Bool { !latestPartial.isEmpty }
+
+    mutating func recordSessionStarted(_ id: String?) {
+        sessionID = id
+    }
+
+    mutating func recordPartial(_ text: String?) {
+        latestPartial = sanitized(text)
+    }
+
+    mutating func recordCommitted(_ text: String?) {
+        let committed = sanitized(text)
+        guard !committed.isEmpty else { return }
+        if committedSegments.last != committed {
+            committedSegments.append(committed)
+        }
+        latestPartial = ""
+    }
+
+    var transcript: String {
+        committedSegments
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func sanitized(_ text: String?) -> String {
+        (text ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+final class ElevenLabsRealtimeAudioSender {
+    private enum Constants {
+        static let sampleRate = 16000
+        static let targetChunkBytes = 6_400  // 0.2s of pcm_16000 mono int16.
+        static let finalSilenceBytes = 6_400
+        static let sendTimeout: TimeInterval = 2.0
+    }
+
+    private let queue = DispatchQueue(label: "com.sapowhisper.elevenlabsRealtimeAudioSender", qos: .userInitiated)
+    private let statsLock = NSLock()
+    private let stateLock = NSLock()
+
+    private var task: URLSessionWebSocketTask?
+    private var isActive = false
+    private var pendingAudio = Data()
+    private var enqueuedChunks = 0
+    private var sentMessages = 0
+    private var failedMessages = 0
+    private var enqueuedBytes = 0
+    private var sentAudioBytes = 0
+    private var maxBufferedBytes = 0
+    private var maxSendWaitMs = 0
+    private var timedOutSends = 0
+
+    func start(task: URLSessionWebSocketTask) {
+        reset()
+        stateLock.lock()
+        self.task = task
+        isActive = true
+        stateLock.unlock()
+        SapoLog.recording.info("ElevenLabs realtime audio sender started")
+    }
+
+    func enqueue(_ data: Data) {
+        guard !data.isEmpty else { return }
+        registerEnqueuedChunk(byteCount: data.count)
+
+        queue.async { [weak self] in
+            self?.appendAndFlushIfNeeded(data)
+        }
+    }
+
+    func finishAndCommit(timeout: TimeInterval) async -> ElevenLabsRealtimeAudioSenderStats {
+        let startedAt = CFAbsoluteTimeGetCurrent()
+
+        return await withCheckedContinuation { continuation in
+            let resumeLock = NSLock()
+            var didResume = false
+
+            func resumeOnce(returning stats: ElevenLabsRealtimeAudioSenderStats) -> Bool {
+                resumeLock.lock()
+                defer { resumeLock.unlock() }
+                guard !didResume else { return false }
+                didResume = true
+                continuation.resume(returning: stats)
+                return true
+            }
+
+            queue.async { [weak self] in
+                guard let self else {
+                    _ = resumeOnce(returning: .empty)
+                    return
+                }
+
+                self.flushFinalCommit()
+                self.setActive(false)
+                let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+                let stats = self.snapshot()
+                if resumeOnce(returning: stats) {
+                    SapoLog.recording.info(
+                        "ElevenLabs realtime audio sender drained elapsed=\(elapsedMs, privacy: .public)ms enqueued=\(stats.enqueuedChunks, privacy: .public) sentMessages=\(stats.sentMessages, privacy: .public) failedMessages=\(stats.failedMessages, privacy: .public) sentBytes=\(stats.sentAudioBytes, privacy: .public) maxBuffered=\(stats.maxBufferedBytes, privacy: .public) maxSendWait=\(stats.maxSendWaitMs, privacy: .public)ms timeouts=\(stats.timedOutSends, privacy: .public)"
+                    )
+                }
+            }
+
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) { [weak self] in
+                guard let self else { return }
+                let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+                let stats = self.snapshot()
+                if resumeOnce(returning: stats) {
+                    self.abortPendingSends()
+                    SapoLog.recording.warning(
+                        "ElevenLabs realtime audio sender timed out elapsed=\(elapsedMs, privacy: .public)ms enqueued=\(stats.enqueuedChunks, privacy: .public) sentMessages=\(stats.sentMessages, privacy: .public) failedMessages=\(stats.failedMessages, privacy: .public) maxBuffered=\(stats.maxBufferedBytes, privacy: .public) maxSendWait=\(stats.maxSendWaitMs, privacy: .public)ms timeouts=\(stats.timedOutSends, privacy: .public)"
+                    )
+                }
+            }
+        }
+    }
+
+    func cancel() {
+        abortPendingSends()
+        let stats = snapshot()
+        if stats.sentMessages > 0 || stats.failedMessages > 0 {
+            SapoLog.recording.info(
+                "ElevenLabs realtime audio sender cancelled sentMessages=\(stats.sentMessages, privacy: .public) failedMessages=\(stats.failedMessages, privacy: .public)"
+            )
+        }
+    }
+
+    func snapshot() -> ElevenLabsRealtimeAudioSenderStats {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+
+        return ElevenLabsRealtimeAudioSenderStats(
+            enqueuedChunks: enqueuedChunks,
+            sentMessages: sentMessages,
+            failedMessages: failedMessages,
+            enqueuedBytes: enqueuedBytes,
+            sentAudioBytes: sentAudioBytes,
+            maxBufferedBytes: maxBufferedBytes,
+            maxSendWaitMs: maxSendWaitMs,
+            timedOutSends: timedOutSends
+        )
+    }
+
+    private func appendAndFlushIfNeeded(_ data: Data) {
+        guard currentTaskIfActive() != nil else {
+            registerFailedMessage()
+            return
+        }
+
+        pendingAudio.append(data)
+        registerBufferedBytes(pendingAudio.count)
+
+        while pendingAudio.count >= Constants.targetChunkBytes {
+            let chunk = pendingAudio.prefix(Constants.targetChunkBytes)
+            pendingAudio.removeFirst(Constants.targetChunkBytes)
+            sendAudioChunk(Data(chunk), commit: false)
+        }
+    }
+
+    private func flushFinalCommit() {
+        var finalAudio = pendingAudio
+        pendingAudio.removeAll(keepingCapacity: true)
+
+        // A short silence tail gives the realtime service a clean boundary to finalize.
+        finalAudio.append(Data(repeating: 0, count: Constants.finalSilenceBytes))
+        sendAudioChunk(finalAudio, commit: true)
+    }
+
+    private func sendAudioChunk(_ data: Data, commit: Bool) {
+        guard !data.isEmpty else { return }
+        guard let task = currentTaskIfActive() else {
+            registerFailedMessage()
+            return
+        }
+
+        let message: String
+        do {
+            message = try makeChunkMessage(audioData: data, commit: commit)
+        } catch {
+            registerFailedMessage()
+            SapoLog.recording.error("ElevenLabs realtime chunk encode failed")
+            return
+        }
+
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        let semaphore = DispatchSemaphore(value: 0)
+        let completionLock = NSLock()
+        var sendError: Error?
+
+        task.send(.string(message)) { error in
+            completionLock.lock()
+            sendError = error
+            completionLock.unlock()
+            semaphore.signal()
+        }
+
+        let didFinish = semaphore.wait(timeout: .now() + Constants.sendTimeout) == .success
+        let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+        completionLock.lock()
+        let completedError = sendError
+        completionLock.unlock()
+
+        if didFinish, completedError == nil {
+            registerSentMessage(byteCount: data.count, waitMs: waitMs)
+            if commit || waitMs > 250 {
+                SapoLog.recording.info(
+                    "ElevenLabs realtime audio chunk sent commit=\(commit, privacy: .public) bytes=\(data.count, privacy: .public) wait=\(waitMs, privacy: .public)ms"
+                )
+            }
+            return
+        }
+
+        registerFailedMessage(waitMs: waitMs, timedOut: !didFinish)
+        let reason = didFinish ? (completedError?.localizedDescription ?? "unknown") : "timeout"
+        SapoLog.recording.warning(
+            "ElevenLabs realtime audio chunk send failed commit=\(commit, privacy: .public) wait=\(waitMs, privacy: .public)ms reason=\(reason, privacy: .public)"
+        )
+    }
+
+    private func makeChunkMessage(audioData: Data, commit: Bool) throws -> String {
+        let payload: [String: Any] = [
+            "message_type": "input_audio_chunk",
+            "audio_base_64": audioData.base64EncodedString(),
+            "sample_rate": Constants.sampleRate,
+            "commit": commit,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw TranscriptionFailure(
+                kind: .unknown,
+                engine: "ElevenLabs",
+                technicalDetail: "could not encode realtime chunk JSON"
+            )
+        }
+        return text
+    }
+
+    private func reset() {
+        statsLock.lock()
+        pendingAudio.removeAll(keepingCapacity: true)
+        enqueuedChunks = 0
+        sentMessages = 0
+        failedMessages = 0
+        enqueuedBytes = 0
+        sentAudioBytes = 0
+        maxBufferedBytes = 0
+        maxSendWaitMs = 0
+        timedOutSends = 0
+        statsLock.unlock()
+    }
+
+    private func registerEnqueuedChunk(byteCount: Int) {
+        statsLock.lock()
+        enqueuedChunks += 1
+        enqueuedBytes += byteCount
+        statsLock.unlock()
+    }
+
+    private func registerBufferedBytes(_ count: Int) {
+        statsLock.lock()
+        maxBufferedBytes = max(maxBufferedBytes, count)
+        statsLock.unlock()
+    }
+
+    private func registerSentMessage(byteCount: Int, waitMs: Int) {
+        statsLock.lock()
+        sentMessages += 1
+        sentAudioBytes += byteCount
+        maxSendWaitMs = max(maxSendWaitMs, waitMs)
+        statsLock.unlock()
+    }
+
+    private func registerFailedMessage(waitMs: Int = 0, timedOut: Bool = false) {
+        statsLock.lock()
+        failedMessages += 1
+        maxSendWaitMs = max(maxSendWaitMs, waitMs)
+        if timedOut {
+            timedOutSends += 1
+        }
+        statsLock.unlock()
+    }
+
+    private func currentTaskIfActive() -> URLSessionWebSocketTask? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard isActive else { return nil }
+        return task
+    }
+
+    private func setActive(_ active: Bool) {
+        stateLock.lock()
+        isActive = active
+        stateLock.unlock()
+    }
+
+    private func abortPendingSends() {
+        setActive(false)
+        stateLock.lock()
+        let task = self.task
+        self.task = nil
+        stateLock.unlock()
+        task?.cancel(with: .goingAway, reason: nil)
+    }
+}
+
+@MainActor
+final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
+    @Published private(set) var isStreaming = false
+    @Published private(set) var isStopping = false
+    @Published private(set) var isPaused = false
+    @Published private(set) var recordingDuration: TimeInterval = 0
+    @Published private(set) var audioLevel: Float = 0
+
+    private(set) var lastCaptureResult: StreamingAudioCaptureResult?
+
+    private let capture = StreamingAudioCapture()
+    private let audioSender = ElevenLabsRealtimeAudioSender()
+    private var webSocketTask: URLSessionWebSocketTask?
+    private var receiveTask: Task<Void, Never>?
+    private var stopTimeoutTask: Task<Void, Never>?
+    private var stopContinuation: CheckedContinuation<String, Error>?
+    private var transcriptAccumulator = ElevenLabsRealtimeTranscriptAccumulator()
+    private var lastStreamingError: Error?
+    private var cancellables = Set<AnyCancellable>()
+    private var stopStartedAt: CFAbsoluteTime = 0
+
+    private static let engineName = "ElevenLabs"
+    private static let maxRealtimeKeyterms = 50
+    private static let maxRealtimeKeytermLength = 20
+    private static let sampleRate = 16000
+
+    private enum StartRecovery {
+        static let maxAttempts = 3
+        static let firstInputTimeout: TimeInterval = 1.2
+        static let retryBudget: TimeInterval = 3.0
+        static let retryBackoffs: [TimeInterval] = [0.25, 0.60]
+    }
+
+    var isConfigured: Bool {
+        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? ""
+        return !key.isEmpty
+    }
+
+    init() {
+        bindCapture()
+    }
+
+    func start(microphone: String, language: String) async throws {
+        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey),
+            !apiKey.isEmpty
+        else {
+            throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
+        }
+
+        resetSessionState()
+        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
+            maxCount: Self.maxRealtimeKeyterms,
+            maxLength: Self.maxRealtimeKeytermLength
+        )
+        let keyterms = keytermPayload.terms
+        let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
+        webSocketTask = task
+        audioSender.start(task: task)
+        task.resume()
+        isStreaming = true
+        SapoLog.recording.info(
+            "ElevenLabs realtime stream opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public)"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "elevenlabs-realtime-opened",
+            context: "language=\(language) keyterms=\(keyterms.count) keytermsDropped=\(keytermPayload.droppedCount)",
+            force: true
+        )
+
+        receiveTask = Task { [weak self] in
+            await self?.receiveMessages()
+        }
+
+        do {
+            try await startCaptureWithRecovery(microphone: microphone)
+        } catch {
+            cancel()
+            throw error
+        }
+    }
+
+    func stop() async throws -> ElevenLabsScribeRealtimeResult {
+        guard isStreaming || isStopping else {
+            throw TranscriptionFailure(
+                kind: .unknown, engine: Self.engineName,
+                technicalDetail: "ElevenLabs realtime stream is not active"
+            )
+        }
+
+        isStopping = true
+        stopStartedAt = CFAbsoluteTimeGetCurrent()
+        SapoLog.recording.info("ElevenLabs realtime stop requested")
+        let captureResult = capture.stopRecording()
+        isStreaming = false
+
+        guard let captureResult else {
+            cleanupWebSocket()
+            throw RecordingError.fileCreationFailed
+        }
+        lastCaptureResult = captureResult
+
+        guard captureResult.diagnostics.receivedInput else {
+            cleanupWebSocket()
+            try? FileManager.default.removeItem(at: captureResult.audioURL)
+            lastCaptureResult = nil
+            throw RecordingError.noInputAfterDeviceSwitch
+        }
+
+        let captureStopMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
+        SapoLog.recording.info(
+            "ElevenLabs realtime local capture stopped elapsed=\(captureStopMs, privacy: .public)ms buffers=\(captureResult.diagnostics.inputBufferCount, privacy: .public) frames=\(captureResult.diagnostics.writtenFrameCount, privacy: .public) chunks=\(captureResult.diagnostics.emittedChunkCount, privacy: .public) bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
+        )
+
+        let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
+        let hadUncommittedPartialBeforeFinalCommit = transcriptAccumulator.hasUncommittedPartial
+        let senderStats = await audioSender.finishAndCommit(timeout: 2.0)
+        defer { cleanupWebSocket() }
+
+        if senderStats.failedMessages > 0 {
+            throw TranscriptionFailure(
+                kind: .network,
+                engine: Self.engineName,
+                technicalDetail:
+                    "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends)"
+            )
+        }
+
+        let finalWaitStartedAt = CFAbsoluteTimeGetCurrent()
+        let finalWaitTimeout: TimeInterval =
+            committedCountBeforeFinalCommit == 0 || hadUncommittedPartialBeforeFinalCommit ? 4.0 : 0.75
+        let transcript = try await waitForFinalTranscript(
+            timeout: finalWaitTimeout,
+            committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
+        )
+        let finalWaitMs = Int((CFAbsoluteTimeGetCurrent() - finalWaitStartedAt) * 1000)
+        let stopElapsedMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
+
+        let cleanedTranscript = VocabularyManager.shared
+            .applyingRecognitionCorrections(to: transcript)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        SapoLog.recording.info(
+            "ElevenLabs realtime final transcript sessionID=\(self.transcriptAccumulator.sessionID ?? "n/a", privacy: .public) elapsed=\(stopElapsedMs, privacy: .public)ms finalWait=\(finalWaitMs, privacy: .public)ms committed=\(self.transcriptAccumulator.committedCount, privacy: .public) enqueuedChunks=\(senderStats.enqueuedChunks, privacy: .public) sentMessages=\(senderStats.sentMessages, privacy: .public) chars=\(cleanedTranscript.count, privacy: .public)"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "elevenlabs-realtime-finished",
+            context:
+                "sessionID=\(transcriptAccumulator.sessionID ?? "n/a") elapsedMs=\(stopElapsedMs) finalWaitMs=\(finalWaitMs) committed=\(transcriptAccumulator.committedCount) enqueuedChunks=\(senderStats.enqueuedChunks) sentMessages=\(senderStats.sentMessages) sentAudioBytes=\(senderStats.sentAudioBytes) audioBytes=\(captureResult.diagnostics.fileSizeBytes) chars=\(cleanedTranscript.count)",
+            force: true
+        )
+
+        guard !cleanedTranscript.isEmpty else {
+            throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
+        }
+
+        return ElevenLabsScribeRealtimeResult(
+            transcript: cleanedTranscript,
+            audioURL: captureResult.audioURL,
+            duration: captureResult.duration,
+            language: "auto",
+            diagnostics: captureResult.diagnostics
+        )
+    }
+
+    func transcribe(audioURL: URL, language: String) async throws -> String {
+        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey),
+            !apiKey.isEmpty
+        else {
+            throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
+        }
+
+        resetSessionState()
+        isStopping = true
+        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
+            maxCount: Self.maxRealtimeKeyterms,
+            maxLength: Self.maxRealtimeKeytermLength
+        )
+        let keyterms = keytermPayload.terms
+        let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
+        webSocketTask = task
+        audioSender.start(task: task)
+        task.resume()
+        SapoLog.recording.info(
+            "ElevenLabs realtime file replay opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public)"
+        )
+
+        receiveTask = Task { [weak self] in
+            await self?.receiveMessages()
+        }
+
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        defer { cleanupWebSocket() }
+        let pcmData = try Self.extractPCM16MonoData(from: audioURL)
+        try await sendReplayAudio(pcmData)
+        let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
+        let stats = await audioSender.finishAndCommit(timeout: 4.0)
+
+        if stats.failedMessages > 0 {
+            throw TranscriptionFailure(
+                kind: .network,
+                engine: Self.engineName,
+                technicalDetail: "ElevenLabs realtime file replay failedMessages=\(stats.failedMessages)"
+            )
+        }
+
+        let transcript = try await waitForFinalTranscript(
+            timeout: 6.0,
+            committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
+        )
+        let cleanedTranscript = VocabularyManager.shared
+            .applyingRecognitionCorrections(to: transcript)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+        SapoLog.recording.info(
+            "ElevenLabs realtime file replay finished elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(pcmData.count, privacy: .public) chars=\(cleanedTranscript.count, privacy: .public)"
+        )
+
+        guard !cleanedTranscript.isEmpty else {
+            throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
+        }
+        return cleanedTranscript
+    }
+
+    func cancel() {
+        capture.discardRecording()
+        cleanupWebSocket()
+        lastCaptureResult = nil
+        resetPublishedState()
+    }
+
+    func pauseRecording() {
+        capture.pauseRecording()
+    }
+
+    func resumeRecording() throws {
+        try capture.resumeRecording()
+    }
+
+    private static func makeWebSocketTask(apiKey: String, language: String, keyterms: [String]) -> URLSessionWebSocketTask {
+        var components = URLComponents()
+        components.scheme = "wss"
+        components.host = "api.elevenlabs.io"
+        components.path = "/v1/speech-to-text/realtime"
+        components.queryItems = [
+            URLQueryItem(name: "model_id", value: "scribe_v2_realtime"),
+            URLQueryItem(name: "audio_format", value: "pcm_16000"),
+            URLQueryItem(name: "commit_strategy", value: "vad"),
+            URLQueryItem(name: "vad_silence_threshold_secs", value: "1.5"),
+            URLQueryItem(name: "vad_threshold", value: "0.4"),
+        ]
+
+        if let languageCode = scribeLanguageCode(for: language) {
+            components.queryItems?.append(URLQueryItem(name: "language_code", value: languageCode))
+        }
+
+        components.queryItems?.append(contentsOf: keyterms.map { URLQueryItem(name: "keyterms", value: $0) })
+
+        guard let url = components.url else {
+            preconditionFailure("Invalid ElevenLabs realtime URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.timeoutInterval = 15
+        return URLSession.shared.webSocketTask(with: request)
+    }
+
+    private static func scribeLanguageCode(for appLanguage: String) -> String? {
+        switch appLanguage {
+        case "es": return "es"
+        case "en": return "en"
+        case "auto": return nil
+        default: return nil
+        }
+    }
+
+    private func bindCapture() {
+        capture.$recordingDuration
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] duration in
+                self?.recordingDuration = duration
+            }
+            .store(in: &cancellables)
+
+        capture.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                self?.audioLevel = level
+            }
+            .store(in: &cancellables)
+
+        capture.$isPaused
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isPaused in
+                self?.isPaused = isPaused
+            }
+            .store(in: &cancellables)
+    }
+
+    private func startCaptureWithRecovery(microphone: String) async throws {
+        let deadline = CFAbsoluteTimeGetCurrent() + StartRecovery.retryBudget
+        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
+
+        for attempt in 1...StartRecovery.maxAttempts {
+            guard !Task.isCancelled else { throw CancellationError() }
+
+            do {
+                let didStart = try await attemptCaptureStart(
+                    microphone: microphone,
+                    attempt: attempt,
+                    minimumDelay: attempt == 1 ? 0 : StartRecovery.retryBackoffs[attempt - 2]
+                )
+                if didStart {
+                    if attempt > 1 {
+                        SapoLog.recording.info("ElevenLabs realtime recovered input on attempt=\(attempt, privacy: .public)")
+                    }
+                    return
+                }
+                lastFailure = RecordingError.noInputAfterDeviceSwitch
+            } catch {
+                if error is CancellationError {
+                    throw error
+                }
+                lastFailure = error
+            }
+
+            capture.discardRecording()
+            guard attempt < StartRecovery.maxAttempts else { break }
+
+            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
+            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
+            guard classification.isTransient else {
+                throw lastFailure
+            }
+
+            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
+            guard remainingBudget > 0 else { break }
+
+            let retryDelay = min(
+                remainingBudget,
+                max(StartRecovery.retryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
+            )
+            SapoLog.recording.info(
+                "ElevenLabs realtime input not ready attempt=\(attempt, privacy: .public) reason=\(classification.reason, privacy: .public) retryDelay=\(Int(retryDelay * 1000), privacy: .public)ms"
+            )
+            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+        }
+
+        throw lastFailure
+    }
+
+    private func attemptCaptureStart(
+        microphone: String,
+        attempt: Int,
+        minimumDelay: TimeInterval
+    ) async throws -> Bool {
+        capture.selectedDeviceUID = microphone
+        let settleDelay = max(minimumDelay, capture.prepareInputDeviceForRecording())
+        if settleDelay > 0 {
+            SapoLog.recording.info(
+                "Delaying ElevenLabs realtime capture start for route settle \(Int(settleDelay * 1000), privacy: .public)ms"
+            )
+            try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
+        }
+
+        guard !Task.isCancelled else { throw CancellationError() }
+        let audioSender = self.audioSender
+        try await capture.startRecording { data in
+            audioSender.enqueue(data)
+        }
+
+        let receivedInput = await capture.waitForFirstInputBuffer(timeout: StartRecovery.firstInputTimeout)
+        if receivedInput {
+            return true
+        }
+
+        let diagnostics = capture.makeCaptureDiagnostics(
+            fileURL: capture.recordingURL,
+            referenceTime: CFAbsoluteTimeGetCurrent()
+        )
+        SapoLog.recording.warning(
+            "ElevenLabs realtime attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
+        )
+        return false
+    }
+
+    private func sendReplayAudio(_ pcmData: Data) async throws {
+        let chunkBytes = 6_400
+        var offset = 0
+        while offset < pcmData.count {
+            let end = min(offset + chunkBytes, pcmData.count)
+            audioSender.enqueue(pcmData.subdata(in: offset..<end))
+            offset = end
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+    }
+
+    private func receiveMessages() async {
+        guard let task = webSocketTask else { return }
+
+        do {
+            while !Task.isCancelled {
+                let message = try await task.receive()
+                handleMessage(message)
+            }
+        } catch {
+            handleReceiveCompletion(error)
+        }
+    }
+
+    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
+        switch message {
+        case .string(let text):
+            handleJSONMessage(text)
+        case .data(let data):
+            guard let text = String(data: data, encoding: .utf8) else { return }
+            handleJSONMessage(text)
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleJSONMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return
+        }
+
+        let type = (json["message_type"] as? String) ?? (json["type"] as? String) ?? ""
+        switch type {
+        case "session_started":
+            let sessionID = json["session_id"] as? String
+            transcriptAccumulator.recordSessionStarted(sessionID)
+            SapoLog.recording.info(
+                "ElevenLabs realtime session started sessionID=\(sessionID ?? "n/a", privacy: .public)"
+            )
+        case "partial_transcript":
+            transcriptAccumulator.recordPartial(json["text"] as? String)
+        case "committed_transcript", "committed_transcript_with_timestamps":
+            let previousCount = transcriptAccumulator.committedCount
+            transcriptAccumulator.recordCommitted(json["text"] as? String)
+            if transcriptAccumulator.committedCount > previousCount {
+                SapoLog.recording.info(
+                    "ElevenLabs realtime committed segment count=\(self.transcriptAccumulator.committedCount, privacy: .public)"
+                )
+                finishStopIfNeeded(error: nil)
+            }
+        case "auth_error", "quota_exceeded", "rate_limited", "commit_throttled", "queue_overflow", "resource_exhausted",
+            "session_time_limit_exceeded", "chunk_size_exceeded", "input_error", "transcriber_error",
+            "unaccepted_terms", "error":
+            let failure = failure(forRealtimeError: type, payload: json)
+            lastStreamingError = failure
+            finishStopIfNeeded(error: failure)
+        default:
+            break
+        }
+    }
+
+    private func handleReceiveCompletion(_ error: Error) {
+        if isStopping {
+            finishStopIfNeeded(error: nil)
+            return
+        }
+
+        if !isStreaming || isCancellation(error) { return }
+        lastStreamingError = error
+        SapoLog.recording.warning(
+            "ElevenLabs realtime receive failed while recording reason=\(error.localizedDescription, privacy: .public); keeping local audio"
+        )
+    }
+
+    private func waitForFinalTranscript(
+        timeout: TimeInterval,
+        committedCountBeforeFinalCommit: Int
+    ) async throws -> String {
+        if let lastStreamingError, transcriptAccumulator.transcript.isEmpty {
+            throw lastStreamingError
+        }
+
+        if transcriptAccumulator.committedCount > committedCountBeforeFinalCommit {
+            return transcriptAccumulator.transcript
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            stopContinuation = continuation
+            stopTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                self?.finishStopIfNeeded(error: nil)
+            }
+        }
+    }
+
+    private func finishStopIfNeeded(error: Error?) {
+        guard let continuation = stopContinuation else { return }
+        stopContinuation = nil
+        stopTimeoutTask?.cancel()
+        stopTimeoutTask = nil
+
+        let transcript = transcriptAccumulator.transcript
+        if let error, transcript.isEmpty {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume(returning: transcript)
+        }
+    }
+
+    private func failure(forRealtimeError type: String, payload: [String: Any]) -> TranscriptionFailure {
+        let detailText =
+            (payload["message"] as? String)
+            ?? (payload["detail"] as? String)
+            ?? (payload["error"] as? String)
+            ?? type
+        let detail = "ElevenLabs realtime \(type): \(detailText.prefix(300))"
+
+        let kind: TranscriptionFailure.Kind
+        switch type {
+        case "auth_error":
+            kind = .auth
+        case "quota_exceeded":
+            kind = .outOfCredits
+        case "rate_limited", "commit_throttled":
+            kind = .rateLimited
+        case "queue_overflow", "resource_exhausted", "error":
+            kind = .serverError
+        case "session_time_limit_exceeded":
+            kind = .timedOut
+        case "chunk_size_exceeded", "input_error":
+            kind = .audioCorrupt
+        case "unaccepted_terms":
+            kind = .planRestricted
+        default:
+            kind = .unknown
+        }
+
+        return TranscriptionFailure(kind: kind, engine: Self.engineName, technicalDetail: detail)
+    }
+
+    private func resetSessionState() {
+        transcriptAccumulator = ElevenLabsRealtimeTranscriptAccumulator()
+        lastStreamingError = nil
+        lastCaptureResult = nil
+        isStopping = false
+        stopStartedAt = 0
+    }
+
+    private func resetPublishedState() {
+        isStreaming = false
+        isStopping = false
+        isPaused = false
+        recordingDuration = 0
+        audioLevel = 0
+    }
+
+    private func cleanupWebSocket() {
+        receiveTask?.cancel()
+        receiveTask = nil
+        audioSender.cancel()
+        stopTimeoutTask?.cancel()
+        stopTimeoutTask = nil
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        webSocketTask = nil
+        stopContinuation = nil
+        resetPublishedState()
+    }
+
+    private func isCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
+
+    private static func extractPCM16MonoData(from wavURL: URL) throws -> Data {
+        let data = try Data(contentsOf: wavURL)
+        guard data.count >= 44 else {
+            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "WAV too small")
+        }
+        guard String(data: data[0..<4], encoding: .ascii) == "RIFF",
+            String(data: data[8..<12], encoding: .ascii) == "WAVE"
+        else {
+            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "not a RIFF/WAVE file")
+        }
+
+        var offset = 12
+        while offset + 8 <= data.count {
+            let chunkID = String(data: data[offset..<offset + 4], encoding: .ascii) ?? ""
+            let chunkSize = Int(data.littleEndianUInt32(at: offset + 4))
+            let chunkStart = offset + 8
+            let chunkEnd = chunkStart + chunkSize
+            guard chunkEnd <= data.count else { break }
+
+            if chunkID == "data" {
+                return data.subdata(in: chunkStart..<chunkEnd)
+            }
+
+            offset = chunkEnd + (chunkSize % 2)
+        }
+
+        throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "missing WAV data chunk")
+    }
+}
+
+extension ElevenLabsRealtimeAudioSenderStats {
+    fileprivate static let empty = ElevenLabsRealtimeAudioSenderStats(
+        enqueuedChunks: 0,
+        sentMessages: 0,
+        failedMessages: 0,
+        enqueuedBytes: 0,
+        sentAudioBytes: 0,
+        maxBufferedBytes: 0,
+        maxSendWaitMs: 0,
+        timedOutSends: 0
+    )
+}
+
+extension Data {
+    fileprivate func littleEndianUInt32(at offset: Int) -> UInt32 {
+        guard offset + 4 <= count else { return 0 }
+        return self[offset..<offset + 4].enumerated().reduce(UInt32(0)) { value, pair in
+            value | (UInt32(pair.element) << UInt32(pair.offset * 8))
+        }
+    }
+}

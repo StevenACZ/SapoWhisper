@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import os
 
 @MainActor
 final class PermissionAssistant: NSObject {
@@ -121,7 +122,9 @@ final class PermissionAssistant: NSObject {
         }
 
         if !opened {
-            NSLog("Failed to open System Settings for permission: %@", permission.title)
+            SapoLog.settings.warning(
+                "Failed to open System Settings permission=\(permission.title, privacy: .public)"
+            )
         }
     }
 }

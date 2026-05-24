@@ -8,6 +8,81 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-05-23
+
+### Added
+
+- **ElevenLabs Scribe Realtime v2 mode** — Added a low-latency ElevenLabs mode that opens a WebSocket at recording start, streams PCM 16 kHz mono while saving a local WAV backup, buffers committed transcript segments only, and pastes once after stop.
+- **ElevenLabs mode selector** — Settings now lets users choose between `ElevenLabs Scribe v2` batch mode and `ElevenLabs Scribe Realtime v2`, with batch kept as the default.
+- **Editable AI prompts and personal context** — Settings now has a Prompts tab where users can create per-destination prompts (Codex, Slack, custom) and a personal context block reused by every AI polish run.
+- **AI transcript polish** — Added an optional post-processing step that can refine completed transcripts with Gemini 3.1 Flash-Lite on Vertex AI after any transcription engine.
+- **AI polish progress state** — The recording overlay and menu bar now distinguish transcription from AI polishing so users can see when local/STT work has finished and Gemini formatting has started.
+- **AI polish history metadata** — History now keeps the raw transcript, final transcript, AI status, model, mode, and error metadata, with an action to run AI polish later.
+- **AI polish output language** — Added an output language selector so polish can keep the transcript language, force Spanish, or force English.
+- **Google Cloud guided setup** — Engine settings now show a clearer step-by-step Google Cloud setup flow with gcloud login detection and JSON import as a secondary credentials path.
+- **Unified transcription failure model** — New `TranscriptionFailure` type maps every engine's raw failure (HTTP status, `URLError`, decode error, audio problems) into 13 semantic kinds, each with a localized message, a retryable flag, and a log-only technical detail.
+- **Engine HTTP failure diagnostics** — Every transcription engine now logs the real HTTP status and a response-body snippet on failure (`failure=<Engine>/<kind> detail=...`), instead of swallowing 401/403/429 with no log line.
+- **Recording pre-flight validation** — `AudioFileValidator` rejects missing, empty, or corrupt recordings with a clear message before they reach an engine.
+- **Localized failure strings** — Added `failure.*` keys (ES/EN) for the unified failure messages.
+
+### Changed
+
+- **ElevenLabs realtime paste behavior** — Partial transcripts are never typed into the active input; realtime mode only pastes the final buffered text once recording ends.
+- **ElevenLabs vocabulary limits** — Scribe batch now accepts up to 1000 keyterms with the current Scribe v2 limits, while realtime uses the stricter 50-term / 20-character limit. Replacements still run locally after transcription.
+- **ElevenLabs realtime failure behavior** — Realtime failures keep the saved WAV in failed history and show manual retry without automatically falling back to batch.
+- **Overlay performance** — Removed the `.id(stateCategory)` subtree rebuild so recording → transcribing → polishing transitions no longer recreate the pill on every state change.
+- **Settings tab churn** — Tabs stay alive in a single ZStack toggled by opacity; switching segments no longer rebuilds the entire tab subtree.
+- **Vocabulary filtering** — Keyterm and replacement filters are cached in `@State` and only recomputed on data or query changes, not on every body redraw.
+- **Release logging cleanup** — Removed raw `NSLog`, deactivated runtime JSONL snapshots, and kept signposts Debug-only while preserving sanitized unified logs for failure triage.
+- **Public repo hygiene** — Dropped the tracked local agent skill cache and ignored `.agents/`, `.claude/`, and `skills-lock.json`.
+- **Logging unification** — Migrated every `print()`/`NSLog()` call to `SapoLog`; only metadata gets `privacy: .public`. Google Cloud STT no longer logs response bodies, and `TranscriptAIResult.mode` is now a single `String?` instead of the previous dual enum/id path.
+- **Deepgram settings layout** — Moved AI polish above Vocabulary so the post-processing toggle is easier to find immediately after Deepgram setup.
+- **AI prompt formatting** — Mode IA now avoids decorative Markdown emphasis by default, preferring compact plain labels, paragraphs, bullets, and backticks only where they improve readability.
+- **AI prompt grounding** — AI polish now treats vocabulary and replacements as recognition context only, avoiding added details that were not present in the raw transcript.
+- **Agent notes** — Kept `AGENTS.md` compact, public-safe, and focused on the current release workflow.
+- **Honest transcription errors** — Failures now distinguish invalid API key, exhausted credits, rate limit, plan restriction, network loss, request timeout, server error, empty/corrupt audio, and interrupted recording, instead of labeling every `401` as "API key inválida".
+- **Adaptive engine timeouts** — Request timeouts for ElevenLabs, Deepgram batch, Google Cloud, and Gemini now scale with the clip length (120–600 s) instead of a fixed value.
+- **Overlay retry affordance** — The error pill only offers "Retry" for retryable failures (network, timeout, rate limit, server error, interrupted recording) and its message can span two lines.
+- **Per-engine error enums removed** — Replaced `ElevenLabsError`, `DeepgramError`, and `GoogleCloudError` with the shared `TranscriptionFailure`.
+
+### Fixed
+
+- **ElevenLabs quota messaging** — `quota_exceeded` responses that mention API key quota now map to `outOfCredits` instead of the invalid API key/auth message.
+- **Vertex model routing** — Moved Gemini 3.1 Flash-Lite calls to the Vertex AI `us` multi-region endpoint so enabled polish does not fall back to the raw transcript because of a regional 404.
+- **ElevenLabs long-recording timeouts** — ElevenLabs Scribe used a fixed 30 s request timeout that could abort longer recordings before the API responded; the timeout now scales with the audio length.
+- **Sanitized provider errors** — HTTP error snippets now redact token/key-like values, and Google token refresh failures no longer surface raw token endpoint bodies.
+
+## [2.1.3] - 2026-05-08
+
+> Patch focused on long-run performance observability after multi-day menu bar, overlay, settings, and recording slowdowns.
+
+### Added
+
+- **Runtime diagnostics file** — Added a rotating JSONL diagnostics log at `~/Library/Application Support/SapoWhisper/Diagnostics/runtime.jsonl` with uptime, memory, screen layout, frontmost app, and contextual state snapshots.
+- **Long-run performance snapshots** — Added unified logging for app launch, activation, screen changes, hotkey presses, recording toggles, overlay show/hide, popover opens/closes, Settings opens, and Settings tab switches.
+- **Recording route context** — Recording diagnostics now include state, engine, Deepgram mode, pending start/stop flags, audio/Flux activity, paused state, duration, session identifiers, and selected microphone.
+- **Multi-monitor overlay diagnostics** — Overlay positioning logs now include the target screen geometry and final window origin so monitor-specific latency can be correlated later.
+
+### Changed
+
+- **Menu bar refresh behavior** — Hidden popover updates are now skipped and visible updates are coalesced, reducing unnecessary SwiftUI/AppKit layout work during long app sessions.
+- **Settings device refresh** — General Settings now refreshes audio devices from a background queue and logs refresh timing, avoiding main-thread work when opening Settings.
+
+## [2.1.2] - 2026-05-06
+
+> Patch focused on keeping Flux Live audio upload work off the main thread while preserving enough telemetry to debug long recordings.
+
+### Added
+
+- **Flux audio sender** — Added a dedicated Flux audio sender that serializes WebSocket audio chunk uploads off the main actor.
+- **Flux sender telemetry** — Added sender stats for enqueued, sent, failed, pending chunks, bytes sent, maximum queue depth, maximum send wait time, and send timeouts.
+- **Flux stop timing logs** — Added drain and stop timing diagnostics so long recordings can show whether audio upload, stream finalization, or transcription handling is the slow part.
+
+### Fixed
+
+- **Flux Live UI latency** — Audio chunks are no longer uploaded from the main-thread streaming path, reducing UI stalls while recording or stopping long Flux sessions.
+- **Flux completion resilience** — Flux stop handling now reports sender completeness and fallback context when the stream cannot finish cleanly.
+
 ## [2.1.1] - 2026-05-05
 
 ### Changed

@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+import os
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -19,9 +20,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarStatusController.start()
         observeScreenChanges()
         scheduleInitialPermissionCheck()
+        PerformanceDiagnostics.logDiagnosticsFileLocation()
+        PerformanceDiagnostics.logRuntimeSnapshot(reason: "launch", force: true)
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        SapoLog.performance.info("Application became active")
+        PerformanceDiagnostics.logRuntimeSnapshot(reason: "app-active")
         AudioInputPreflightManager.shared.preflightSoon(reason: "app-active")
     }
 
@@ -39,6 +44,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { _ in
+            SapoLog.performance.info("Screen parameters changed")
+            PerformanceDiagnostics.logRuntimeSnapshot(reason: "screen-change", force: true)
             AudioInputPreflightManager.shared.preflightSoon(reason: "screen-change")
         }
     }

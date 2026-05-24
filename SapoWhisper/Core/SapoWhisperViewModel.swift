@@ -41,13 +41,21 @@ class SapoWhisperViewModel: ObservableObject {
 
     @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "es"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
     @AppStorage(Constants.StorageKeys.hotkeyKeyCode) var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
     @AppStorage(Constants.StorageKeys.hotkeyModifiers) var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
+    @AppStorage(Constants.StorageKeys.hotkeyDoubleTapModifier) var hotkeyDoubleTapModifier: Int = Int(
+        Constants.Hotkey.defaultDoubleTapModifier
+    )
     @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
     @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.appleOnline.rawValue
     @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
+        ElevenLabsTranscriptionMode.defaultMode.rawValue
     @AppStorage(Constants.StorageKeys.deepgramPreviousLanguage) var deepgramPreviousLanguage: String = ""
+    @AppStorage(Constants.StorageKeys.geminiAudioModel) var selectedGeminiAudioModel: String =
+        GeminiAudioModel.defaultModel.rawValue
 
     // MARK: - Managers
 
@@ -55,11 +63,15 @@ class SapoWhisperViewModel: ObservableObject {
     let transcriber = WhisperTranscriber()
     let whisperKitTranscriber = WhisperKitTranscriber()
     let googleCloudTranscriber = GoogleCloudTranscriber()
+    let geminiAudioTranscriber = GeminiAudioTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
     let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
+    let elevenLabsTranscriber = ElevenLabsScribeTranscriber()
+    let elevenLabsRealtimeTranscriber = ElevenLabsScribeRealtimeTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
+    private let transcriptPostProcessor = TranscriptPostProcessor()
 
     // Retry support
     @Published var lastFailedAudioURL: URL?
@@ -77,6 +89,7 @@ class SapoWhisperViewModel: ObservableObject {
     private var startRecordingTask: Task<Void, Never>?
     private var isStartPending = false
     private var recordingSessionCounter: UInt64 = 0
+    private var toggleRecordingCount: UInt64 = 0
     private var activeRecordingSessionID: UInt64?
     private var activeTranscriptionSessionID: UInt64?
     private var lastStartHotkeyTime: CFAbsoluteTime = 0
@@ -96,12 +109,24 @@ class SapoWhisperViewModel: ObservableObject {
         DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3
     }
 
+    var currentElevenLabsMode: ElevenLabsTranscriptionMode {
+        ElevenLabsTranscriptionMode(rawValue: selectedElevenLabsMode) ?? .defaultMode
+    }
+
+    var currentGeminiAudioModel: GeminiAudioModel {
+        GeminiAudioModel(rawValue: selectedGeminiAudioModel) ?? .defaultModel
+    }
+
     private var isDeepgramFluxLiveSelected: Bool {
         currentEngine == .deepgram && currentDeepgramMode == .fluxLive
     }
 
+    private var isElevenLabsRealtimeSelected: Bool {
+        currentEngine == .elevenLabsScribe && currentElevenLabsMode == .scribeV2Realtime
+    }
+
     private var isAnyRecorderActive: Bool {
-        audioRecorder.isRecording || deepgramFluxTranscriber.isStreaming
+        audioRecorder.isRecording || deepgramFluxTranscriber.isStreaming || elevenLabsRealtimeTranscriber.isStreaming
     }
 
     var isWhisperKitReady: Bool {
@@ -118,6 +143,10 @@ class SapoWhisperViewModel: ObservableObject {
             return googleCloudTranscriber.isConfigured
         case .deepgram:
             return deepgramTranscriber.isConfigured
+        case .geminiAudio:
+            return geminiAudioTranscriber.isConfigured
+        case .elevenLabsScribe:
+            return elevenLabsTranscriber.isConfigured
         }
     }
 
@@ -165,8 +194,10 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.selectedDeviceUID = selectedMicrophone
 
         // Aplicar hotkey guardado
+        hotkeyManager.currentTriggerKind = HotkeyTriggerKind(rawValue: hotkeyTriggerKind) ?? .keyCombination
         hotkeyManager.currentKeyCode = UInt32(hotkeyKeyCode)
         hotkeyManager.currentModifiers = UInt32(hotkeyModifiers)
+        hotkeyManager.currentDoubleTapModifier = UInt32(hotkeyDoubleTapModifier)
     }
 
     private func setupBindings() {
@@ -229,6 +260,39 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Observar estado de transcripcion (Gemini Audio)
+        geminiAudioTranscriber.$isTranscribing
+            .sink { [weak self] isTranscribing in
+                if isTranscribing {
+                    self?.appState = .processing
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observar estado de transcripcion (ElevenLabs Scribe)
+        elevenLabsTranscriber.$isTranscribing
+            .sink { [weak self] isTranscribing in
+                if isTranscribing {
+                    self?.appState = .processing
+                }
+            }
+            .store(in: &cancellables)
+
+        elevenLabsRealtimeTranscriber.$isStreaming
+            .sink { [weak self] isStreaming in
+                if isStreaming {
+                    self?.appState = .recording
+                }
+            }
+            .store(in: &cancellables)
+
+        elevenLabsRealtimeTranscriber.$recordingDuration
+            .sink { [weak self] duration in
+                guard self?.currentEngine == .elevenLabsScribe else { return }
+                self?.recordingDuration = duration
+            }
+            .store(in: &cancellables)
+
         // Observar carga de WhisperKit
         whisperKitTranscriber.$isLoading
             .sink { [weak self] isLoading in
@@ -271,7 +335,6 @@ class SapoWhisperViewModel: ObservableObject {
         $appState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                self?.objectWillChange.send()
                 // Actualizar icono del Dock usando el manager
                 DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingWhisperKit ?? false)
                 // Auto-Ducking: reducir/restaurar volumen del sistema
@@ -332,6 +395,14 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        elevenLabsRealtimeTranscriber.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                guard self?.currentEngine == .elevenLabsScribe else { return }
+                self?.overlayManager.updateAudioLevel(level)
+            }
+            .store(in: &cancellables)
+
         // Update overlay duration during recording
         audioRecorder.$recordingDuration
             .receive(on: DispatchQueue.main)
@@ -352,6 +423,21 @@ class SapoWhisperViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
                 guard let self, self.currentEngine == .deepgram else { return }
+                switch self.overlayManager.state {
+                case .recording:
+                    self.overlayManager.updateRecordingDuration(duration)
+                case .paused:
+                    break
+                default:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+
+        elevenLabsRealtimeTranscriber.$recordingDuration
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] duration in
+                guard let self, self.currentEngine == .elevenLabsScribe else { return }
                 switch self.overlayManager.state {
                 case .recording:
                     self.overlayManager.updateRecordingDuration(duration)
@@ -397,6 +483,18 @@ class SapoWhisperViewModel: ObservableObject {
             } else {
                 appState = .noModel
             }
+        case .geminiAudio:
+            if geminiAudioTranscriber.isConfigured {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
+        case .elevenLabsScribe:
+            if elevenLabsTranscriber.isConfigured {
+                appState = .idle
+            } else {
+                appState = .noModel
+            }
         }
     }
 
@@ -410,7 +508,7 @@ class SapoWhisperViewModel: ObservableObject {
             appState = .idle
         } catch {
             let errorMsg = error.localizedDescription
-            print("❌ Error cargando WhisperKit: \(errorMsg)")
+            SapoLog.recording.error("WhisperKit load failed error=\(errorMsg, privacy: .public)")
 
             // Verificar si es error de red
             let isNetworkError =
@@ -419,7 +517,7 @@ class SapoWhisperViewModel: ObservableObject {
 
             if isNetworkError {
                 // Fallback a Apple Speech
-                print("🔄 Haciendo fallback a Apple Speech por error de red...")
+                SapoLog.recording.warning("WhisperKit network error — falling back to Apple Speech")
                 selectedEngine = TranscriptionEngine.appleOnline.rawValue
                 appState = .error("Error de conexión. Usando Apple Speech temporalmente.")
 
@@ -476,6 +574,11 @@ class SapoWhisperViewModel: ObservableObject {
         checkInitialState()
     }
 
+    func setElevenLabsMode(_ mode: ElevenLabsTranscriptionMode) {
+        selectedElevenLabsMode = mode.rawValue
+        checkInitialState()
+    }
+
     private func applyDeepgramLanguagePolicy() {
         guard currentEngine == .deepgram else { return }
 
@@ -497,15 +600,34 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Toggle de grabación (llamado por hotkey o botón)
     func toggleRecording() {
+        toggleRecordingCount &+= 1
+        let toggleCount = toggleRecordingCount
+        SapoLog.hotkey.info(
+            "Recording toggle requested count=\(toggleCount, privacy: .public) \(self.diagnosticContext(), privacy: .public)"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-toggle",
+            context: "count=\(toggleCount) \(diagnosticContext())",
+            force: true
+        )
+
         if isStartPending {
+            SapoLog.hotkey.info("Recording toggle route=cancel-start count=\(toggleCount, privacy: .public)")
             cancelPendingRecordingStart()
+        } else if elevenLabsRealtimeTranscriber.isStreaming {
+            SapoLog.hotkey.info("Recording toggle route=stop-elevenlabs-realtime count=\(toggleCount, privacy: .public)")
+            requestStopElevenLabsRealtimeRecordingAndTranscribe()
         } else if deepgramFluxTranscriber.isStreaming {
+            SapoLog.hotkey.info("Recording toggle route=stop-flux count=\(toggleCount, privacy: .public)")
             requestStopFluxRecordingAndTranscribe()
         } else if audioRecorder.isRecording {
+            SapoLog.hotkey.info("Recording toggle route=stop-recorder count=\(toggleCount, privacy: .public)")
             requestStopRecordingAndTranscribe()
         } else if canStartRecordingFromHotkey() {
+            SapoLog.hotkey.info("Recording toggle route=start count=\(toggleCount, privacy: .public)")
             startRecording()
         } else {
+            SapoLog.hotkey.info("Recording toggle route=ignored count=\(toggleCount, privacy: .public)")
             return
         }
     }
@@ -518,8 +640,8 @@ class SapoWhisperViewModel: ObservableObject {
             return false
         }
 
-        if case .processing = appState {
-            SapoLog.hotkey.info("Hotkey ignored while app is processing")
+        if appState.isBusyProcessing {
+            SapoLog.hotkey.info("Hotkey ignored while app is processing or polishing")
             return false
         }
 
@@ -536,13 +658,31 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
     func togglePause() {
+        if elevenLabsRealtimeTranscriber.isStreaming {
+            if elevenLabsRealtimeTranscriber.isPaused {
+                do {
+                    try elevenLabsRealtimeTranscriber.resumeRecording()
+                    overlayManager.updateState(.recording(duration: elevenLabsRealtimeTranscriber.recordingDuration))
+                } catch {
+                    SapoLog.recording.error(
+                        "ElevenLabs realtime resume failed error=\(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            } else {
+                elevenLabsRealtimeTranscriber.pauseRecording()
+                overlayManager.updateState(.paused(duration: elevenLabsRealtimeTranscriber.recordingDuration))
+                overlayManager.updateAudioLevel(0)
+            }
+            return
+        }
+
         if deepgramFluxTranscriber.isStreaming {
             if deepgramFluxTranscriber.isPaused {
                 do {
                     try deepgramFluxTranscriber.resumeRecording()
                     overlayManager.updateState(.recording(duration: deepgramFluxTranscriber.recordingDuration))
                 } catch {
-                    print("❌ [flux] failed to resume recording: \(error)")
+                    SapoLog.flux.error("Resume failed error=\(error.localizedDescription, privacy: .public)")
                 }
             } else {
                 deepgramFluxTranscriber.pauseRecording()
@@ -560,7 +700,7 @@ class SapoWhisperViewModel: ObservableObject {
                 try audioRecorder.resumeRecording()
                 overlayManager.updateState(.recording(duration: audioRecorder.recordingDuration))
             } catch {
-                print("❌ [capture] failed to resume recording: \(error)")
+                SapoLog.recording.error("Capture resume failed error=\(error.localizedDescription, privacy: .public)")
             }
         } else {
             // Pause
@@ -579,6 +719,11 @@ class SapoWhisperViewModel: ObservableObject {
         activeRecordingSessionID = sessionID
         SapoLog.hotkey.info(
             "Recording trigger accepted engine=\(engine.rawValue, privacy: .public) session=\(sessionID, privacy: .public)"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-trigger-accepted",
+            context: diagnosticContext(extra: "session=\(sessionID)"),
+            force: true
         )
         let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
 
@@ -608,15 +753,35 @@ class SapoWhisperViewModel: ObservableObject {
         overlayManager.updateState(.recording(duration: 0))
         let uiReadyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
         SapoLog.recording.info("Recording UI ready in \(uiReadyMs, privacy: .public)ms")
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-ui-ready",
+            context: diagnosticContext(extra: "session=\(sessionID) uiReadyMs=\(uiReadyMs)")
+        )
 
         let mic = selectedMicrophone
         let playSound = playSoundEnabled
         isStartPending = true
-        if isDeepgramFluxLiveSelected {
+        if isElevenLabsRealtimeSelected {
+            if playSound {
+                SoundManager.shared.play(.startRecording)
+            }
+            SapoLog.recording.info("ElevenLabs realtime UI feedback emitted before input startup")
+            startElevenLabsRealtimeRecordingSession(
+                sessionID: sessionID,
+                microphone: mic,
+                language: selectedLanguage,
+                playSound: false,
+                triggerTime: triggerTime
+            )
+        } else if isDeepgramFluxLiveSelected {
+            if playSound {
+                SoundManager.shared.play(.startRecording)
+            }
+            SapoLog.flux.info("Flux UI feedback emitted before input startup")
             startFluxRecordingSession(
                 sessionID: sessionID,
                 microphone: mic,
-                playSound: playSound,
+                playSound: false,
                 triggerTime: triggerTime
             )
         } else {
@@ -635,6 +800,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         audioRecorder.cancelPendingSetup()
         deepgramFluxTranscriber.cancel()
+        elevenLabsRealtimeTranscriber.cancel()
         startRecordingTask?.cancel()
         startRecordingTask = nil
         isStartPending = false
@@ -649,6 +815,15 @@ class SapoWhisperViewModel: ObservableObject {
     private func nextRecordingSessionID() -> UInt64 {
         recordingSessionCounter &+= 1
         return recordingSessionCounter
+    }
+
+    private func diagnosticContext(extra: String = "") -> String {
+        let recordingSession = activeRecordingSessionID.map(String.init) ?? "none"
+        let transcriptionSession = activeTranscriptionSessionID.map(String.init) ?? "none"
+        let suffix = extra.isEmpty ? "" : " \(extra)"
+
+        return
+            "state=\(appState.diagnosticName) engine=\(currentEngine.rawValue) deepgramMode=\(currentDeepgramMode.rawValue) elevenLabsMode=\(currentElevenLabsMode.rawValue) startPending=\(isStartPending) stopPending=\(isStopPending) audioRecording=\(audioRecorder.isRecording) fluxStreaming=\(deepgramFluxTranscriber.isStreaming) elevenLabsRealtimeStreaming=\(elevenLabsRealtimeTranscriber.isStreaming) audioPaused=\(audioRecorder.isPaused) fluxPaused=\(deepgramFluxTranscriber.isPaused) elevenLabsRealtimePaused=\(elevenLabsRealtimeTranscriber.isPaused) duration=\(Int(recordingDuration)) recordingSession=\(recordingSession) transcriptionSession=\(transcriptionSession) mic=\(selectedMicrophone)\(suffix)"
     }
 
     private func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64) {
@@ -666,6 +841,11 @@ class SapoWhisperViewModel: ObservableObject {
         isStopPending = true
 
         let tailPadding = Self.stopTailPadding
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "recording-stop-requested",
+            context: diagnosticContext(extra: "tailPaddingMs=\(Int(tailPadding * 1000))"),
+            force: true
+        )
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
@@ -683,11 +863,171 @@ class SapoWhisperViewModel: ObservableObject {
         isStopPending = true
 
         let tailPadding = Self.stopTailPadding
+        let stopRequestTime = CFAbsoluteTimeGetCurrent()
+        SapoLog.flux.info("Flux stop hotkey accepted tailPadding=\(Int(tailPadding * 1000), privacy: .public)ms")
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "flux-stop-requested",
+            context: diagnosticContext(extra: "tailPaddingMs=\(Int(tailPadding * 1000))"),
+            force: true
+        )
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
             await MainActor.run {
+                let elapsed = Int((CFAbsoluteTimeGetCurrent() - stopRequestTime) * 1000)
+                SapoLog.flux.info("Flux stop tail elapsed=\(elapsed, privacy: .public)ms")
                 self.stopFluxRecordingAndTranscribe()
+            }
+        }
+    }
+
+    private func requestStopElevenLabsRealtimeRecordingAndTranscribe() {
+        guard !isStopPending else {
+            SapoLog.hotkey.info("Hotkey ignored because ElevenLabs realtime stop is already pending")
+            return
+        }
+        isStopPending = true
+
+        let tailPadding = Self.stopTailPadding
+        let stopRequestTime = CFAbsoluteTimeGetCurrent()
+        SapoLog.recording.info(
+            "ElevenLabs realtime stop hotkey accepted tailPadding=\(Int(tailPadding * 1000), privacy: .public)ms"
+        )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "elevenlabs-realtime-stop-requested",
+            context: diagnosticContext(extra: "tailPaddingMs=\(Int(tailPadding * 1000))"),
+            force: true
+        )
+
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
+            await MainActor.run {
+                let elapsed = Int((CFAbsoluteTimeGetCurrent() - stopRequestTime) * 1000)
+                SapoLog.recording.info("ElevenLabs realtime stop tail elapsed=\(elapsed, privacy: .public)ms")
+                self.stopElevenLabsRealtimeRecordingAndTranscribe()
+            }
+        }
+    }
+
+    private func stopElevenLabsRealtimeRecordingAndTranscribe() {
+        isStopPending = false
+        defer { restoreMicMonitorAfterRecordingIfNeeded() }
+        autoStopTimer?.invalidate()
+        autoStopTimer = nil
+
+        if playSoundEnabled {
+            SoundManager.shared.play(.stopRecording)
+        }
+
+        let engine = TranscriptionEngine.elevenLabsScribe
+        let engineName = currentElevenLabsMode.historyName
+        let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
+        activeRecordingSessionID = nil
+        activeTranscriptionSessionID = sessionID
+        appState = .processing
+        overlayManager.updateState(.transcribing)
+        SapoLog.recording.info(
+            "ElevenLabs realtime overlay switched to transcribing session=\(sessionID, privacy: .public)"
+        )
+
+        Task { @MainActor in
+            do {
+                let transcriptionStartedAt = CFAbsoluteTimeGetCurrent()
+                let result = try await elevenLabsRealtimeTranscriber.stop()
+                let transcriptionElapsed = Int((CFAbsoluteTimeGetCurrent() - transcriptionStartedAt) * 1000)
+                SapoLog.recording.info(
+                    "ElevenLabs realtime stop/transcribe completed elapsed=\(transcriptionElapsed, privacy: .public)ms characters=\(result.transcript.count, privacy: .public)"
+                )
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "elevenlabs-realtime-transcription-completed",
+                    context: self.diagnosticContext(
+                        extra:
+                            "session=\(sessionID) elapsedMs=\(transcriptionElapsed) characters=\(result.transcript.count)"
+                    ),
+                    force: true
+                )
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                let aiResult = await postProcessTranscript(
+                    result.transcript,
+                    source: "elevenlabs_realtime",
+                    duration: result.duration
+                )
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
+
+                if autoPasteEnabled {
+                    PasteManager.simulatePaste()
+                }
+
+                appState = .idle
+                activeTranscriptionSessionID = nil
+                if playSoundEnabled {
+                    SoundManager.shared.play(.success)
+                }
+
+                let persistedEntry = persistHistoryEntry(
+                    from: result.audioURL,
+                    engine: engine,
+                    engineName: engineName,
+                    language: result.language,
+                    duration: result.duration,
+                    aiResult: aiResult,
+                    status: "completed"
+                )
+                cleanupSourceAudioIfSafe(sourceURL: result.audioURL, persistedEntry: persistedEntry)
+                lastFailedAudioURL = nil
+                lastFailedHistoryId = nil
+
+            } catch {
+                let captureResult = elevenLabsRealtimeTranscriber.lastCaptureResult
+                if let captureResult, self.activeTranscriptionSessionID != sessionID {
+                    self.handleStaleTranscriptionCompletion(audioURL: captureResult.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
+                activeTranscriptionSessionID = nil
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "elevenlabs-realtime-transcription-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) failure=\(failure.diagnosticCode)"
+                    ),
+                    force: true
+                )
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
+                if playSoundEnabled {
+                    SoundManager.shared.play(.error)
+                }
+
+                if let captureResult {
+                    let persistedEntry = persistHistoryEntry(
+                        from: captureResult.audioURL,
+                        engine: engine,
+                        engineName: engineName,
+                        language: "auto",
+                        duration: captureResult.duration,
+                        aiResult: nil,
+                        status: "failed"
+                    )
+                    lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
+                    lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
+                    cleanupSourceAudioIfSafe(sourceURL: captureResult.audioURL, persistedEntry: persistedEntry)
+                }
+                SapoLog.recording.error(
+                    "ElevenLabs realtime transcription failed \(failure.logSummary, privacy: .public)"
+                )
             }
         }
     }
@@ -709,18 +1049,38 @@ class SapoWhisperViewModel: ObservableObject {
         activeTranscriptionSessionID = sessionID
         appState = .processing
         overlayManager.updateState(.transcribing)
+        SapoLog.flux.info("Flux overlay switched to transcribing session=\(sessionID, privacy: .public)")
 
         Task { @MainActor in
             do {
+                let transcriptionStartedAt = CFAbsoluteTimeGetCurrent()
                 let result = try await deepgramFluxTranscriber.stop()
+                let transcriptionElapsed = Int((CFAbsoluteTimeGetCurrent() - transcriptionStartedAt) * 1000)
+                SapoLog.flux.info(
+                    "Flux stop/transcribe completed elapsed=\(transcriptionElapsed, privacy: .public)ms characters=\(result.transcript.count, privacy: .public)"
+                )
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-transcription-completed",
+                    context: self.diagnosticContext(
+                        extra:
+                            "session=\(sessionID) elapsedMs=\(transcriptionElapsed) characters=\(result.transcript.count)"
+                    ),
+                    force: true
+                )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
                     return
                 }
 
-                lastTranscription = result.transcript
-                PasteManager.copyToClipboard(result.transcript)
-                overlayManager.showCompleted(text: result.transcript, autoDismissAfter: 2.0)
+                let aiResult = await postProcessTranscript(result.transcript, source: "flux", duration: result.duration)
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
+                    return
+                }
+
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
                     PasteManager.simulatePaste()
@@ -738,7 +1098,7 @@ class SapoWhisperViewModel: ObservableObject {
                     engineName: engineName,
                     language: result.language,
                     duration: result.duration,
-                    text: result.transcript,
+                    aiResult: aiResult,
                     status: "completed"
                 )
                 cleanupSourceAudioIfSafe(sourceURL: result.audioURL, persistedEntry: persistedEntry)
@@ -752,9 +1112,17 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                appState = .error(error.localizedDescription)
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
                 activeTranscriptionSessionID = nil
-                overlayManager.showError(message: error.localizedDescription)
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-transcription-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) failure=\(failure.diagnosticCode)"),
+                    force: true
+                )
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
@@ -766,14 +1134,14 @@ class SapoWhisperViewModel: ObservableObject {
                         engineName: engineName,
                         language: "auto",
                         duration: captureResult.duration,
-                        text: "",
+                        aiResult: nil,
                         status: "failed"
                     )
                     lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
                     lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
                     cleanupSourceAudioIfSafe(sourceURL: captureResult.audioURL, persistedEntry: persistedEntry)
                 }
-                print("❌ [flux] \(error)")
+                SapoLog.flux.error("Flux transcription failed \(failure.logSummary, privacy: .public)")
             }
         }
     }
@@ -800,8 +1168,12 @@ class SapoWhisperViewModel: ObservableObject {
         // All engines: stop recording, get audio file, transcribe
         guard let audioURL = audioRecorder.stopRecording() else {
             activeTranscriptionSessionID = nil
-            appState = .error("error.no_audio".localized)
-            overlayManager.showError(message: "error.no_audio".localized)
+            let failure = TranscriptionFailure(kind: .audioEmpty)
+            let message = failure.errorDescription ?? "error.no_audio".localized
+            appState = .error(message)
+            overlayManager.showError(message: message, isRetryable: failure.isRetryable)
+            SapoLog.recording.error(
+                "Recording produced no audio file \(failure.diagnosticCode, privacy: .public)")
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -809,14 +1181,15 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
-            print(
-                "⚠️ [capture] dropping empty recording after device switch "
-                    + "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
+            SapoLog.recording.warning(
+                "Dropping empty recording after device switch bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .public)"
             )
             audioRecorder.deleteRecording(at: audioURL)
             activeTranscriptionSessionID = nil
-            appState = .error("error.no_audio".localized)
-            overlayManager.showError(message: "error.no_audio".localized)
+            let failure = TranscriptionFailure(kind: .recordingInterrupted)
+            let message = failure.errorDescription ?? "error.no_audio".localized
+            appState = .error(message)
+            overlayManager.showError(message: message, isRetryable: failure.isRetryable)
             if playSoundEnabled {
                 SoundManager.shared.play(.error)
             }
@@ -831,14 +1204,27 @@ class SapoWhisperViewModel: ObservableObject {
         Task { @MainActor in
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "transcription-completed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) engine=\(engine.rawValue) characters=\(transcription.count)"
+                    ),
+                    force: true
+                )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
                     return
                 }
 
-                lastTranscription = transcription
-                PasteManager.copyToClipboard(transcription)
-                overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
+                let aiResult = await postProcessTranscript(transcription, source: engine.rawValue, duration: duration)
+                guard self.activeTranscriptionSessionID == sessionID else {
+                    self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
+                    return
+                }
+
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
                     PasteManager.simulatePaste()
@@ -853,9 +1239,10 @@ class SapoWhisperViewModel: ObservableObject {
                 let persistedEntry = persistHistoryEntry(
                     from: audioURL,
                     engine: engine,
+                    engineName: historyEngineName(for: engine),
                     language: language,
                     duration: duration,
-                    text: transcription,
+                    aiResult: aiResult,
                     status: "completed"
                 )
                 cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
@@ -867,9 +1254,18 @@ class SapoWhisperViewModel: ObservableObject {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
                     return
                 }
-                appState = .error(error.localizedDescription)
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
                 activeTranscriptionSessionID = nil
-                overlayManager.showError(message: error.localizedDescription)
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "transcription-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) engine=\(engine.rawValue) failure=\(failure.diagnosticCode)"
+                    ),
+                    force: true
+                )
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
                 if playSoundEnabled {
                     SoundManager.shared.play(.error)
                 }
@@ -877,15 +1273,18 @@ class SapoWhisperViewModel: ObservableObject {
                 let persistedEntry = persistHistoryEntry(
                     from: audioURL,
                     engine: engine,
+                    engineName: historyEngineName(for: engine),
                     language: language,
                     duration: duration,
-                    text: "",
+                    aiResult: nil,
                     status: "failed"
                 )
                 lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
                 lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
                 cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
-                print("❌ [transcription] \(engine.displayName): \(error)")
+                SapoLog.recording.error(
+                    "Transcription failed engine=\(engine.displayName, privacy: .public) \(failure.logSummary, privacy: .public)"
+                )
             }
         }
     }
@@ -937,14 +1336,18 @@ class SapoWhisperViewModel: ObservableObject {
 
         let engine = currentEngine
         let language = selectedLanguage
+        let duration = lastFailedHistoryId.flatMap { historyId in
+            historyManager.fetchAll().first { $0.id == historyId }?.duration
+        }
 
         Task {
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
+                let aiResult = await postProcessTranscript(transcription, source: "retry", duration: duration)
 
-                lastTranscription = transcription
-                PasteManager.copyToClipboard(transcription)
-                overlayManager.showCompleted(text: transcription, autoDismissAfter: 2.0)
+                lastTranscription = aiResult.finalText
+                PasteManager.copyToClipboard(aiResult.finalText)
+                overlayManager.showCompleted(text: aiResult.finalText, autoDismissAfter: 2.0)
 
                 if autoPasteEnabled {
                     PasteManager.simulatePaste()
@@ -955,14 +1358,26 @@ class SapoWhisperViewModel: ObservableObject {
 
                 // Update history entry
                 if let historyId = lastFailedHistoryId {
-                    historyManager.updateStatus(id: historyId, status: "completed", transcription: transcription)
+                    historyManager.updateAIProcessing(
+                        id: historyId,
+                        finalText: aiResult.finalText,
+                        rawText: aiResult.rawText,
+                        aiStatus: aiResult.status,
+                        aiModel: aiResult.model,
+                        aiMode: aiResult.mode,
+                        aiError: aiResult.error
+                    )
                 }
                 lastFailedAudioURL = nil
                 lastFailedHistoryId = nil
 
             } catch {
-                appState = .error(error.localizedDescription)
-                overlayManager.showError(message: error.localizedDescription)
+                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
+                let message = failure.errorDescription ?? error.localizedDescription
+                appState = .error(message)
+                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
+                SapoLog.recording.error(
+                    "Retry transcription failed \(failure.logSummary, privacy: .public)")
                 if playSoundEnabled { SoundManager.shared.play(.error) }
             }
         }
@@ -980,12 +1395,18 @@ class SapoWhisperViewModel: ObservableObject {
 
         do {
             let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
+            let aiResult = await postProcessTranscript(
+                transcription,
+                source: "history-retranscribe",
+                duration: entry.duration
+            )
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
                 engine: engine,
+                engineName: historyEngineName(for: engine),
                 language: entry.language,
                 duration: entry.duration,
-                text: transcription,
+                aiResult: aiResult,
                 status: "completed"
             )
 
@@ -997,9 +1418,10 @@ class SapoWhisperViewModel: ObservableObject {
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
                 engine: engine,
+                engineName: historyEngineName(for: engine),
                 language: entry.language,
                 duration: entry.duration,
-                text: "",
+                aiResult: nil,
                 status: "failed"
             )
 
@@ -1008,6 +1430,35 @@ class SapoWhisperViewModel: ObservableObject {
                 errorMessage: error.localizedDescription
             )
         }
+    }
+
+    func polishHistoryEntry(_ entry: HistoryEntry) async -> HistoryRetranscriptionResult {
+        let sourceText = (entry.hasRawTranscript ? entry.rawText : entry.text)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !sourceText.isEmpty, entry.status == "completed" else {
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                errorMessage: "history.ai_polish_missing_text".localized
+            )
+        }
+
+        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, duration: entry.duration, force: true)
+        logAIResult(aiResult, source: "history-polish")
+        historyManager.updateAIProcessing(
+            id: entry.id,
+            finalText: aiResult.finalText,
+            rawText: aiResult.rawText,
+            aiStatus: aiResult.status,
+            aiModel: aiResult.model,
+            aiMode: aiResult.mode,
+            aiError: aiResult.error
+        )
+
+        return HistoryRetranscriptionResult(
+            entryId: entry.id,
+            errorMessage: aiResult.status == .failed ? aiResult.error : nil
+        )
     }
 
     // MARK: - Hotkey
@@ -1057,6 +1508,11 @@ class SapoWhisperViewModel: ObservableObject {
                 recorderDidStart = true
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
                 SapoLog.recording.info("Recording input ready in \(readyMs, privacy: .public)ms")
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "recording-input-ready",
+                    context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
+                    force: true
+                )
                 self.startAutoStopTimer(for: engine)
                 if playSound {
                     SoundManager.shared.play(.startRecording)
@@ -1078,8 +1534,14 @@ class SapoWhisperViewModel: ObservableObject {
                 if playSound && !self.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "recording-input-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) error=\(error.localizedDescription)"
+                    ),
+                    force: true
+                )
                 SapoLog.recording.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
-                print("❌ [capture] failed to start recording: \(error)")
             }
         }
     }
@@ -1110,6 +1572,11 @@ class SapoWhisperViewModel: ObservableObject {
                 recorderDidStart = true
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
                 SapoLog.recording.info("Flux input ready in \(readyMs, privacy: .public)ms")
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-input-ready",
+                    context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
+                    force: true
+                )
                 if playSound {
                     SoundManager.shared.play(.startRecording)
                 }
@@ -1130,8 +1597,80 @@ class SapoWhisperViewModel: ObservableObject {
                 if playSound && !self.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "flux-input-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) error=\(error.localizedDescription)"
+                    ),
+                    force: true
+                )
                 SapoLog.recording.error("Flux failed to start: \(error.localizedDescription, privacy: .public)")
-                print("❌ [flux] failed to start: \(error)")
+            }
+        }
+    }
+
+    private func startElevenLabsRealtimeRecordingSession(
+        sessionID: UInt64,
+        microphone: String,
+        language: String,
+        playSound: Bool,
+        triggerTime: CFAbsoluteTime
+    ) {
+        elevenLabsRealtimeTranscriber.cancel()
+        startRecordingTask?.cancel()
+        startRecordingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            var recorderDidStart = false
+
+            defer {
+                self.isStartPending = false
+                self.startRecordingTask = nil
+                if didSuspendMonitor && !recorderDidStart {
+                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                }
+            }
+
+            do {
+                try await self.elevenLabsRealtimeTranscriber.start(microphone: microphone, language: language)
+                recorderDidStart = true
+                let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+                SapoLog.recording.info("ElevenLabs realtime input ready in \(readyMs, privacy: .public)ms")
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "elevenlabs-realtime-input-ready",
+                    context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
+                    force: true
+                )
+                if playSound {
+                    SoundManager.shared.play(.startRecording)
+                }
+            } catch {
+                if error is CancellationError {
+                    return
+                }
+                guard self.activeRecordingSessionID == sessionID else {
+                    SapoLog.recording.warning(
+                        "Ignoring stale ElevenLabs realtime start failure session=\(sessionID, privacy: .public)"
+                    )
+                    return
+                }
+                self.activeRecordingSessionID = nil
+                self.appState = .error(error.localizedDescription)
+                self.overlayManager.showError(message: error.localizedDescription)
+                AutoDuckingManager.shared.restore()
+                if playSound && !self.isRecoverableInputStartError(error) {
+                    SoundManager.shared.play(.error)
+                }
+                PerformanceDiagnostics.logRuntimeSnapshot(
+                    reason: "elevenlabs-realtime-input-failed",
+                    context: self.diagnosticContext(
+                        extra: "session=\(sessionID) error=\(error.localizedDescription)"
+                    ),
+                    force: true
+                )
+                SapoLog.recording.error(
+                    "ElevenLabs realtime failed to start: \(error.localizedDescription, privacy: .public)"
+                )
             }
         }
     }
@@ -1151,7 +1690,7 @@ class SapoWhisperViewModel: ObservableObject {
                 )
                 if didStart {
                     if attempt > 1 {
-                        print("✅ [capture] recovered on retry after route transition")
+                        SapoLog.recording.info("Capture recovered on retry after route transition")
                     }
                     return
                 }
@@ -1181,9 +1720,8 @@ class SapoWhisperViewModel: ObservableObject {
                 max(Self.startRetryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
             )
 
-            print(
-                "🎙️ [capture] transient start failure (\(classification.reason)), "
-                    + "retrying \(attempt + 1)/3 after \(Int(retryDelay * 1000))ms"
+            SapoLog.recording.warning(
+                "Capture transient start failure reason=\(classification.reason, privacy: .public) attempt=\(attempt + 1, privacy: .public)/3 retryAfterMs=\(Int(retryDelay * 1000), privacy: .public)"
             )
             try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
         }
@@ -1214,9 +1752,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         let diagnostics = audioRecorder.currentCaptureDiagnostics()
         let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
-        print(
-            "⚠️ [capture] attempt \(attempt) received no input buffer within " + "\(Int(Self.firstInputBufferTimeout * 1000))ms "
-                + "(bytes: \(diagnostics.fileSizeBytes), input: \(inputDescription))"
+        SapoLog.recording.warning(
+            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(Self.firstInputBufferTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .public)"
         )
         return false
     }
@@ -1251,6 +1788,8 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
+        // Fail fast with a clear message if the recording is missing, empty, or corrupt.
+        try AudioFileValidator.validate(audioURL)
         switch engine {
         case .appleOnline:
             guard PermissionService.shared.isGranted(.speechRecognition) else {
@@ -1263,7 +1802,74 @@ class SapoWhisperViewModel: ObservableObject {
             return try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .geminiAudio:
+            return try await geminiAudioTranscriber.transcribe(
+                audioURL: audioURL,
+                language: language,
+                model: currentGeminiAudioModel
+            )
+        case .elevenLabsScribe:
+            switch currentElevenLabsMode {
+            case .scribeV2Batch:
+                return try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
+            case .scribeV2Realtime:
+                return try await elevenLabsRealtimeTranscriber.transcribe(audioURL: audioURL, language: language)
+            }
         }
+    }
+
+    private func historyEngineName(for engine: TranscriptionEngine) -> String {
+        switch engine {
+        case .geminiAudio:
+            return "Gemini Audio · \(currentGeminiAudioModel.displayName)"
+        case .elevenLabsScribe:
+            return currentElevenLabsMode.historyName
+        default:
+            return engine.displayName
+        }
+    }
+
+    private func postProcessTranscript(
+        _ rawText: String,
+        source: String,
+        duration: TimeInterval?
+    ) async -> TranscriptAIResult {
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText, duration: duration)
+        if willAttemptPolish {
+            appState = .polishing
+            overlayManager.updateState(.polishing)
+            SapoLog.ai.info(
+                "AI polish started source=\(source, privacy: .public) rawChars=\(rawText.count, privacy: .public)"
+            )
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "ai-polish-start",
+                context: diagnosticContext(extra: "source=\(source) rawChars=\(rawText.count)"),
+                force: true
+            )
+        }
+
+        let result = await transcriptPostProcessor.process(rawText: rawText, duration: duration)
+        logAIResult(result, source: source)
+        if willAttemptPolish {
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "ai-polish-finished",
+                context: diagnosticContext(
+                    extra:
+                        "source=\(source) status=\(result.status.rawValue) elapsedMs=\(result.elapsedMs) rawChars=\(result.rawText.count) finalChars=\(result.finalText.count)"
+                ),
+                force: true
+            )
+        }
+        return result
+    }
+
+    private func logAIResult(_ result: TranscriptAIResult, source: String) {
+        let mode = result.mode ?? "none"
+        let model = result.model ?? "none"
+        let fallbackReason = result.error ?? "none"
+        SapoLog.ai.info(
+            "AI polish source=\(source, privacy: .public) status=\(result.status.rawValue, privacy: .public) mode=\(mode, privacy: .public) model=\(model, privacy: .public) elapsed=\(result.elapsedMs, privacy: .public)ms rawChars=\(result.rawText.count, privacy: .public) finalChars=\(result.finalText.count, privacy: .public) fallback=\(fallbackReason, privacy: .public)"
+        )
     }
 
     private func persistHistoryEntry(
@@ -1272,19 +1878,25 @@ class SapoWhisperViewModel: ObservableObject {
         engineName: String? = nil,
         language: String,
         duration: TimeInterval,
-        text: String,
+        aiResult: TranscriptAIResult?,
         status: String
     ) -> PersistedHistoryEntry {
         let savedPath = historyManager.saveAudioFile(from: sourceURL)
         let fallbackPath = FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL.path : nil
         let audioPath = savedPath ?? fallbackPath
+        let text = aiResult?.finalText ?? ""
         let historyID = historyManager.save(
             engine: engineName ?? engine.displayName,
             language: language,
             duration: duration,
             text: text,
+            rawText: aiResult?.rawText ?? text,
             audioPath: audioPath,
-            status: status
+            status: status,
+            aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
+            aiModel: aiResult?.model,
+            aiMode: aiResult?.mode,
+            aiError: aiResult?.error
         )
 
         return PersistedHistoryEntry(
@@ -1323,6 +1935,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Si el boton de grabar esta habilitado
     var canRecord: Bool {
+        guard activeTranscriptionSessionID == nil, !appState.isBusyProcessing else {
+            return false
+        }
+
         switch currentEngine {
         case .appleOnline:
             return !transcriber.isTranscribing
@@ -1333,6 +1949,11 @@ class SapoWhisperViewModel: ObservableObject {
         case .deepgram:
             return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing && !deepgramFluxTranscriber.isStreaming
                 && !deepgramFluxTranscriber.isStopping
+        case .geminiAudio:
+            return geminiAudioTranscriber.isConfigured && !geminiAudioTranscriber.isTranscribing
+        case .elevenLabsScribe:
+            return elevenLabsTranscriber.isConfigured && !elevenLabsTranscriber.isTranscribing
+                && !elevenLabsRealtimeTranscriber.isStreaming && !elevenLabsRealtimeTranscriber.isStopping
         }
     }
 

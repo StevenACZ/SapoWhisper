@@ -48,7 +48,7 @@ final class DockIconManager: ObservableObject {
             case .recording:
                 newIcon = recordingIcon
                 iconName = "Recording"
-            case .processing:
+            case .processing, .polishing:
                 newIcon = transcribingIcon
                 iconName = "Transcribing"
             }

@@ -11,6 +11,7 @@ enum AppState: Equatable {
     case idle  // Verde - Listo para grabar
     case recording  // Rojo - Grabando audio
     case processing  // Amarillo - Transcribiendo
+    case polishing  // Azul - Mejorando con IA
     case error(String)  // Naranja - Error
     case noModel  // Gris - Sin modelo instalado
 
@@ -22,10 +23,29 @@ enum AppState: Equatable {
             return "status.recording_generic".localized
         case .processing:
             return "menu.transcribing".localized
+        case .polishing:
+            return "menu.ai_polishing".localized
         case .error(let message):
             return "status.error".localized(message)
         case .noModel:
             return "status.no_model".localized
+        }
+    }
+
+    var diagnosticName: String {
+        switch self {
+        case .idle:
+            return "idle"
+        case .recording:
+            return "recording"
+        case .processing:
+            return "processing"
+        case .polishing:
+            return "polishing"
+        case .error:
+            return "error"
+        case .noModel:
+            return "noModel"
         }
     }
 
@@ -37,6 +57,8 @@ enum AppState: Equatable {
             return "record.circle.fill"
         case .processing:
             return "ellipsis.circle.fill"
+        case .polishing:
+            return "wand.and.stars"
         case .error:
             return "exclamationmark.circle.fill"
         case .noModel:
@@ -52,10 +74,21 @@ enum AppState: Equatable {
             return Color(red: 0.957, green: 0.263, blue: 0.212)  // #F44336
         case .processing:
             return Color(red: 1.0, green: 0.757, blue: 0.027)  // #FFC107
+        case .polishing:
+            return .aiPolish
         case .error:
             return Color(red: 1.0, green: 0.596, blue: 0.0)  // #FF9800
         case .noModel:
             return Color(red: 0.620, green: 0.620, blue: 0.620)  // #9E9E9E
+        }
+    }
+
+    var isBusyProcessing: Bool {
+        switch self {
+        case .processing, .polishing:
+            return true
+        default:
+            return false
         }
     }
 }

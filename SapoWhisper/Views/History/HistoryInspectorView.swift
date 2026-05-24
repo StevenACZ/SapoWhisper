@@ -9,9 +9,11 @@ struct HistoryInspectorView: View {
     let entry: HistoryEntry
     let onCopy: () -> Void
     let onRetranscribe: () -> Void
+    let onPolishWithAI: () -> Void
     let onDownloadAudio: () -> Void
     let onTogglePin: () -> Void
     let onDelete: () -> Void
+    var isAIPolishing = false
 
     @State private var showCopied = false
 
@@ -49,6 +51,12 @@ struct HistoryInspectorView: View {
                     value: entry.status == "completed" ? "history.status_completed".localized : "history.status_failed".localized,
                     valueColor: entry.status == "completed" ? Color.sapoGreen : .orange
                 )
+                MetadataRow(
+                    icon: "wand.and.stars",
+                    label: "history.ai_polish".localized,
+                    value: aiStatusText,
+                    valueColor: aiStatusColor
+                )
             }
         }
     }
@@ -79,6 +87,15 @@ struct HistoryInspectorView: View {
                 )
             }
 
+            if entry.status == "completed", !entry.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                InspectorButton(
+                    label: isAIPolishing ? "history.ai_polishing".localized : "history.ai_polish_action".localized,
+                    icon: "wand.and.stars",
+                    isDisabled: isAIPolishing,
+                    action: onPolishWithAI
+                )
+            }
+
             InspectorButton(
                 label: entry.isFavorite ? "history.unpin".localized : "history.pin".localized,
                 icon: entry.isFavorite ? "pin.slash" : "pin",
@@ -102,6 +119,31 @@ struct HistoryInspectorView: View {
         showCopied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             showCopied = false
+        }
+    }
+
+    private var aiStatusText: String {
+        var parts = [entry.transcriptAIStatus.displayName]
+        if let modeName = entry.aiModeDisplayName {
+            parts.append(modeName)
+        }
+        if let model = entry.aiModel, !model.isEmpty {
+            parts.append(model)
+        }
+        if let error = entry.aiError, !error.isEmpty {
+            parts.append(error)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var aiStatusColor: Color {
+        switch entry.transcriptAIStatus {
+        case .applied:
+            return .sapoGreen
+        case .failed:
+            return .orange
+        case .skippedShort, .skippedDuration, .none:
+            return .secondary
         }
     }
 }
@@ -149,6 +191,7 @@ private struct InspectorButton: View {
     let label: String
     let icon: String
     var isDestructive: Bool = false
+    var isDisabled = false
     let action: () -> Void
 
     var body: some View {
@@ -166,6 +209,8 @@ private struct InspectorButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.55 : 1)
         .background(.quaternary.opacity(0.01))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -178,6 +223,7 @@ private struct InspectorButton: View {
         entry: HistoryEntry.mockData[0],
         onCopy: {},
         onRetranscribe: {},
+        onPolishWithAI: {},
         onDownloadAudio: {},
         onTogglePin: {},
         onDelete: {}

@@ -9,6 +9,7 @@ import AppKit
 import Combine
 import QuartzCore
 import SwiftUI
+import os
 
 @MainActor
 final class MenuBarStatusController: NSObject, NSPopoverDelegate {
@@ -20,6 +21,12 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var isPopoverTransitioning = false
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
+    private var pendingPopoverRefresh = false
+    private var hiddenPopoverRefreshSkipCount = 0
+    private var lastHiddenRefreshSkipLogTime: CFAbsoluteTime = 0
+    private var popoverOpenCount = 0
+    private var settingsOpenCount = 0
+    private var historyOpenCount = 0
 
     init(viewModel: SapoWhisperViewModel) {
         self.viewModel = viewModel
@@ -33,12 +40,16 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     func closePopover() {
+        let t0 = CFAbsoluteTimeGetCurrent()
         popover?.performClose(nil)
         statusItem?.button?.state = .off
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        SapoLog.menuBar.info("Popover close requested elapsed=\(elapsed, privacy: .public)ms")
     }
 
     func popoverWillClose(_ notification: Notification) {
         statusItem?.button?.state = .off
+        SapoLog.menuBar.info("Popover will close")
     }
 
     private func setupStatusItem() {
@@ -59,7 +70,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = makePopoverContentController()
         self.popover = popover
-        refreshPopoverSize()
+        refreshPopoverSize(reason: "setup", force: true)
     }
 
     private func bindStatusImage() {
@@ -70,12 +81,35 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
-        viewModel.objectWillChange
+        let appStateRefreshes = viewModel.$appState
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "app-state" }
+            .eraseToAnyPublisher()
+
+        let transcriptionRefreshes = viewModel.$lastTranscription
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "last-transcription" }
+            .eraseToAnyPublisher()
+
+        let loadingRefreshes = viewModel.$isLoadingWhisperKit
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "whisper-loading" }
+            .eraseToAnyPublisher()
+
+        Publishers.Merge3(appStateRefreshes, transcriptionRefreshes, loadingRefreshes)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] reason in
+                self?.schedulePopoverRefresh(reason: reason)
+            }
+            .store(in: &cancellables)
+
+        localizationManager.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.refreshPopoverSize()
-                }
+                self?.schedulePopoverRefresh(reason: "localization")
             }
             .store(in: &cancellables)
     }
@@ -84,30 +118,75 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         guard let button = statusItem?.button, let popover else { return }
         guard !isPopoverTransitioning else { return }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         lockPopoverTransition()
         animateStatusButton(button)
 
         if popover.isShown {
             closePopover()
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            SapoLog.menuBar.info("Popover toggle closed elapsed=\(elapsed, privacy: .public)ms")
         } else {
+            popoverOpenCount += 1
             popover.contentViewController = makePopoverContentController()
-            refreshPopoverSize()
+            refreshPopoverSize(reason: "open", force: true)
             button.state = .on
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate(ignoringOtherApps: true)
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "popover-open",
+                context: "openCount=\(popoverOpenCount)",
+                force: true
+            )
 
             DispatchQueue.main.async { [weak self] in
-                self?.refreshPopoverSize()
+                self?.refreshPopoverSize(reason: "post-open", force: true)
             }
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            SapoLog.menuBar.info("Popover toggle opened elapsed=\(elapsed, privacy: .public)ms")
         }
     }
 
-    private func refreshPopoverSize() {
+    private func schedulePopoverRefresh(reason: String) {
+        guard popover?.isShown == true else {
+            recordHiddenPopoverRefreshSkip()
+            return
+        }
+        guard !pendingPopoverRefresh else { return }
+
+        pendingPopoverRefresh = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingPopoverRefresh = false
+            self.refreshPopoverSize(reason: reason)
+        }
+    }
+
+    private func recordHiddenPopoverRefreshSkip() {
+        hiddenPopoverRefreshSkipCount += 1
+
+        let now = CFAbsoluteTimeGetCurrent()
+        guard hiddenPopoverRefreshSkipCount >= 100 || now - lastHiddenRefreshSkipLogTime >= 60 else { return }
+
+        SapoLog.menuBar.info(
+            "Skipped hidden popover refreshes count=\(self.hiddenPopoverRefreshSkipCount, privacy: .public)"
+        )
+        hiddenPopoverRefreshSkipCount = 0
+        lastHiddenRefreshSkipLogTime = now
+    }
+
+    private func refreshPopoverSize(reason: String, force: Bool = false) {
+        guard force || popover?.isShown == true else {
+            recordHiddenPopoverRefreshSkip()
+            return
+        }
+
         guard
             let popover,
             let hostingController = popover.contentViewController as? NSHostingController<MenuBarPopoverHost>
         else { return }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         let width = Constants.Sizes.menuBarWidth
         let fittingSize = hostingController.sizeThatFits(
             in: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
@@ -120,6 +199,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let view = hostingController.view
         view.setFrameSize(popover.contentSize)
         view.layoutSubtreeIfNeeded()
+
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        if elapsed >= 16 {
+            SapoLog.menuBar.info(
+                "Popover size refreshed reason=\(reason, privacy: .public) elapsed=\(elapsed, privacy: .public)ms height=\(Int(height), privacy: .public)"
+            )
+        }
     }
 
     private func lockPopoverTransition() {
@@ -168,6 +254,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func openSettingsWindow() {
+        settingsOpenCount += 1
+        SapoLog.settings.info("Settings open requested from menu bar")
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "settings-open",
+            context: "openCount=\(settingsOpenCount)",
+            force: true
+        )
         closePopover()
 
         DispatchQueue.main.async { [weak self] in
@@ -176,18 +269,27 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func presentSettingsWindow() {
+        let t0 = CFAbsoluteTimeGetCurrent()
         let controller =
             settingsWindowController
             ?? makeWindowController(
-                size: NSSize(width: 480, height: 500),
+                size: NSSize(width: 800, height: 560),
                 resizable: false,
                 rootView: SettingsWindowHost(viewModel: viewModel)
             )
         settingsWindowController = controller
         show(controller)
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        SapoLog.settings.info("Settings window presented elapsed=\(elapsed, privacy: .public)ms")
     }
 
     private func openHistoryWindow() {
+        historyOpenCount += 1
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "history-open",
+            context: "openCount=\(historyOpenCount)",
+            force: true
+        )
         closePopover()
 
         let controller =
@@ -241,6 +343,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private func show(_ controller: NSWindowController) {
         guard let window = controller.window else { return }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         let shouldCenter = !window.isVisible
         NSApp.activate(ignoringOtherApps: true)
 
@@ -251,20 +354,34 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         controller.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
         refreshWindowRendering(window)
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        SapoLog.menuBar.info(
+            "Window shown visibleBefore=\((!shouldCenter), privacy: .public) elapsed=\(elapsed, privacy: .public)ms"
+        )
     }
 
     private func refreshWindowRendering(_ window: NSWindow) {
         guard let contentView = window.contentView else { return }
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         contentView.layoutSubtreeIfNeeded()
         contentView.needsDisplay = true
         contentView.displayIfNeeded()
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        if elapsed >= 16 {
+            SapoLog.menuBar.info("Window render refreshed elapsed=\(elapsed, privacy: .public)ms")
+        }
 
         DispatchQueue.main.async { [weak window] in
             guard let contentView = window?.contentView else { return }
+            let t0 = CFAbsoluteTimeGetCurrent()
             contentView.layoutSubtreeIfNeeded()
             contentView.needsDisplay = true
             contentView.displayIfNeeded()
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            if elapsed >= 16 {
+                SapoLog.menuBar.info("Window deferred render refreshed elapsed=\(elapsed, privacy: .public)ms")
+            }
         }
     }
 }

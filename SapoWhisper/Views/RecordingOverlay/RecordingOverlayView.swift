@@ -17,34 +17,26 @@ struct RecordingOverlayView: View {
     private var stateCategory: String { manager.state.stateCategory }
 
     var body: some View {
-        ZStack {
-            contentForState
-                .id(stateCategory)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeOut(duration: 0.2)),
-                        removal: .opacity.combined(with: .scale(scale: 0.94)).animation(.easeIn(duration: 0.15))
-                    ))
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-        )
-        .fixedSize()
-        .frame(maxWidth: 380, maxHeight: 48)
-        .scaleEffect(scale)
-        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: stateCategory)
-        .onChange(of: stateCategory) { _, _ in
-            microBounce()
-        }
-        .onAppear {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
-                scale = 1.0
+        contentForState
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+            )
+            .fixedSize()
+            .frame(maxWidth: 380, maxHeight: 48)
+            .scaleEffect(scale)
+            .animation(.spring(response: 0.35, dampingFraction: 0.78), value: stateCategory)
+            .onChange(of: stateCategory) { _, _ in
+                microBounce()
             }
-        }
+            .onAppear {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                    scale = 1.0
+                }
+            }
     }
 
     /// Micro-bounce effect when state changes — subtle scale pop for tactile feedback
@@ -83,11 +75,14 @@ struct RecordingOverlayView: View {
         case .transcribing:
             TranscribingPillView()
 
+        case .polishing:
+            AIPolishingPillView()
+
         case .completed(let text):
             CompletedPillView(text: text)
 
-        case .error(let message):
-            ErrorPillView(message: message, onRetry: manager.onRetry)
+        case .error(let message, let isRetryable):
+            ErrorPillView(message: message, onRetry: isRetryable ? manager.onRetry : nil)
 
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)

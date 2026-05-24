@@ -5,6 +5,7 @@
 
 import Foundation
 import SQLite3
+import os
 
 /// Manages transcription history using SQLite
 /// DB at ~/Library/Application Support/SapoWhisper/history.db
@@ -28,9 +29,9 @@ class TranscriptionHistoryManager {
             createTable()
             migrateSchema()
             createIndexes()
-            print("History DB opened: \(dbPath)")
+            SapoLog.recording.info("History DB opened")
         } else {
-            print("Failed to open history DB")
+            SapoLog.recording.error("Failed to open history DB")
         }
     }
 
@@ -54,10 +55,25 @@ class TranscriptionHistoryManager {
     /// Save a transcription entry. Returns the row ID.
     @discardableResult
     func save(
-        engine: String, language: String, duration: TimeInterval, text: String, audioPath: String? = nil, status: String = "completed"
+        engine: String,
+        language: String,
+        duration: TimeInterval,
+        text: String,
+        rawText: String? = nil,
+        audioPath: String? = nil,
+        status: String = "completed",
+        aiStatus: String = TranscriptAIStatus.none.rawValue,
+        aiModel: String? = nil,
+        aiMode: String? = nil,
+        aiError: String? = nil
     ) -> Int64 {
         let sql =
-            "INSERT INTO transcriptions (timestamp, engine, language, duration_seconds, transcription, audio_path, status) VALUES (?, ?, ?, ?, ?, ?, ?);"
+            """
+            INSERT INTO transcriptions (
+                timestamp, engine, language, duration_seconds, transcription, raw_transcription,
+                audio_path, status, ai_status, ai_model, ai_mode, ai_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
 
@@ -69,12 +85,29 @@ class TranscriptionHistoryManager {
         bindText(stmt, 3, language)
         sqlite3_bind_double(stmt, 4, duration)
         bindText(stmt, 5, text)
+        bindText(stmt, 6, rawText ?? text)
         if let path = audioPath {
-            bindText(stmt, 6, path)
+            bindText(stmt, 7, path)
         } else {
-            sqlite3_bind_null(stmt, 6)
+            sqlite3_bind_null(stmt, 7)
         }
-        bindText(stmt, 7, status)
+        bindText(stmt, 8, status)
+        bindText(stmt, 9, aiStatus)
+        if let aiModel {
+            bindText(stmt, 10, aiModel)
+        } else {
+            sqlite3_bind_null(stmt, 10)
+        }
+        if let aiMode {
+            bindText(stmt, 11, aiMode)
+        } else {
+            sqlite3_bind_null(stmt, 11)
+        }
+        if let aiError {
+            bindText(stmt, 12, aiError)
+        } else {
+            sqlite3_bind_null(stmt, 12)
+        }
 
         let result = sqlite3_step(stmt)
         guard result == SQLITE_DONE else { return -1 }
@@ -106,6 +139,48 @@ class TranscriptionHistoryManager {
         } else {
             sqlite3_bind_int64(stmt, 2, id)
         }
+        sqlite3_step(stmt)
+        notifyDidChange()
+    }
+
+    func updateAIProcessing(
+        id: Int64,
+        finalText: String,
+        rawText: String,
+        aiStatus: TranscriptAIStatus,
+        aiModel: String?,
+        aiMode: String?,
+        aiError: String?
+    ) {
+        let sql = """
+            UPDATE transcriptions
+            SET transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?, ai_error = ?, status = 'completed'
+            WHERE id = ?;
+            """
+
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        bindText(stmt, 1, finalText)
+        bindText(stmt, 2, rawText)
+        bindText(stmt, 3, aiStatus.rawValue)
+        if let aiModel {
+            bindText(stmt, 4, aiModel)
+        } else {
+            sqlite3_bind_null(stmt, 4)
+        }
+        if let aiMode {
+            bindText(stmt, 5, aiMode)
+        } else {
+            sqlite3_bind_null(stmt, 5)
+        }
+        if let aiError {
+            bindText(stmt, 6, aiError)
+        } else {
+            sqlite3_bind_null(stmt, 6)
+        }
+        sqlite3_bind_int64(stmt, 7, id)
         sqlite3_step(stmt)
         notifyDidChange()
     }

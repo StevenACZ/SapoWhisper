@@ -61,16 +61,19 @@ class OverlayWindowManager: ObservableObject {
         overlayWindow?.orderOut(nil)
         overlayWindow?.alphaValue = 0
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        print("⏱️ [overlay prewarm] ready in \(String(format: "%.0f", elapsed))ms")
         SapoLog.overlay.info("Overlay prewarmed in \(Int(elapsed), privacy: .public)ms")
     }
 
     /// Muestra la ventana de overlay con animacion
     func show() {
+        let signpostState = SapoSignpost.begin(SapoSignpost.Name.hotkeyToOverlay)
         let t0 = CFAbsoluteTimeGetCurrent()
         let reusedWindow = overlayWindow != nil
         ensureWindow()
-        guard let window = overlayWindow else { return }
+        guard let window = overlayWindow else {
+            SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
+            return
+        }
         presentationRevision &+= 1
         let revision = presentationRevision
         isAnimating = false
@@ -88,13 +91,21 @@ class OverlayWindowManager: ObservableObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1.0
         }
-        guard revision == presentationRevision else { return }
+        guard revision == presentationRevision else {
+            SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
+            return
+        }
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        print("⏱️ [overlay show] \(reusedWindow ? "reused" : "created") in \(String(format: "%.0f", elapsed))ms")
         let reuseState = reusedWindow ? "reused" : "created"
         SapoLog.overlay.info(
             "Overlay shown state=\(reuseState, privacy: .public) elapsed=\(Int(elapsed), privacy: .public)ms"
         )
+        PerformanceDiagnostics.logRuntimeSnapshot(
+            reason: "overlay-show",
+            context: "reuse=\(reuseState) elapsedMs=\(Int(elapsed))",
+            force: true
+        )
+        SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
     }
 
     /// Oculta la ventana de overlay con animacion
@@ -127,6 +138,10 @@ class OverlayWindowManager: ObservableObject {
                     self.publishAudioLevel(0, force: true)
                     let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     SapoLog.overlay.info("Overlay hidden in \(elapsed, privacy: .public)ms")
+                    PerformanceDiagnostics.logRuntimeSnapshot(
+                        reason: "overlay-hidden",
+                        context: "elapsedMs=\(elapsed)"
+                    )
                 }
             })
     }
@@ -161,7 +176,6 @@ class OverlayWindowManager: ObservableObject {
         overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
         isAnimating = false
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        print("⏱️ [overlay build] window created in \(String(format: "%.0f", elapsed))ms")
         SapoLog.overlay.info("Overlay window created in \(Int(elapsed), privacy: .public)ms")
     }
 
@@ -230,7 +244,7 @@ class OverlayWindowManager: ObservableObject {
     func showDeviceDetected(deviceName: String, autoDismissAfter delay: TimeInterval = 2.5) {
         // Don't interrupt active recording/transcribing states
         switch state {
-        case .recording, .transcribing, .paused:
+        case .recording, .transcribing, .polishing, .paused:
             return
         default:
             break
@@ -246,9 +260,13 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Muestra un error
-    func showError(message: String, autoDismissAfter delay: TimeInterval = 3.0) {
-        updateState(.error(message: message))
+    /// Muestra un error. `isRetryable` controla si se ofrece el boton de reintento.
+    func showError(
+        message: String,
+        isRetryable: Bool = true,
+        autoDismissAfter delay: TimeInterval = 5.0
+    ) {
+        updateState(.error(message: message, isRetryable: isRetryable))
 
         // Auto-ocultar despues del delay
         Task {

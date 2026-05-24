@@ -5,6 +5,7 @@
 
 import AVFoundation
 import SwiftUI
+import os
 
 /// Mini inline audio player for playback of saved transcription audio
 struct AudioPlayerView: View {
@@ -76,7 +77,9 @@ struct AudioPlayerView: View {
             player?.prepareToPlay()
             duration = player?.duration ?? 0
         } catch {
-            print("AudioPlayerView: Failed to load audio: \(error)")
+            SapoLog.settings.warning(
+                "History AudioPlayer load failed error=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 

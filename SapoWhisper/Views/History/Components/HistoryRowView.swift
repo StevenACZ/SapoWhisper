@@ -96,6 +96,7 @@ private struct EngineIndicator: View {
     private var color: Color {
         switch engine.lowercased() {
         case let e where e.contains("deepgram"): return .blue
+        case let e where e.contains("gemini"): return .cyan
         case let e where e.contains("google"): return .orange
         case let e where e.contains("whisper"): return .purple
         case let e where e.contains("apple"): return .green
@@ -132,6 +133,7 @@ struct EngineBadge: View {
     private var badgeColor: Color {
         switch engine.lowercased() {
         case let e where e.contains("deepgram"): return .blue
+        case let e where e.contains("gemini"): return .cyan
         case let e where e.contains("google"): return .orange
         case let e where e.contains("whisper"): return .purple
         case let e where e.contains("apple"): return .green

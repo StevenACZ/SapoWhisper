@@ -10,6 +10,7 @@ enum SapoIconState {
     case recording
     case paused
     case transcribing
+    case polishing
     case completed
     case error
 
@@ -19,7 +20,7 @@ enum SapoIconState {
             return "DockIconRecording"
         case .paused, .completed, .error:
             return "DockIconLoading"
-        case .transcribing:
+        case .transcribing, .polishing:
             return "DockIconTranscribing"
         }
     }
@@ -65,6 +66,11 @@ struct FloatingSapoIcon: View {
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                 pulseScale = 1.08
             }
+        case .polishing:
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                pulseScale = 1.06
+                floatOffset = -2
+            }
         case .completed:
             withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) {
                 pulseScale = 1.15
@@ -93,6 +99,10 @@ struct FloatingSapoIcon: View {
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .transcribing, size: 44)
             Text("Transcribing").font(.caption2).foregroundColor(.secondary)
+        }
+        VStack(spacing: 6) {
+            FloatingSapoIcon(state: .polishing, size: 44)
+            Text("AI").font(.caption2).foregroundColor(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .completed, size: 44)

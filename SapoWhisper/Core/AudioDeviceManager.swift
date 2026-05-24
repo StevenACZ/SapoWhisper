@@ -252,7 +252,6 @@ class AudioDeviceManager: ObservableObject {
         guard changed else { return }
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
-        print("🎙️ [audio route] default input -> \(deviceName)")
         SapoLog.audioRoute.info("Default input changed to \(deviceName, privacy: .public)")
         notifyRouteChange()
     }
@@ -271,7 +270,6 @@ class AudioDeviceManager: ObservableObject {
         guard changed else { return }
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
-        print("🔊 [audio route] default output -> \(deviceName)")
         SapoLog.audioRoute.info("Default output changed to \(deviceName, privacy: .public)")
         notifyRouteChange()
     }
@@ -455,7 +453,9 @@ class AudioDeviceManager: ObservableObject {
             &propertyAddress, 0, nil, &dataSize
         )
         guard sizeStatus == noErr else {
-            print("❌ Error obteniendo tamaño de dispositivos: \(sizeStatus)")
+            SapoLog.audioRoute.error(
+                "Device list size query failed status=\(sizeStatus, privacy: .public)"
+            )
             return nil
         }
 
@@ -466,7 +466,9 @@ class AudioDeviceManager: ObservableObject {
             &propertyAddress, 0, nil, &dataSize, &deviceIDs
         )
         guard status == noErr else {
-            print("❌ Error obteniendo dispositivos: \(status)")
+            SapoLog.audioRoute.error(
+                "Device list query failed status=\(status, privacy: .public)"
+            )
             return nil
         }
 

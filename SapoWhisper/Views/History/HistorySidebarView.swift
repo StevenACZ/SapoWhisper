@@ -167,6 +167,8 @@ private struct EngineFilterChip: View {
             return .primary
         case .deepgram:
             return .blue
+        case .gemini:
+            return .cyan
         case .google:
             return .orange
         case .whisper:
@@ -182,6 +184,8 @@ private struct EngineFilterChip: View {
             return .accentColor
         case .deepgram:
             return .blue
+        case .gemini:
+            return .cyan
         case .google:
             return .orange
         case .whisper:

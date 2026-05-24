@@ -4,11 +4,15 @@
 //
 //
 
+import Foundation
 import ServiceManagement
 import SwiftUI
+import os
 
-/// Tab de configuracion general con Form nativo (.grouped)
+/// Tab de configuracion general con layout de 2 columnas usando SettingsCard
 struct GeneralSettingsTab: View {
+    let viewModel: SapoWhisperViewModel
+
     @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "es"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
@@ -46,19 +50,28 @@ struct GeneralSettingsTab: View {
     }
 
     var body: some View {
-        Form {
-            microphoneSection
-            languageSection
-            soundSection
-            autoDuckingSection
-            behaviorSection
-            permissionsSection
+        ScrollView {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(spacing: 12) {
+                    microphoneCard
+                    languageCard
+                    behaviorCard
+                    transferCard
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+
+                VStack(spacing: 12) {
+                    autoDuckingCard
+                    soundCard
+                    permissionsCard
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .padding(16)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
         .tint(Constants.Colors.sapoGreen)
         .onAppear {
-            audioDeviceManager.refreshDevices()
+            refreshAudioDevicesForAppearance()
             enforceFluxLanguageLock()
         }
         .onChange(of: selectedEngine) { _, _ in
@@ -69,22 +82,29 @@ struct GeneralSettingsTab: View {
         }
     }
 
-    // MARK: - Microphone
+    // MARK: - Microphone Card
 
-    private var microphoneSection: some View {
-        Section {
-            Picker("settings.microphone_desc".localized, selection: $selectedMicrophone) {
-                ForEach(audioDeviceManager.availableDevices) { device in
-                    Text(device.name).tag(device.uid)
+    private var microphoneCard: some View {
+        SettingsCard(icon: "mic.fill", title: "settings.microphone".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("settings.microphone_desc".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker("", selection: $selectedMicrophone) {
+                        ForEach(audioDeviceManager.availableDevices) { device in
+                            Text(device.name).tag(device.uid)
+                        }
+                    }
+                    .labelsHidden()
+                    .onChange(of: selectedMicrophone) { _, newUID in
+                        syncSystemDefaultInput(uid: newUID)
+                    }
                 }
-            }
-            .onChange(of: selectedMicrophone) { _, newUID in
-                syncSystemDefaultInput(uid: newUID)
-            }
 
-            AudioLevelMeterView(deviceUID: selectedMicrophone)
-        } header: {
-            Label("settings.microphone".localized, systemImage: "mic.fill")
+                AudioLevelMeterView(deviceUID: selectedMicrophone)
+            }
         }
     }
 
@@ -93,133 +113,173 @@ struct GeneralSettingsTab: View {
         preferredMicrophoneCoordinator.applyUserSelection(uid: uid)
     }
 
-    // MARK: - Language (combined)
+    private func refreshAudioDevicesForAppearance() {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        SapoLog.settings.info("General settings scheduled audio device refresh")
 
-    private var languageSection: some View {
-        Section {
-            // Input language
-            VStack(alignment: .leading, spacing: 8) {
-                Text("settings.input_language".localized)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        DispatchQueue.global(qos: .userInitiated).async {
+            AudioDeviceManager.shared.refreshDevices()
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            SapoLog.settings.info(
+                "General settings audio devices refreshed elapsed=\(elapsed, privacy: .public)ms"
+            )
+            PerformanceDiagnostics.logRuntimeSnapshot(
+                reason: "settings-audio-devices-refreshed",
+                context: "elapsedMs=\(elapsed)"
+            )
+        }
+    }
 
-                HStack(spacing: 8) {
-                    LanguageButton(name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: inputLanguageBinding)
-                    LanguageButton(name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: inputLanguageBinding)
-                    LanguageButton(name: "lang.auto".localized, flag: "🌐", languageCode: "auto", selectedLanguage: inputLanguageBinding)
-                }
-                .disabled(isInputLanguageLocked)
-                .opacity(isInputLanguageLocked ? 0.65 : 1)
+    // MARK: - Language Card
 
-                if isInputLanguageLocked {
-                    Label("settings.flux_language_locked".localized, systemImage: "lock.fill")
+    private var languageCard: some View {
+        SettingsCard(icon: "globe", title: "settings.language_header".localized) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("settings.input_language".localized)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        LanguageButton(
+                            name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: inputLanguageBinding)
+                        LanguageButton(
+                            name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: inputLanguageBinding)
+                        LanguageButton(name: "lang.auto".localized, flag: "🌐", languageCode: "auto", selectedLanguage: inputLanguageBinding)
+                    }
+                    .disabled(isInputLanguageLocked)
+                    .opacity(isInputLanguageLocked ? 0.65 : 1)
+
+                    if isInputLanguageLocked {
+                        Label("settings.flux_language_locked".localized, systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("config.app_language".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        LanguageButton(name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: appBinding)
+                        LanguageButton(name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: appBinding)
+                    }
                 }
             }
-
-            // App language
-            VStack(alignment: .leading, spacing: 8) {
-                Text("config.app_language".localized)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    LanguageButton(name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: appBinding)
-                    LanguageButton(name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: appBinding)
-                }
-            }
-        } header: {
-            Label("settings.language_header".localized, systemImage: "globe")
         }
     }
 
-    // MARK: - Sound
+    // MARK: - Sound Card
 
-    private var soundSection: some View {
-        Section {
-            Toggle("settings.play_sounds".localized, isOn: $playSound)
+    private var soundCard: some View {
+        SettingsCard(icon: "speaker.wave.2.fill", title: "settings.sounds".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("settings.play_sounds".localized, isOn: $playSound)
+                    .toggleStyle(.switch)
 
-            if playSound {
-                Slider(value: $soundVolume, in: 0.05...1.0, step: 0.05) {
-                    Text("settings.sound_volume".localized)
-                } minimumValueLabel: {
-                    Text("5%")
-                } maximumValueLabel: {
-                    Text("\(Int(soundVolume * 100))%")
+                if playSound {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("settings.sound_volume".localized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(Int(soundVolume * 100))%")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Constants.Colors.sapoGreen)
+                                .monospacedDigit()
+                        }
+
+                        Slider(value: $soundVolume, in: 0.05...1.0, step: 0.05)
+                            .tint(Constants.Colors.sapoGreen)
+                    }
+
+                    Button(action: {
+                        SoundManager.shared.play(.success)
+                    }) {
+                        Label("settings.test_sound".localized, systemImage: "play.circle.fill")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Constants.Colors.sapoGreen)
                 }
-                .tint(Constants.Colors.sapoGreen)
 
-                Button(action: {
-                    SoundManager.shared.play(.success)
-                }) {
-                    Label("settings.test_sound".localized, systemImage: "play.circle.fill")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Constants.Colors.sapoGreen)
+                Text("settings.play_sounds_desc".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-        } header: {
-            Label("settings.sounds".localized, systemImage: "speaker.wave.2.fill")
-        } footer: {
-            Text("settings.play_sounds_desc".localized)
         }
     }
 
-    // MARK: - Auto-Ducking
+    // MARK: - Auto-Ducking Card
 
-    private var autoDuckingSection: some View {
-        Section {
-            Toggle("settings.auto_ducking".localized, isOn: $autoDuckingEnabled)
+    private var autoDuckingCard: some View {
+        SettingsCard(icon: "speaker.minus.fill", title: "settings.auto_ducking_header".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("settings.auto_ducking".localized, isOn: $autoDuckingEnabled)
+                    .toggleStyle(.switch)
 
-            if autoDuckingEnabled {
-                Slider(value: $autoDuckingAmount, in: 0.1...1.0, step: 0.05) {
-                    Text("settings.ducking_amount".localized)
-                } minimumValueLabel: {
-                    Text("10%")
-                } maximumValueLabel: {
-                    Text("\(Int(autoDuckingAmount * 100))%")
+                if autoDuckingEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("settings.ducking_amount".localized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(Int(autoDuckingAmount * 100))%")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Constants.Colors.sapoGreen)
+                                .monospacedDigit()
+                        }
+
+                        Slider(value: $autoDuckingAmount, in: 0.1...1.0, step: 0.05)
+                            .tint(Constants.Colors.sapoGreen)
+                    }
                 }
-                .tint(Constants.Colors.sapoGreen)
+
+                Text("settings.auto_ducking_desc".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-        } header: {
-            Label("settings.auto_ducking_header".localized, systemImage: "speaker.minus.fill")
-        } footer: {
-            Text("settings.auto_ducking_desc".localized)
         }
     }
 
-    // MARK: - Behavior
+    // MARK: - Behavior Card
 
-    private var behaviorSection: some View {
-        Section {
-            Toggle("settings.auto_paste".localized, isOn: $autoPaste)
+    private var behaviorCard: some View {
+        SettingsCard(icon: "gearshape", title: "settings.behavior".localized) {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("settings.auto_paste".localized, isOn: $autoPaste)
+                    .toggleStyle(.switch)
 
-            Toggle("settings.launch_at_login".localized, isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, newValue in
-                    setLaunchAtLogin(enabled: newValue)
-                }
-        } header: {
-            Label("settings.behavior".localized, systemImage: "gearshape")
-        } footer: {
-            Text("settings.auto_paste_desc".localized)
+                Toggle("settings.launch_at_login".localized, isOn: $launchAtLogin)
+                    .toggleStyle(.switch)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        setLaunchAtLogin(enabled: newValue)
+                    }
+
+                Text("settings.auto_paste_desc".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
-    // MARK: - Permissions
+    // MARK: - Transfer Card
 
-    private var permissionsSection: some View {
-        Section {
-            ForEach(AppPermission.allCases) { permission in
-                PermissionStatusRow(permission: permission)
-            }
+    private var transferCard: some View {
+        SettingsTransferCard(viewModel: viewModel)
+    }
 
-            Button("permissions.review".localized) {
-                PermissionRequirementsWindowController.shared.showWindow(force: true)
-            }
-        } header: {
-            Label("settings.permissions".localized, systemImage: "hand.raised.fill")
-        } footer: {
-            Text("settings.permissions_guided_footer".localized)
+    // MARK: - Permissions Card
+
+    private var permissionsCard: some View {
+        SettingsCard(icon: "hand.raised.fill", title: "settings.permissions".localized) {
+            SettingsPermissionsSection()
         }
     }
 
@@ -247,6 +307,6 @@ struct GeneralSettingsTab: View {
 }
 
 #Preview("General Settings") {
-    GeneralSettingsTab()
-        .frame(width: 480, height: 600)
+    GeneralSettingsTab(viewModel: SapoWhisperViewModel())
+        .frame(width: 780, height: 560)
 }

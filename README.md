@@ -1,39 +1,43 @@
-# SapoWhisper
+# 🐸 SapoWhisper
 
-SapoWhisper is a macOS menu bar app that turns speech into text from a global shortcut.
-Press `Option + Space`, speak, stop, and the transcript is pasted into the frontmost app.
+SapoWhisper is a small macOS menu bar app for fast speech-to-text.
+Press `Option + Space`, speak, press it again, and the transcript is pasted into the app you were using.
 
-## Requirements
+## ✨ Highlights
+
+- ⚡ Global hotkey recording with a compact floating overlay.
+- 📋 Auto-paste via clipboard + `Cmd+V`; no live typing while you speak.
+- 🧠 Local and cloud transcription engines.
+- 🗂️ Searchable history with saved audio, replay, download, pinning, and re-transcription.
+- 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
+- 🪄 Optional AI polish with Gemini after transcription.
+- 🔐 Guided setup for Microphone, Speech Recognition, and Accessibility permissions.
+
+## 🎧 Transcription Engines
+
+| Engine | Mode | Best for |
+|---|---|---|
+| Apple Speech | Online | Native macOS fallback. |
+| WhisperKit | Local | Private offline transcription. |
+| Google Cloud STT | Batch | Google Cloud / Chirp workflows. |
+| Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
+| Deepgram Flux Live | Realtime | Low-latency streaming with WAV backup. |
+| Gemini Audio | Batch | Gemini-native audio transcription. |
+| ElevenLabs Scribe v2 | Batch | Accurate Scribe transcription. |
+| ElevenLabs Scribe Realtime v2 | Realtime | Low-latency Scribe with committed-text buffering. |
+
+Cloud credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+
+## 🧰 Requirements
 
 - macOS 14.0 or later
 - Apple Silicon Mac (`arm64`, M1 and newer)
 - Xcode with command line tools
 - Microphone permission
 - Accessibility permission for auto-paste
+- Speech Recognition permission when using Apple Speech
 
-## Features
-
-- Global hotkey recording with a compact floating overlay.
-- Auto-paste into the current app.
-- Local transcription with WhisperKit.
-- Online transcription with Apple Speech, Google Cloud STT, Deepgram Nova-3, and Deepgram Flux Live.
-- Searchable transcription history with saved audio, replay, download, pinning, and re-transcription.
-- Guided permission setup for Microphone, Speech Recognition, and Accessibility.
-- Preferred microphone sync, route-change resilience, and optional auto-ducking while recording.
-
-## Transcription Engines
-
-| Engine | Mode | Notes |
-|---|---|---|
-| Apple Speech | Online | No app-specific setup. |
-| WhisperKit | Local | Private offline transcription; models download in-app. |
-| Google Cloud | Online | Supports Chirp 3 via ADC and API-key fallback. |
-| Deepgram Nova-3 | Online | High-accuracy batch transcription. |
-| Deepgram Flux Live | Online | Near real-time streaming with local WAV history. |
-
-Cloud API keys and Google credentials are stored locally on the user's Mac. Do not commit credentials, exported recordings, logs, DMGs, or local signing files.
-
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 git clone <repo-url>
@@ -44,21 +48,21 @@ make ci-check
 
 Open `SapoWhisper.xcodeproj` in Xcode and run the `SapoWhisper` scheme.
 
-The tracked project defaults to local ad-hoc signing (`Sign to Run Locally`) so contributors can build without the maintainer's Apple Developer Team ID. Maintainers should configure Developer ID or Apple Development signing locally when creating release artifacts.
+The tracked project defaults to local signing (`Sign to Run Locally`) so contributors can build without the maintainer's Apple Developer Team ID.
 
-## Daily Workflow
+## 🛠️ Developer Workflow
 
 ```bash
 make format
 make lint
-make build
+make ci-check
 ```
 
-- `make format` formats changed Swift files with Xcode's bundled `swift-format`.
-- `make lint` checks changed Swift files without editing them.
-- `make ci-check` runs `lint + Debug build`.
-- `make release-check` runs `lint + Release build + size check`.
-- `make format-all` and `make lint-all` are explicit full-repo passes; use them only for a planned formatting migration.
+- `make format`: format changed Swift files with Xcode's bundled `swift-format`.
+- `make lint`: lint changed Swift files without editing them.
+- `make ci-check`: lint + Debug build.
+- `make release-check`: lint + Release build + bundle size audit.
+- `make format-all` / `make lint-all`: full-repo passes for planned formatting work.
 
 Optional hooks:
 
@@ -66,46 +70,51 @@ Optional hooks:
 make hooks-install
 ```
 
-## Release Size
+## 📦 Release Builds
 
-Release builds target Apple Silicon only. Measure a built app with:
+Release builds target Apple Silicon only.
 
 ```bash
+make release-check
+
 scripts/measure_release_bundle.sh \
   build/audit-release/Build/Products/Release/SapoWhisper.app
 ```
 
-Current size baseline after the arm64 release cleanup:
+Current arm64 cleanup baseline:
 
-- Release `.app`: 29,624 KB -> 20,624 KB (`-30.38%`)
-- Main executable: 17,708 KB -> 8,712 KB (`-50.80%`)
-- Local compressed test DMG: 13 MB
+- `.app`: 29,624 KB -> 20,624 KB (`-30.38%`)
+- executable: 17,708 KB -> 8,712 KB (`-50.80%`)
+- local compressed test DMG: about 13-14 MB
 
-## Public Repo Safety
+Local test DMGs are usually ad-hoc signed with hardened runtime. Do not present them as notarized unless notarization was explicitly verified.
 
-Tracked and expected to be public:
+## 🧪 Tests
 
-- Source code, assets needed by the app, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, formatting config, scripts, README, changelog, contributing notes, and license.
+The `SapoWhisper` scheme currently has no configured test action.
+Use `make ci-check` as the main local gate and `make release-check` before packaging.
 
-Ignored and intentionally private/local:
+## 🧼 Public Repo Safety
 
-- `AGENTS.md`, `CLAUDE.md`, `DMG/`, `docs/`, `.codex/`, `xcuserdata/`, build products, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
+Tracked and public-safe:
 
-Before opening a PR, run:
+- Source code, app assets, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, changelog, contributing notes, security notes, and license.
+
+Ignored and local/private:
+
+- `CLAUDE.md`, `DMG/`, `docs/`, `.agents/`, `.claude/`, `.codex/`, `skills-lock.json`, `xcuserdata/`, `build/`, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
+
+Before opening a PR:
 
 ```bash
 make ci-check
 git diff --check
 ```
 
-## Tests
-
-The `SapoWhisper` scheme currently has no configured test action. Use `make ci-check` as the current local gate.
-
-## Contributing
+## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## 📄 License
 
 MIT

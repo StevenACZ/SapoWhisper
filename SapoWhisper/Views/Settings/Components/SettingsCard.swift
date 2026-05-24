@@ -20,15 +20,29 @@ struct SettingsCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: icon)
-                .font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Constants.Colors.sapoGreen)
+                    .frame(width: 18, alignment: .leading)
+
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
 
             content()
         }
-        .padding()
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(Constants.Sizes.cornerRadius)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 }
 
@@ -40,18 +54,32 @@ struct InfoSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon)
-                .font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Constants.Colors.sapoGreen)
+                    .frame(width: 18, alignment: .leading)
+
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
 
             Text(content)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding()
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(Constants.Sizes.cornerRadius)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 }
 

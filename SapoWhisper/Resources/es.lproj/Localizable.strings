@@ -4,6 +4,7 @@
 "made_by" = "Creado con cuidado para macOS";
 "about.open_source" = "Proyecto open source listo para compartirse publicamente.";
 "close" = "Cerrar";
+"cancel" = "Cancelar";
 "quit" = "Salir de SapoWhisper";
 "about" = "Acerca de";
 
@@ -11,6 +12,7 @@
 "menu.ready" = "Listo para grabar";
 "menu.recording" = "Grabando... %@s";
 "menu.transcribing" = "Transcribiendo...";
+"menu.ai_polishing" = "Mejorando con IA...";
 "menu.no_model" = "Configurar";
 "menu.start_recording" = "Iniciar Grabación";
 "menu.stop_recording" = "Detener Grabación";
@@ -71,9 +73,16 @@
 "history.pause" = "Pausar";
 "history.filter_all" = "Todos";
 "history.filter_deepgram" = "Deepgram";
+"history.filter_gemini" = "Gemini";
 "history.filter_google" = "Google";
 "history.filter_whisper" = "Whisper";
 "history.filter_apple" = "Apple";
+"history.final_text" = "Texto final";
+"history.original_text" = "Texto original";
+"history.ai_polish" = "Mejora IA";
+"history.ai_polish_action" = "Mejorar con IA";
+"history.ai_polishing" = "Mejorando...";
+"history.ai_polish_missing_text" = "No hay texto disponible para mejorar con IA.";
 
 "common.cancel" = "Cancelar";
 "common.ok" = "OK";
@@ -124,7 +133,7 @@
 "info.how_to_title" = "¿Cómo funciona?";
 "info.how_to_body" = "1. Presiona el atajo de teclado para iniciar\n2. Habla claramente al micrófono\n3. Presiona el atajo otra vez para detener\n4. El texto se copia automáticamente\n5. Con \"Auto-pegar\" activado, se pega donde tengas el cursor";
 "info.privacy_title" = "Privacidad";
-"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Google Cloud Speech-to-Text. Usa el modelo Chirp 3 (V2) para maxima precision. Requiere cuenta de Google Cloud.";
+"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nApple (Online): El audio se procesa en los servidores de Apple. Tu voz no se almacena permanentemente.\n\nGoogle Cloud: El audio se envia a Speech-to-Text con Chirp 3 para maxima precision. Requiere cuenta Google Cloud.\n\nDeepgram: Usa Nova-3 o Flux Live para transcripcion en la nube. Requiere API key.\n\nGemini Audio: Envia el WAV guardado directo a Gemini en Vertex AI para transcripcion nativa de audio.\n\nMejora por IA: Opcional. Usa Gemini en Vertex AI para ordenar, corregir y mejorar legibilidad sin inventar detalles.";
 "info.permissions_title" = "Permisos necesarios";
 "info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Reconocimiento de voz: Para transcribir el audio\n• Accesibilidad: Para el atajo de teclado global";
 
@@ -140,7 +149,7 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Descarga un modelo primero";
 "status.recording_generic" = "Grabando...";
-"config.subtitle_info" = "Speech-to-Text con WhisperKit, Apple Speech y Google Cloud";
+"config.subtitle_info" = "Speech-to-Text con WhisperKit, Apple, Google Cloud, Deepgram y Mejora por IA";
 "app.description" = "Speech-to-Text local y en la nube";
 "config.coming_soon" = "Próximamente";
 "config.whisper_coming_soon_desc" = "En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.";
@@ -168,6 +177,63 @@
 "config.service_account_detect" = "Detectar";
 "config.api_key_fallback" = "API Key (alternativa)";
 
+/* AI Polish */
+"ai.google_ai.title" = "Google Cloud y Mejora por IA";
+"ai.google_credentials.title" = "Credenciales de Google Cloud";
+"ai.polish.title" = "Mejora por IA";
+"ai.polish.enable" = "Mejorar texto con IA";
+"ai.polish.enable_subtitle" = "Refina dictados largos con Gemini.";
+"ai.polish.enable_active" = "Activo — Gemini refina dictados largos.";
+"ai.polish.enable_active_after" = "Activo — se aplica despues de %@ de hablar.";
+"ai.polish.enable_active_always" = "Activo — se aplica a cada transcript elegible.";
+"ai.polish.mode" = "Modo";
+"ai.polish.mode_desc" = "Usa %@ para ordenar y limpiar el texto antes de copiarlo.";
+"ai.polish.output_language" = "Idioma de salida";
+"ai.polish.output_language_desc" = "Genera el texto en %@.";
+"ai.polish.minimum_duration" = "Activar desde";
+"ai.polish.minimum_duration.always" = "Siempre";
+"ai.polish.minimum_duration.20" = "20 segundos";
+"ai.polish.minimum_duration.30" = "30 segundos";
+"ai.polish.minimum_duration_desc.always" = "Corre en cualquier transcript que no sea trivialmente corto.";
+"ai.polish.minimum_duration_desc.20" = "Salta la mejora en grabaciones menores de 20 segundos.";
+"ai.polish.minimum_duration_desc.30" = "Salta la mejora en grabaciones menores de 30 segundos.";
+"ai.polish.desc" = "Usa Gemini 3.1 Flash-Lite en Vertex AI para corregir errores probables, preservar la intención y mejorar legibilidad sin forzar vocabulario no relacionado.";
+"ai.polish.vertex_info_title" = "Gemini en Vertex AI";
+"ai.polish.requires_google" = "Requiere Google Cloud conectado.";
+"ai.google_connected" = "Google Cloud conectado";
+"ai.google_missing" = "Google Cloud no conectado";
+"ai.google_connected_desc" = "Estas credenciales activan Chirp 3 y tambien habilitan Gemini en Vertex AI.";
+"ai.google_missing_desc" = "Conecta Google Cloud para usar Chirp 3 y activar Mejora por IA.";
+"ai.google_connect" = "Conectar Google Cloud";
+"ai.google_setup_intro" = "SapoWhisper usa las credenciales locales de Google Cloud para Chirp 3 y Vertex AI. Haz estos pasos una sola vez:";
+"ai.google_setup_desc" = "Para conectar: instala gcloud, ejecuta 'gcloud auth application-default login' y luego presiona Detectar. Tambien puedes importar el JSON de credenciales.";
+"ai.google_step1_title" = "Instala Google Cloud CLI";
+"ai.google_step1_detail" = "Si ya tienes gcloud instalado, puedes saltar este paso.";
+"ai.google_step2_title" = "Inicia sesion en Google";
+"ai.google_step2_detail" = "Este comando abre el navegador y guarda credenciales ADC locales para Vertex AI.";
+"ai.google_step3_title" = "Vuelve a SapoWhisper";
+"ai.google_step3_detail" = "Presiona Detectar login de gcloud. Si usas un archivo de credenciales, recien ahi importa el JSON.";
+"ai.google_detect_adc" = "Detectar login de gcloud";
+"ai.google_import_json" = "Importar JSON de credenciales";
+"ai.google_change_json" = "Cambiar JSON";
+"ai.google_json_hint" = "Importar JSON no inicia sesion en Google. Usalo solo si ya tienes un archivo de credenciales de Google Cloud.";
+"ai.google_copy_command" = "Copiar comando";
+"ai.google_import_panel_desc" = "Selecciona un JSON de credenciales de Google Cloud. Para login normal, cancela y usa gcloud auth application-default login.";
+"ai.google_required" = "Conecta Google Cloud para activar Mejora por IA.";
+"ai.google_not_detected" = "No se detectaron credenciales ADC. Ejecuta gcloud auth application-default login o importa el JSON.";
+"ai.mode.automatic" = "Automático";
+"ai.mode.ai" = "Modo IA";
+"ai.mode.work" = "Trabajo";
+"ai.mode.translate_english" = "Traducir a inglés";
+"ai.output_language.same" = "Mismo idioma del audio";
+"ai.output_language.spanish" = "Español";
+"ai.output_language.english" = "English";
+"ai.status.none" = "No aplicada";
+"ai.status.applied" = "Aplicada";
+"ai.status.skipped_short" = "Saltada por texto corto";
+"ai.status.skipped_duration" = "Saltada por grabacion corta";
+"ai.status.failed" = "Falló";
+
 /* Badges & Labels */
 "badge.recommended" = "Recomendado";
 "badge.balance" = "Balance";
@@ -183,11 +249,21 @@
 /* Settings Tabs */
 "tab.general" = "General";
 "tab.engine" = "Motor";
+"tab.vocabulary" = "Vocabulario";
+"tab.vocabulary_short" = "Vocab.";
+"tab.prompts" = "Prompts";
+"tab.prompts_short" = "Prompts";
 "tab.hotkey" = "Atajo";
 "tab.about" = "Info";
 
 /* Hotkey Settings */
 "settings.presets_desc" = "Selecciona un atajo predefinido o personaliza el tuyo";
+"settings.hotkey_activation_mode" = "Modo de activación";
+"settings.hotkey_mode_combination" = "Combinación";
+"settings.hotkey_mode_double_modifier" = "Doble pulsación";
+"settings.hotkey_double_modifier_desc" = "Presiona el mismo modificador dos veces rápido.";
+"settings.hotkey_presets_combinations" = "Combinaciones";
+"settings.hotkey_presets_double_tap" = "Doble pulsación";
 
 /* Microphone Level Meter */
 
@@ -246,6 +322,10 @@
 "permissions.speech.denied_error" = "Permisos de reconocimiento de voz denegados";
 "settings.permissions_guided_footer" = "Puedes abrir el onboarding guiado para cada permiso y ver el estado en vivo mientras vuelves desde Ajustes del Sistema.";
 "settings.permissions_guided_desc" = "Accesibilidad sigue siendo clave para auto-pegar y para un flujo cómodo desde cualquier app. Si quieres ver todos los permisos juntos, abre el onboarding guiado.";
+"settings.permissions_all_active" = "Todos los permisos activos";
+"settings.permissions_all_active_desc" = "Micrófono, reconocimiento de voz y accesibilidad listos.";
+"settings.permissions_all_active_badge" = "%d activos";
+"settings.permissions_all_active_footer" = "Abre el detalle solo si quieres revisar cada permiso o reabrir el onboarding guiado.";
 "settings.test_microphone" = "Probar micrófono";
 "settings.gain" = "Ganancia";
 "settings.listening" = "Escuchando...";
@@ -259,6 +339,7 @@
 "overlay.recording" = "Grabando...";
 "overlay.paused" = "En pausa";
 "overlay.transcribing" = "Transcribiendo...";
+"overlay.ai_polishing" = "Mejorando con IA...";
 "overlay.completed" = "¡Listo!";
 "overlay.copied" = "Copiado";
 "overlay.device_ready" = "Listo para grabar";
@@ -273,6 +354,7 @@
 
 /* Deepgram Engine */
 "engine.deepgram.description" = "Deepgram Nova-3. Alta precision, requiere internet.";
+"engine.gemini_audio.description" = "Audio nativo de Gemini a texto en Vertex AI. Requiere Google Cloud.";
 "config.deepgram_mode" = "Modo de transcripcion";
 "deepgram.mode_nova" = "Nova-3";
 "deepgram.mode_nova_desc" = "Modo clasico por lote. Mantiene tu idioma preferido.";
@@ -284,24 +366,123 @@
 "config.deepgram_key_configured" = "API key configurada";
 "settings.flux_language_locked" = "Flux Live usa idioma Auto.";
 
+/* ElevenLabs Engine */
+"engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Maxima precision, requiere internet y una API key.";
+"config.elevenlabs_mode" = "Modo de transcripcion";
+"elevenlabs.mode_batch" = "Scribe v2";
+"elevenlabs.mode_batch_desc" = "Modo clasico por lote. Maxima precision al terminar de grabar.";
+"elevenlabs.mode_realtime" = "Realtime v2";
+"elevenlabs.mode_realtime_desc" = "Streaming de baja latencia. Pega solo al terminar de grabar.";
+"config.elevenlabs_key_placeholder" = "Ingresa tu API key de ElevenLabs...";
+"config.elevenlabs_key_desc" = "Crea tu API key en elevenlabs.io > API Keys.\nSe guarda localmente.";
+"config.elevenlabs_key_missing" = "API key no configurada";
+"config.elevenlabs_key_configured" = "API key configurada";
+
+/* Gemini Audio Engine */
+"gemini.audio.title" = "Gemini Audio";
+"gemini.audio.model" = "Modelo de audio";
+"gemini.audio.requires_google" = "Requiere credenciales de Google Cloud.";
+"gemini.audio.cost_title" = "Aprox. 4 min: %@";
+"gemini.audio.cost_desc" = "Estimacion con audio input mas un transcript corto. El cobro real viene del uso de tokens en Vertex.";
+"gemini.audio.elevenlabs_note" = "ElevenLabs no esta incluido en esta version; este motor solo compara modelos de audio Gemini.";
+"gemini.audio.model_31_pro_desc" = "Calidad premium para audio dificil y dictado tecnico.";
+"gemini.audio.model_3_flash_desc" = "Opcion Flash mas costosa para pruebas rapidas de alta calidad.";
+"gemini.audio.model_25_flash_desc" = "Baseline Flash estable para comparar.";
+"gemini.audio.model_31_lite_desc" = "Default recomendado: bajo costo con buen entendimiento de audio.";
+"gemini.audio.model_25_lite_desc" = "Opcion Flash-Lite legacy mas barata para experimentos.";
+
 /* Vocabulary */
 "config.vocabulary" = "Vocabulario";
 "config.keyterms" = "Palabras clave";
 "config.keyterm_placeholder" = "Ej: Claude Code";
-"config.keyterms_desc" = "Palabras que Deepgram priorizara al transcribir";
+"config.keyterms_desc" = "Palabras que los motores cloud compatibles priorizaran al transcribir";
 "config.replacements" = "Correcciones automaticas";
 "config.replace_from" = "Original";
 "config.replace_to" = "Corregir a";
 "config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
 "config.add" = "Agregar";
+"settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes usadas por Deepgram y el pulido con IA.";
+"settings.vocabulary.search" = "Buscar vocabulario o correcciones";
+"settings.vocabulary.counts" = "%d palabras · %d correcciones";
+"settings.vocabulary.empty" = "No hay resultados";
+"settings.vocabulary.export" = "Exportar";
+"settings.vocabulary.import" = "Importar";
+"settings.vocabulary.export_panel_message" = "Guarda tu vocabulario como JSON.";
+"settings.vocabulary.import_panel_message" = "Selecciona un JSON de vocabulario o configuración de SapoWhisper.";
+"settings.vocabulary.export_success" = "Vocabulario exportado.";
+"settings.vocabulary.import_success" = "Vocabulario importado.";
+
+/* Prompts & Context */
+"prompts.title" = "Prompts y contexto";
+"prompts.personal_context" = "Contexto personal";
+"prompts.personal_context_desc" = "Se aplica a todos los modos de IA para entender tu perfil, herramientas y estilo sin inventar detalles.";
+"prompts.personal_context_hint" = "Ej: soy desarrollador mobile, mezclo español con términos técnicos y trabajo con SwiftUI, KMP y Xcode.";
+"prompts.save_context" = "Guardar contexto";
+"prompts.project_prompts" = "Prompts por proyecto o destino";
+"prompts.project_prompts_desc" = "Crea modos editables para Codex, Claude Code, Slack, issues o cualquier flujo de dictado.";
+"prompts.add_prompt" = "Agregar prompt";
+"prompts.name" = "Nombre";
+"prompts.description" = "Descripción";
+"prompts.force_english" = "Forzar salida en inglés";
+"prompts.instruction_hint" = "Esta instrucción se envía a Gemini junto con el contexto personal, vocabulario y transcript crudo.";
+"prompts.save_prompt" = "Guardar";
+"prompts.delete_prompt" = "Eliminar";
+"prompts.context_saved" = "Contexto personal guardado.";
+"prompts.prompt_saved" = "Prompt guardado.";
+"prompts.prompt_deleted" = "Prompt eliminado.";
+
+/* Settings Transfer */
+"settings.transfer.title" = "Migrar configuración";
+"settings.transfer.desc" = "Exporta un JSON portable para mover preferencias, vocabulario, prompts y contexto a otra Mac. El micrófono, permisos del sistema y credenciales Google importadas como archivo no se incluyen.";
+"settings.transfer.include_api_keys" = "Incluir API keys guardadas en este Mac";
+"settings.transfer.export" = "Exportar configuración";
+"settings.transfer.import" = "Importar configuración";
+"settings.transfer.export_panel_message" = "Guarda la configuración portable de SapoWhisper.";
+"settings.transfer.import_panel_message" = "Selecciona un JSON exportado desde SapoWhisper.";
+"settings.transfer.export_success" = "Configuración exportada.";
+"settings.transfer.import_success" = "Configuración importada.";
+"settings.transfer.import_options_title" = "Qué quieres importar";
+"settings.transfer.import_options_desc" = "El archivo puede traer todo, pero solo se aplicarán las categorías seleccionadas.";
+"settings.transfer.import_selected" = "Importar seleccionado";
+"settings.transfer.section_behavior" = "Comportamiento e idioma";
+"settings.transfer.section_behavior_desc" = "Idioma de la app, idioma de transcripción y auto-pegar.";
+"settings.transfer.section_audio" = "Audio";
+"settings.transfer.section_audio_desc" = "Sonidos, volumen, ganancia y auto-ducking.";
+"settings.transfer.section_engine" = "Motor";
+"settings.transfer.section_engine_desc" = "Motor de transcripción, modelo local y modo Deepgram.";
+"settings.transfer.section_hotkey" = "Atajo";
+"settings.transfer.section_hotkey_desc" = "Tecla global para iniciar o detener grabación.";
+"settings.transfer.section_ai" = "Pulido con IA";
+"settings.transfer.section_ai_desc" = "Modo de pulido y lenguaje de salida.";
+"settings.transfer.section_vocabulary" = "Vocabulario";
+"settings.transfer.section_vocabulary_desc" = "Palabras clave y correcciones automáticas.";
+"settings.transfer.section_prompt_context" = "Prompts y contexto";
+"settings.transfer.section_prompt_context_desc" = "Contexto personal y modos de IA editables.";
+"settings.transfer.section_api_keys" = "API keys";
+"settings.transfer.section_api_keys_desc" = "Deepgram y Google API key si el archivo las contiene.";
 
 "overlay.no_speech" = "No se detecto voz";
 
 /* Errors */
-"error.deepgram_auth" = "Deepgram: API key invalida o expirada. Verifica en Settings.";
 "error.no_audio" = "No se pudo obtener el audio";
 "error.input_not_ready" = "Microfono no disponible. Reintenta o elige otro.";
 "overlay.retry" = "Reintentar";
+
+/* Transcription failures (unified, engine-agnostic) */
+"failure.generic_engine" = "El motor de transcripción";
+"failure.not_configured" = "%@ no está configurado. Agregá tu API key en Ajustes.";
+"failure.auth" = "%@: API key inválida o expirada. Revisala en Ajustes.";
+"failure.out_of_credits" = "%@: te quedaste sin créditos. Revisá tu plan o saldo.";
+"failure.rate_limited" = "%@: límite de uso alcanzado. Esperá unos segundos y reintentá.";
+"failure.plan_restricted" = "%@: tu plan no permite esta función.";
+"failure.server_error" = "%@: el servicio falló temporalmente. Reintentá.";
+"failure.network" = "Sin conexión a internet. Revisá tu red y reintentá.";
+"failure.timed_out" = "La transcripción tardó demasiado. Reintentá.";
+"failure.audio_empty" = "No se grabó audio. Revisá tu micrófono.";
+"failure.audio_corrupt" = "La grabación se dañó y no se pudo procesar.";
+"failure.recording_interrupted" = "La grabación se interrumpió (cambio de micrófono). Reintentá.";
+"failure.empty_transcription" = "No se detectó voz en el audio.";
+"failure.unknown" = "%@: ocurrió un error inesperado. Reintentá.";
 
 /* Google Cloud Warning */
 "config.google_60s_warning" = "Limitado a 60 segundos por grabacion";

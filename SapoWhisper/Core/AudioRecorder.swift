@@ -78,7 +78,6 @@ class AudioRecorder: ObservableObject {
         }
 
         guard deviceManager.getDeviceID(for: selectedDeviceUID) != nil else {
-            print("⚠️ [capture] selected input not found, falling back to system default")
             SapoLog.recording.warning("Selected input was missing during capture preparation")
             return 0
         }
@@ -91,7 +90,6 @@ class AudioRecorder: ObservableObject {
     private func logInputSettleDelayIfNeeded(_ delay: TimeInterval) {
         guard delay > 0 else { return }
         let delayMs = Int(delay * 1000)
-        print("🎙️ [capture] waiting \(String(format: "%.0f", delay * 1000))ms for input to settle")
         SapoLog.recording.info("Waiting \(delayMs, privacy: .public)ms for input route to settle")
     }
 
@@ -132,10 +130,7 @@ class AudioRecorder: ObservableObject {
 
                     let localEngine = AVAudioEngine()
                     engine = localEngine
-                    print("🎙️ [capture] setup: engine created (\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms)")
-
                     let inputNode = localEngine.inputNode
-                    print("🎙️ [capture] setup: inputNode accessed (\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms)")
 
                     let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
 
@@ -144,24 +139,25 @@ class AudioRecorder: ObservableObject {
                     let tapFormat: AVAudioFormat
                     if let hwFormat, hwFormat.sampleRate != cachedFormat.sampleRate {
                         tapFormat = hwFormat
-                        print(
-                            "🎙️ [capture] setup: format override: cached=\(Int(cachedFormat.sampleRate))Hz, "
-                                + "hw=\(Int(hwFormat.sampleRate))Hz → using hw format for tap"
+                        SapoLog.recording.info(
+                            "Recorder format override cachedHz=\(Int(cachedFormat.sampleRate), privacy: .public) hwHz=\(Int(hwFormat.sampleRate), privacy: .public)"
                         )
                     } else if let hwFormat {
                         tapFormat = hwFormat
-                        print(
-                            "🎙️ [capture] setup: format \(Int(hwFormat.sampleRate))Hz \(hwFormat.channelCount)ch (hw matches cached)"
+                        SapoLog.recording.info(
+                            "Recorder format hwHz=\(Int(hwFormat.sampleRate), privacy: .public) channels=\(hwFormat.channelCount, privacy: .public)"
                         )
                     } else {
                         tapFormat = cachedFormat
-                        print(
-                            "🎙️ [capture] setup: format \(Int(cachedFormat.sampleRate))Hz \(cachedFormat.channelCount)ch (system default)"
+                        SapoLog.recording.info(
+                            "Recorder format defaultHz=\(Int(cachedFormat.sampleRate), privacy: .public) channels=\(cachedFormat.channelCount, privacy: .public)"
                         )
                     }
 
                     guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
-                        print("❌ [capture] setup: FAILED format invalid sampleRate=\(tapFormat.sampleRate)")
+                        SapoLog.recording.error(
+                            "Recorder setup failed: invalid sampleRate=\(tapFormat.sampleRate, privacy: .public)"
+                        )
                         continuation.resume(throwing: RecordingError.invalidFormat)
                         return
                     }
@@ -215,13 +211,14 @@ class AudioRecorder: ObservableObject {
                     }
 
                     let setupMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    print("🎙️ [capture] setup: total \(setupMs)ms (off-main)")
                     SapoLog.recording.info("Recorder setup completed in \(setupMs, privacy: .public)ms")
 
                     continuation.resume(returning: (localEngine, recordingURL))
                 } catch {
                     self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingRecordingURL, deleteTemporaryFile: true)
-                    print("❌ [capture] setup: FAILED \(error)")
+                    SapoLog.recording.error(
+                        "Recorder setup failed error=\(error.localizedDescription, privacy: .public)"
+                    )
                     continuation.resume(throwing: error)
                 }
             }
@@ -280,7 +277,9 @@ class AudioRecorder: ObservableObject {
 
         let deviceName = deviceManager.getDeviceName(for: deviceID) ?? deviceUID
         if getStatus == noErr, currentDeviceID == deviceID {
-            print("🎙️ [capture] input already bound -> \(deviceName)")
+            SapoLog.recording.info(
+                "Recorder input already bound device=\(deviceName, privacy: .public)"
+            )
             return queryDeviceInputFormat(deviceID: deviceID)
         }
 
@@ -295,11 +294,13 @@ class AudioRecorder: ObservableObject {
         )
 
         guard setStatus == noErr else {
-            print("❌ [capture] failed to bind input directly -> \(deviceName) (status: \(setStatus))")
+            SapoLog.recording.error(
+                "Recorder bind failed device=\(deviceName, privacy: .public) status=\(setStatus, privacy: .public)"
+            )
             throw RecordingError.deviceSelectionFailed(setStatus)
         }
 
-        print("🎙️ [capture] bound input directly -> \(deviceName)")
+        SapoLog.recording.info("Recorder bound input device=\(deviceName, privacy: .public)")
         return queryDeviceInputFormat(deviceID: deviceID)
     }
 
@@ -316,7 +317,9 @@ class AudioRecorder: ObservableObject {
 
         let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &size, &asbd)
         guard status == noErr else {
-            print("⚠️ [capture] could not query device hw format (status: \(status))")
+            SapoLog.recording.warning(
+                "Recorder could not query device hw format status=\(status, privacy: .public)"
+            )
             return nil
         }
 
@@ -334,13 +337,9 @@ class AudioRecorder: ObservableObject {
             let elapsed = (inputBufferTime - startRecordingTime) * 1000
             let captureDeviceUID = currentCaptureDeviceUID()
             let effectiveDevice = captureDeviceUID == "default" ? "system-default" : captureDeviceUID
-            print(
-                "🎙️ [capture] first input buffer in \(String(format: "%.0f", elapsed))ms "
-                    + "(\(buffer.frameLength) frames @ \(String(format: "%.0f", buffer.format.sampleRate))Hz, input: \(effectiveDevice))"
-            )
             let elapsedMs = Int(elapsed)
             SapoLog.recording.info(
-                "First input buffer received in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public)"
+                "First input buffer in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public) sampleRate=\(Int(buffer.format.sampleRate), privacy: .public) input=\(effectiveDevice, privacy: .public)"
             )
         }
         os_unfair_lock_lock(&converterLock)
@@ -349,15 +348,14 @@ class AudioRecorder: ObservableObject {
         // Lazy converter creation from actual buffer format (avoids stale format cache after device switch)
         if converter == nil {
             let inputFmt = buffer.format
-            print(
-                "🎙️ [capture] creating converter: \(String(format: "%.0f", inputFmt.sampleRate))Hz "
-                    + "\(inputFmt.commonFormat == .pcmFormatFloat32 ? "Float32" : "Int16") → "
-                    + "\(String(format: "%.0f", outputFormat.sampleRate))Hz "
-                    + "\(outputFormat.commonFormat == .pcmFormatInt16 ? "Int16" : "Float32")"
+            SapoLog.recording.info(
+                "Recorder creating converter inHz=\(Int(inputFmt.sampleRate), privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public)"
             )
             converter = AVAudioConverter(from: inputFmt, to: outputFormat)
             if converter == nil {
-                print("❌ [capture] failed to create converter from \(inputFmt) to \(outputFormat)")
+                SapoLog.recording.error(
+                    "Recorder converter creation failed inHz=\(Int(inputFmt.sampleRate), privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public)"
+                )
             }
         }
         guard let converter = converter else { return }
@@ -391,7 +389,9 @@ class AudioRecorder: ObservableObject {
             case .inputRanDry, .endOfStream:
                 return
             case .error:
-                print("❌ [capture] audio conversion failed: \(error?.localizedDescription ?? "unknown")")
+                SapoLog.recording.error(
+                    "Recorder audio conversion failed error=\(error?.localizedDescription ?? "unknown", privacy: .public)"
+                )
                 return
             @unknown default:
                 return
@@ -412,7 +412,9 @@ class AudioRecorder: ObservableObject {
             try audioFile.write(from: convertedBuffer)
             registerWrittenFrames(convertedBuffer.frameLength)
         } catch {
-            print("❌ [capture] failed to write audio buffer: \(error)")
+            SapoLog.recording.error(
+                "Recorder audio buffer write failed error=\(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -545,14 +547,12 @@ class AudioRecorder: ObservableObject {
         lastCaptureDiagnostics = diagnostics
         if logSummary {
             if diagnostics.receivedInput {
-                print(
-                    "🎙️ [capture] recorded \(diagnostics.inputBufferCount) buffers, "
-                        + "\(diagnostics.writtenFrameCount) frames, \(diagnostics.fileSizeBytes) bytes"
+                SapoLog.recording.info(
+                    "Recorder stopped buffers=\(diagnostics.inputBufferCount, privacy: .public) frames=\(diagnostics.writtenFrameCount, privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
                 )
             } else {
-                print(
-                    "⚠️ [capture] stopped without input buffers "
-                        + "(\(diagnostics.fileSizeBytes) bytes, input: \(diagnostics.selectedDeviceUID))"
+                SapoLog.recording.warning(
+                    "Recorder stopped without input buffers bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .public)"
                 )
             }
         }
@@ -636,7 +636,9 @@ class AudioRecorder: ObservableObject {
             case .endOfStream, .inputRanDry:
                 return (chunks, frames, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
             case .error:
-                print("❌ [capture] converter flush failed: \(error?.localizedDescription ?? "unknown")")
+                SapoLog.recording.error(
+                    "Recorder converter flush failed error=\(error?.localizedDescription ?? "unknown", privacy: .public)"
+                )
                 return (chunks, frames, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
             @unknown default:
                 return (chunks, frames, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
@@ -717,8 +719,10 @@ class AudioRecorder: ObservableObject {
             selectedDeviceUID: deviceUID,
             inputBufferCount: bufferCount,
             writtenFrameCount: frameCount,
+            emittedChunkCount: 0,
             firstInputLatencyMs: firstLatency,
             lastBufferAgeMs: lastBufferAgeMs,
+            maxInputGapMs: 0,
             fileSizeBytes: fileSizeBytes
         )
     }
@@ -766,8 +770,10 @@ struct RecordingCaptureDiagnostics {
     let selectedDeviceUID: String
     let inputBufferCount: Int
     let writtenFrameCount: AVAudioFramePosition
+    let emittedChunkCount: Int
     let firstInputLatencyMs: Double?
     let lastBufferAgeMs: Double?
+    let maxInputGapMs: Double
     let fileSizeBytes: Int
 
     var receivedInput: Bool {

@@ -8,6 +8,7 @@ import SwiftUI
 /// Indicador de carga durante la transcripcion
 /// Muestra dots animados que se mueven en secuencia
 struct TranscribingIndicator: View {
+    var color: Color = .processing
 
     @State private var animatingDots: [Bool] = [false, false, false]
 
@@ -18,7 +19,7 @@ struct TranscribingIndicator: View {
         HStack(spacing: spacing) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(Color.processing)
+                    .fill(color)
                     .frame(width: dotSize, height: dotSize)
                     .scaleEffect(animatingDots[index] ? 1.3 : 0.8)
                     .opacity(animatingDots[index] ? 1.0 : 0.4)

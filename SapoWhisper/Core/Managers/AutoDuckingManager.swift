@@ -7,6 +7,7 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import os
 
 /// Gestiona el Auto-Ducking: reduce el volumen del sistema durante la grabación
 /// y lo restaura al terminar.
@@ -57,7 +58,7 @@ final class AutoDuckingManager {
         switch state {
         case .recording:
             duck()
-        case .processing:
+        case .processing, .polishing:
             // Restaurar volumen al transcribir — el mic ya no está activo,
             // y la transcripción puede tardar 3-30s. Que el usuario siga
             // escuchando su música mientras espera.
@@ -98,12 +99,12 @@ final class AutoDuckingManager {
         guard isEnabled, !isDucked else { return }
 
         guard let deviceID = getSystemDefaultOutputDevice() else {
-            print("⚠️ [auto-ducking] No se encontró dispositivo de salida")
+            SapoLog.audioRoute.warning("Auto-ducking: no output device found")
             return
         }
 
         guard let currentVolume = getDeviceVolume(deviceID: deviceID) else {
-            print("⚠️ [auto-ducking] No se pudo leer el volumen actual")
+            SapoLog.audioRoute.warning("Auto-ducking: cannot read current volume")
             return
         }
 
@@ -119,8 +120,8 @@ final class AutoDuckingManager {
 
         if setDeviceVolume(deviceID: deviceID, volume: clampedVolume) {
             isDucked = true
-            print(
-                "🔉 [auto-ducking] Volumen reducido: \(Int(currentVolume * 100))% → \(Int(clampedVolume * 100))% (duck: \(Int(duckAmount * 100))%)"
+            SapoLog.audioRoute.info(
+                "Auto-ducking applied from=\(Int(currentVolume * 100), privacy: .public)% to=\(Int(clampedVolume * 100), privacy: .public)% amount=\(Int(self.duckAmount * 100), privacy: .public)%"
             )
         }
     }
@@ -141,7 +142,9 @@ final class AutoDuckingManager {
             let tolerance: Float = 0.02  // ~2% de tolerancia
 
             if currentVolume > expectedDuckedVolume + tolerance {
-                print("🔊 [auto-ducking] Usuario cambió volumen durante grabación (\(Int(currentVolume * 100))%), respetando su elección")
+                SapoLog.audioRoute.info(
+                    "Auto-ducking respecting user volume change current=\(Int(currentVolume * 100), privacy: .public)%"
+                )
                 isDucked = false
                 originalVolume = nil
                 duckedDeviceID = nil
@@ -150,7 +153,9 @@ final class AutoDuckingManager {
         }
 
         if setDeviceVolume(deviceID: deviceID, volume: original) {
-            print("🔊 [auto-ducking] Volumen restaurado: \(Int(original * 100))%")
+            SapoLog.audioRoute.info(
+                "Auto-ducking restored volume=\(Int(original * 100), privacy: .public)%"
+            )
         }
 
         isDucked = false

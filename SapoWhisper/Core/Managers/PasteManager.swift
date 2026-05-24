@@ -6,6 +6,7 @@
 
 import AppKit
 import Carbon
+import os
 
 /// Maneja el portapapeles y auto-paste
 class PasteManager {
@@ -21,7 +22,9 @@ class PasteManager {
     /// Guarda la app activa actual
     static func savePreviousApp() {
         previousApp = NSWorkspace.shared.frontmostApplication
-        print("💾 App guardada: \(previousApp?.localizedName ?? "ninguna")")
+        SapoLog.menuBar.info(
+            "Saved previous app name=\(self.previousApp?.localizedName ?? "none", privacy: .public)"
+        )
     }
 
     /// Copia texto al portapapeles del sistema
@@ -29,7 +32,7 @@ class PasteManager {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        print("📋 Texto copiado al portapapeles: \(text.prefix(50))...")
+        SapoLog.menuBar.info("Clipboard updated chars=\(text.count, privacy: .public)")
     }
 
     /// Simula Cmd+V para pegar automáticamente
@@ -41,7 +44,9 @@ class PasteManager {
         // Primero activar la app anterior donde el usuario estaba escribiendo
         if let app = targetApp {
             app.activate(options: [])
-            print("🔄 Activando app: \(app.localizedName ?? "desconocida")")
+            SapoLog.menuBar.info(
+                "Reactivating previous app name=\(app.localizedName ?? "unknown", privacy: .public)"
+            )
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + initialActivationDelay) {
@@ -60,8 +65,8 @@ class PasteManager {
         }
 
         if isReadyToPaste || elapsed >= activationTimeout {
-            let activationDelay = elapsed * 1000
-            print("⏱️ [paste] activation wait \(String(format: "%.0f", activationDelay))ms")
+            let activationDelay = Int(elapsed * 1000)
+            SapoLog.menuBar.info("Paste activation waitMs=\(activationDelay, privacy: .public)")
             performPaste()
             return
         }
@@ -78,7 +83,7 @@ class PasteManager {
         guard let vDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
             let vUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
         else {
-            print("❌ Error creando eventos de teclado")
+            SapoLog.menuBar.error("Paste keyboard event creation failed")
             return
         }
 
@@ -90,9 +95,10 @@ class PasteManager {
         vDown.post(tap: .cghidEventTap)
         vUp.post(tap: .cghidEventTap)
 
-        print("⌨️ Auto-paste ejecutado")
-        let totalElapsed = (CFAbsoluteTimeGetCurrent() - lastPasteTriggerTime) * 1000
-        print("⏱️ [paste] total from trigger \(String(format: "%.0f", totalElapsed))ms")
+        let totalElapsed = Int((CFAbsoluteTimeGetCurrent() - lastPasteTriggerTime) * 1000)
+        SapoLog.menuBar.info(
+            "Auto-paste done totalMs=\(totalElapsed, privacy: .public)"
+        )
     }
 
     /// Copia texto y lo pega automáticamente

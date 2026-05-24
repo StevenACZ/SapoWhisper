@@ -26,6 +26,7 @@ enum Constants {
         // Estados
         static let recording = Color(red: 0.957, green: 0.263, blue: 0.212)  // #F44336
         static let processing = Color(red: 1.0, green: 0.757, blue: 0.027)  // #FFC107
+        static let aiPolish = Color(red: 0.173, green: 0.557, blue: 0.859)  // #2C8EDB
         static let error = Color(red: 1.0, green: 0.596, blue: 0.0)  // #FF9800
         static let disabled = Color(red: 0.620, green: 0.620, blue: 0.620)  // #9E9E9E
 
@@ -68,6 +69,8 @@ enum Constants {
     enum Hotkey {
         static let defaultKeyCode: UInt32 = 49  // Space
         static let defaultModifiers: UInt32 = 2048  // Option key
+        static let defaultTriggerKind = "keyCombination"
+        static let defaultDoubleTapModifier: UInt32 = 2048  // Option key
     }
 
     // MARK: - Audio Settings
@@ -84,11 +87,14 @@ enum Constants {
         static let autoPaste = "autoPaste"
         static let playSound = "playSound"
         static let soundVolume = "soundVolume"  // Volumen de 0.0 a 1.0
+        static let appLanguage = "appLanguage"
         static let language = "language"
         static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"
+        static let hotkeyTriggerKind = "hotkeyTriggerKind"
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
+        static let hotkeyDoubleTapModifier = "hotkeyDoubleTapModifier"
         static let selectedMicrophone = "selectedMicrophone"
 
         // Motor de transcripcion
@@ -97,10 +103,21 @@ enum Constants {
         static let googleCloudAPIKey = "googleCloudAPIKey"
         static let serviceAccountConfigured = "serviceAccountConfigured"
 
+        // AI polish
+        static let aiPolishEnabled = "aiPolishEnabled"
+        static let aiPolishMode = "aiPolishMode"
+        static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
+        static let aiPolishMinimumDuration = "aiPolishMinimumDuration"
+        static let geminiAudioModel = "geminiAudioModel"
+
         // Deepgram
         static let deepgramAPIKey = "deepgramAPIKey"
         static let deepgramTranscriptionMode = "deepgramTranscriptionMode"
         static let deepgramPreviousLanguage = "deepgramPreviousLanguage"
+
+        // ElevenLabs
+        static let elevenLabsAPIKey = "elevenLabsAPIKey"
+        static let elevenLabsTranscriptionMode = "elevenLabsTranscriptionMode"
 
         // Audio
         static let audioGain = "audioGain"
@@ -122,6 +139,7 @@ extension Color {
     static let sapoGreenLight = Constants.Colors.sapoGreenLight
     static let recording = Constants.Colors.recording
     static let processing = Constants.Colors.processing
+    static let aiPolish = Constants.Colors.aiPolish
     static let sapoError = Constants.Colors.error
     static let disabled = Constants.Colors.disabled
 }

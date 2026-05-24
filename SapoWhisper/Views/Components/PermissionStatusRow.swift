@@ -17,7 +17,7 @@ struct PermissionStatusRow: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(nsColor: permission.accentColor).opacity(isGranted ? 0.14 : 0.10))
+                    .fill(iconBackgroundColor)
                     .frame(width: 40, height: 40)
 
                 Image(systemName: permission.iconName)
@@ -31,15 +31,17 @@ struct PermissionStatusRow: View {
                     Text(permission.title)
                         .font(.body.weight(.semibold))
 
-                    Text(isGranted ? "permissions.status.active".localized : "permissions.status.pending".localized)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(isGranted ? Color.green.opacity(0.14) : Color.orange.opacity(0.14))
-                        )
-                        .foregroundStyle(isGranted ? .green : .orange)
+                    if !isGranted {
+                        Text("permissions.status.pending".localized)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.orange.opacity(0.14))
+                            )
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Text(permission.summary)
@@ -95,5 +97,11 @@ struct PermissionStatusRow: View {
             }
             isValidatingMicrophone = false
         }
+    }
+
+    private var iconBackgroundColor: Color {
+        isGranted
+            ? Color.green.opacity(0.12)
+            : Color(nsColor: permission.accentColor).opacity(0.10)
     }
 }
