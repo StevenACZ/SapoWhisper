@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build release size-check ci-check release-check hooks-install
+.PHONY: help tools format format-all lint lint-all build release size-check ci-check release-check notarized-dmg hooks-install
 
 .DEFAULT_GOAL := help
 
@@ -23,6 +23,7 @@ help:
 	@printf "  make size-check    Measure the Release app bundle\n"
 	@printf "  make ci-check      Fast local gate: lint + Debug build\n"
 	@printf "  make release-check Release gate: lint + Release build + size check\n"
+	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
 	@printf "  make hooks-install Install optional Lefthook git hooks\n"
 
 tools:
@@ -64,6 +65,9 @@ ci-check: lint build
 
 release-check: lint release size-check
 	@printf "release-check: passed\n"
+
+notarized-dmg:
+	@scripts/package_notarized_dmg.sh
 
 hooks-install:
 	@command -v lefthook >/dev/null || { echo "lefthook is not installed. Install it with: brew install lefthook"; exit 69; }
