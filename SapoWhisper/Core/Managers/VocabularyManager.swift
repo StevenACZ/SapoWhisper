@@ -120,8 +120,7 @@ class VocabularyManager: ObservableObject {
         replacements
             .sorted { $0.key.count > $1.key.count }
             .reduce(transcript) { current, replacement in
-                let escaped = NSRegularExpression.escapedPattern(for: replacement.key)
-                let pattern = "\\b\(escaped)\\b"
+                let pattern = Self.replacementPattern(for: replacement.key)
                 guard
                     let regex = try? NSRegularExpression(
                         pattern: pattern,
@@ -258,6 +257,29 @@ class VocabularyManager: ObservableObject {
         }
 
         return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+    }
+
+    private static func replacementPattern(for term: String) -> String {
+        guard term.contains(where: { ".-_".contains($0) }) else {
+            let escaped = NSRegularExpression.escapedPattern(for: term)
+            return "\\b\(escaped)\\b"
+        }
+
+        let body = term.map { character -> String in
+            switch character {
+            case ".":
+                return #"(?:\s*(?:\.|dot)?\s*)"#
+            case "-":
+                return #"(?:\s*(?:-|dash|hyphen)?\s*)"#
+            case "_":
+                return #"(?:\s*(?:_|underscore)?\s*)"#
+            default:
+                return NSRegularExpression.escapedPattern(for: String(character))
+            }
+        }
+        .joined()
+
+        return "(?<![A-Za-z0-9])\(body)(?![A-Za-z0-9])"
     }
 
     private static func spokenSymbolForm(for keyterm: String) -> String {

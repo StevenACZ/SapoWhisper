@@ -254,14 +254,24 @@ struct GeneralSettingsTab: View {
     private var behaviorCard: some View {
         SettingsCard(icon: "gearshape", title: "settings.behavior".localized) {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle("settings.auto_paste".localized, isOn: $autoPaste)
-                    .toggleStyle(.switch)
+                HStack(spacing: 12) {
+                    Text("settings.auto_paste".localized)
+                    Spacer()
+                    Toggle("", isOn: $autoPaste)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
-                Toggle("settings.launch_at_login".localized, isOn: $launchAtLogin)
-                    .toggleStyle(.switch)
-                    .onChange(of: launchAtLogin) { _, newValue in
-                        setLaunchAtLogin(enabled: newValue)
-                    }
+                HStack(spacing: 12) {
+                    Text("settings.launch_at_login".localized)
+                    Spacer()
+                    Toggle("", isOn: $launchAtLogin)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .onChange(of: launchAtLogin) { _, newValue in
+                            setLaunchAtLogin(enabled: newValue)
+                        }
+                }
 
                 Text("settings.auto_paste_desc".localized)
                     .font(.caption2)
