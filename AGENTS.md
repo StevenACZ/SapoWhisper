@@ -20,6 +20,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - History: SQLite via `TranscriptionHistoryManager*`; audio retention via `HistoryAudioStorage`.
 - Permissions: `PermissionService` plus guided permission windows and overlays.
 - AI polish: optional Vertex AI Gemini 3.1 Flash-Lite after any engine; keep `polishing` visually distinct from recording/transcribing.
+- Transcription language is recognition context, not translation or output forcing.
 
 ## ElevenLabs
 
@@ -31,7 +32,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Realtime failure is manual retry only; do not auto-fallback to batch.
 - Retry uses the currently selected ElevenLabs mode.
 - Keyterms: batch allows up to 1000 terms, max 50 chars and 5 words each; realtime allows up to 50 terms, max 20 chars each.
-- Language `auto` lets Scribe detect speech language; explicit languages must be forwarded to Scribe and keep the final output in the selected language.
+- Language `auto` lets Scribe detect speech language; explicit languages are Scribe `language_code` hints for the spoken audio only.
 - Keyterm payloads must prioritize saved vocabulary terms before generated variants, include replacement values as recognition hints, and sanitize hints before cloud requests.
 - Replacements remain local post-processing for both modes.
 
@@ -50,7 +51,10 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Keep streaming paths resilient to device route churn.
 - Map engine failures to `TranscriptionFailure`; do not reintroduce per-engine error enums.
 - Keep AI polish non-blocking: if Gemini fails, paste/save the raw transcript and record AI metadata.
+- Never run Gemini polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
 - Keep AI prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
+- Do not use transcription-language selection to translate text or force a final output language.
+- For Deepgram Flux, send `language_hint` only for supported Flux languages; unsupported selections should fall back to auto-detect.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.
 - Do not force-add ignored local docs, agent caches, or packaging assets (`docs/`, `.agents/`, `DMG/`) without explicit approval.
 - Ask before `git add`, `git commit`, `git push`, PR creation, merge, rebase, reset, or destructive git operations.

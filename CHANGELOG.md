@@ -15,6 +15,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - Transcription language now acts as provider recognition context only, avoiding hidden AI translation or output-language forcing.
+- ElevenLabs Scribe batch and realtime now pass explicit languages as `language_code` hints for the spoken audio without changing the transcript into another language.
 - Deepgram Flux Live now keeps the native language picker enabled and sends supported selections as `language_hint`.
 - AI polish stays fully disabled unless the user explicitly enables it, including forced/manual polish paths.
 - ElevenLabs vocabulary hints now send saved terms first, include auto-correction replacement values as recognition hints, and sanitize hints before cloud requests.
