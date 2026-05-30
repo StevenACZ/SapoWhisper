@@ -27,6 +27,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private let audioSender = DeepgramFluxAudioSender()
     private var sessionStartedAt: CFAbsoluteTime = 0
     private var stopStartedAt: CFAbsoluteTime = 0
+    private var currentLanguage = "auto"
 
     /// Brand name surfaced in user-facing failures and logs.
     private static let engineName = "Deepgram"
@@ -47,7 +48,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         bindCapture()
     }
 
-    func start(microphone: String) async throws {
+    func start(microphone: String, language: String) async throws {
         guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
             !apiKey.isEmpty
         else {
@@ -55,13 +56,14 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         }
 
         resetSessionState()
-        let task = DeepgramFluxRequestFactory.makeWebSocketTask(apiKey: apiKey)
+        currentLanguage = language
+        let task = DeepgramFluxRequestFactory.makeWebSocketTask(apiKey: apiKey, language: language)
         webSocketTask = task
         audioSender.start(task: task)
         task.resume()
         isStreaming = true
         sessionStartedAt = CFAbsoluteTimeGetCurrent()
-        SapoLog.flux.info("Flux stream opened")
+        SapoLog.flux.info("Flux stream opened language=\(language, privacy: .public)")
 
         receiveTask = Task { [weak self] in
             await self?.receiveMessages()
@@ -152,7 +154,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
-            language: "auto",
+            language: currentLanguage,
             diagnostics: captureResult.diagnostics
         )
     }
@@ -282,7 +284,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await DeepgramBatchTranscriber().transcribe(
             audioURL: captureResult.audioURL,
-            language: "auto"
+            language: currentLanguage
         )
         let cleanedTranscript = VocabularyManager.shared
             .applyingReplacements(to: transcript)
@@ -301,7 +303,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
-            language: "auto",
+            language: currentLanguage,
             diagnostics: captureResult.diagnostics
         )
     }
@@ -327,6 +329,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         isStopping = false
         sessionStartedAt = 0
         stopStartedAt = 0
+        currentLanguage = "auto"
     }
 
     private func resetPublishedState() {

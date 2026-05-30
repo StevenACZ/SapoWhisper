@@ -53,7 +53,6 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramPreviousLanguage) var deepgramPreviousLanguage: String = ""
     @AppStorage(Constants.StorageKeys.geminiAudioModel) var selectedGeminiAudioModel: String =
         GeminiAudioModel.defaultModel.rawValue
 
@@ -123,12 +122,6 @@ class SapoWhisperViewModel: ObservableObject {
 
     private var isElevenLabsRealtimeSelected: Bool {
         currentEngine == .elevenLabsScribe && currentElevenLabsMode == .scribeV2Realtime
-    }
-
-    private func outputLanguageOverride(for engine: TranscriptionEngine, language: String) -> TranscriptionLanguage? {
-        guard engine == .elevenLabsScribe else { return nil }
-        guard language != "auto" else { return nil }
-        return TranscriptionLanguageCatalog.language(for: language)
     }
 
     private var isAnyRecorderActive: Bool {
@@ -549,8 +542,6 @@ class SapoWhisperViewModel: ObservableObject {
             whisperKitTranscriber.unloadModel()
         }
 
-        applyDeepgramLanguagePolicy()
-
         checkInitialState()
 
         // Si cambia a WhisperKit y no hay modelo cargado, intentar cargarlo
@@ -576,30 +567,12 @@ class SapoWhisperViewModel: ObservableObject {
 
     func setDeepgramMode(_ mode: DeepgramTranscriptionMode) {
         selectedDeepgramMode = mode.rawValue
-        applyDeepgramLanguagePolicy()
         checkInitialState()
     }
 
     func setElevenLabsMode(_ mode: ElevenLabsTranscriptionMode) {
         selectedElevenLabsMode = mode.rawValue
         checkInitialState()
-    }
-
-    private func applyDeepgramLanguagePolicy() {
-        guard currentEngine == .deepgram else { return }
-
-        switch currentDeepgramMode {
-        case .fluxLive:
-            if selectedLanguage != "auto" {
-                deepgramPreviousLanguage = selectedLanguage
-            }
-            selectedLanguage = "auto"
-        case .nova3:
-            if selectedLanguage == "auto", !deepgramPreviousLanguage.isEmpty {
-                selectedLanguage = deepgramPreviousLanguage
-            }
-            deepgramPreviousLanguage = ""
-        }
     }
 
     // MARK: - Recording & Transcription
@@ -961,8 +934,7 @@ class SapoWhisperViewModel: ObservableObject {
                 let aiResult = await postProcessTranscript(
                     result.transcript,
                     source: "elevenlabs_realtime",
-                    duration: result.duration,
-                    outputLanguageOverride: outputLanguageOverride(for: engine, language: language)
+                    duration: result.duration
                 )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
@@ -1227,8 +1199,7 @@ class SapoWhisperViewModel: ObservableObject {
                 let aiResult = await postProcessTranscript(
                     transcription,
                     source: engine.rawValue,
-                    duration: duration,
-                    outputLanguageOverride: outputLanguageOverride(for: engine, language: language)
+                    duration: duration
                 )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
@@ -1359,8 +1330,7 @@ class SapoWhisperViewModel: ObservableObject {
                 let aiResult = await postProcessTranscript(
                     transcription,
                     source: "retry",
-                    duration: duration,
-                    outputLanguageOverride: outputLanguageOverride(for: engine, language: language)
+                    duration: duration
                 )
 
                 lastTranscription = aiResult.finalText
@@ -1416,8 +1386,7 @@ class SapoWhisperViewModel: ObservableObject {
             let aiResult = await postProcessTranscript(
                 transcription,
                 source: "history-retranscribe",
-                duration: entry.duration,
-                outputLanguageOverride: outputLanguageOverride(for: engine, language: entry.language)
+                duration: entry.duration
             )
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
@@ -1587,7 +1556,7 @@ class SapoWhisperViewModel: ObservableObject {
             }
 
             do {
-                try await self.deepgramFluxTranscriber.start(microphone: microphone)
+                try await self.deepgramFluxTranscriber.start(microphone: microphone, language: self.selectedLanguage)
                 recorderDidStart = true
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
                 SapoLog.recording.info("Flux input ready in \(readyMs, privacy: .public)ms")
@@ -1851,14 +1820,11 @@ class SapoWhisperViewModel: ObservableObject {
     private func postProcessTranscript(
         _ rawText: String,
         source: String,
-        duration: TimeInterval?,
-        outputLanguageOverride: TranscriptionLanguage? = nil
+        duration: TimeInterval?
     ) async -> TranscriptAIResult {
-        let forcePolish = outputLanguageOverride != nil
         let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(
             rawText: rawText,
-            duration: duration,
-            force: forcePolish
+            duration: duration
         )
         if willAttemptPolish {
             appState = .polishing
@@ -1875,9 +1841,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         let result = await transcriptPostProcessor.process(
             rawText: rawText,
-            duration: duration,
-            force: forcePolish,
-            outputLanguageOverride: outputLanguageOverride
+            duration: duration
         )
         logAIResult(result, source: source)
         if willAttemptPolish {

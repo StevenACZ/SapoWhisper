@@ -26,13 +26,6 @@ struct TranscriptionLanguage: Identifiable, Equatable {
         return "\(flag) \(nativeName) (\(englishName))"
     }
 
-    var outputPromptInstruction: String? {
-        guard code != "auto" else { return nil }
-
-        return """
-            Write the final text in \(englishName), using natural \(nativeName) spelling and grammar. Preserve technical terms, commands, filenames, APIs, product names, and user vocabulary exactly when they are technical identifiers.
-            """
-    }
 }
 
 enum TranscriptionLanguageCatalog {
@@ -193,6 +186,12 @@ enum TranscriptionLanguageCatalog {
 
     static func deepgramLanguageCode(for code: String) -> String {
         code == "auto" ? "multi" : (language(for: code)?.code ?? "multi")
+    }
+
+    static func deepgramFluxLanguageHint(for code: String) -> String? {
+        let supportedHints: Set<String> = ["en", "es", "fr", "de", "hi", "ru", "pt", "ja", "it", "nl"]
+        guard supportedHints.contains(code) else { return nil }
+        return code
     }
 
     static func elevenLabsLanguageCode(for code: String) -> String? {

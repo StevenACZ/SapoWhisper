@@ -14,7 +14,9 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- ElevenLabs Scribe batch and realtime now keep explicit Spanish/English/other selected-language output instead of falling back to auto/native-language output.
+- Transcription language now acts as provider recognition context only, avoiding hidden AI translation or output-language forcing.
+- Deepgram Flux Live now keeps the native language picker enabled and sends supported selections as `language_hint`.
+- AI polish stays fully disabled unless the user explicitly enables it, including forced/manual polish paths.
 - ElevenLabs vocabulary hints now send saved terms first, include auto-correction replacement values as recognition hints, and sanitize hints before cloud requests.
 
 ## [2.2.1] - 2026-05-29

@@ -15,8 +15,7 @@ final class TranscriptPostProcessor {
     func process(
         rawText: String,
         duration: TimeInterval? = nil,
-        force: Bool = false,
-        outputLanguageOverride: TranscriptionLanguage? = nil
+        force: Bool = false
     ) async -> TranscriptAIResult {
         let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
         defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
@@ -29,23 +28,18 @@ final class TranscriptPostProcessor {
 
         let defaults = UserDefaults.standard
         let enabled = defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
-        guard enabled || force else {
+        guard enabled else {
             return makeResult(rawText: rawText, finalText: trimmed, status: .none, startedAt: startedAt)
         }
 
         let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
-        var promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
+        let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
         let outputLanguageValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
         var outputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
         if promptProfile.forcesEnglish {
             outputLanguage = .english
-        }
-        if let outputLanguageOverride {
-            if promptProfile.forcesEnglish && outputLanguageOverride.code != "en" {
-                promptProfile = PromptContextManager.shared.promptProfile(for: TranscriptPolishMode.automatic.rawValue)
-            }
         }
 
         guard force || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
@@ -73,7 +67,6 @@ final class TranscriptPostProcessor {
             promptProfile: promptProfile,
             personalContext: PromptContextManager.shared.makePersonalContextBlock(),
             outputLanguage: outputLanguage,
-            outputLanguageInstructionOverride: outputLanguageOverride?.outputPromptInstruction,
             keyterms: VocabularyManager.shared.keyterms,
             replacements: VocabularyManager.shared.replacements
         )
@@ -142,7 +135,7 @@ final class TranscriptPostProcessor {
         guard !trimmed.isEmpty else { return false }
 
         let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
-        guard enabled || force else { return false }
+        guard enabled else { return false }
 
         return force || (!Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(trimmed))
     }

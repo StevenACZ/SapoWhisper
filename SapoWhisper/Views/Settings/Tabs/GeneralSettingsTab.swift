@@ -20,9 +20,6 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.soundVolume) private var soundVolume: Double = 1.0
     @AppStorage(Constants.StorageKeys.autoDuckingEnabled) private var autoDuckingEnabled = false
     @AppStorage(Constants.StorageKeys.autoDuckingAmount) private var autoDuckingAmount: Double = 0.8
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramPreviousLanguage) private var deepgramPreviousLanguage = ""
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
@@ -32,20 +29,6 @@ struct GeneralSettingsTab: View {
         Binding(
             get: { LocalizationManager.shared.language },
             set: { LocalizationManager.shared.language = $0 }
-        )
-    }
-
-    private var isInputLanguageLocked: Bool {
-        selectedEngine == TranscriptionEngine.deepgram.rawValue && selectedDeepgramMode == DeepgramTranscriptionMode.fluxLive.rawValue
-    }
-
-    private var inputLanguageBinding: Binding<String> {
-        Binding(
-            get: { isInputLanguageLocked ? "auto" : selectedLanguage },
-            set: { newValue in
-                guard !isInputLanguageLocked else { return }
-                selectedLanguage = newValue
-            }
         )
     }
 
@@ -72,13 +55,6 @@ struct GeneralSettingsTab: View {
         .tint(Constants.Colors.sapoGreen)
         .onAppear {
             refreshAudioDevicesForAppearance()
-            enforceFluxLanguageLock()
-        }
-        .onChange(of: selectedEngine) { _, _ in
-            enforceFluxLanguageLock()
-        }
-        .onChange(of: selectedDeepgramMode) { _, _ in
-            enforceFluxLanguageLock()
         }
     }
 
@@ -140,7 +116,7 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Picker("settings.input_language".localized, selection: inputLanguageBinding) {
+                    Picker("settings.input_language".localized, selection: $selectedLanguage) {
                         ForEach(TranscriptionLanguageCatalog.languages) { language in
                             Text(language.displayName).tag(language.code)
                         }
@@ -148,14 +124,6 @@ struct GeneralSettingsTab: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .disabled(isInputLanguageLocked)
-                    .opacity(isInputLanguageLocked ? 0.65 : 1)
-
-                    if isInputLanguageLocked {
-                        Label("settings.flux_language_locked".localized, systemImage: "lock.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
 
                 Divider()
@@ -318,13 +286,6 @@ struct GeneralSettingsTab: View {
         }
     }
 
-    private func enforceFluxLanguageLock() {
-        guard isInputLanguageLocked else { return }
-        if selectedLanguage != "auto" {
-            deepgramPreviousLanguage = selectedLanguage
-        }
-        selectedLanguage = "auto"
-    }
 }
 
 #Preview("General Settings") {

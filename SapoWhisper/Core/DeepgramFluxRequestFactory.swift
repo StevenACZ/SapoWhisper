@@ -6,7 +6,7 @@
 import Foundation
 
 enum DeepgramFluxRequestFactory {
-    static func makeWebSocketTask(apiKey: String) -> URLSessionWebSocketTask {
+    static func makeWebSocketTask(apiKey: String, language: String) -> URLSessionWebSocketTask {
         var components = URLComponents()
         components.scheme = "wss"
         components.host = "api.deepgram.com"
@@ -17,9 +17,10 @@ enum DeepgramFluxRequestFactory {
             URLQueryItem(name: "sample_rate", value: "16000"),
             URLQueryItem(name: "eot_threshold", value: "0.7"),
             URLQueryItem(name: "eot_timeout_ms", value: "1000"),
-            URLQueryItem(name: "language_hint", value: "es"),
-            URLQueryItem(name: "language_hint", value: "en"),
         ]
+        if let languageHint = TranscriptionLanguageCatalog.deepgramFluxLanguageHint(for: language) {
+            components.queryItems?.append(URLQueryItem(name: "language_hint", value: languageHint))
+        }
         components.queryItems?.append(contentsOf: VocabularyManager.shared.keytermQueryItems())
 
         guard let url = components.url else {

@@ -113,7 +113,6 @@ enum Constants {
         // Deepgram
         static let deepgramAPIKey = "deepgramAPIKey"
         static let deepgramTranscriptionMode = "deepgramTranscriptionMode"
-        static let deepgramPreviousLanguage = "deepgramPreviousLanguage"
 
         // ElevenLabs
         static let elevenLabsAPIKey = "elevenLabsAPIKey"
