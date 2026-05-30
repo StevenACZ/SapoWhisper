@@ -11,6 +11,7 @@ enum TranscriptPolishPromptBuilder {
         promptProfile: PromptProfile,
         personalContext: String,
         outputLanguage: TranscriptPolishOutputLanguage,
+        outputLanguageInstructionOverride: String? = nil,
         keyterms: [String],
         replacements: [String: String]
     ) -> String {
@@ -60,7 +61,7 @@ enum TranscriptPolishPromptBuilder {
             \(promptProfile.instruction)
 
             Output language:
-            \(outputLanguage.promptInstruction)\(personalContextSection)
+            \(outputLanguageInstructionOverride ?? outputLanguage.promptInstruction)\(personalContextSection)
 
             Optional user vocabulary keyterms:
             \(keytermBlock)

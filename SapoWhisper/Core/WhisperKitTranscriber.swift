@@ -367,7 +367,7 @@ class WhisperKitTranscriber: ObservableObject {
 
                 // Configurar opciones de decodificacion
                 var options = DecodingOptions()
-                options.language = language == "auto" ? nil : language
+                options.language = TranscriptionLanguageCatalog.whisperLanguageCode(for: language)
 
                 progress = 0.3
 

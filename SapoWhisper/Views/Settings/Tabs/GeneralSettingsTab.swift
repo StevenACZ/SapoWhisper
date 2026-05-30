@@ -140,13 +140,14 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    HStack(spacing: 8) {
-                        LanguageButton(
-                            name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: inputLanguageBinding)
-                        LanguageButton(
-                            name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: inputLanguageBinding)
-                        LanguageButton(name: "lang.auto".localized, flag: "🌐", languageCode: "auto", selectedLanguage: inputLanguageBinding)
+                    Picker("settings.input_language".localized, selection: inputLanguageBinding) {
+                        ForEach(TranscriptionLanguageCatalog.languages) { language in
+                            Text(language.displayName).tag(language.code)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .disabled(isInputLanguageLocked)
                     .opacity(isInputLanguageLocked ? 0.65 : 1)
 

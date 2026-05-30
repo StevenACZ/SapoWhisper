@@ -211,11 +211,6 @@ class DeepgramBatchTranscriber: ObservableObject {
     // MARK: - Language Mapping
 
     private func deepgramLanguageCode(for appLanguage: String) -> String {
-        switch appLanguage {
-        case "es": return "es"
-        case "en": return "en"
-        case "auto": return "multi"
-        default: return "es"
-        }
+        TranscriptionLanguageCatalog.deepgramLanguageCode(for: appLanguage)
     }
 }

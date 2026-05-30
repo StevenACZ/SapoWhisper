@@ -143,20 +143,32 @@ class VocabularyManager: ObservableObject {
     }
 
     /// Returns keyterms shaped for engines that accept server-side recognition hints.
-    func recognitionKeytermPayload(maxCount: Int, maxLength: Int, maxWords: Int? = nil) -> (terms: [String], droppedCount: Int) {
-        let candidates =
-            keyterms
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+    func recognitionKeytermPayload(
+        maxCount: Int,
+        maxLength: Int,
+        maxWords: Int? = nil,
+        includeReplacementValues: Bool = false
+    ) -> (terms: [String], droppedCount: Int) {
+        let candidates = recognitionCandidates(includeReplacementValues: includeReplacementValues)
         var seen = Set<String>()
         var expandedTerms: [String] = []
 
+        func appendUnique(_ term: String) {
+            let trimmed = Self.sanitizedRecognitionHint(term)
+            guard !trimmed.isEmpty else { return }
+            let normalized = trimmed.lowercased()
+            guard !seen.contains(normalized) else { return }
+            seen.insert(normalized)
+            expandedTerms.append(trimmed)
+        }
+
+        for candidate in candidates {
+            appendUnique(candidate)
+        }
+
         for candidate in candidates {
             for variant in Self.recognitionVariants(for: candidate) {
-                let normalized = variant.lowercased()
-                guard !seen.contains(normalized) else { continue }
-                seen.insert(normalized)
-                expandedTerms.append(variant)
+                appendUnique(variant)
             }
         }
 
@@ -171,9 +183,7 @@ class VocabularyManager: ObservableObject {
     func applyingRecognitionCorrections(to transcript: String) -> String {
         let replacedTranscript = applyingReplacements(to: transcript)
         let correctionPairs =
-            keyterms
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            recognitionCandidates(includeReplacementValues: true)
             .flatMap { keyterm in
                 Self.correctionVariants(for: keyterm).map { variant in
                     (variant: variant, canonical: keyterm)
@@ -199,10 +209,28 @@ class VocabularyManager: ObservableObject {
         }
     }
 
+    private func recognitionCandidates(includeReplacementValues: Bool) -> [String] {
+        let savedKeyterms =
+            keyterms
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard includeReplacementValues else { return savedKeyterms }
+
+        let replacementValues =
+            replacements
+            .sorted { $0.key < $1.key }
+            .map { $0.value.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return savedKeyterms + replacementValues
+    }
+
     private static func recognitionVariants(for keyterm: String) -> [String] {
         uniqueVariants([
             keyterm,
             spokenForm(for: keyterm),
+            spokenSymbolForm(for: keyterm),
         ])
     }
 
@@ -211,7 +239,7 @@ class VocabularyManager: ObservableObject {
     }
 
     private static func spokenForm(for keyterm: String) -> String {
-        let separated = keyterm.replacingOccurrences(of: #"[-_]+"#, with: " ", options: .regularExpression)
+        let separated = keyterm.replacingOccurrences(of: #"[-_.]+"#, with: " ", options: .regularExpression)
         let characters = Array(separated)
         guard characters.count > 1 else { return separated }
 
@@ -230,6 +258,24 @@ class VocabularyManager: ObservableObject {
         }
 
         return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+    }
+
+    private static func spokenSymbolForm(for keyterm: String) -> String {
+        keyterm
+            .replacingOccurrences(of: ".", with: " dot ")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+    }
+
+    private static func sanitizedRecognitionHint(_ term: String) -> String {
+        String(
+            term.unicodeScalars.map { scalar -> Character in
+                CharacterSet.controlCharacters.contains(scalar) ? " " : Character(scalar)
+            }
+        )
+        .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func shouldInsertSpeechSpace(previous: Character, current: Character, next: Character?) -> Bool {

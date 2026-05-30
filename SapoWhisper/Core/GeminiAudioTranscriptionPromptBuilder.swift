@@ -55,15 +55,10 @@ enum GeminiAudioTranscriptionPromptBuilder {
     }
 
     private static func languageInstruction(for language: String) -> String {
-        switch language {
-        case "es":
-            return "Spanish, while preserving intentional English technical terms"
-        case "en":
-            return "English, while preserving intentional Spanish words or names"
-        case "auto":
-            return "detect automatically"
-        default:
+        guard language != "auto", let transcriptionLanguage = TranscriptionLanguageCatalog.language(for: language) else {
             return "detect automatically"
         }
+
+        return "\(transcriptionLanguage.englishName), while preserving intentional mixed-language technical terms"
     }
 }

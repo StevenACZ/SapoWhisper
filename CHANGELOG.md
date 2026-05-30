@@ -8,6 +8,15 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Native transcription-language menu with Auto plus 15 common languages shared by the supported providers.
+
+### Fixed
+
+- ElevenLabs Scribe batch and realtime now keep explicit Spanish/English/other selected-language output instead of falling back to auto/native-language output.
+- ElevenLabs vocabulary hints now send saved terms first, include auto-correction replacement values as recognition hints, and sanitize hints before cloud requests.
+
 ## [2.2.1] - 2026-05-29
 
 ### Changed

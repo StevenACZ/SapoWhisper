@@ -31,6 +31,8 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Realtime failure is manual retry only; do not auto-fallback to batch.
 - Retry uses the currently selected ElevenLabs mode.
 - Keyterms: batch allows up to 1000 terms, max 50 chars and 5 words each; realtime allows up to 50 terms, max 20 chars each.
+- Language `auto` lets Scribe detect speech language; explicit languages must be forwarded to Scribe and keep the final output in the selected language.
+- Keyterm payloads must prioritize saved vocabulary terms before generated variants, include replacement values as recognition hints, and sanitize hints before cloud requests.
 - Replacements remain local post-processing for both modes.
 
 ## Diagnostics

@@ -34,12 +34,7 @@ class GoogleCloudTranscriber: ObservableObject {
     }
 
     private func googleLanguageCode(for appLanguage: String) -> String {
-        switch appLanguage {
-        case "es": return "es-ES"
-        case "en": return "en-US"
-        case "auto": return "es-ES"
-        default: return "es-ES"
-        }
+        TranscriptionLanguageCatalog.googleLanguageCode(for: appLanguage)
     }
 
     // MARK: - Public API

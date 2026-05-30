@@ -77,15 +77,12 @@ class WhisperTranscriber: ObservableObject {
 
         let recognizer: SFSpeechRecognizer?
 
-        switch language {
-        case "es":
-            recognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES"))
-        case "en":
-            recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        case "auto":
-            // Usar el idioma del sistema para auto-detección
+        if language == "auto" {
+            // Use the system language for automatic recognition.
             recognizer = SFSpeechRecognizer()
-        default:
+        } else if let localeIdentifier = TranscriptionLanguageCatalog.appleLocaleIdentifier(for: language) {
+            recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
+        } else {
             recognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES"))
         }
 

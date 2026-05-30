@@ -365,6 +365,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var lastStreamingError: Error?
     private var cancellables = Set<AnyCancellable>()
     private var stopStartedAt: CFAbsoluteTime = 0
+    private var requestedLanguage = "auto"
 
     private static let engineName = "ElevenLabs"
     private static let maxRealtimeKeyterms = 50
@@ -395,9 +396,11 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
 
         resetSessionState()
+        requestedLanguage = language
         let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
             maxCount: Self.maxRealtimeKeyterms,
-            maxLength: Self.maxRealtimeKeytermLength
+            maxLength: Self.maxRealtimeKeytermLength,
+            includeReplacementValues: true
         )
         let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
@@ -504,7 +507,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
-            language: "auto",
+            language: requestedLanguage,
             diagnostics: captureResult.diagnostics
         )
     }
@@ -517,10 +520,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
 
         resetSessionState()
+        requestedLanguage = language
         isStopping = true
         let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
             maxCount: Self.maxRealtimeKeyterms,
-            maxLength: Self.maxRealtimeKeytermLength
+            maxLength: Self.maxRealtimeKeytermLength,
+            includeReplacementValues: true
         )
         let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
@@ -613,12 +618,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     private static func scribeLanguageCode(for appLanguage: String) -> String? {
-        switch appLanguage {
-        case "es": return "es"
-        case "en": return "en"
-        case "auto": return nil
-        default: return nil
-        }
+        TranscriptionLanguageCatalog.elevenLabsLanguageCode(for: appLanguage)
     }
 
     private func bindCapture() {

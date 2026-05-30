@@ -59,7 +59,8 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
             maxCount: Self.maxKeyterms,
             maxLength: Self.maxKeytermLength,
-            maxWords: Self.maxKeytermWords
+            maxWords: Self.maxKeytermWords,
+            includeReplacementValues: true
         )
         let keyterms = keytermPayload.terms
         let body = makeMultipartBody(
@@ -173,14 +174,9 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     // MARK: - Language Mapping
 
-    /// Maps the app language to an ISO-639-1 code; `nil` lets Scribe auto-detect.
+    /// Maps the app language to a Scribe language code; `nil` lets Scribe auto-detect.
     private func scribeLanguageCode(for appLanguage: String) -> String? {
-        switch appLanguage {
-        case "es": return "es"
-        case "en": return "en"
-        case "auto": return nil
-        default: return nil
-        }
+        TranscriptionLanguageCatalog.elevenLabsLanguageCode(for: appLanguage)
     }
 }
 

@@ -12,7 +12,12 @@ final class TranscriptPostProcessor {
         self.polisher = polisher
     }
 
-    func process(rawText: String, duration: TimeInterval? = nil, force: Bool = false) async -> TranscriptAIResult {
+    func process(
+        rawText: String,
+        duration: TimeInterval? = nil,
+        force: Bool = false,
+        outputLanguageOverride: TranscriptionLanguage? = nil
+    ) async -> TranscriptAIResult {
         let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
         defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
         let startedAt = CFAbsoluteTimeGetCurrent()
@@ -29,13 +34,18 @@ final class TranscriptPostProcessor {
         }
 
         let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
-        let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
+        var promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
         let outputLanguageValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
         var outputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
         if promptProfile.forcesEnglish {
             outputLanguage = .english
+        }
+        if let outputLanguageOverride {
+            if promptProfile.forcesEnglish && outputLanguageOverride.code != "en" {
+                promptProfile = PromptContextManager.shared.promptProfile(for: TranscriptPolishMode.automatic.rawValue)
+            }
         }
 
         guard force || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
@@ -63,6 +73,7 @@ final class TranscriptPostProcessor {
             promptProfile: promptProfile,
             personalContext: PromptContextManager.shared.makePersonalContextBlock(),
             outputLanguage: outputLanguage,
+            outputLanguageInstructionOverride: outputLanguageOverride?.outputPromptInstruction,
             keyterms: VocabularyManager.shared.keyterms,
             replacements: VocabularyManager.shared.replacements
         )

@@ -125,6 +125,12 @@ class SapoWhisperViewModel: ObservableObject {
         currentEngine == .elevenLabsScribe && currentElevenLabsMode == .scribeV2Realtime
     }
 
+    private func outputLanguageOverride(for engine: TranscriptionEngine, language: String) -> TranscriptionLanguage? {
+        guard engine == .elevenLabsScribe else { return nil }
+        guard language != "auto" else { return nil }
+        return TranscriptionLanguageCatalog.language(for: language)
+    }
+
     private var isAnyRecorderActive: Bool {
         audioRecorder.isRecording || deepgramFluxTranscriber.isStreaming || elevenLabsRealtimeTranscriber.isStreaming
     }
@@ -921,6 +927,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         let engine = TranscriptionEngine.elevenLabsScribe
         let engineName = currentElevenLabsMode.historyName
+        let language = selectedLanguage
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
         activeRecordingSessionID = nil
         activeTranscriptionSessionID = sessionID
@@ -954,7 +961,8 @@ class SapoWhisperViewModel: ObservableObject {
                 let aiResult = await postProcessTranscript(
                     result.transcript,
                     source: "elevenlabs_realtime",
-                    duration: result.duration
+                    duration: result.duration,
+                    outputLanguageOverride: outputLanguageOverride(for: engine, language: language)
                 )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: result.audioURL, sessionID: sessionID)
@@ -979,7 +987,7 @@ class SapoWhisperViewModel: ObservableObject {
                     from: result.audioURL,
                     engine: engine,
                     engineName: engineName,
-                    language: result.language,
+                    language: language,
                     duration: result.duration,
                     aiResult: aiResult,
                     status: "completed"
@@ -1016,7 +1024,7 @@ class SapoWhisperViewModel: ObservableObject {
                         from: captureResult.audioURL,
                         engine: engine,
                         engineName: engineName,
-                        language: "auto",
+                        language: language,
                         duration: captureResult.duration,
                         aiResult: nil,
                         status: "failed"
@@ -1216,7 +1224,12 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
 
-                let aiResult = await postProcessTranscript(transcription, source: engine.rawValue, duration: duration)
+                let aiResult = await postProcessTranscript(
+                    transcription,
+                    source: engine.rawValue,
+                    duration: duration,
+                    outputLanguageOverride: outputLanguageOverride(for: engine, language: language)
+                )
                 guard self.activeTranscriptionSessionID == sessionID else {
                     self.handleStaleTranscriptionCompletion(audioURL: audioURL, sessionID: sessionID)
                     return
@@ -1343,7 +1356,12 @@ class SapoWhisperViewModel: ObservableObject {
         Task {
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
-                let aiResult = await postProcessTranscript(transcription, source: "retry", duration: duration)
+                let aiResult = await postProcessTranscript(
+                    transcription,
+                    source: "retry",
+                    duration: duration,
+                    outputLanguageOverride: outputLanguageOverride(for: engine, language: language)
+                )
 
                 lastTranscription = aiResult.finalText
                 PasteManager.copyToClipboard(aiResult.finalText)
@@ -1398,7 +1416,8 @@ class SapoWhisperViewModel: ObservableObject {
             let aiResult = await postProcessTranscript(
                 transcription,
                 source: "history-retranscribe",
-                duration: entry.duration
+                duration: entry.duration,
+                outputLanguageOverride: outputLanguageOverride(for: engine, language: entry.language)
             )
             let persistedEntry = persistHistoryEntry(
                 from: audioURL,
@@ -1832,9 +1851,15 @@ class SapoWhisperViewModel: ObservableObject {
     private func postProcessTranscript(
         _ rawText: String,
         source: String,
-        duration: TimeInterval?
+        duration: TimeInterval?,
+        outputLanguageOverride: TranscriptionLanguage? = nil
     ) async -> TranscriptAIResult {
-        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText, duration: duration)
+        let forcePolish = outputLanguageOverride != nil
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(
+            rawText: rawText,
+            duration: duration,
+            force: forcePolish
+        )
         if willAttemptPolish {
             appState = .polishing
             overlayManager.updateState(.polishing)
@@ -1848,7 +1873,12 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
 
-        let result = await transcriptPostProcessor.process(rawText: rawText, duration: duration)
+        let result = await transcriptPostProcessor.process(
+            rawText: rawText,
+            duration: duration,
+            force: forcePolish,
+            outputLanguageOverride: outputLanguageOverride
+        )
         logAIResult(result, source: source)
         if willAttemptPolish {
             PerformanceDiagnostics.logRuntimeSnapshot(
