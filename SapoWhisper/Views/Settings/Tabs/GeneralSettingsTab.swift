@@ -179,8 +179,13 @@ struct GeneralSettingsTab: View {
     private var soundCard: some View {
         SettingsCard(icon: "speaker.wave.2.fill", title: "settings.sounds".localized) {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("settings.play_sounds".localized, isOn: $playSound)
-                    .toggleStyle(.switch)
+                HStack(spacing: 12) {
+                    Text("settings.play_sounds".localized)
+                    Spacer()
+                    Toggle("", isOn: $playSound)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
                 if playSound {
                     VStack(alignment: .leading, spacing: 8) {
@@ -221,8 +226,13 @@ struct GeneralSettingsTab: View {
     private var autoDuckingCard: some View {
         SettingsCard(icon: "speaker.minus.fill", title: "settings.auto_ducking_header".localized) {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("settings.auto_ducking".localized, isOn: $autoDuckingEnabled)
-                    .toggleStyle(.switch)
+                HStack(spacing: 12) {
+                    Text("settings.auto_ducking".localized)
+                    Spacer()
+                    Toggle("", isOn: $autoDuckingEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
                 if autoDuckingEnabled {
                     VStack(alignment: .leading, spacing: 8) {
