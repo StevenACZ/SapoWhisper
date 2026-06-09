@@ -10,6 +10,7 @@ struct RecordingPillView: View {
     let duration: TimeInterval
     let onPause: () -> Void
     let audioLevelPublisher: AnyPublisher<Float, Never>
+    var showsNoSpeechHint: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -17,9 +18,20 @@ struct RecordingPillView: View {
             PillDivider()
             MiniEqualizerView(audioLevelPublisher: audioLevelPublisher)
 
-            Text("overlay.recording".localized)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
+            if showsNoSpeechHint {
+                HStack(spacing: 5) {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("overlay.no_speech".localized)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(.sapoError)
+                .transition(.opacity)
+            } else {
+                Text("overlay.recording".localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+            }
 
             Spacer(minLength: 12)
 

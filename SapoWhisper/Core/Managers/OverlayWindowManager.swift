@@ -22,6 +22,10 @@ class OverlayWindowManager: ObservableObject {
 
     @Published private(set) var state: RecordingOverlayState = .hidden
 
+    /// Live "no voice?" hint while recording (NS2): set by the ViewModel when
+    /// the session peak stays under the silence threshold for a few seconds.
+    @Published private(set) var showsNoSpeechHint = false
+
     let audioLevelPublisher: AnyPublisher<Float, Never>
 
     // MARK: - Callbacks
@@ -197,6 +201,10 @@ class OverlayWindowManager: ObservableObject {
 
         updateDisplayedSecond(for: newState)
         state = newState
+        if case .recording = newState {
+        } else {
+            showsNoSpeechHint = false
+        }
         SapoLog.overlay.info("Overlay state changed to \(newState.stateCategory, privacy: .public)")
 
         if case .recording = newState {
@@ -275,6 +283,26 @@ class OverlayWindowManager: ObservableObject {
                 self.hide()
             }
         }
+    }
+
+    /// Kind-aware error presentation: no-speech dismisses fast with no retry
+    /// affordance; everything else keeps the standard 5s + retry behavior.
+    func showError(_ errorState: ErrorState) {
+        showError(
+            message: errorState.message,
+            isRetryable: errorState.isNoSpeech ? false : errorState.isRetryable,
+            autoDismissAfter: errorState.isNoSpeech ? 1.8 : 5.0
+        )
+    }
+
+    /// Toggles the live "no voice?" pill while recording.
+    func setNoSpeechHint(_ shows: Bool) {
+        guard showsNoSpeechHint != shows else { return }
+        if shows {
+            guard case .recording = state else { return }
+        }
+        showsNoSpeechHint = shows
+        SapoLog.overlay.info("Overlay no-speech hint \(shows ? "shown" : "cleared", privacy: .public)")
     }
 
     private func updateDisplayedSecond(for state: RecordingOverlayState) {

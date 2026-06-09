@@ -86,6 +86,18 @@ class SapoWhisperViewModel: ObservableObject {
     private var lastStartHotkeyTime: CFAbsoluteTime = 0
     private var shouldResumeMicMonitorAfterRecording = false
 
+    // No-speech fast path: track the session peak from the overlay level
+    // stream. The threshold is deliberately conservative (~−55 dBFS in the
+    // normalized 0...1 scale) so quiet speakers are never misclassified.
+    private var sessionPeakAudioLevel: Float = 0
+    private var sessionLevelTrackingStartedAt: CFAbsoluteTime = 0
+    private static let noSpeechPeakLevelThreshold: Float = 0.085
+    private static let noSpeechHintDelay: TimeInterval = 3.0
+
+    private var sessionLooksSilent: Bool {
+        sessionPeakAudioLevel < Self.noSpeechPeakLevelThreshold
+    }
+
     // MARK: - Computed Properties
 
     var currentEngine: TranscriptionEngine {
@@ -327,6 +339,7 @@ class SapoWhisperViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.overlayManager.updateAudioLevel(level)
+                self?.registerSessionAudioLevel(level)
             }
             .store(in: &cancellables)
 
@@ -335,6 +348,7 @@ class SapoWhisperViewModel: ObservableObject {
             .sink { [weak self] level in
                 guard self?.currentEngine == .deepgram else { return }
                 self?.overlayManager.updateAudioLevel(level)
+                self?.registerSessionAudioLevel(level)
             }
             .store(in: &cancellables)
 
@@ -343,6 +357,7 @@ class SapoWhisperViewModel: ObservableObject {
             .sink { [weak self] level in
                 guard self?.currentEngine == .elevenLabsScribe else { return }
                 self?.overlayManager.updateAudioLevel(level)
+                self?.registerSessionAudioLevel(level)
             }
             .store(in: &cancellables)
 
@@ -418,7 +433,7 @@ class SapoWhisperViewModel: ObservableObject {
         } catch {
             let errorMsg = error.localizedDescription
             SapoLog.recording.error("WhisperKit load failed error=\(errorMsg, privacy: .public)")
-            appState = .error("Error cargando modelo: \(errorMsg)")
+            appState = .error(ErrorState(message: "Error cargando modelo: \(errorMsg)"))
 
             // Mostrar el error un momento y volver a noModel para reintentar.
             Task {
@@ -624,6 +639,8 @@ class SapoWhisperViewModel: ObservableObject {
         PasteManager.savePreviousApp()
 
         // Mostrar overlay PRIMERO para feedback visual inmediato
+        sessionPeakAudioLevel = 0
+        sessionLevelTrackingStartedAt = triggerTime
         appState = .recording
 
         overlayManager.updateState(.recording(duration: 0))
@@ -870,8 +887,6 @@ class SapoWhisperViewModel: ObservableObject {
                 }
 
                 let failure = TranscriptionFailure.from(error, engine: engine.displayName)
-                let message = failure.errorDescription ?? error.localizedDescription
-                appState = .error(message)
                 activeTranscriptionSessionID = nil
                 PerformanceDiagnostics.logRuntimeSnapshot(
                     reason: "elevenlabs-realtime-transcription-failed",
@@ -880,12 +895,12 @@ class SapoWhisperViewModel: ObservableObject {
                     ),
                     force: true
                 )
-                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
-                if playSoundEnabled {
-                    SoundManager.shared.play(.error)
-                }
+                presentTranscriptionFailure(failure)
 
-                if let captureResult {
+                // Silence sessions keep their WAV but never create a failed
+                // history row — there was nothing to transcribe.
+                let isLocalSilence = failure.kind == .emptyTranscription && sessionLooksSilent
+                if let captureResult, !isLocalSilence {
                     let persistedEntry = persistHistoryEntry(
                         from: captureResult.audioURL,
                         engine: engine,
@@ -985,8 +1000,6 @@ class SapoWhisperViewModel: ObservableObject {
                 }
 
                 let failure = TranscriptionFailure.from(error, engine: engine.displayName)
-                let message = failure.errorDescription ?? error.localizedDescription
-                appState = .error(message)
                 activeTranscriptionSessionID = nil
                 PerformanceDiagnostics.logRuntimeSnapshot(
                     reason: "flux-transcription-failed",
@@ -994,12 +1007,12 @@ class SapoWhisperViewModel: ObservableObject {
                         extra: "session=\(sessionID) failure=\(failure.diagnosticCode)"),
                     force: true
                 )
-                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
-                if playSoundEnabled {
-                    SoundManager.shared.play(.error)
-                }
+                presentTranscriptionFailure(failure)
 
-                if let captureResult {
+                // Silence sessions keep their WAV but never create a failed
+                // history row — there was nothing to transcribe.
+                let isLocalSilence = failure.kind == .emptyTranscription && sessionLooksSilent
+                if let captureResult, !isLocalSilence {
                     let persistedEntry = persistHistoryEntry(
                         from: captureResult.audioURL,
                         engine: engine,
@@ -1038,14 +1051,9 @@ class SapoWhisperViewModel: ObservableObject {
         guard let audioURL = audioRecorder.stopRecording() else {
             activeTranscriptionSessionID = nil
             let failure = TranscriptionFailure(kind: .audioEmpty)
-            let message = failure.errorDescription ?? "error.no_audio".localized
-            appState = .error(message)
-            overlayManager.showError(message: message, isRetryable: failure.isRetryable)
             SapoLog.recording.error(
                 "Recording produced no audio file \(failure.diagnosticCode, privacy: .public)")
-            if playSoundEnabled {
-                SoundManager.shared.play(.error)
-            }
+            presentTranscriptionFailure(failure)
             return
         }
 
@@ -1055,13 +1063,24 @@ class SapoWhisperViewModel: ObservableObject {
             )
             audioRecorder.deleteRecording(at: audioURL)
             activeTranscriptionSessionID = nil
-            let failure = TranscriptionFailure(kind: .recordingInterrupted)
-            let message = failure.errorDescription ?? "error.no_audio".localized
-            appState = .error(message)
-            overlayManager.showError(message: message, isRetryable: failure.isRetryable)
-            if playSoundEnabled {
-                SoundManager.shared.play(.error)
-            }
+            presentTranscriptionFailure(TranscriptionFailure(kind: .recordingInterrupted))
+            return
+        }
+
+        // No-speech fast path: the whole session peaked below the silence
+        // threshold, so skip the network entirely. The WAV stays on disk
+        // (guardrail) and no failed history row is created.
+        if sessionLooksSilent {
+            activeTranscriptionSessionID = nil
+            SapoLog.recording.info(
+                "No-speech fast path engaged engine=\(engine.rawValue, privacy: .public) peakDb=\(self.approximateSessionPeakDb, privacy: .public)"
+            )
+            presentTranscriptionFailure(
+                TranscriptionFailure(
+                    kind: .emptyTranscription, engine: engine.displayName,
+                    technicalDetail: "local silence gate peakDb=\(approximateSessionPeakDb)"
+                )
+            )
             return
         }
 
@@ -1128,8 +1147,6 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
                 let failure = TranscriptionFailure.from(error, engine: engine.displayName)
-                let message = failure.errorDescription ?? error.localizedDescription
-                appState = .error(message)
                 activeTranscriptionSessionID = nil
                 PerformanceDiagnostics.logRuntimeSnapshot(
                     reason: "transcription-failed",
@@ -1138,10 +1155,7 @@ class SapoWhisperViewModel: ObservableObject {
                     ),
                     force: true
                 )
-                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
-                if playSoundEnabled {
-                    SoundManager.shared.play(.error)
-                }
+                presentTranscriptionFailure(failure)
 
                 let persistedEntry = persistHistoryEntry(
                     from: audioURL,
@@ -1216,12 +1230,9 @@ class SapoWhisperViewModel: ObservableObject {
 
             } catch {
                 let failure = TranscriptionFailure.from(error, engine: engine.displayName)
-                let message = failure.errorDescription ?? error.localizedDescription
-                appState = .error(message)
-                overlayManager.showError(message: message, isRetryable: failure.isRetryable)
+                presentTranscriptionFailure(failure)
                 SapoLog.recording.error(
                     "Retry transcription failed \(failure.logSummary, privacy: .public)")
-                if playSoundEnabled { SoundManager.shared.play(.error) }
             }
         }
     }
@@ -1369,7 +1380,7 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
                 self.activeRecordingSessionID = nil
-                self.appState = .error(error.localizedDescription)
+                self.appState = .error(ErrorState(message: error.localizedDescription))
                 self.overlayManager.showError(message: error.localizedDescription)
                 AutoDuckingManager.shared.restore()
                 if playSound && !self.isRecoverableInputStartError(error) {
@@ -1432,7 +1443,7 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
                 self.activeRecordingSessionID = nil
-                self.appState = .error(error.localizedDescription)
+                self.appState = .error(ErrorState(message: error.localizedDescription))
                 self.overlayManager.showError(message: error.localizedDescription)
                 AutoDuckingManager.shared.restore()
                 if playSound && !self.isRecoverableInputStartError(error) {
@@ -1496,7 +1507,7 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
                 self.activeRecordingSessionID = nil
-                self.appState = .error(error.localizedDescription)
+                self.appState = .error(ErrorState(message: error.localizedDescription))
                 self.overlayManager.showError(message: error.localizedDescription)
                 AutoDuckingManager.shared.restore()
                 if playSound && !self.isRecoverableInputStartError(error) {
@@ -1626,6 +1637,37 @@ class SapoWhisperViewModel: ObservableObject {
         guard shouldResumeMicMonitorAfterRecording else { return }
         shouldResumeMicMonitorAfterRecording = false
         AudioLevelMonitor.shared.resumeAfterRecorderIfNeeded()
+    }
+
+    // MARK: - No-speech handling
+
+    /// Tracks the session peak and drives the live "no voice?" overlay hint.
+    private func registerSessionAudioLevel(_ level: Float) {
+        guard case .recording = appState else { return }
+        sessionPeakAudioLevel = max(sessionPeakAudioLevel, level)
+        let elapsed = CFAbsoluteTimeGetCurrent() - sessionLevelTrackingStartedAt
+        overlayManager.setNoSpeechHint(sessionLooksSilent && elapsed >= Self.noSpeechHintDelay)
+    }
+
+    /// Approximate session peak in dBFS, derived from the normalized level.
+    private var approximateSessionPeakDb: Int {
+        Int(sessionPeakAudioLevel * 60 - 60)
+    }
+
+    /// Single failure presenter: overlay dismiss time, retry affordance, and
+    /// sound all derive from the failure kind. No-speech keeps the menu bar
+    /// idle and skips the error sound.
+    private func presentTranscriptionFailure(_ failure: TranscriptionFailure) {
+        let errorState = ErrorState(failure: failure)
+        if errorState.isNoSpeech {
+            checkInitialState()
+        } else {
+            appState = .error(errorState)
+        }
+        overlayManager.showError(errorState)
+        if playSoundEnabled && !errorState.isNoSpeech {
+            SoundManager.shared.play(.error)
+        }
     }
 
     private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {

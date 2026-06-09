@@ -63,7 +63,8 @@ struct RecordingOverlayView: View {
             RecordingPillView(
                 duration: duration,
                 onPause: { manager.onPauseToggle?() },
-                audioLevelPublisher: manager.audioLevelPublisher
+                audioLevelPublisher: manager.audioLevelPublisher,
+                showsNoSpeechHint: manager.showsNoSpeechHint
             )
 
         case .paused(let duration):
