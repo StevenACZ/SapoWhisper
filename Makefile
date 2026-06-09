@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build release size-check ci-check release-check notarized-dmg hooks-install
+.PHONY: help tools format format-all lint lint-all build test release size-check ci-check release-check notarized-dmg hooks-install
 
 .DEFAULT_GOAL := help
 
@@ -19,9 +19,10 @@ help:
 	@printf "  make lint          Check changed Swift files without editing files\n"
 	@printf "  make lint-all      Check all Swift sources explicitly\n"
 	@printf "  make build         Build Debug for Apple Silicon\n"
+	@printf "  make test          Run unit tests\n"
 	@printf "  make release       Build Release for Apple Silicon\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
-	@printf "  make ci-check      Fast local gate: lint + Debug build\n"
+	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
 	@printf "  make release-check Release gate: lint + Release build + size check\n"
 	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
 	@printf "  make hooks-install Install optional Lefthook git hooks\n"
@@ -52,6 +53,11 @@ build:
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
 		-derivedDataPath $(DEBUG_DERIVED_DATA) build
 
+test:
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
+		-configuration Debug -destination 'platform=macOS,arch=arm64' \
+		-derivedDataPath $(DEBUG_DERIVED_DATA) test
+
 release:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
@@ -60,7 +66,7 @@ release:
 size-check:
 	@scripts/measure_release_bundle.sh $(RELEASE_APP)
 
-ci-check: lint build
+ci-check: lint build test
 	@printf "ci-check: passed\n"
 
 release-check: lint release size-check

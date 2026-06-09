@@ -64,12 +64,13 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 ```bash
 make format
 make lint
+make test
 make ci-check
 make release-check
 ```
 
 - `make format` and `make lint` only inspect changed Swift files by default.
-- The `SapoWhisper` scheme has no configured test action; use `make ci-check` as the current local gate.
+- `make test` runs the `SapoWhisperTests` unit bundle (pure logic: fidelity guard, failure mapping, engine migration, settings import); `make ci-check` = lint + Debug build + tests.
 - Run `git diff --check` before staging or reporting a docs/code patch done.
 
 ## Packaging

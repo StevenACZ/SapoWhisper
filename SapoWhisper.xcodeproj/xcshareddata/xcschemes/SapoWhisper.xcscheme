@@ -29,6 +29,16 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A1B2C3D40000000000000008"
+               BuildableName = "SapoWhisperTests.xctest"
+               BlueprintName = "SapoWhisperTests"
+               ReferencedContainer = "container:SapoWhisper.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
