@@ -74,6 +74,7 @@ final class ElevenLabsRealtimeAudioSender {
         static let targetChunkBytes = 6_400  // 0.2s of pcm_16000 mono int16.
         static let finalSilenceBytes = 6_400
         static let sendTimeout: TimeInterval = 2.0
+        static let firstSendTimeout: TimeInterval = 8.0
     }
 
     private let queue = DispatchQueue(label: "com.sapowhisper.elevenlabsRealtimeAudioSender", qos: .userInitiated)
@@ -82,6 +83,7 @@ final class ElevenLabsRealtimeAudioSender {
 
     private var task: URLSessionWebSocketTask?
     private var isActive = false
+    private var hasUsedFirstSendBudget = false
     private var pendingAudio = Data()
     private var enqueuedChunks = 0
     private var sentMessages = 0
@@ -236,7 +238,10 @@ final class ElevenLabsRealtimeAudioSender {
             semaphore.signal()
         }
 
-        let didFinish = semaphore.wait(timeout: .now() + Constants.sendTimeout) == .success
+        // The first message absorbs the WebSocket handshake (capture starts
+        // concurrently with the connect), so give it a longer budget.
+        let sendTimeout = consumeFirstSendBudgetIfNeeded() ?? Constants.sendTimeout
+        let didFinish = semaphore.wait(timeout: .now() + sendTimeout) == .success
         let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         completionLock.lock()
         let completedError = sendError
@@ -277,9 +282,19 @@ final class ElevenLabsRealtimeAudioSender {
         return text
     }
 
+    /// Returns the extended handshake budget exactly once per session.
+    private func consumeFirstSendBudgetIfNeeded() -> TimeInterval? {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        guard !hasUsedFirstSendBudget else { return nil }
+        hasUsedFirstSendBudget = true
+        return Constants.firstSendTimeout
+    }
+
     private func reset() {
         statsLock.lock()
         pendingAudio.removeAll(keepingCapacity: true)
+        hasUsedFirstSendBudget = false
         enqueuedChunks = 0
         sentMessages = 0
         failedMessages = 0
@@ -476,8 +491,17 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
 
         let finalWaitStartedAt = CFAbsoluteTimeGetCurrent()
-        let finalWaitTimeout: TimeInterval =
-            committedCountBeforeFinalCommit == 0 || hadUncommittedPartialBeforeFinalCommit ? 4.0 : 0.75
+        let finalWaitTimeout: TimeInterval
+        if committedCountBeforeFinalCommit == 0 && !hadUncommittedPartialBeforeFinalCommit {
+            // Zero partials and zero commits: VAD never fired, so nothing is
+            // coming — fail fast instead of riding the 4s wait. The local WAV
+            // is preserved either way.
+            finalWaitTimeout = 0.5
+        } else if committedCountBeforeFinalCommit == 0 || hadUncommittedPartialBeforeFinalCommit {
+            finalWaitTimeout = 4.0
+        } else {
+            finalWaitTimeout = 0.75
+        }
         let transcript = try await waitForFinalTranscript(
             timeout: finalWaitTimeout,
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit

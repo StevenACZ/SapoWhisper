@@ -153,7 +153,10 @@ final class DeepgramFluxAudioSender {
                 semaphore.signal()
             }
 
-            let didFinish = semaphore.wait(timeout: .now() + 2.0) == .success
+            // The first chunk absorbs the WebSocket handshake (capture starts
+            // concurrently with the connect), so give it a longer budget.
+            let sendTimeout: TimeInterval = chunkIndex == 1 ? 8.0 : 2.0
+            let didFinish = semaphore.wait(timeout: .now() + sendTimeout) == .success
             let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
             completionLock.lock()
             let completedError = sendError

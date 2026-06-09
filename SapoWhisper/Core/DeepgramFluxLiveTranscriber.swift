@@ -238,6 +238,12 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         switch type {
         case "TurnInfo":
             transcriptAccumulator.update(with: json)
+            // After CloseStream the server flushes a final TurnInfo with
+            // event=EndOfTurn — resume immediately instead of riding the
+            // stop timeout or waiting for the socket to close.
+            if isStopping, (json["event"] as? String) == "EndOfTurn" {
+                finishStopIfNeeded(error: nil)
+            }
         case "FatalError":
             let description = (json["description"] as? String) ?? "Unknown Flux error"
             let error = TranscriptionFailure(
