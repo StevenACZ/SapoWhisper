@@ -77,6 +77,8 @@ class HotkeyManager: ObservableObject {
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
+    private var watchdogTimer: Timer?
+    private static let watchdogInterval: TimeInterval = 600
     private var hotkeyPressCount: UInt64 = 0
     private var isDoubleTapModifierPressed = false
     private var isSuppressingCurrentDoubleTapPress = false
@@ -120,6 +122,60 @@ class HotkeyManager: ObservableObject {
         case .doubleModifier:
             registerDoubleModifierHotkey()
         }
+
+        startWatchdogIfNeeded()
+    }
+
+    // MARK: - Watchdog (R2)
+
+    /// R2: macOS can silently kill the CGEventTap (wake, login, Secure Input
+    /// churn) and the app would look fine with a dead hotkey. Re-validate on
+    /// wake and on a cheap periodic tick; re-create when the tap is gone.
+    func assertHotkeyAlive(reason: String) {
+        guard let callback = hotkeyCallback else { return }
+
+        switch currentTriggerKind {
+        case .keyCombination:
+            if hotkeyRef == nil {
+                SapoLog.hotkey.warning(
+                    "Hotkey check reason=\(reason, privacy: .public) result=missing-registration action=re-register"
+                )
+                registerHotkey(callback: callback)
+            } else {
+                SapoLog.hotkey.info("Hotkey check reason=\(reason, privacy: .public) result=alive")
+            }
+        case .doubleModifier:
+            guard let eventTap else {
+                SapoLog.hotkey.warning(
+                    "Hotkey check reason=\(reason, privacy: .public) result=missing-tap action=re-register"
+                )
+                registerHotkey(callback: callback)
+                return
+            }
+            if CGEvent.tapIsEnabled(tap: eventTap) {
+                SapoLog.hotkey.info("Hotkey check reason=\(reason, privacy: .public) result=alive")
+            } else {
+                SapoLog.hotkey.warning(
+                    "Hotkey check reason=\(reason, privacy: .public) result=disabled-tap action=re-enable"
+                )
+                enableEventTap()
+                if !CGEvent.tapIsEnabled(tap: eventTap) {
+                    SapoLog.hotkey.warning("Hotkey tap stayed disabled; re-creating it")
+                    registerHotkey(callback: callback)
+                }
+            }
+        }
+    }
+
+    private func startWatchdogIfNeeded() {
+        guard watchdogTimer == nil else { return }
+
+        let timer = Timer(timeInterval: Self.watchdogInterval, repeats: true) { [weak self] _ in
+            self?.assertHotkeyAlive(reason: "watchdog")
+        }
+        timer.tolerance = 60
+        RunLoop.main.add(timer, forMode: .common)
+        watchdogTimer = timer
     }
 
     private func registerKeyCombinationHotkey() {

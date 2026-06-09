@@ -101,6 +101,8 @@ struct TranscribingPillView: View {
 }
 
 struct AIPolishingPillView: View {
+    @State private var startedAt = Date()
+
     var body: some View {
         HStack(spacing: 10) {
             FloatingSapoIcon(state: .polishing, size: 32)
@@ -110,7 +112,20 @@ struct AIPolishingPillView: View {
             Text("overlay.ai_polishing".localized)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
+
+            // L10: countdown to the polish timeout — the user sees the worst
+            // case shrinking instead of an open-ended spinner.
+            TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                let elapsed = Int(context.date.timeIntervalSince(startedAt))
+                let remaining = max(0, Int(TranscriptPostProcessor.polishTimeoutSeconds) - elapsed)
+                Text("\(remaining)s")
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+                    .contentTransition(.numericText(countsDown: true))
+            }
         }
+        .onAppear { startedAt = Date() }
     }
 }
 

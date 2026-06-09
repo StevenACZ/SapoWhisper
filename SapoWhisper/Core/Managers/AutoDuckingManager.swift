@@ -134,24 +134,9 @@ final class AutoDuckingManager {
             return
         }
 
-        // If the user raises the volume during recording, respect that choice.
-        // If the output still reports a low/ducked value (common with Bluetooth
-        // quantization), restore the original volume instead of leaving audio low.
-        if let currentVolume = getDeviceVolume(deviceID: deviceID) {
-            let expectedDuckedVolume = original * Float(1.0 - duckAmount)
-            let tolerance: Float = 0.02  // ~2% de tolerancia
-
-            if currentVolume > expectedDuckedVolume + tolerance {
-                SapoLog.audioRoute.info(
-                    "Auto-ducking respecting user volume change current=\(Int(currentVolume * 100), privacy: .public)%"
-                )
-                isDucked = false
-                originalVolume = nil
-                duckedDeviceID = nil
-                return
-            }
-        }
-
+        // A7: always restore the saved volume. The old "respect a user volume
+        // change" heuristic compared against quantized Bluetooth volumes and
+        // could leave audio ducked forever — the duck is temporary by design.
         if setDeviceVolume(deviceID: deviceID, volume: original) {
             SapoLog.audioRoute.info(
                 "Auto-ducking restored volume=\(Int(original * 100), privacy: .public)%"

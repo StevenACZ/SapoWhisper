@@ -604,6 +604,16 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         resetPublishedState()
     }
 
+    /// Stops the local capture and tears down the socket without any network
+    /// wait. Used on system sleep; the WAV is preserved for manual retry.
+    func abortPreservingAudio() -> StreamingAudioCaptureResult? {
+        let captureResult = capture.stopRecording(logSummary: false)
+        cleanupWebSocket()
+        lastCaptureResult = nil
+        resetPublishedState()
+        return captureResult
+    }
+
     func pauseRecording() {
         capture.pauseRecording()
     }

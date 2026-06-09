@@ -99,8 +99,16 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             .map { _ in "whisper-loading" }
             .eraseToAnyPublisher()
 
-        Publishers.Merge3(appStateRefreshes, transcriptionRefreshes, loadingRefreshes)
-            .receive(on: RunLoop.main)
+        let reachabilityRefreshes = NetworkReachability.shared.$isOnline
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "reachability" }
+            .eraseToAnyPublisher()
+
+        // L9: state ticks can burst (recording → processing → polishing →
+        // idle); one re-measure per 150ms window is plenty for a popover.
+        Publishers.Merge4(appStateRefreshes, transcriptionRefreshes, loadingRefreshes, reachabilityRefreshes)
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] reason in
                 self?.schedulePopoverRefresh(reason: reason)
             }
@@ -128,7 +136,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             SapoLog.menuBar.info("Popover toggle closed elapsed=\(elapsed, privacy: .public)ms")
         } else {
             popoverOpenCount += 1
-            popover.contentViewController = makePopoverContentController()
+            // R3: reuse the hosting controller across opens; only the root
+            // view is refreshed (missing permissions may have changed).
+            if let hostingController = popover.contentViewController as? NSHostingController<MenuBarPopoverHost> {
+                hostingController.rootView = makePopoverHost()
+            } else {
+                popover.contentViewController = makePopoverContentController()
+            }
             refreshPopoverSize(reason: "open", force: true)
             button.state = .on
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -216,18 +230,18 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func makePopoverContentController() -> NSHostingController<MenuBarPopoverHost> {
-        let missingPermissions = PermissionService.shared.missingPermissions()
+        NSHostingController(rootView: makePopoverHost())
+    }
 
-        return NSHostingController(
-            rootView: MenuBarPopoverHost(
-                viewModel: viewModel,
-                missingPermissions: missingPermissions,
-                openSettings: { [weak self] in self?.openSettingsWindow() },
-                openHistory: { [weak self] in self?.openHistoryWindow() },
-                openPermissions: { [weak self] in self?.openPermissionsWindow() },
-                openWelcome: { [weak self] in self?.openWelcomeWindow() },
-                closePopover: { [weak self] in self?.closePopover() }
-            )
+    private func makePopoverHost() -> MenuBarPopoverHost {
+        MenuBarPopoverHost(
+            viewModel: viewModel,
+            missingPermissions: PermissionService.shared.missingPermissions(),
+            openSettings: { [weak self] in self?.openSettingsWindow() },
+            openHistory: { [weak self] in self?.openHistoryWindow() },
+            openPermissions: { [weak self] in self?.openPermissionsWindow() },
+            openWelcome: { [weak self] in self?.openWelcomeWindow() },
+            closePopover: { [weak self] in self?.closePopover() }
         )
     }
 

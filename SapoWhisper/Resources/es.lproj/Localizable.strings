@@ -502,3 +502,4 @@
 "menu.welcome_tour" = "Tour de bienvenida";
 "menu.setup_pending_title" = "Termina la configuración";
 "menu.setup_pending_subtitle" = "Tu motor de transcripción aún no está listo";
+"menu.offline_hint" = "Sin conexión — el motor en la nube no está disponible. Se reanudará al reconectar.";

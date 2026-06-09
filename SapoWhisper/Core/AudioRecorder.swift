@@ -522,22 +522,47 @@ class AudioRecorder: ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        let url = audioSetupQueue.sync { () -> URL? in
-            audioEngine?.inputNode.removeTap(onBus: 0)
-            audioEngine?.stop()
-            audioEngine?.reset()
+        let url = audioSetupQueue.sync { finalizeCaptureOnQueue() }
+        completeStop(url: url, stopStart: stopStart, logSummary: logSummary)
+        return url
+    }
 
-            _ = flushRemainingConvertedAudio()
+    /// Variante async de `stopRecording`: el finalize (remove tap, engine
+    /// stop, converter flush, file close) corre en la cola de audio sin
+    /// bloquear el hilo llamador (MainActor en el stop path).
+    func stopRecordingAsync(logSummary: Bool = true) async -> URL? {
+        let stopStart = CFAbsoluteTimeGetCurrent()
+        invalidateSetupGeneration()
+        timer?.invalidate()
+        timer = nil
 
-            let currentURL = recordingURL
-            audioFile = nil
-            audioEngine = nil
-            converter = nil
-            converterOutputFormat = nil
-            recordingURL = nil
-            return currentURL
+        let url = await withCheckedContinuation { (continuation: CheckedContinuation<URL?, Never>) in
+            audioSetupQueue.async { [weak self] in
+                continuation.resume(returning: self?.finalizeCaptureOnQueue())
+            }
         }
+        completeStop(url: url, stopStart: stopStart, logSummary: logSummary)
+        return url
+    }
 
+    /// Must run on `audioSetupQueue`.
+    private func finalizeCaptureOnQueue() -> URL? {
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine?.stop()
+        audioEngine?.reset()
+
+        _ = flushRemainingConvertedAudio()
+
+        let currentURL = recordingURL
+        audioFile = nil
+        audioEngine = nil
+        converter = nil
+        converterOutputFormat = nil
+        recordingURL = nil
+        return currentURL
+    }
+
+    private func completeStop(url: URL?, stopStart: CFAbsoluteTime, logSummary: Bool) {
         isRecording = false
         isPaused = false
 
@@ -564,8 +589,6 @@ class AudioRecorder: ObservableObject {
         startRecordingTime = 0
         firstInputBufferLogged = false
         lastInputBufferTime = 0
-
-        return url
     }
 
     func discardRecording() {

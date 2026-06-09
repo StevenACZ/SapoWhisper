@@ -6,6 +6,28 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Sleep/wake residency** — On system sleep any active dictation stops cleanly: the WAV is preserved and the entry is saved as failed with retry available. On wake the app re-validates the global hotkey, refreshes the audio device caches, and re-runs the input preflight.
+- **Hotkey watchdog** — The global hotkey re-enables or re-creates itself if macOS silently kills the event tap, checked on every wake and every 10 minutes.
+- **Offline fast-fail** — With no network, cloud engines fail instantly with a clear network error (before the mic even opens) instead of burning the request timeout, and the menu bar shows an offline hint that clears on reconnect. Local WhisperKit dictation is unaffected.
+- Per-dictation performance log line (`perf stop→paste totalMs=… stages={tail,finalize,engine,polish,paste,persist}`) plus a daily resident-memory log line, so latency and long-run memory are provable from sanitized logs.
+- `make idle-cpu-note` prints the manual idle-CPU (0%) verification procedure.
+
+### Changed
+
+- **Faster stop→paste** — Auto-paste fires the moment macOS confirms the target app is active (150 ms hard fallback) instead of polling; history persistence (audio copy + database insert) moved off the paste path to a background task; the overlay switches to "transcribing" the instant stop is pressed; the WAV finalize runs on the audio queue without blocking the UI.
+- **AI polish timeout reduced from 8 s to 5 s**, and the polishing overlay now shows a per-second countdown.
+- The audio input preflight now genuinely warms the input route (brief muted engine start), so the first dictation after a device change starts faster; the mic indicator may blink briefly on device changes. The preflight also defers itself while any recording is active.
+- Auto-ducking always restores the saved volume after recording; the old "respect user volume" heuristic could leave Bluetooth audio permanently low.
+- The menu bar popover re-measures at most once per 150 ms and reuses its content controller across opens.
+
+### Fixed
+
+- History audio playback now uses one shared player: switching entries or closing the detail pane reliably stops playback, and the progress timer only runs while audio plays.
+
 ## [2.3.0] - 2026-06-09
 
 ### Added

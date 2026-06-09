@@ -9,6 +9,7 @@ import SwiftUI
 /// Vista principal del popup del menu bar - Diseño limpio y moderno
 struct MenuBarView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
+    @ObservedObject private var reachability = NetworkReachability.shared
     @Environment(\.openWindow) var openWindow
     var missingPermissions: [AppPermission] = []
     var openSettingsAction: (() -> Void)?
@@ -24,12 +25,21 @@ struct MenuBarView: View {
         !onboardingComplete && !viewModel.isLoadingWhisperKit && !viewModel.isEngineReady(viewModel.currentEngine)
     }
 
+    /// R7: only the cloud engines lose anything while offline.
+    private var showsOfflineHint: Bool {
+        reachability.isOffline && viewModel.currentEngine.requiresInternet
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             headerSection
 
             MenuBarPermissionReminderView(missingPermissions: missingPermissions) {
                 openPermissionsWindow()
+            }
+
+            if showsOfflineHint {
+                offlineHintBanner
             }
 
             if needsEngineSetup {
@@ -297,6 +307,30 @@ struct MenuBarView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Offline Hint (R7)
+
+    private var offlineHintBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            Text("menu.offline_hint".localized)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.orange.opacity(0.1))
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
     }
 
     // MARK: - Setup Reminder

@@ -11,13 +11,13 @@ import os
 /// Maneja el portapapeles y auto-paste
 class PasteManager {
 
-    private static let initialActivationDelay: TimeInterval = 0.03
-    private static let activationPollInterval: TimeInterval = 0.02
-    private static let activationTimeout: TimeInterval = 0.18
+    private static let activationFallbackDelay: TimeInterval = 0.15
 
     /// Guarda la app activa antes de grabar para volver a ella después
     private static var previousApp: NSRunningApplication?
     private static var lastPasteTriggerTime: CFAbsoluteTime = 0
+    private static var activationObserver: NSObjectProtocol?
+    private static var activationFallbackWorkItem: DispatchWorkItem?
 
     /// Guarda la app activa actual
     static func savePreviousApp() {
@@ -35,45 +35,67 @@ class PasteManager {
         SapoLog.menuBar.info("Clipboard updated chars=\(text.count, privacy: .public)")
     }
 
-    /// Simula Cmd+V para pegar automáticamente
-    static func simulatePaste() {
+    /// Simula Cmd+V para pegar automáticamente.
+    /// Activa la app anterior y pega en cuanto el sistema notifica la
+    /// activación (fallback fijo si la notificación no llega), en vez de
+    /// esperar con polling.
+    static func simulatePaste(onPasted: (() -> Void)? = nil) {
         let t0 = CFAbsoluteTimeGetCurrent()
         lastPasteTriggerTime = t0
-        let targetApp = previousApp
+        cancelPendingActivationWait()
 
-        // Primero activar la app anterior donde el usuario estaba escribiendo
-        if let app = targetApp {
-            app.activate(options: [])
-            SapoLog.menuBar.info(
-                "Reactivating previous app name=\(app.localizedName ?? "unknown", privacy: .public)"
-            )
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + initialActivationDelay) {
-            attemptPaste(for: targetApp, startedAt: t0)
-        }
-    }
-
-    private static func attemptPaste(for targetApp: NSRunningApplication?, startedAt startTime: CFAbsoluteTime) {
-        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-        let isReadyToPaste: Bool
-
-        if let targetApp {
-            isReadyToPaste = NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp.processIdentifier
-        } else {
-            isReadyToPaste = true
-        }
-
-        if isReadyToPaste || elapsed >= activationTimeout {
-            let activationDelay = Int(elapsed * 1000)
-            SapoLog.menuBar.info("Paste activation waitMs=\(activationDelay, privacy: .public)")
+        guard let targetApp = previousApp else {
             performPaste()
+            onPasted?()
             return
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + activationPollInterval) {
-            attemptPaste(for: targetApp, startedAt: startTime)
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp.processIdentifier {
+            SapoLog.menuBar.info("Paste target already frontmost waitMs=0")
+            performPaste()
+            onPasted?()
+            return
         }
+
+        targetApp.activate(options: [])
+        SapoLog.menuBar.info(
+            "Reactivating previous app name=\(targetApp.localizedName ?? "unknown", privacy: .public)"
+        )
+
+        let pasteOnce: (String) -> Void = { trigger in
+            cancelPendingActivationWait()
+            let waitMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+            SapoLog.menuBar.info(
+                "Paste activation trigger=\(trigger, privacy: .public) waitMs=\(waitMs, privacy: .public)"
+            )
+            performPaste()
+            onPasted?()
+        }
+
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            let activated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard activated?.processIdentifier == targetApp.processIdentifier else { return }
+            pasteOnce("notification")
+        }
+
+        let fallback = DispatchWorkItem {
+            pasteOnce("fallback")
+        }
+        activationFallbackWorkItem = fallback
+        DispatchQueue.main.asyncAfter(deadline: .now() + activationFallbackDelay, execute: fallback)
+    }
+
+    private static func cancelPendingActivationWait() {
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+            self.activationObserver = nil
+        }
+        activationFallbackWorkItem?.cancel()
+        activationFallbackWorkItem = nil
     }
 
     private static func performPaste() {

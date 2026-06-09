@@ -49,6 +49,8 @@ enum SapoSignpost {
 }
 
 enum PerformanceDiagnostics {
+    private static var residencyTimer: Timer?
+
     static func logMemorySnapshot(reason: String, force: Bool = false) {
         _ = reason
         _ = force
@@ -62,5 +64,41 @@ enum PerformanceDiagnostics {
 
     static func logDiagnosticsFileLocation() {
         // Runtime JSONL diagnostics were removed after the long-run validation pass.
+    }
+
+    /// R3: one RSS line per day (plus launch) proves flat memory over weeks of
+    /// residency without any heavier tooling.
+    static func startDailyResidencyLog() {
+        guard residencyTimer == nil else { return }
+
+        logResidentMemory(reason: "launch")
+        let timer = Timer(timeInterval: 86_400, repeats: true) { _ in
+            logResidentMemory(reason: "daily")
+        }
+        timer.tolerance = 3_600
+        RunLoop.main.add(timer, forMode: .common)
+        residencyTimer = timer
+    }
+
+    static func logResidentMemory(reason: String) {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+            }
+        }
+
+        guard result == KERN_SUCCESS else {
+            SapoLog.performance.warning("Resident memory query failed code=\(result, privacy: .public)")
+            return
+        }
+
+        let residentMB = Int(info.phys_footprint / 1_048_576)
+        SapoLog.performance.info(
+            "Resident memory reason=\(reason, privacy: .public) footprintMB=\(residentMB, privacy: .public)"
+        )
     }
 }

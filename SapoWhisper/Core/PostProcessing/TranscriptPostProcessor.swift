@@ -7,6 +7,10 @@ import Foundation
 import os
 
 final class TranscriptPostProcessor {
+    /// L10: hard cap for one polish round-trip. The overlay countdown renders
+    /// this same value, so keep them in sync by construction.
+    static let polishTimeoutSeconds: UInt64 = 5
+
     private let polisher: OpenAICompatiblePolisher
 
     init(polisher: OpenAICompatiblePolisher = OpenAICompatiblePolisher()) {
@@ -81,7 +85,7 @@ final class TranscriptPostProcessor {
         )
 
         do {
-            let response = try await withTimeout(seconds: 8) {
+            let response = try await withTimeout(seconds: Self.polishTimeoutSeconds) {
                 try await self.polisher.polish(system: messages.system, user: messages.user)
             }
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: trimmed)

@@ -502,3 +502,4 @@
 "menu.welcome_tour" = "Welcome tour";
 "menu.setup_pending_title" = "Finish setting up";
 "menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";
+"menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";

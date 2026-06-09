@@ -24,7 +24,10 @@ class TranscriptionHistoryManager {
         audioStorage = HistoryAudioStorage(appDirectory: appDir)
 
         let dbPath = appDir.appendingPathComponent("history.db").path
-        if sqlite3_open(dbPath, &db) == SQLITE_OK {
+        // FULLMUTEX: history persistence runs off the paste path (background
+        // task) while the UI reads from the main thread on this connection.
+        let openFlags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        if sqlite3_open_v2(dbPath, &db, openFlags, nil) == SQLITE_OK {
             configureDatabase()
             createTable()
             migrateSchema()
@@ -47,7 +50,15 @@ class TranscriptionHistoryManager {
     }
 
     func notifyDidChange() {
-        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        // History UI observers expect main-thread delivery; saves may post
+        // from the background persistence task.
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        } else {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+            }
+        }
     }
 
     /// Steps a mutating statement and surfaces SQLite errors in diagnostics

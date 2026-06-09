@@ -13,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         viewModel: SapoWhisperAppEnvironment.shared.viewModel
     )
     private var screenChangeObserver: NSObjectProtocol?
+    private var sleepObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
@@ -21,10 +23,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         EnginePortfolioMigration.run()
         menuBarStatusController.start()
         observeScreenChanges()
+        observeSleepWake()
         scheduleInitialOnboardingCheck()
         Task.detached(priority: .utility) {
             TemporaryAudioStorage.sweepStaleFiles()
         }
+        _ = NetworkReachability.shared
+        PerformanceDiagnostics.startDailyResidencyLog()
         PerformanceDiagnostics.logDiagnosticsFileLocation()
         PerformanceDiagnostics.logRuntimeSnapshot(reason: "launch", force: true)
     }
@@ -40,7 +45,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let screenChangeObserver {
             NotificationCenter.default.removeObserver(screenChangeObserver)
         }
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        if let sleepObserver {
+            workspaceCenter.removeObserver(sleepObserver)
+        }
+        if let wakeObserver {
+            workspaceCenter.removeObserver(wakeObserver)
+        }
         AutoDuckingManager.shared.forceRestore()
+    }
+
+    /// R1: the app is resident for days — recording must stop cleanly before
+    /// sleep, and the hotkey tap / device caches re-validate on wake.
+    private func observeSleepWake() {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+
+        sleepObserver = workspaceCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                SapoWhisperAppEnvironment.shared.viewModel.handleSystemWillSleep()
+            }
+        }
+
+        wakeObserver = workspaceCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                SapoWhisperAppEnvironment.shared.viewModel.handleSystemDidWake()
+            }
+        }
     }
 
     private func observeScreenChanges() {
