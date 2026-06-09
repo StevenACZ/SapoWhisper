@@ -14,6 +14,9 @@ struct GeneralSettingsTab: View {
     let viewModel: SapoWhisperViewModel
 
     @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "es"
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
+        .rawValue
     @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
     @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
@@ -108,6 +111,19 @@ struct GeneralSettingsTab: View {
 
     // MARK: - Language Card
 
+    /// Flux Multilingual accepts a `language_hint` for a subset of the
+    /// catalog; anything else falls back to auto-detect. Make that visible
+    /// instead of silent when Flux live is the active mode.
+    private var showsFluxHintUnsupportedBadge: Bool {
+        guard selectedEngine == TranscriptionEngine.deepgram.rawValue,
+            selectedDeepgramMode == DeepgramTranscriptionMode.fluxLive.rawValue,
+            selectedLanguage != "auto"
+        else {
+            return false
+        }
+        return TranscriptionLanguageCatalog.deepgramFluxLanguageHint(for: selectedLanguage) == nil
+    }
+
     private var languageCard: some View {
         SettingsCard(icon: "globe", title: "settings.language_header".localized) {
             VStack(alignment: .leading, spacing: 14) {
@@ -124,6 +140,13 @@ struct GeneralSettingsTab: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if showsFluxHintUnsupportedBadge {
+                        Label("settings.flux_hint_unsupported".localized, systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 Divider()

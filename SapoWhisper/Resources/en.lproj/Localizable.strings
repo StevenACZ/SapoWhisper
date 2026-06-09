@@ -96,6 +96,7 @@
 "settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";
 "settings.input_language_desc" = "The language you will speak";
+"settings.flux_hint_unsupported" = "Deepgram Flux has no hint for this language — auto-detect will be used.";
 "settings.behavior" = "Behavior";
 "settings.auto_paste" = "Auto-paste";
 "settings.auto_paste_desc" = "Text will be pasted at cursor position";
@@ -347,6 +348,8 @@
 "config.keyterms" = "Keywords";
 "config.keyterm_placeholder" = "e.g. Claude Code";
 "config.keyterms_desc" = "Words that supported cloud engines will prioritize when transcribing";
+"config.keyterm_limit_batch" = "%@ saved term(s) exceed the ElevenLabs batch limits (50 characters, 5 words) and will be skipped on that engine.";
+"config.keyterm_limit_realtime" = "%@ saved term(s) exceed the ElevenLabs realtime limit (20 characters) and will be skipped on that mode.";
 "config.replacements" = "Auto-corrections";
 "config.replace_from" = "Original";
 "config.replace_to" = "Replace with";

@@ -96,6 +96,7 @@
 "settings.language_header" = "Idioma";
 "settings.input_language" = "Idioma de transcripción";
 "settings.input_language_desc" = "El idioma que usarás para hablar";
+"settings.flux_hint_unsupported" = "Deepgram Flux no tiene hint para este idioma — se usará detección automática.";
 "settings.behavior" = "Comportamiento";
 "settings.auto_paste" = "Pegar automáticamente";
 "settings.auto_paste_desc" = "El texto se pegará donde tengas el cursor";
@@ -347,6 +348,8 @@
 "config.keyterms" = "Palabras clave";
 "config.keyterm_placeholder" = "Ej: Claude Code";
 "config.keyterms_desc" = "Palabras que los motores cloud compatibles priorizaran al transcribir";
+"config.keyterm_limit_batch" = "%@ término(s) guardado(s) superan los límites de ElevenLabs batch (50 caracteres, 5 palabras) y se omitirán en ese motor.";
+"config.keyterm_limit_realtime" = "%@ término(s) guardado(s) superan el límite de ElevenLabs realtime (20 caracteres) y se omitirán en ese modo.";
 "config.replacements" = "Correcciones automaticas";
 "config.replace_from" = "Original";
 "config.replace_to" = "Corregir a";

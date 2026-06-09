@@ -368,8 +368,8 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var requestedLanguage = "auto"
 
     private static let engineName = "ElevenLabs"
-    private static let maxRealtimeKeyterms = 50
-    private static let maxRealtimeKeytermLength = 20
+    private static let maxRealtimeKeyterms = ElevenLabsKeytermLimits.realtimeMaxCount
+    private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
     private static let sampleRate = 16000
 
     private enum StartRecovery {

@@ -18,9 +18,9 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     /// ElevenLabs Scribe v2 batch keyterm biasing limits: up to 1000 terms,
     /// each ≤50 characters and ≤5 words.
-    private static let maxKeyterms = 1000
-    private static let maxKeytermLength = 50
-    private static let maxKeytermWords = 5
+    private static let maxKeyterms = ElevenLabsKeytermLimits.batchMaxCount
+    private static let maxKeytermLength = ElevenLabsKeytermLimits.batchMaxLength
+    private static let maxKeytermWords = ElevenLabsKeytermLimits.batchMaxWords
 
     /// Check if the ElevenLabs API key is configured.
     var isConfigured: Bool {
@@ -82,16 +82,11 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             force: true
         )
         let data: Data
-        let response: URLResponse
+        let httpResponse: HTTPURLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, httpResponse) = try await TransientRequestRetry.data(for: request, engine: Self.engineName)
         } catch {
             throw TranscriptionFailure.from(error, engine: Self.engineName)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName, technicalDetail: "non-HTTP response")
         }
 
         guard httpResponse.statusCode == 200 else {
@@ -109,6 +104,8 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             throw failure
         }
 
+        // A 200 without parsable text means "nothing was recognized" — surface
+        // it as emptyTranscription (not retryable), matching every other engine.
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let transcript = json["text"] as? String
         else {
@@ -116,13 +113,19 @@ class ElevenLabsScribeTranscriber: ObservableObject {
                 "ElevenLabs Scribe parse failure status=\(httpResponse.statusCode, privacy: .public) audioBytes=\(audioData.count, privacy: .public)"
             )
             throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName,
+                kind: .emptyTranscription, engine: Self.engineName,
                 technicalDetail: "could not parse 200 response bytes=\(data.count)")
         }
 
         // Scribe v2 has no server-side replace; apply saved vocabulary corrections locally.
         let finalText = VocabularyManager.shared.applyingRecognitionCorrections(to: transcript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !finalText.isEmpty else {
+            throw TranscriptionFailure(
+                kind: .emptyTranscription, engine: Self.engineName,
+                technicalDetail: "empty transcript in 200 response")
+        }
 
         let requestID = httpResponse.value(forHTTPHeaderField: "request-id") ?? "n/a"
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)

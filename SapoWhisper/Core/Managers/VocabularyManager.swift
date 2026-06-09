@@ -6,6 +6,16 @@
 import Combine
 import Foundation
 
+/// ElevenLabs keyterm biasing limits, shared by the request builders and the
+/// vocabulary UI so over-limit terms are surfaced instead of silently dropped.
+enum ElevenLabsKeytermLimits {
+    static let batchMaxCount = 1000
+    static let batchMaxLength = 50
+    static let batchMaxWords = 5
+    static let realtimeMaxCount = 50
+    static let realtimeMaxLength = 20
+}
+
 /// Manages keyterms and replacements for speech recognition engines.
 /// Persists to ~/Library/Application Support/SapoWhisper/vocabulary.json
 class VocabularyManager: ObservableObject {
@@ -101,6 +111,23 @@ class VocabularyManager: ObservableObject {
         }
 
         save()
+    }
+
+    // MARK: - Limit validation
+
+    /// Saved keyterms that exceed an ElevenLabs limit and would be dropped at
+    /// request time. Counted here so the UI can warn instead of staying silent.
+    func elevenLabsLimitViolations() -> (batch: Int, realtime: Int) {
+        let trimmed =
+            keyterms
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let batch = trimmed.filter {
+            $0.count > ElevenLabsKeytermLimits.batchMaxLength
+                || $0.split(separator: " ").count > ElevenLabsKeytermLimits.batchMaxWords
+        }.count
+        let realtime = trimmed.filter { $0.count > ElevenLabsKeytermLimits.realtimeMaxLength }.count
+        return (batch, realtime)
     }
 
     // MARK: - Query Parameters for Deepgram

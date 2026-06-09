@@ -143,6 +143,34 @@ struct VocabularySettingsCard: View {
             Text("config.keyterms_desc".localized)
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            keytermLimitWarnings
+        }
+    }
+
+    /// Over-limit terms are skipped at request time; surface that here instead
+    /// of dropping them silently (ElevenLabs batch: ≤50 chars and ≤5 words;
+    /// realtime: ≤20 chars).
+    @ViewBuilder
+    private var keytermLimitWarnings: some View {
+        let violations = vocabularyManager.elevenLabsLimitViolations()
+
+        if violations.batch > 0 {
+            Label(
+                "config.keyterm_limit_batch".localized(String(violations.batch)),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+
+        if violations.realtime > 0 {
+            Label(
+                "config.keyterm_limit_realtime".localized(String(violations.realtime)),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
         }
     }
 
