@@ -225,6 +225,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
                 openSettings: { [weak self] in self?.openSettingsWindow() },
                 openHistory: { [weak self] in self?.openHistoryWindow() },
                 openPermissions: { [weak self] in self?.openPermissionsWindow() },
+                openWelcome: { [weak self] in self?.openWelcomeWindow() },
                 closePopover: { [weak self] in self?.closePopover() }
             )
         )
@@ -307,6 +308,11 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         closePopover()
         PermissionRequirementsWindowController.shared.showWindow(force: true)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openWelcomeWindow() {
+        closePopover()
+        WelcomeWindowController.shared.show()
     }
 
     private func makeWindowController<Content: View>(

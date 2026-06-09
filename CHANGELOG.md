@@ -14,6 +14,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **OpenAI-compatible AI polish provider** — AI polish now talks to any `chat/completions` endpoint (OpenRouter by default, OpenAI, Groq, or a custom URL such as Ollama). Paste an API key, pick a model (default `openai/gpt-5.4-nano`), press Test, done. The key is stored in the macOS Keychain.
 - **Fidelity guard for AI polish** — Polished text is checked against the raw transcript (length ratio + anchor tokens: numbers, URLs, names, vocabulary). If the AI drifts, the raw transcript is pasted instead and the entry is marked `rejected_fidelity`.
 - History engine filter now includes ElevenLabs and an "Other engines" bucket for entries created by removed engines.
+- **Animated Welcome flow** — A five-step onboarding window (welcome → permissions → choose your engine → optional AI polish → ready) guides first-run setup: WhisperKit downloads a model with a progress ring, Deepgram/ElevenLabs keys validate inline, and the AI polish step is prominently skippable. Re-openable any time from the menu bar ("Welcome tour"); a menu hint appears while the engine is unconfigured.
 
 ### Changed
 

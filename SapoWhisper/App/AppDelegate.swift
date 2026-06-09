@@ -20,7 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         EnginePortfolioMigration.run()
         menuBarStatusController.start()
         observeScreenChanges()
-        scheduleInitialPermissionCheck()
+        scheduleInitialOnboardingCheck()
         PerformanceDiagnostics.logDiagnosticsFileLocation()
         PerformanceDiagnostics.logRuntimeSnapshot(reason: "launch", force: true)
     }
@@ -51,10 +51,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func scheduleInitialPermissionCheck() {
+    private func scheduleInitialOnboardingCheck() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 650_000_000)
-            PermissionService.shared.showRequirementsWindow()
+            if WelcomeWindowController.isOnboardingNeeded {
+                WelcomeWindowController.shared.show()
+            } else {
+                PermissionService.shared.showRequirementsWindow()
+            }
         }
     }
 }
