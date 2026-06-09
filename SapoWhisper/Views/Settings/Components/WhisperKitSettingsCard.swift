@@ -40,6 +40,11 @@ struct WhisperKitSettingsCard: View {
             Text("config.models_download_auto".localized)
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            Label("config.whisper_vocabulary_hint".localized, systemImage: "info.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -12,23 +12,13 @@ struct EngineSettingsTab: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                let inner = max(0, proxy.size.width - Self.outerPadding - Self.columnSpacing)
-                HStack(alignment: .top, spacing: Self.columnSpacing) {
-                    transcriptionEngineCard
-                        .frame(width: inner * 0.60, alignment: .topLeading)
-
-                    AIPolishSettingsCard()
-                        .frame(width: inner * 0.40, alignment: .topLeading)
-                }
+        ScrollView {
+            transcriptionEngineCard
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
                 .padding(16)
-            }
         }
     }
-
-    private static let columnSpacing: CGFloat = 16
-    private static let outerPadding: CGFloat = 32
 
     private var transcriptionEngineCard: some View {
         SettingsCard(icon: "cpu", title: "config.engine".localized) {

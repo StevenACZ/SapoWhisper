@@ -17,11 +17,13 @@ struct HotkeyRecorderView: NSViewRepresentable {
     func makeNSView(context: Context) -> HotkeyRecorderNSView {
         let view = HotkeyRecorderNSView()
         view.delegate = context.coordinator
+        view.recordingPrompt = "config.hotkey_recorder_listening".localized
         view.updateDisplay(keyCode: keyCode, modifiers: modifiers)
         return view
     }
 
     func updateNSView(_ nsView: HotkeyRecorderNSView, context: Context) {
+        nsView.recordingPrompt = "config.hotkey_recorder_listening".localized
         nsView.updateDisplay(keyCode: keyCode, modifiers: modifiers)
         nsView.isRecording = isRecording
     }
@@ -61,6 +63,11 @@ protocol HotkeyRecorderDelegate: AnyObject {
 
 class HotkeyRecorderNSView: NSView {
     weak var delegate: HotkeyRecorderDelegate?
+    var recordingPrompt = "Press your shortcut…" {
+        didSet {
+            if isRecording { needsDisplay = true }
+        }
+    }
     var isRecording = false {
         didSet {
             needsDisplay = true
@@ -110,7 +117,7 @@ class HotkeyRecorderNSView: NSView {
         path.stroke()
 
         // Text
-        let text = isRecording ? "Presiona tu atajo..." : hotkeyDescription(keyCode: displayKeyCode, modifiers: displayModifiers)
+        let text = isRecording ? recordingPrompt : hotkeyDescription(keyCode: displayKeyCode, modifiers: displayModifiers)
         let textColor: NSColor = isRecording ? .secondaryLabelColor : .labelColor
 
         let paragraphStyle = NSMutableParagraphStyle()
@@ -177,57 +184,7 @@ class HotkeyRecorderNSView: NSView {
     }
 
     private func hotkeyDescription(keyCode: Int, modifiers: Int) -> String {
-        var parts: [String] = []
-
-        if modifiers & controlKey != 0 { parts.append("⌃") }
-        if modifiers & optionKey != 0 { parts.append("⌥") }
-        if modifiers & shiftKey != 0 { parts.append("⇧") }
-        if modifiers & cmdKey != 0 { parts.append("⌘") }
-
-        parts.append(keyName(for: keyCode))
-
-        return parts.joined(separator: " ")
-    }
-
-    private func keyName(for keyCode: Int) -> String {
-        switch keyCode {
-        case 49: return "Space"
-        case 36: return "Return"
-        case 48: return "Tab"
-        case 51: return "Delete"
-        case 53: return "Esc"
-        case 123: return "←"
-        case 124: return "→"
-        case 125: return "↓"
-        case 126: return "↑"
-        case 0: return "A"
-        case 1: return "S"
-        case 2: return "D"
-        case 3: return "F"
-        case 4: return "H"
-        case 5: return "G"
-        case 6: return "Z"
-        case 7: return "X"
-        case 8: return "C"
-        case 9: return "V"
-        case 11: return "B"
-        case 12: return "Q"
-        case 13: return "W"
-        case 14: return "E"
-        case 15: return "R"
-        case 16: return "Y"
-        case 17: return "T"
-        case 31: return "O"
-        case 32: return "U"
-        case 34: return "I"
-        case 35: return "P"
-        case 37: return "L"
-        case 38: return "J"
-        case 40: return "K"
-        case 45: return "N"
-        case 46: return "M"
-        default: return "Key\(keyCode)"
-        }
+        HotkeyKeyName.keycapLabels(keyCode: keyCode, modifiers: modifiers).joined(separator: " ")
     }
 
     override var intrinsicContentSize: NSSize {

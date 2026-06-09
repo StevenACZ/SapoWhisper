@@ -67,6 +67,11 @@ class HotkeyManager: ObservableObject {
 
     static let shared = HotkeyManager()
 
+    /// Live double-tap feedback for the Hotkey settings tab: a valid first tap
+    /// landed, or the second tap triggered the hotkey.
+    static let doubleTapFirstTapNotification = Notification.Name("HotkeyManager.doubleTapFirstTap")
+    static let doubleTapTriggeredNotification = Notification.Name("HotkeyManager.doubleTapTriggered")
+
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
     private var eventTap: CFMachPort?
@@ -322,6 +327,7 @@ class HotkeyManager: ObservableObject {
                     "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
                 )
                 DispatchQueue.main.async { [weak self] in
+                    NotificationCenter.default.post(name: Self.doubleTapTriggeredNotification, object: nil)
                     self?.handleHotkeyPressed(source: "double-modifier")
                 }
             }
@@ -335,6 +341,11 @@ class HotkeyManager: ObservableObject {
                 lastDoubleTapReleaseAt = nil
             } else {
                 lastDoubleTapReleaseAt = pressDuration <= Self.doubleTapMaxHoldDuration ? now : nil
+                if lastDoubleTapReleaseAt != nil {
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: Self.doubleTapFirstTapNotification, object: nil)
+                    }
+                }
             }
         } else if modifierFlags != option.cgFlag {
             resetDoubleTapState()
@@ -370,44 +381,7 @@ class HotkeyManager: ObservableObject {
     }
 
     private func keyName(for keyCode: Int) -> String {
-        switch keyCode {
-        case kVK_Space: return "Space"
-        case kVK_Return: return "Return"
-        case kVK_Tab: return "Tab"
-        case kVK_Delete: return "Delete"
-        case kVK_Escape: return "Esc"
-        case kVK_LeftArrow: return "←"
-        case kVK_RightArrow: return "→"
-        case kVK_DownArrow: return "↓"
-        case kVK_UpArrow: return "↑"
-        case kVK_ANSI_A: return "A"
-        case kVK_ANSI_S: return "S"
-        case kVK_ANSI_D: return "D"
-        case kVK_ANSI_F: return "F"
-        case kVK_ANSI_H: return "H"
-        case kVK_ANSI_G: return "G"
-        case kVK_ANSI_Z: return "Z"
-        case kVK_ANSI_X: return "X"
-        case kVK_ANSI_C: return "C"
-        case kVK_ANSI_V: return "V"
-        case kVK_ANSI_B: return "B"
-        case kVK_ANSI_Q: return "Q"
-        case kVK_ANSI_W: return "W"
-        case kVK_ANSI_E: return "E"
-        case kVK_ANSI_R: return "R"
-        case kVK_ANSI_Y: return "Y"
-        case kVK_ANSI_T: return "T"
-        case kVK_ANSI_O: return "O"
-        case kVK_ANSI_U: return "U"
-        case kVK_ANSI_I: return "I"
-        case kVK_ANSI_P: return "P"
-        case kVK_ANSI_L: return "L"
-        case kVK_ANSI_J: return "J"
-        case kVK_ANSI_K: return "K"
-        case kVK_ANSI_N: return "N"
-        case kVK_ANSI_M: return "M"
-        default: return "Key\(keyCode)"
-        }
+        HotkeyKeyName.name(for: keyCode)
     }
 
     deinit {

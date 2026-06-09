@@ -124,6 +124,7 @@
 "config.whisper_model" = "Modelo de Whisper";
 "config.downloading" = "Descargando";
 "config.space_used" = "Espacio usado: %@";
+"config.whisper_vocabulary_hint" = "Los hints de vocabulario no son compatibles con el modelo local de Whisper; tus reemplazos se siguen aplicando tras la transcripción.";
 "config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
 "config.hotkey_instruction" = "Haz clic y presiona tu combinación de teclas (mínimo 2 teclas)";
 "config.app_language" = "Idioma de la App";
@@ -236,6 +237,15 @@
 "settings.hotkey_mode_combination" = "Combinación";
 "settings.hotkey_mode_double_modifier" = "Doble pulsación";
 "settings.hotkey_double_modifier_desc" = "Presiona el mismo modificador dos veces rápido.";
+"settings.hotkey_mode_combination_caption" = "Pulsa la combinación una vez para dictar y otra vez para parar.";
+"settings.hotkey_mode_double_caption" = "Pulsa el modificador dos veces rápido, sin mantener nada más.";
+"settings.hotkey_conflict" = "Puede chocar con %@ en algunos sistemas.";
+"settings.hotkey_conflict_spotlight" = "Spotlight";
+"settings.hotkey_conflict_input_source" = "el cambio de idioma del teclado";
+"settings.hotkey_conflict_character_viewer" = "el visor de caracteres";
+"settings.hotkey_double_tap_try" = "Pruébalo ahora: doble pulsación de la tecla.";
+"settings.hotkey_double_tap_success" = "¡Doble pulsación detectada!";
+"config.hotkey_recorder_listening" = "Presiona tu atajo…";
 "settings.hotkey_presets_combinations" = "Combinaciones";
 "settings.hotkey_presets_double_tap" = "Doble pulsación";
 
@@ -378,7 +388,19 @@
 "prompts.name" = "Nombre";
 "prompts.description" = "Descripción";
 "prompts.force_english" = "Forzar salida en inglés";
-"prompts.instruction_hint" = "Esta instrucción se envía a Gemini junto con el contexto personal, vocabulario y transcript crudo.";
+"prompts.instruction_hint" = "Esta instrucción se envía a la IA junto con el contexto personal, vocabulario y transcript crudo.";
+"prompts.duplicate_prompt" = "Duplicar";
+"prompts.prompt_duplicated" = "Prompt duplicado.";
+"prompts.base_rules_note" = "Todos los modos heredan las reglas base de fidelidad: nunca parafrasear, nunca añadir datos. Tu instrucción se aplica sobre ellas.";
+"prompts.effective_prompt" = "Prompt efectivo";
+"prompts.effective_prompt_desc" = "Vista de solo lectura del system prompt exacto que se envía para este modo, incluyendo contexto personal y vocabulario.";
+"prompts.preview_polish" = "Probar el polish";
+"prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia este modo.";
+"prompts.preview_run" = "Pulir ejemplo";
+"prompts.preview_raw" = "Original";
+"prompts.preview_polished" = "Pulido";
+"prompts.preview_needs_provider" = "Configura el proveedor de IA arriba para ejecutar una prueba.";
+"prompts.preview_sample" = "eh bueno quería confirmarte que mañana subo el fix a la rama feature login y luego corro npm run build";
 "prompts.save_prompt" = "Guardar";
 "prompts.delete_prompt" = "Eliminar";
 "prompts.context_saved" = "Contexto personal guardado.";
@@ -388,7 +410,6 @@
 /* Settings Transfer */
 "settings.transfer.title" = "Migrar configuración";
 "settings.transfer.desc" = "Exporta un JSON portable para mover preferencias, vocabulario, prompts y contexto a otra Mac. El micrófono, permisos del sistema y credenciales Google importadas como archivo no se incluyen.";
-"settings.transfer.include_api_keys" = "Incluir API keys guardadas en este Mac";
 "settings.transfer.export" = "Exportar configuración";
 "settings.transfer.import" = "Importar configuración";
 "settings.transfer.export_panel_message" = "Guarda la configuración portable de SapoWhisper.";
@@ -413,7 +434,7 @@
 "settings.transfer.section_prompt_context" = "Prompts y contexto";
 "settings.transfer.section_prompt_context_desc" = "Contexto personal y modos de IA editables.";
 "settings.transfer.section_api_keys" = "API keys";
-"settings.transfer.section_api_keys_desc" = "Deepgram y Google API key si el archivo las contiene.";
+"settings.transfer.section_api_keys_desc" = "API keys de motores de archivos exportados antiguos; se guardan en el Llavero de macOS.";
 
 "overlay.no_speech" = "No se detecto voz";
 
