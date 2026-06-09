@@ -48,21 +48,16 @@ class SapoWhisperViewModel: ObservableObject {
         Constants.Hotkey.defaultDoubleTapModifier
     )
     @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.appleOnline.rawValue
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.whisperLocal.rawValue
     @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
-    @AppStorage(Constants.StorageKeys.geminiAudioModel) var selectedGeminiAudioModel: String =
-        GeminiAudioModel.defaultModel.rawValue
 
     // MARK: - Managers
 
     let audioRecorder = AudioRecorder()
-    let transcriber = WhisperTranscriber()
     let whisperKitTranscriber = WhisperKitTranscriber()
-    let googleCloudTranscriber = GoogleCloudTranscriber()
-    let geminiAudioTranscriber = GeminiAudioTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
@@ -76,9 +71,6 @@ class SapoWhisperViewModel: ObservableObject {
     @Published var lastFailedAudioURL: URL?
     private var lastFailedHistoryId: Int64?
 
-    // Auto-stop timers
-    private var autoStopTimer: Timer?
-    private static let googleCloudMaxDuration: TimeInterval = 58  // Stop before 60s limit
     private static let stopTailPadding: TimeInterval = 0.12
     private static let firstInputBufferTimeout: TimeInterval = 0.8
     private static let startRetryBudget: TimeInterval = 1.0
@@ -97,7 +89,7 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Computed Properties
 
     var currentEngine: TranscriptionEngine {
-        TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
+        TranscriptionEngine(rawValue: selectedEngine) ?? .whisperLocal
     }
 
     var currentWhisperKitModel: WhisperKitModel {
@@ -110,10 +102,6 @@ class SapoWhisperViewModel: ObservableObject {
 
     var currentElevenLabsMode: ElevenLabsTranscriptionMode {
         ElevenLabsTranscriptionMode(rawValue: selectedElevenLabsMode) ?? .defaultMode
-    }
-
-    var currentGeminiAudioModel: GeminiAudioModel {
-        GeminiAudioModel(rawValue: selectedGeminiAudioModel) ?? .defaultModel
     }
 
     private var isDeepgramFluxLiveSelected: Bool {
@@ -134,16 +122,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
         switch engine {
-        case .appleOnline:
-            return true
         case .whisperLocal:
             return whisperKitTranscriber.isModelLoaded
-        case .googleCloud:
-            return googleCloudTranscriber.isConfigured
         case .deepgram:
             return deepgramTranscriber.isConfigured
-        case .geminiAudio:
-            return geminiAudioTranscriber.isConfigured
         case .elevenLabsScribe:
             return elevenLabsTranscriber.isConfigured
         }
@@ -232,35 +214,8 @@ class SapoWhisperViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Observar estado de transcripcion (Apple)
-        transcriber.$isTranscribing
-            .sink { [weak self] isTranscribing in
-                if isTranscribing {
-                    self?.appState = .processing
-                }
-            }
-            .store(in: &cancellables)
-
         // Observar estado de transcripcion (WhisperKit)
         whisperKitTranscriber.$isTranscribing
-            .sink { [weak self] isTranscribing in
-                if isTranscribing {
-                    self?.appState = .processing
-                }
-            }
-            .store(in: &cancellables)
-
-        // Observar estado de transcripcion (Google Cloud)
-        googleCloudTranscriber.$isTranscribing
-            .sink { [weak self] isTranscribing in
-                if isTranscribing {
-                    self?.appState = .processing
-                }
-            }
-            .store(in: &cancellables)
-
-        // Observar estado de transcripcion (Gemini Audio)
-        geminiAudioTranscriber.$isTranscribing
             .sink { [weak self] isTranscribing in
                 if isTranscribing {
                     self?.appState = .processing
@@ -308,16 +263,6 @@ class SapoWhisperViewModel: ObservableObject {
         whisperKitTranscriber.$loadingMessage
             .sink { [weak self] message in
                 self?.whisperKitLoadingMessage = message
-            }
-            .store(in: &cancellables)
-
-        // Observar cuando el modelo esta listo (Apple)
-        transcriber.$isModelLoaded
-            .sink { [weak self] isLoaded in
-                guard let self = self else { return }
-                if isLoaded && !self.audioRecorder.isRecording && !self.transcriber.isTranscribing {
-                    self.appState = .idle
-                }
             }
             .store(in: &cancellables)
 
@@ -373,7 +318,6 @@ class SapoWhisperViewModel: ObservableObject {
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.transcriber.refreshAuthorizationStatus()
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
@@ -461,46 +405,12 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Initial State
 
     private func checkInitialState() {
-        switch currentEngine {
-        case .appleOnline:
-            appState = .idle
-        case .whisperLocal:
-            if whisperKitTranscriber.isModelLoaded {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
-        case .googleCloud:
-            if googleCloudTranscriber.isConfigured {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
-        case .deepgram:
-            if deepgramTranscriber.isConfigured {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
-        case .geminiAudio:
-            if geminiAudioTranscriber.isConfigured {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
-        case .elevenLabsScribe:
-            if elevenLabsTranscriber.isConfigured {
-                appState = .idle
-            } else {
-                appState = .noModel
-            }
-        }
+        appState = isEngineReady(currentEngine) ? .idle : .noModel
     }
 
     // MARK: - WhisperKit Methods
 
     /// Carga el modelo de WhisperKit seleccionado
-    /// Si falla, hace fallback automatico a Apple Speech
     func loadWhisperKitModel() async {
         do {
             try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: selectedLanguage)
@@ -508,27 +418,14 @@ class SapoWhisperViewModel: ObservableObject {
         } catch {
             let errorMsg = error.localizedDescription
             SapoLog.recording.error("WhisperKit load failed error=\(errorMsg, privacy: .public)")
+            appState = .error("Error cargando modelo: \(errorMsg)")
 
-            // Verificar si es error de red
-            let isNetworkError =
-                errorMsg.contains("network") || errorMsg.contains("-1005") || errorMsg.contains("connection")
-                || errorMsg.contains("NSURLErrorDomain") || errorMsg.contains("lost")
-
-            if isNetworkError {
-                // Fallback a Apple Speech
-                SapoLog.recording.warning("WhisperKit network error — falling back to Apple Speech")
-                selectedEngine = TranscriptionEngine.appleOnline.rawValue
-                appState = .error("Error de conexión. Usando Apple Speech temporalmente.")
-
-                // Pequeno delay para mostrar el error, luego limpiar
-                Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3 segundos
-                    if case .error(_) = self.appState {
-                        self.appState = .idle
-                    }
+            // Mostrar el error un momento y volver a noModel para reintentar.
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if case .error(_) = self.appState {
+                    self.checkInitialState()
                 }
-            } else {
-                appState = .error("Error cargando modelo: \(errorMsg)")
             }
         }
     }
@@ -704,7 +601,7 @@ class SapoWhisperViewModel: ObservableObject {
             context: diagnosticContext(extra: "session=\(sessionID)"),
             force: true
         )
-        let missingPermissions = PermissionService.shared.missingRecordingPermissions(for: engine)
+        let missingPermissions = PermissionService.shared.missingRecordingPermissions()
 
         guard missingPermissions.isEmpty else {
             activeRecordingSessionID = nil
@@ -766,7 +663,6 @@ class SapoWhisperViewModel: ObservableObject {
         } else {
             startRecordingSession(
                 sessionID: sessionID,
-                engine: engine,
                 microphone: mic,
                 playSound: playSound,
                 triggerTime: triggerTime
@@ -891,8 +787,6 @@ class SapoWhisperViewModel: ObservableObject {
     private func stopElevenLabsRealtimeRecordingAndTranscribe() {
         isStopPending = false
         defer { restoreMicMonitorAfterRecordingIfNeeded() }
-        autoStopTimer?.invalidate()
-        autoStopTimer = nil
 
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
@@ -1015,8 +909,6 @@ class SapoWhisperViewModel: ObservableObject {
     private func stopFluxRecordingAndTranscribe() {
         isStopPending = false
         defer { restoreMicMonitorAfterRecordingIfNeeded() }
-        autoStopTimer?.invalidate()
-        autoStopTimer = nil
 
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
@@ -1130,9 +1022,6 @@ class SapoWhisperViewModel: ObservableObject {
     private func stopRecordingAndTranscribe() {
         isStopPending = false
         defer { restoreMicMonitorAfterRecordingIfNeeded() }
-        // Detener timers
-        autoStopTimer?.invalidate()
-        autoStopTimer = nil
 
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
@@ -1270,40 +1159,6 @@ class SapoWhisperViewModel: ObservableObject {
                     "Transcription failed engine=\(engine.displayName, privacy: .public) \(failure.logSummary, privacy: .public)"
                 )
             }
-        }
-    }
-
-    /// Starts auto-stop timer for engines with duration limits
-    private func startAutoStopTimer(for engine: TranscriptionEngine) {
-        autoStopTimer?.invalidate()
-
-        let maxDuration: TimeInterval
-        switch engine {
-        case .googleCloud:
-            maxDuration = Self.googleCloudMaxDuration
-        default:
-            return  // No limit for Apple/WhisperKit
-        }
-
-        // Fix #18: Tighter check interval
-        autoStopTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleAutoStopTick(maxDuration: maxDuration)
-            }
-        }
-    }
-
-    private func handleAutoStopTick(maxDuration: TimeInterval) {
-        guard audioRecorder.isRecording else {
-            autoStopTimer?.invalidate()
-            autoStopTimer = nil
-            return
-        }
-
-        if recordingDuration >= maxDuration {
-            autoStopTimer?.invalidate()
-            autoStopTimer = nil
-            requestStopRecordingAndTranscribe()
         }
     }
 
@@ -1469,7 +1324,6 @@ class SapoWhisperViewModel: ObservableObject {
 
     private func startRecordingSession(
         sessionID: UInt64,
-        engine: TranscriptionEngine,
         microphone: String,
         playSound: Bool,
         triggerTime: CFAbsoluteTime
@@ -1501,7 +1355,6 @@ class SapoWhisperViewModel: ObservableObject {
                     context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
                     force: true
                 )
-                self.startAutoStopTimer(for: engine)
                 if playSound {
                     SoundManager.shared.play(.startRecording)
                 }
@@ -1779,23 +1632,10 @@ class SapoWhisperViewModel: ObservableObject {
         // Fail fast with a clear message if the recording is missing, empty, or corrupt.
         try AudioFileValidator.validate(audioURL)
         switch engine {
-        case .appleOnline:
-            guard PermissionService.shared.isGranted(.speechRecognition) else {
-                throw TranscriberError.permissionDenied
-            }
-            return try await transcriber.transcribe(audioURL: audioURL, language: language)
         case .whisperLocal:
             return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
-        case .googleCloud:
-            return try await googleCloudTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
-        case .geminiAudio:
-            return try await geminiAudioTranscriber.transcribe(
-                audioURL: audioURL,
-                language: language,
-                model: currentGeminiAudioModel
-            )
         case .elevenLabsScribe:
             switch currentElevenLabsMode {
             case .scribeV2Batch:
@@ -1808,8 +1648,6 @@ class SapoWhisperViewModel: ObservableObject {
 
     private func historyEngineName(for engine: TranscriptionEngine) -> String {
         switch engine {
-        case .geminiAudio:
-            return "Gemini Audio · \(currentGeminiAudioModel.displayName)"
         case .elevenLabsScribe:
             return currentElevenLabsMode.historyName
         default:
@@ -1934,17 +1772,11 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         switch currentEngine {
-        case .appleOnline:
-            return !transcriber.isTranscribing
         case .whisperLocal:
             return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
-        case .googleCloud:
-            return googleCloudTranscriber.isConfigured && !googleCloudTranscriber.isTranscribing
         case .deepgram:
             return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing && !deepgramFluxTranscriber.isStreaming
                 && !deepgramFluxTranscriber.isStopping
-        case .geminiAudio:
-            return geminiAudioTranscriber.isConfigured && !geminiAudioTranscriber.isTranscribing
         case .elevenLabsScribe:
             return elevenLabsTranscriber.isConfigured && !elevenLabsTranscriber.isTranscribing
                 && !elevenLabsRealtimeTranscriber.isStreaming && !elevenLabsRealtimeTranscriber.isStopping

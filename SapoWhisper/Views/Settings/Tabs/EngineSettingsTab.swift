@@ -4,12 +4,11 @@ import SwiftUI
 struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
-    @StateObject private var googleCredentials = GoogleCredentialsState()
 
     private var currentEngine: TranscriptionEngine {
-        TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
+        TranscriptionEngine(rawValue: selectedEngine) ?? .whisperLocal
     }
 
     var body: some View {
@@ -17,11 +16,8 @@ struct EngineSettingsTab: View {
             ScrollView {
                 let inner = max(0, proxy.size.width - Self.outerPadding - Self.columnSpacing)
                 HStack(alignment: .top, spacing: Self.columnSpacing) {
-                    VStack(spacing: 16) {
-                        transcriptionEngineCard
-                        GoogleCloudCredentialsCard(credentials: googleCredentials)
-                    }
-                    .frame(width: inner * 0.60, alignment: .topLeading)
+                    transcriptionEngineCard
+                        .frame(width: inner * 0.60, alignment: .topLeading)
 
                     AIPolishSettingsCard()
                         .frame(width: inner * 0.40, alignment: .topLeading)
@@ -67,16 +63,10 @@ struct EngineSettingsTab: View {
     @ViewBuilder
     private func selectedEngineSettings(for engine: TranscriptionEngine) -> some View {
         switch engine {
-        case .appleOnline:
-            EmptyView()
         case .whisperLocal:
             WhisperKitSettingsCard(viewModel: viewModel, isEmbedded: true)
-        case .googleCloud:
-            GoogleCloudSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .deepgram:
             DeepgramSettingsCard(viewModel: viewModel, isEmbedded: true)
-        case .geminiAudio:
-            GeminiAudioSettingsCard(credentials: googleCredentials, isEmbedded: true)
         case .elevenLabsScribe:
             ElevenLabsSettingsCard(viewModel: viewModel, isEmbedded: true)
         }
@@ -85,12 +75,7 @@ struct EngineSettingsTab: View {
 
 extension TranscriptionEngine {
     fileprivate var hasInlineSettings: Bool {
-        switch self {
-        case .appleOnline:
-            return false
-        case .whisperLocal, .googleCloud, .deepgram, .geminiAudio, .elevenLabsScribe:
-            return true
-        }
+        true
     }
 }
 

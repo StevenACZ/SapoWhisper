@@ -11,6 +11,15 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - Native transcription-language menu with Auto plus 15 common languages shared by the supported providers.
+- **OpenAI-compatible AI polish provider** — AI polish now talks to any `chat/completions` endpoint (OpenRouter by default, OpenAI, Groq, or a custom URL such as Ollama). Paste an API key, pick a model (default `openai/gpt-5.4-nano`), press Test, done. The key is stored in the macOS Keychain.
+- **Fidelity guard for AI polish** — Polished text is checked against the raw transcript (length ratio + anchor tokens: numbers, URLs, names, vocabulary). If the AI drifts, the raw transcript is pasted instead and the entry is marked `rejected_fidelity`.
+- History engine filter now includes ElevenLabs and an "Other engines" bucket for entries created by removed engines.
+
+### Changed
+
+- **Engine portfolio reduced to three engines** — WhisperKit (local), Deepgram (Nova-3 batch / Flux live), and ElevenLabs (Scribe v2 batch / realtime). Apple Speech, Google Cloud STT (V1 and Chirp), and Gemini Audio were removed, along with the entire Vertex AI / service-account stack. Existing selections migrate automatically (Deepgram key → Deepgram, ElevenLabs key → ElevenLabs, otherwise WhisperKit) and stored Google credentials are purged.
+- AI polish default mode is now literal clean-up: remove fillers and self-corrections, fix punctuation, never paraphrase.
+- The app no longer requests the Speech Recognition permission; only Microphone and Accessibility are needed.
 
 ### Fixed
 

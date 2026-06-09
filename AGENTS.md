@@ -16,10 +16,10 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - `SapoWhisperViewModel`: recording, transcription, AI polish, history, overlay, retry, and paste orchestration.
 - `AudioRecorder`: batch 16 kHz mono int16 WAV capture.
 - `StreamingAudioCapture*`: shared streaming capture that writes local WAV history and emits ordered PCM chunks.
-- Engines: Apple Speech, WhisperKit, Google Cloud STT, Deepgram Nova-3, Deepgram Flux Live, Gemini Audio, ElevenLabs Scribe v2 batch, ElevenLabs Scribe Realtime v2.
+- Engines: WhisperKit (local), Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe v2 batch, ElevenLabs Scribe Realtime v2. Apple Speech, Google Cloud STT, and Gemini Audio were removed; old history rows from them stay readable.
 - History: SQLite via `TranscriptionHistoryManager*`; audio retention via `HistoryAudioStorage`.
-- Permissions: `PermissionService` plus guided permission windows and overlays.
-- AI polish: optional Vertex AI Gemini 3.1 Flash-Lite after any engine; keep `polishing` visually distinct from recording/transcribing.
+- Permissions: `PermissionService` plus guided permission windows and overlays (Microphone + Accessibility only).
+- AI polish: optional OpenAI-compatible provider after any engine (`OpenAICompatiblePolisher`; OpenRouter default, model `openai/gpt-5.4-nano`, key in the macOS Keychain). A fidelity guard pastes the raw transcript when the output drifts. Keep `polishing` visually distinct from recording/transcribing.
 - Transcription language is recognition context, not translation or output forcing.
 
 ## ElevenLabs
@@ -38,20 +38,20 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 
 ## Diagnostics
 
-- Prefer `SapoLog` categories: `Overlay`, `Hotkey`, `Recording`, `AudioRoute`, `Flux`, `AI`, `Gemini`, `Lifecycle`, `MenuBar`, `Settings`, `Performance`.
+- Prefer `SapoLog` categories: `Overlay`, `Hotkey`, `Recording`, `AudioRoute`, `Flux`, `AI`, `Lifecycle`, `MenuBar`, `Settings`, `Performance`.
 - Unified logs use subsystem `oli.SapoWhisper`.
 - Runtime JSONL snapshots are not active in release code; use sanitized unified logs for triage before code changes.
 - Transcription failures should log `failure=<Engine>/<kind>` with HTTP status/body snippet in `detail=`.
-- Never log raw transcripts, prompts, API keys, OAuth tokens, service-account JSON, or Gemini responses.
+- Never log raw transcripts, prompts, API keys, or AI provider responses.
 - Prefer `chars=`, `bytes=`, `requestID=`, `sessionID=`, and timing summaries.
 
 ## Guardrails
 
-- Do not remove engines, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
+- Do not remove the WhisperKit/Deepgram/ElevenLabs engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route churn.
 - Map engine failures to `TranscriptionFailure`; do not reintroduce per-engine error enums.
-- Keep AI polish non-blocking: if Gemini fails, paste/save the raw transcript and record AI metadata.
-- Never run Gemini polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
+- Keep AI polish non-blocking: if the AI provider fails or is not configured, paste/save the raw transcript and record AI metadata.
+- Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
 - Keep AI prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
 - Do not use transcription-language selection to translate text or force a final output language.
 - For Deepgram Flux, send `language_hint` only for supported Flux languages; unsupported selections should fall back to auto-detect.

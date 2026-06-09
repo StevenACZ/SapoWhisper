@@ -132,7 +132,7 @@ struct WhisperKitSettingsCard: View {
 
     private func deleteModel(_ model: WhisperKitModel) {
         if currentWhisperKitModel == model && viewModel.whisperKitTranscriber.isModelLoaded {
-            viewModel.setEngine(.appleOnline)
+            viewModel.whisperKitTranscriber.unloadModel()
         }
 
         let success = viewModel.whisperKitTranscriber.deleteDownloadedModel(model)

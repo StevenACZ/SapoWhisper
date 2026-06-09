@@ -36,7 +36,6 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var whisperKitModel: String
     var deepgramTranscriptionMode: String
     var elevenLabsTranscriptionMode: String?
-    var geminiAudioModel: String?
     var hotkeyTriggerKind: String?
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
@@ -46,16 +45,17 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var aiPolishMode: String
     var aiPolishOutputLanguage: String
     var aiPolishMinimumDuration: String?
+    var aiPolishEndpoint: String?
+    var aiPolishModel: String?
+    var aiPolishCustomBaseURL: String?
 }
 
 struct SettingsTransferAPIKeys: Codable, Equatable {
     var deepgramAPIKey: String?
-    var googleCloudAPIKey: String?
     var elevenLabsAPIKey: String?
 
     var isEmpty: Bool {
-        (deepgramAPIKey ?? "").isEmpty && (googleCloudAPIKey ?? "").isEmpty
-            && (elevenLabsAPIKey ?? "").isEmpty
+        (deepgramAPIKey ?? "").isEmpty && (elevenLabsAPIKey ?? "").isEmpty
     }
 }
 
@@ -252,15 +252,13 @@ struct SettingsTransferManager {
             autoDuckingEnabled: boolValue(forKey: Constants.StorageKeys.autoDuckingEnabled, defaultValue: false),
             autoDuckingAmount: doubleValue(forKey: Constants.StorageKeys.autoDuckingAmount, defaultValue: 0.8),
             transcriptionEngine: defaults.string(forKey: Constants.StorageKeys.transcriptionEngine)
-                ?? TranscriptionEngine.appleOnline.rawValue,
+                ?? TranscriptionEngine.whisperLocal.rawValue,
             whisperKitModel: defaults.string(forKey: Constants.StorageKeys.whisperKitModel)
                 ?? WhisperKitModel.small.rawValue,
             deepgramTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
             elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
                 ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
-            geminiAudioModel: defaults.string(forKey: Constants.StorageKeys.geminiAudioModel)
-                ?? GeminiAudioModel.defaultModel.rawValue,
             hotkeyTriggerKind: defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
                 ?? Constants.Hotkey.defaultTriggerKind,
             hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
@@ -276,14 +274,17 @@ struct SettingsTransferManager {
             aiPolishOutputLanguage: defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
                 ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue,
             aiPolishMinimumDuration: defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration)
-                ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue
+                ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue,
+            aiPolishEndpoint: defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint)
+                ?? PolishEndpoint.default.rawValue,
+            aiPolishModel: defaults.string(forKey: Constants.StorageKeys.aiPolishModel),
+            aiPolishCustomBaseURL: defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
         )
     }
 
     private func currentAPIKeys() -> SettingsTransferAPIKeys {
         SettingsTransferAPIKeys(
             deepgramAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey)),
-            googleCloudAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.googleCloudAPIKey)),
             elevenLabsAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey))
         )
     }
@@ -305,16 +306,18 @@ struct SettingsTransferManager {
         }
 
         if sections.contains(.engine) {
-            defaults.set(preferences.transcriptionEngine, forKey: Constants.StorageKeys.transcriptionEngine)
+            // Old export files may carry removed engines; map them like the launch migration.
+            let importedEngine = EnginePortfolioMigration.migratedEngine(
+                from: preferences.transcriptionEngine,
+                hasDeepgramKey: !(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? "").isEmpty,
+                hasElevenLabsKey: !(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? "").isEmpty
+            )
+            defaults.set(importedEngine, forKey: Constants.StorageKeys.transcriptionEngine)
             defaults.set(preferences.whisperKitModel, forKey: Constants.StorageKeys.whisperKitModel)
             defaults.set(preferences.deepgramTranscriptionMode, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
             defaults.set(
                 preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
                 forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
-            )
-            defaults.set(
-                preferences.geminiAudioModel ?? GeminiAudioModel.defaultModel.rawValue,
-                forKey: Constants.StorageKeys.geminiAudioModel
             )
         }
 
@@ -342,15 +345,21 @@ struct SettingsTransferManager {
                 preferences.aiPolishMinimumDuration ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue,
                 forKey: Constants.StorageKeys.aiPolishMinimumDuration
             )
+            if let endpoint = preferences.aiPolishEndpoint {
+                defaults.set(endpoint, forKey: Constants.StorageKeys.aiPolishEndpoint)
+            }
+            if let model = preferences.aiPolishModel {
+                defaults.set(model, forKey: Constants.StorageKeys.aiPolishModel)
+            }
+            if let customBaseURL = preferences.aiPolishCustomBaseURL {
+                defaults.set(customBaseURL, forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+            }
         }
     }
 
     private func importAPIKeys(_ apiKeys: SettingsTransferAPIKeys) {
         if let deepgramAPIKey = apiKeys.deepgramAPIKey {
             defaults.set(deepgramAPIKey, forKey: Constants.StorageKeys.deepgramAPIKey)
-        }
-        if let googleCloudAPIKey = apiKeys.googleCloudAPIKey {
-            defaults.set(googleCloudAPIKey, forKey: Constants.StorageKeys.googleCloudAPIKey)
         }
         if let elevenLabsAPIKey = apiKeys.elevenLabsAPIKey {
             defaults.set(elevenLabsAPIKey, forKey: Constants.StorageKeys.elevenLabsAPIKey)

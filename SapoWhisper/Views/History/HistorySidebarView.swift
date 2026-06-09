@@ -165,16 +165,14 @@ private struct EngineFilterChip: View {
         switch filter {
         case .all:
             return .primary
-        case .deepgram:
-            return .blue
-        case .gemini:
-            return .cyan
-        case .google:
-            return .orange
         case .whisper:
             return .purple
-        case .apple:
-            return .green
+        case .deepgram:
+            return .blue
+        case .elevenLabs:
+            return .teal
+        case .other:
+            return .gray
         }
     }
 
@@ -182,16 +180,14 @@ private struct EngineFilterChip: View {
         switch filter {
         case .all:
             return .accentColor
-        case .deepgram:
-            return .blue
-        case .gemini:
-            return .cyan
-        case .google:
-            return .orange
         case .whisper:
             return .purple
-        case .apple:
-            return .green
+        case .deepgram:
+            return .blue
+        case .elevenLabs:
+            return .teal
+        case .other:
+            return .gray
         }
     }
 

@@ -197,7 +197,7 @@ extension View {
 #Preview("Engine Buttons") {
     VStack(spacing: 8) {
         EngineOptionRow(
-            engine: .appleOnline,
+            engine: .elevenLabsScribe,
             isSelected: true,
             isLoading: false,
             loadingProgress: 0,
@@ -224,7 +224,7 @@ extension View {
         }
 
         EngineOptionRow(
-            engine: .googleCloud,
+            engine: .deepgram,
             isSelected: false,
             isLoading: true,
             loadingProgress: 0.6,

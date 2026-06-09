@@ -18,7 +18,6 @@ enum SapoLog {
     static let settings = Logger(subsystem: subsystem, category: "Settings")
     static let flux = Logger(subsystem: subsystem, category: "Flux")
     static let ai = Logger(subsystem: subsystem, category: "AI")
-    static let gemini = Logger(subsystem: subsystem, category: "Gemini")
     static let lifecycle = Logger(subsystem: subsystem, category: "Lifecycle")
 }
 

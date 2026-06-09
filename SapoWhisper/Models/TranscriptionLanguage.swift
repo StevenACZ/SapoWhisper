@@ -10,8 +10,6 @@ struct TranscriptionLanguage: Identifiable, Equatable {
     let flag: String
     let nativeName: String
     let englishName: String
-    let appleLocaleIdentifier: String?
-    let googleLanguageCode: String?
     let elevenLabsLanguageCode: String?
 
     var id: String { code }
@@ -35,8 +33,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🌐",
             nativeName: "Auto",
             englishName: "Auto",
-            appleLocaleIdentifier: nil,
-            googleLanguageCode: nil,
             elevenLabsLanguageCode: nil
         ),
         TranscriptionLanguage(
@@ -44,8 +40,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇺🇸",
             nativeName: "English",
             englishName: "English",
-            appleLocaleIdentifier: "en-US",
-            googleLanguageCode: "en-US",
             elevenLabsLanguageCode: "eng"
         ),
         TranscriptionLanguage(
@@ -53,8 +47,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇪🇸",
             nativeName: "Español",
             englishName: "Spanish",
-            appleLocaleIdentifier: "es-ES",
-            googleLanguageCode: "es-ES",
             elevenLabsLanguageCode: "spa"
         ),
         TranscriptionLanguage(
@@ -62,8 +54,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇮🇳",
             nativeName: "हिन्दी",
             englishName: "Hindi",
-            appleLocaleIdentifier: "hi-IN",
-            googleLanguageCode: "hi-IN",
             elevenLabsLanguageCode: "hin"
         ),
         TranscriptionLanguage(
@@ -71,8 +61,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇫🇷",
             nativeName: "Français",
             englishName: "French",
-            appleLocaleIdentifier: "fr-FR",
-            googleLanguageCode: "fr-FR",
             elevenLabsLanguageCode: "fra"
         ),
         TranscriptionLanguage(
@@ -80,8 +68,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇩🇪",
             nativeName: "Deutsch",
             englishName: "German",
-            appleLocaleIdentifier: "de-DE",
-            googleLanguageCode: "de-DE",
             elevenLabsLanguageCode: "deu"
         ),
         TranscriptionLanguage(
@@ -89,8 +75,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇷🇺",
             nativeName: "Русский",
             englishName: "Russian",
-            appleLocaleIdentifier: "ru-RU",
-            googleLanguageCode: "ru-RU",
             elevenLabsLanguageCode: "rus"
         ),
         TranscriptionLanguage(
@@ -98,8 +82,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇨🇳",
             nativeName: "中文（普通话）",
             englishName: "Mandarin Chinese",
-            appleLocaleIdentifier: "zh-CN",
-            googleLanguageCode: "cmn-Hans-CN",
             elevenLabsLanguageCode: "zho"
         ),
         TranscriptionLanguage(
@@ -107,8 +89,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇸🇦",
             nativeName: "العربية",
             englishName: "Arabic",
-            appleLocaleIdentifier: "ar-SA",
-            googleLanguageCode: "ar-SA",
             elevenLabsLanguageCode: "ara"
         ),
         TranscriptionLanguage(
@@ -116,8 +96,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇧🇷",
             nativeName: "Português",
             englishName: "Portuguese",
-            appleLocaleIdentifier: "pt-BR",
-            googleLanguageCode: "pt-BR",
             elevenLabsLanguageCode: "por"
         ),
         TranscriptionLanguage(
@@ -125,8 +103,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇹🇷",
             nativeName: "Türkçe",
             englishName: "Turkish",
-            appleLocaleIdentifier: "tr-TR",
-            googleLanguageCode: "tr-TR",
             elevenLabsLanguageCode: "tur"
         ),
         TranscriptionLanguage(
@@ -134,8 +110,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇯🇵",
             nativeName: "日本語",
             englishName: "Japanese",
-            appleLocaleIdentifier: "ja-JP",
-            googleLanguageCode: "ja-JP",
             elevenLabsLanguageCode: "jpn"
         ),
         TranscriptionLanguage(
@@ -143,8 +117,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇮🇩",
             nativeName: "Bahasa Indonesia",
             englishName: "Indonesian",
-            appleLocaleIdentifier: "id-ID",
-            googleLanguageCode: "id-ID",
             elevenLabsLanguageCode: "ind"
         ),
         TranscriptionLanguage(
@@ -152,8 +124,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇮🇹",
             nativeName: "Italiano",
             englishName: "Italian",
-            appleLocaleIdentifier: "it-IT",
-            googleLanguageCode: "it-IT",
             elevenLabsLanguageCode: "ita"
         ),
         TranscriptionLanguage(
@@ -161,8 +131,6 @@ enum TranscriptionLanguageCatalog {
             flag: "🇰🇷",
             nativeName: "한국어",
             englishName: "Korean",
-            appleLocaleIdentifier: "ko-KR",
-            googleLanguageCode: "ko-KR",
             elevenLabsLanguageCode: "kor"
         ),
         TranscriptionLanguage(
@@ -170,18 +138,12 @@ enum TranscriptionLanguageCatalog {
             flag: "🇻🇳",
             nativeName: "Tiếng Việt",
             englishName: "Vietnamese",
-            appleLocaleIdentifier: "vi-VN",
-            googleLanguageCode: "vi-VN",
             elevenLabsLanguageCode: "vie"
         ),
     ]
 
     static func language(for code: String) -> TranscriptionLanguage? {
         languages.first { $0.code == code }
-    }
-
-    static func appleLocaleIdentifier(for code: String) -> String? {
-        language(for: code)?.appleLocaleIdentifier
     }
 
     static func deepgramLanguageCode(for code: String) -> String {
@@ -196,10 +158,6 @@ enum TranscriptionLanguageCatalog {
 
     static func elevenLabsLanguageCode(for code: String) -> String? {
         language(for: code)?.elevenLabsLanguageCode
-    }
-
-    static func googleLanguageCode(for code: String) -> String {
-        language(for: code)?.googleLanguageCode ?? "es-ES"
     }
 
     static func whisperLanguageCode(for code: String) -> String? {

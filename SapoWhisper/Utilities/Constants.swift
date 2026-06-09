@@ -100,8 +100,6 @@ enum Constants {
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
         static let whisperKitModel = "whisperKitModel"
-        static let googleCloudAPIKey = "googleCloudAPIKey"
-        static let serviceAccountConfigured = "serviceAccountConfigured"
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
@@ -111,7 +109,6 @@ enum Constants {
         static let aiPolishEndpoint = "aiPolishEndpoint"
         static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
         static let aiPolishModel = "aiPolishModel"
-        static let geminiAudioModel = "geminiAudioModel"
 
         // Deepgram
         static let deepgramAPIKey = "deepgramAPIKey"

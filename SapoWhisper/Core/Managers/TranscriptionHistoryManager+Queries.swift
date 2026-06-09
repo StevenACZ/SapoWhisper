@@ -27,10 +27,12 @@ extension TranscriptionHistoryManager {
         var conditions: [String] = []
         var binders: [(OpaquePointer?, Int32) -> Void] = []
 
-        if let enginePattern = enginePattern(for: engineFilter) {
-            conditions.append("engine LIKE ? COLLATE NOCASE")
-            binders.append { [enginePattern] stmt, index in
-                self.bindText(stmt, index, enginePattern)
+        if let engineCondition = engineCondition(for: engineFilter) {
+            conditions.append(engineCondition.sql)
+            for pattern in engineCondition.patterns {
+                binders.append { [pattern] stmt, index in
+                    self.bindText(stmt, index, pattern)
+                }
             }
         }
 
@@ -138,20 +140,21 @@ extension TranscriptionHistoryManager {
         )
     }
 
-    private func enginePattern(for filter: EngineFilter) -> String? {
+    private func engineCondition(for filter: EngineFilter) -> (sql: String, patterns: [String])? {
         switch filter {
         case .all:
             return nil
-        case .deepgram:
-            return "%deepgram%"
-        case .gemini:
-            return "%gemini%"
-        case .google:
-            return "%google%"
         case .whisper:
-            return "%whisper%"
-        case .apple:
-            return "%apple%"
+            return ("engine LIKE ? COLLATE NOCASE", ["%whisper%"])
+        case .deepgram:
+            return ("engine LIKE ? COLLATE NOCASE", ["%deepgram%"])
+        case .elevenLabs:
+            return ("engine LIKE ? COLLATE NOCASE", ["%elevenlabs%"])
+        case .other:
+            return (
+                "engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE",
+                ["%whisper%", "%deepgram%", "%elevenlabs%"]
+            )
         }
     }
 

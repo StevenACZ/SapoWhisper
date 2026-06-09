@@ -258,7 +258,7 @@ struct MenuBarView: View {
             ActionRow(
                 icon: "gearshape",
                 title: "menu.settings".localized,
-                subtitle: viewModel.transcriber.loadedModelName ?? "Speech Recognition"
+                subtitle: viewModel.currentEngine.displayName
             ) {
                 openSettingsWindow()
             }

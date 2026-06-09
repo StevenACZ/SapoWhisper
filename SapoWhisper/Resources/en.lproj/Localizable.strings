@@ -73,10 +73,9 @@
 "history.pause" = "Pause";
 "history.filter_all" = "All";
 "history.filter_deepgram" = "Deepgram";
-"history.filter_gemini" = "Gemini";
-"history.filter_google" = "Google";
 "history.filter_whisper" = "Whisper";
-"history.filter_apple" = "Apple";
+"history.filter_elevenlabs" = "ElevenLabs";
+"history.filter_other" = "Other engines";
 "history.final_text" = "Final text";
 "history.original_text" = "Original text";
 "history.ai_polish" = "AI polish";
@@ -133,9 +132,9 @@
 "info.how_to_title" = "How does it work?";
 "info.how_to_body" = "1. Press the hotkey to start\n2. Speak clearly into the microphone\n3. Press the hotkey again to stop\n4. Text is automatically copied\n5. With \"Auto-paste\" enabled, it pastes where your cursor is";
 "info.privacy_title" = "Privacy";
-"info.privacy_body" = "Whisper (Local): Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.\n\nApple (Online): Audio is processed on Apple's servers. Your voice is not stored permanently.\n\nGoogle Cloud: Audio is sent to Speech-to-Text with Chirp 3 for maximum accuracy. Requires a Google Cloud account.\n\nDeepgram: Uses Nova-3 or Flux Live for cloud transcription. Requires an API key.\n\nGemini Audio: Sends saved WAV audio directly to Gemini on Vertex AI for native audio transcription.\n\nAI Polish: Optional. Uses Gemini on Vertex AI to organize, correct, and improve readability without inventing details.";
+"info.privacy_body" = "Whisper (Local): Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.\n\nDeepgram: Uses Nova-3 or Flux Live for cloud transcription. Requires an API key.\n\nElevenLabs: Uses Scribe v2 (batch or realtime) for cloud transcription. Requires an API key.\n\nAI Polish: Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
 "info.permissions_title" = "Required Permissions";
-"info.permissions_body" = "• Microphone: To capture your voice\n• Speech Recognition: To transcribe audio\n• Accessibility: For global hotkey support";
+"info.permissions_body" = "• Microphone: To capture your voice\n• Accessibility: For global hotkey support and auto-paste";
 
 /* Languages */
 "lang.spanish" = "Spanish";
@@ -149,37 +148,16 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Download a model first";
 "status.recording_generic" = "Recording...";
-"config.subtitle_info" = "Speech-to-Text with WhisperKit, Apple, Google Cloud, Deepgram, and AI Polish";
+"config.subtitle_info" = "Speech-to-Text with WhisperKit, Deepgram, ElevenLabs, and AI Polish";
 "app.description" = "Speech-to-Text local and cloud";
 "config.coming_soon" = "Coming Soon";
 "config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
 "menu.copy_clipboard" = "Copy to clipboard";
 
 /* Engine Descriptions */
-"engine.apple.description" = "Free, requires internet. Uses Apple servers.";
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
-"engine.google.description" = "Chirp 3: maximum accuracy. Requires internet and Google Cloud account.";
-
-/* Google Cloud Engine */
-"config.api_key" = "Google Cloud API Key";
-"config.api_key_placeholder" = "Enter your API key...";
-"config.api_key_desc" = "Uses V1 (latest_long). Create your API key at:\nconsole.cloud.google.com > APIs & Services > Credentials\nStored locally.";
-"config.api_key_missing" = "API key not configured";
-"config.api_key_configured" = "API key configured";
-
-/* Google Cloud Service Account */
-"config.service_account" = "Service Account (Chirp 3)";
-"config.service_account_desc" = "Use Chirp 3 (V2) for maximum accuracy. Setup:\n1. Install gcloud: brew install google-cloud-sdk\n2. Run: gcloud auth application-default login\n3. Sign in with your browser\n4. Click 'Detect' or restart the app";
-"config.service_account_configured" = "Chirp 3 active — %@";
-"config.service_account_import" = "Import JSON";
-"config.service_account_change" = "Change";
-"config.service_account_remove" = "Remove";
-"config.service_account_detect" = "Detect";
-"config.api_key_fallback" = "API Key (alternative)";
 
 /* AI Polish */
-"ai.google_ai.title" = "Google Cloud and AI Polish";
-"ai.google_credentials.title" = "Google Cloud credentials";
 "ai.polish.title" = "AI Polish";
 "ai.polish.enable" = "Improve text with AI";
 "ai.polish.enable_subtitle" = "Polish longer transcripts with AI.";
@@ -214,27 +192,7 @@
 "ai.provider.error_not_configured" = "AI polish is not configured (missing API key or model).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
 "ai.provider.error_http" = "AI provider error (%@): %@";
-"ai.google_connected" = "Google Cloud connected";
-"ai.google_missing" = "Google Cloud not connected";
-"ai.google_connected_desc" = "These credentials enable Chirp 3 and also unlock Gemini on Vertex AI.";
-"ai.google_missing_desc" = "Connect Google Cloud to use Chirp 3 and enable AI Polish.";
-"ai.google_connect" = "Connect Google Cloud";
-"ai.google_setup_intro" = "SapoWhisper uses local Google Cloud credentials for Chirp 3 and Vertex AI. Do these steps once:";
-"ai.google_setup_desc" = "To connect: install gcloud, run 'gcloud auth application-default login', then press Detect. You can also import the credentials JSON.";
-"ai.google_step1_title" = "Install Google Cloud CLI";
-"ai.google_step1_detail" = "If gcloud is already installed, skip this step.";
-"ai.google_step2_title" = "Sign in to Google";
-"ai.google_step2_detail" = "This command opens the browser and stores local ADC credentials for Vertex AI.";
-"ai.google_step3_title" = "Return to SapoWhisper";
-"ai.google_step3_detail" = "Press Detect gcloud login. If you use a credentials file, import the JSON here instead.";
-"ai.google_detect_adc" = "Detect gcloud login";
-"ai.google_import_json" = "Import credentials JSON";
 "ai.google_change_json" = "Change JSON";
-"ai.google_json_hint" = "Importing JSON does not sign in to Google. Use it only if you already have a Google Cloud credentials file.";
-"ai.google_copy_command" = "Copy command";
-"ai.google_import_panel_desc" = "Select a Google Cloud credentials JSON. For normal sign-in, cancel and run gcloud auth application-default login.";
-"ai.google_required" = "Connect Google Cloud to enable AI Polish.";
-"ai.google_not_detected" = "No ADC credentials were detected. Run gcloud auth application-default login or import the JSON.";
 "ai.mode.automatic" = "Automatic";
 "ai.mode.ai" = "AI Mode";
 "ai.mode.work" = "Work";
@@ -291,14 +249,6 @@
 "permissions.microphone.helper_message" = "Once enabled, we will validate the status automatically.";
 "permissions.microphone.active_detail" = "SapoWhisper can already use the microphone to record.";
 "permissions.microphone.pending_detail" = "Required to record audio before transcription.";
-"permissions.speech.title" = "Speech Recognition";
-"permissions.speech.summary" = "Required to use the Apple Speech engine.";
-"permissions.speech.overlay_title" = "Enable Speech Recognition";
-"permissions.speech.overlay_message" = "Find SapoWhisper in the list and enable speech recognition access. If macOS does not show it yet, allow the system dialog first and then come back here.";
-"permissions.speech.helper_title" = "Enable Apple Speech access";
-"permissions.speech.helper_message" = "This setting allows Apple Speech to process the audio recorded by SapoWhisper.";
-"permissions.speech.active_detail" = "Apple Speech is already ready to transcribe from SapoWhisper.";
-"permissions.speech.pending_detail" = "Required to transcribe with the Apple Speech engine.";
 "permissions.accessibility.title" = "Accessibility";
 "permissions.accessibility.summary" = "Required for auto-paste and the smoothest global flow.";
 "permissions.accessibility.overlay_title" = "Enable Accessibility";
@@ -334,7 +284,6 @@
 "permissions.card.ready" = "Ready";
 "permissions.activate" = "Enable";
 "permissions.settings.row_hint" = "SapoWhisper takes you to the right panel and refreshes the status when you come back.";
-"permissions.speech.denied_error" = "Speech recognition permission was denied";
 "settings.permissions_guided_footer" = "You can open the guided onboarding for each permission and watch the live status update when you return from System Settings.";
 "settings.permissions_guided_desc" = "Accessibility is still key for auto-paste and for the smoothest flow from any app. If you want to review all permissions together, open the guided onboarding.";
 "settings.permissions_all_active" = "All permissions active";
@@ -369,7 +318,6 @@
 
 /* Deepgram Engine */
 "engine.deepgram.description" = "Deepgram Nova-3. High accuracy, requires internet.";
-"engine.gemini_audio.description" = "Native Gemini audio-to-text on Vertex AI. Requires Google Cloud.";
 "config.deepgram_mode" = "Transcription mode";
 "deepgram.mode_nova" = "Nova-3";
 "deepgram.mode_nova_desc" = "Classic batch mode. Keeps your preferred language.";
@@ -393,17 +341,6 @@
 "config.elevenlabs_key_configured" = "API key configured";
 
 /* Gemini Audio Engine */
-"gemini.audio.title" = "Gemini Audio";
-"gemini.audio.model" = "Audio model";
-"gemini.audio.requires_google" = "Requires Google Cloud credentials.";
-"gemini.audio.cost_title" = "Approx. 4 min: %@";
-"gemini.audio.cost_desc" = "Estimate includes audio input plus a short text transcript. Real billing comes from Vertex token usage.";
-"gemini.audio.elevenlabs_note" = "ElevenLabs is not included in this version; this engine only compares Gemini audio models.";
-"gemini.audio.model_31_pro_desc" = "Premium quality for hard audio and technical dictation.";
-"gemini.audio.model_3_flash_desc" = "Higher-cost Flash option for fast high-quality trials.";
-"gemini.audio.model_25_flash_desc" = "Stable Flash baseline for comparison.";
-"gemini.audio.model_31_lite_desc" = "Recommended default: low cost with strong audio understanding.";
-"gemini.audio.model_25_lite_desc" = "Cheapest legacy Flash-Lite option for experiments.";
 
 /* Vocabulary */
 "config.vocabulary" = "Vocabulary";
@@ -499,7 +436,6 @@
 "failure.unknown" = "%@: an unexpected error occurred. Please retry.";
 
 /* Google Cloud Warning */
-"config.google_60s_warning" = "Limited to 60 seconds per recording";
 
 /* Auto-Ducking */
 "settings.auto_ducking" = "Auto-duck system audio";

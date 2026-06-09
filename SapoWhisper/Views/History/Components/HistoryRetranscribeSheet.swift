@@ -172,7 +172,7 @@ private struct StatusPill: View {
         currentEngine: .deepgram,
         selectedEngine: .constant(.deepgram),
         isProcessing: false,
-        isEngineReady: { $0 != .googleCloud },
+        isEngineReady: { $0 != .whisperLocal },
         onConfirm: {},
         onCancel: {}
     )

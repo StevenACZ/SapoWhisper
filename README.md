@@ -10,19 +10,16 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🧠 Local and cloud transcription engines.
 - 🗂️ Searchable history with saved audio, replay, download, pinning, and re-transcription.
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
-- 🪄 Optional AI polish with Gemini after transcription.
-- 🔐 Guided setup for Microphone, Speech Recognition, and Accessibility permissions.
+- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard.
+- 🔐 Guided setup for Microphone and Accessibility permissions.
 
 ## 🎧 Transcription Engines
 
 | Engine | Mode | Best for |
 |---|---|---|
-| Apple Speech | Online | Native macOS fallback. |
 | WhisperKit | Local | Private offline transcription. |
-| Google Cloud STT | Batch | Google Cloud / Chirp workflows. |
 | Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
 | Deepgram Flux Live | Realtime | Low-latency streaming with WAV backup. |
-| Gemini Audio | Batch | Gemini-native audio transcription. |
 | ElevenLabs Scribe v2 | Batch | Accurate Scribe transcription. |
 | ElevenLabs Scribe Realtime v2 | Realtime | Low-latency Scribe with committed-text buffering. |
 
@@ -35,7 +32,6 @@ Cloud credentials are stored locally on the user's Mac. Never commit API keys, e
 - Xcode with command line tools
 - Microphone permission
 - Accessibility permission for auto-paste
-- Speech Recognition permission when using Apple Speech
 
 ## 🚀 Quick Start
 

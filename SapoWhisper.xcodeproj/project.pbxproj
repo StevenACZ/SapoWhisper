@@ -280,7 +280,6 @@
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SapoWhisper necesita acceso al reconocimiento de voz para transcribir audio a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -320,7 +319,6 @@
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SapoWhisper necesita acceso al reconocimiento de voz para transcribir audio a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

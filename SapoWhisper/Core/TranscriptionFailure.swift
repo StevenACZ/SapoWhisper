@@ -198,25 +198,8 @@ extension TranscriptionFailure {
         if let urlError = error as? URLError {
             return fromURLError(urlError, engine: engine)
         }
-        if let vertexError = error as? VertexGenerateContentError {
-            return fromVertex(vertexError, engine: engine ?? "Gemini")
-        }
         if let recordingError = error as? RecordingError {
             return fromRecording(recordingError, engine: engine)
-        }
-        if let transcriberError = error as? TranscriberError {
-            switch transcriberError {
-            case .permissionDenied, .modelNotDownloaded, .modelNotLoaded:
-                return TranscriptionFailure(
-                    kind: .notConfigured, engine: engine,
-                    technicalDetail: "TranscriberError.\(transcriberError)",
-                    messageOverride: transcriberError.errorDescription)
-            case .transcriptionFailed:
-                return TranscriptionFailure(
-                    kind: .unknown, engine: engine,
-                    technicalDetail: "TranscriberError.transcriptionFailed",
-                    messageOverride: transcriberError.errorDescription)
-            }
         }
         if let whisperKitError = error as? WhisperKitError {
             switch whisperKitError {
@@ -234,14 +217,6 @@ extension TranscriptionFailure {
         }
 
         let nsError = error as NSError
-        // Apple Speech surfaces failures under kAFAssistantErrorDomain; 1110 = no speech.
-        if nsError.domain == "kAFAssistantErrorDomain" {
-            let kind: Kind = nsError.code == 1110 ? .emptyTranscription : .unknown
-            return TranscriptionFailure(
-                kind: kind, engine: engine,
-                technicalDetail: "kAFAssistantErrorDomain/\(nsError.code)")
-        }
-
         return TranscriptionFailure(
             kind: .unknown, engine: engine,
             technicalDetail: "\(nsError.domain)/\(nsError.code) \(error.localizedDescription)")
@@ -262,23 +237,6 @@ extension TranscriptionFailure {
             return TranscriptionFailure(
                 kind: .unknown, engine: engine,
                 technicalDetail: "URLError.\(urlError.code.rawValue)")
-        }
-    }
-
-    private static func fromVertex(
-        _ error: VertexGenerateContentError, engine: String
-    ) -> TranscriptionFailure {
-        switch error {
-        case .notConfigured:
-            return TranscriptionFailure(kind: .notConfigured, engine: engine)
-        case .invalidURL:
-            return TranscriptionFailure(
-                kind: .unknown, engine: engine,
-                technicalDetail: "VertexGenerateContentError.invalidURL")
-        case .emptyResponse:
-            return TranscriptionFailure(kind: .emptyTranscription, engine: engine)
-        case .httpError(let statusCode, let message):
-            return fromHTTP(engine: engine, statusCode: statusCode, body: Data(message.utf8))
         }
     }
 

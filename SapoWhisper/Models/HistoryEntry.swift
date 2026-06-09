@@ -99,44 +99,49 @@ enum DateGroup: String, CaseIterable {
 
 enum EngineFilter: String, CaseIterable, Identifiable {
     case all
-    case deepgram
-    case gemini
-    case google
     case whisper
-    case apple
+    case deepgram
+    case elevenLabs = "elevenlabs"
+    /// Entries from engines that no longer exist (Apple, Google, Gemini, ...).
+    /// History is data: old rows stay readable under this bucket.
+    case other
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .all: return "history.filter_all".localized
-        case .deepgram: return "history.filter_deepgram".localized
-        case .gemini: return "history.filter_gemini".localized
-        case .google: return "history.filter_google".localized
         case .whisper: return "history.filter_whisper".localized
-        case .apple: return "history.filter_apple".localized
+        case .deepgram: return "history.filter_deepgram".localized
+        case .elevenLabs: return "history.filter_elevenlabs".localized
+        case .other: return "history.filter_other".localized
         }
     }
 
     var iconName: String {
         switch self {
         case .all: return "line.3.horizontal.decrease.circle"
-        case .deepgram: return "waveform.badge.mic"
-        case .gemini: return "sparkles"
-        case .google: return "cloud"
         case .whisper: return "waveform"
-        case .apple: return "apple.logo"
+        case .deepgram: return "waveform.badge.mic"
+        case .elevenLabs: return "waveform.badge.magnifyingglass"
+        case .other: return "archivebox"
         }
     }
 
     func matches(_ engine: String) -> Bool {
+        let lowercased = engine.lowercased()
         switch self {
-        case .all: return true
-        case .deepgram: return engine.lowercased().contains("deepgram")
-        case .gemini: return engine.lowercased().contains("gemini")
-        case .google: return engine.lowercased().contains("google")
-        case .whisper: return engine.lowercased().contains("whisper")
-        case .apple: return engine.lowercased().contains("apple")
+        case .all:
+            return true
+        case .whisper:
+            return lowercased.contains("whisper")
+        case .deepgram:
+            return lowercased.contains("deepgram")
+        case .elevenLabs:
+            return lowercased.contains("elevenlabs")
+        case .other:
+            return !lowercased.contains("whisper") && !lowercased.contains("deepgram")
+                && !lowercased.contains("elevenlabs")
         }
     }
 }
