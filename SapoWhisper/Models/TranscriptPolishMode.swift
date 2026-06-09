@@ -25,27 +25,6 @@ enum TranscriptPolishMode: String, CaseIterable, Identifiable {
             return "ai.mode.translate_english".localized
         }
     }
-
-    var promptInstruction: String {
-        switch self {
-        case .automatic:
-            return """
-                Choose the most natural readable format for the text. Preserve the user's main idea, constraints, and relevant supporting details. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.
-                """
-        case .ai:
-            return """
-                Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas. Labels must follow the selected output language, for example "Objetivo:" and "Tareas:" in Spanish, or "Goal:" and "Tasks:" in English.
-                """
-        case .work:
-            return """
-                Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown.
-                """
-        case .translateEnglish:
-            return """
-                Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability.
-                """
-        }
-    }
 }
 
 enum TranscriptPolishMinimumDuration: String, CaseIterable, Identifiable {
@@ -96,6 +75,7 @@ enum TranscriptAIStatus: String {
     case applied
     case skippedShort = "skipped_short"
     case skippedDuration = "skipped_duration"
+    case rejectedFidelity = "rejected_fidelity"
     case failed
 
     var displayName: String {
@@ -108,6 +88,8 @@ enum TranscriptAIStatus: String {
             return "ai.status.skipped_short".localized
         case .skippedDuration:
             return "ai.status.skipped_duration".localized
+        case .rejectedFidelity:
+            return "ai.status.rejected_fidelity".localized
         case .failed:
             return "ai.status.failed".localized
         }

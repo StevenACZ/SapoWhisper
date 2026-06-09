@@ -5,11 +5,10 @@
 
 import SwiftUI
 
-/// AI polish (Gemini in Vertex AI) controls. Reads its enabled-state requirement
-/// from [[GoogleCredentialsState]] — credential lifecycle lives in
-/// `GoogleCloudCredentialsCard`.
+/// AI polish settings: one OpenAI-compatible provider (OpenRouter by default),
+/// an API key stored in the Keychain, a model, and the polish behavior pickers.
+/// Paste a key, press Test, done — no cloud-project setup anywhere.
 struct AIPolishSettingsCard: View {
-    @ObservedObject var credentials: GoogleCredentialsState
     @ObservedObject private var promptContextManager = PromptContextManager.shared
 
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
@@ -18,6 +17,25 @@ struct AIPolishSettingsCard: View {
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishMinimumDuration) private var aiPolishMinimumDuration =
         TranscriptPolishMinimumDuration.defaultPolicy.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishModel) private var model = PolishEndpoint.default.defaultModel
+    @AppStorage(Constants.StorageKeys.aiPolishCustomBaseURL) private var customBaseURL = ""
+
+    @State private var apiKey = ""
+    @State private var testState: ProviderTestState = .idle
+
+    private var endpoint: PolishEndpoint {
+        PolishEndpoint(rawValue: endpointValue) ?? .default
+    }
+
+    private var isProviderUsable: Bool {
+        PolishProviderConfiguration.isUsable(
+            endpoint: endpoint,
+            model: model,
+            customBaseURL: customBaseURL,
+            apiKey: apiKey
+        )
+    }
 
     private var currentPrompt: PromptProfile {
         promptContextManager.promptProfile(for: aiPolishMode)
@@ -28,10 +46,6 @@ struct AIPolishSettingsCard: View {
             return .english
         }
         return TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-    }
-
-    private var canEditPolish: Bool {
-        credentials.isConfigured && aiPolishEnabled
     }
 
     private var currentMinimumDuration: TranscriptPolishMinimumDuration {
@@ -51,31 +65,171 @@ struct AIPolishSettingsCard: View {
         SettingsCard(icon: "sparkles", title: "ai.polish.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
                 AIPolishHeroToggle(
-                    isOn: aiPolishBinding,
-                    isEnabled: credentials.isConfigured,
+                    isOn: $aiPolishEnabled,
                     activeSubtitle: activeSubtitle
                 )
+
+                providerSection
+
+                if aiPolishEnabled && !isProviderUsable {
+                    Label("ai.provider.needs_key".localized, systemImage: "key.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.sapoError)
+                }
+
+                Divider()
 
                 VStack(alignment: .leading, spacing: 10) {
                     modePicker
                     outputLanguagePicker
                     minimumDurationPicker
                 }
-                .opacity(canEditPolish ? 1 : 0.62)
-
-                if !credentials.isConfigured {
-                    Label("ai.polish.requires_google".localized, systemImage: "lock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                .opacity(aiPolishEnabled ? 1 : 0.62)
 
                 AIPolishInfoCallout(
-                    title: "ai.polish.vertex_info_title".localized,
+                    title: "ai.polish.fidelity_info_title".localized,
                     detail: "ai.polish.desc".localized
                 )
             }
         }
+        .onAppear {
+            apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+        }
+        .onChange(of: apiKey) { _, newValue in
+            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: .aiPolishAPIKey)
+            testState = .idle
+        }
+        .onChange(of: endpointValue) { oldValue, _ in
+            let previous = PolishEndpoint(rawValue: oldValue) ?? .default
+            if model.isEmpty || model == previous.defaultModel {
+                model = endpoint.defaultModel
+            }
+            testState = .idle
+        }
+        .onChange(of: model) { _, _ in
+            testState = .idle
+        }
     }
+
+    // MARK: - Provider
+
+    private var providerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ai.provider.section".localized)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.4)
+
+            Picker("ai.provider.endpoint".localized, selection: $endpointValue) {
+                ForEach(PolishEndpoint.allCases) { endpoint in
+                    Text(endpoint.displayName).tag(endpoint.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+
+            if endpoint == .custom {
+                TextField("ai.provider.custom_url_placeholder".localized, text: $customBaseURL)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            modelRow
+            apiKeyRow
+            testRow
+        }
+        .animation(.smooth(duration: 0.25), value: endpoint)
+    }
+
+    private var modelRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("ai.provider.model".localized)
+                .font(.subheadline)
+
+            HStack(spacing: 6) {
+                TextField("ai.provider.model_placeholder".localized, text: $model)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+
+                if !endpoint.suggestedModels.isEmpty {
+                    Menu {
+                        ForEach(endpoint.suggestedModels, id: \.self) { suggestion in
+                            Button(suggestion) { model = suggestion }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 24)
+                }
+            }
+        }
+    }
+
+    private var apiKeyRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("ai.provider.api_key".localized)
+                .font(.subheadline)
+
+            SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
+                .textFieldStyle(.roundedBorder)
+
+            Text("ai.provider.api_key_hint".localized)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private var testRow: some View {
+        HStack(spacing: 8) {
+            Button(action: runTest) {
+                Label("ai.provider.test".localized, systemImage: "bolt.fill")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!isProviderUsable || testState == .running)
+
+            switch testState {
+            case .idle:
+                EmptyView()
+            case .running:
+                ProgressView()
+                    .controlSize(.small)
+            case .success(let modelIdentifier):
+                Label("ai.provider.test_success".localized(modelIdentifier), systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.sapoGreen)
+                    .symbolEffect(.bounce, value: testState)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            case .failure(let message):
+                Label(message, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.sapoError)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func runTest() {
+        testState = .running
+        Task { @MainActor in
+            do {
+                let response = try await OpenAICompatiblePolisher().runConnectionTest()
+                testState = .success(response.modelIdentifier)
+            } catch {
+                testState = .failure(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Behavior
 
     private var modePicker: some View {
         AIPolishSettingRow(
@@ -90,7 +244,7 @@ struct AIPolishSettingsCard: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!canEditPolish)
+            .disabled(!aiPolishEnabled)
         }
     }
 
@@ -111,7 +265,7 @@ struct AIPolishSettingsCard: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!canEditPolish)
+                .disabled(!aiPolishEnabled)
             }
         }
     }
@@ -131,21 +285,16 @@ struct AIPolishSettingsCard: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!canEditPolish)
+            .disabled(!aiPolishEnabled)
         }
     }
+}
 
-    private var aiPolishBinding: Binding<Bool> {
-        Binding(
-            get: { aiPolishEnabled && credentials.isConfigured },
-            set: { newValue in
-                aiPolishEnabled = newValue && credentials.isConfigured
-                if newValue && !credentials.isConfigured {
-                    credentials.connectionMessage = "ai.google_required".localized
-                }
-            }
-        )
-    }
+enum ProviderTestState: Equatable {
+    case idle
+    case running
+    case success(String)
+    case failure(String)
 }
 
 private struct AIPolishSettingRow<Control: View>: View {
@@ -225,7 +374,6 @@ private struct AIPolishInfoCallout: View {
 
 private struct AIPolishHeroToggle: View {
     @Binding var isOn: Bool
-    let isEnabled: Bool
     let activeSubtitle: String
 
     var body: some View {
@@ -260,7 +408,6 @@ private struct AIPolishHeroToggle: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .tint(Color.sapoGreen)
-                .disabled(!isEnabled)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
@@ -272,7 +419,6 @@ private struct AIPolishHeroToggle: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(isOn ? Color.sapoGreen.opacity(0.38) : Color.secondary.opacity(0.18), lineWidth: 1)
         )
-        .opacity(isEnabled ? 1 : 0.55)
         .animation(.easeInOut(duration: 0.18), value: isOn)
     }
 
@@ -293,7 +439,7 @@ private struct AIPolishHeroToggle: View {
 }
 
 #Preview("AI Polish Settings") {
-    AIPolishSettingsCard(credentials: GoogleCredentialsState())
+    AIPolishSettingsCard()
         .frame(width: 400)
         .padding()
 }

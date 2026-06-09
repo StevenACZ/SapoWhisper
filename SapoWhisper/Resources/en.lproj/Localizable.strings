@@ -182,8 +182,8 @@
 "ai.google_credentials.title" = "Google Cloud credentials";
 "ai.polish.title" = "AI Polish";
 "ai.polish.enable" = "Improve text with AI";
-"ai.polish.enable_subtitle" = "Polish longer transcripts with Gemini.";
-"ai.polish.enable_active" = "Active — Gemini refines longer transcripts.";
+"ai.polish.enable_subtitle" = "Polish longer transcripts with AI.";
+"ai.polish.enable_active" = "Active — AI refines longer transcripts.";
 "ai.polish.enable_active_after" = "Active — runs after %@ of speech.";
 "ai.polish.enable_active_always" = "Active — runs on every eligible transcript.";
 "ai.polish.mode" = "Mode";
@@ -197,9 +197,23 @@
 "ai.polish.minimum_duration_desc.always" = "Runs on any transcript that is not trivially short.";
 "ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
 "ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
-"ai.polish.desc" = "Uses Gemini 3.1 Flash-Lite on Vertex AI to fix likely mistakes, preserve intent, and improve readability without forcing unrelated vocabulary.";
-"ai.polish.vertex_info_title" = "Gemini on Vertex AI";
-"ai.polish.requires_google" = "Requires Google Cloud connection.";
+"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while staying literal — your words, your order. A fidelity guard pastes the raw transcript whenever the AI drifts.";
+"ai.polish.fidelity_info_title" = "Fidelity first";
+"ai.provider.section" = "Provider";
+"ai.provider.endpoint" = "Endpoint";
+"ai.provider.endpoint_custom" = "Custom";
+"ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
+"ai.provider.model" = "Model";
+"ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
+"ai.provider.api_key" = "API key";
+"ai.provider.api_key_placeholder" = "Paste your API key";
+"ai.provider.api_key_hint" = "Stored securely in your macOS Keychain.";
+"ai.provider.test" = "Test connection";
+"ai.provider.test_success" = "Works · %@";
+"ai.provider.needs_key" = "Add an API key and model to run AI polish. Get a key at openrouter.ai.";
+"ai.provider.error_not_configured" = "AI polish is not configured (missing API key or model).";
+"ai.provider.error_empty" = "The AI provider returned an empty response.";
+"ai.provider.error_http" = "AI provider error (%@): %@";
 "ai.google_connected" = "Google Cloud connected";
 "ai.google_missing" = "Google Cloud not connected";
 "ai.google_connected_desc" = "These credentials enable Chirp 3 and also unlock Gemini on Vertex AI.";
@@ -232,6 +246,7 @@
 "ai.status.applied" = "Applied";
 "ai.status.skipped_short" = "Skipped for short text";
 "ai.status.skipped_duration" = "Skipped for short recording";
+"ai.status.rejected_fidelity" = "Rejected — drifted from your words";
 "ai.status.failed" = "Failed";
 
 /* Badges & Labels */

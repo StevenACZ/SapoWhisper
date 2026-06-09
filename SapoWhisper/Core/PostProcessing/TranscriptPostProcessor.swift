@@ -4,11 +4,12 @@
 //
 
 import Foundation
+import os
 
 final class TranscriptPostProcessor {
-    private let polisher: GeminiTranscriptPolisher
+    private let polisher: OpenAICompatiblePolisher
 
-    init(polisher: GeminiTranscriptPolisher = GeminiTranscriptPolisher()) {
+    init(polisher: OpenAICompatiblePolisher = OpenAICompatiblePolisher()) {
         self.polisher = polisher
     }
 
@@ -29,6 +30,13 @@ final class TranscriptPostProcessor {
         let defaults = UserDefaults.standard
         let enabled = defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
         guard enabled else {
+            return makeResult(rawText: rawText, finalText: trimmed, status: .none, startedAt: startedAt)
+        }
+
+        guard let configuration = PolishProviderConfiguration.current() else {
+            // Enabled but no usable provider: dictation must never block on
+            // polish, so the raw transcript ships untouched.
+            SapoLog.ai.info("AI polish skipped reason=not-configured")
             return makeResult(rawText: rawText, finalText: trimmed, status: .none, startedAt: startedAt)
         }
 
@@ -62,25 +70,54 @@ final class TranscriptPostProcessor {
             )
         }
 
-        let prompt = TranscriptPolishPromptBuilder.makePrompt(
+        let keyterms = VocabularyManager.shared.keyterms
+        let messages = TranscriptPolishPromptBuilder.makeMessages(
             rawText: trimmed,
             promptProfile: promptProfile,
-            personalContext: PromptContextManager.shared.makePersonalContextBlock(),
+            personalContext: PromptContextManager.shared.personalContext.details,
             outputLanguage: outputLanguage,
-            keyterms: VocabularyManager.shared.keyterms,
+            keyterms: keyterms,
             replacements: VocabularyManager.shared.replacements
         )
 
         do {
             let response = try await withTimeout(seconds: 8) {
-                try await self.polisher.polish(prompt: prompt)
+                try await self.polisher.polish(system: messages.system, user: messages.user)
             }
-            let finalText = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = PolishOutputSanitizer.clean(response.text, rawText: trimmed)
+            guard !cleaned.isEmpty else {
+                return makeResult(
+                    rawText: rawText,
+                    finalText: trimmed,
+                    status: .failed,
+                    model: response.modelIdentifier,
+                    mode: promptProfile.id,
+                    error: "empty polished text",
+                    startedAt: startedAt
+                )
+            }
+
+            let verdict = PolishFidelityGuard.evaluate(raw: trimmed, polished: cleaned, vocabularyTerms: keyterms)
+            guard verdict.isAcceptable else {
+                SapoLog.ai.warning(
+                    "AI polish rejected by fidelity guard \(verdict.diagnosticSummary, privacy: .public)"
+                )
+                return makeResult(
+                    rawText: rawText,
+                    finalText: trimmed,
+                    status: .rejectedFidelity,
+                    model: response.modelIdentifier,
+                    mode: promptProfile.id,
+                    error: verdict.diagnosticSummary,
+                    startedAt: startedAt
+                )
+            }
+
             return makeResult(
                 rawText: rawText,
-                finalText: finalText.isEmpty ? trimmed : finalText,
+                finalText: cleaned,
                 status: .applied,
-                model: response.model,
+                model: response.modelIdentifier,
                 mode: promptProfile.id,
                 startedAt: startedAt
             )
@@ -89,7 +126,7 @@ final class TranscriptPostProcessor {
                 rawText: rawText,
                 finalText: trimmed,
                 status: .failed,
-                model: GoogleCloudConfig.vertexGeminiModel,
+                model: configuration.modelIdentifier,
                 mode: promptProfile.id,
                 error: error.localizedDescription,
                 startedAt: startedAt
@@ -135,7 +172,7 @@ final class TranscriptPostProcessor {
         guard !trimmed.isEmpty else { return false }
 
         let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
-        guard enabled else { return false }
+        guard enabled, polisher.isConfigured else { return false }
 
         return force || (!Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(trimmed))
     }

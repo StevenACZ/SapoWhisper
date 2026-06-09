@@ -182,8 +182,8 @@
 "ai.google_credentials.title" = "Credenciales de Google Cloud";
 "ai.polish.title" = "Mejora por IA";
 "ai.polish.enable" = "Mejorar texto con IA";
-"ai.polish.enable_subtitle" = "Refina dictados largos con Gemini.";
-"ai.polish.enable_active" = "Activo — Gemini refina dictados largos.";
+"ai.polish.enable_subtitle" = "Refina dictados largos con IA.";
+"ai.polish.enable_active" = "Activo — la IA refina dictados largos.";
 "ai.polish.enable_active_after" = "Activo — se aplica despues de %@ de hablar.";
 "ai.polish.enable_active_always" = "Activo — se aplica a cada transcript elegible.";
 "ai.polish.mode" = "Modo";
@@ -197,9 +197,23 @@
 "ai.polish.minimum_duration_desc.always" = "Corre en cualquier transcript que no sea trivialmente corto.";
 "ai.polish.minimum_duration_desc.20" = "Salta la mejora en grabaciones menores de 20 segundos.";
 "ai.polish.minimum_duration_desc.30" = "Salta la mejora en grabaciones menores de 30 segundos.";
-"ai.polish.desc" = "Usa Gemini 3.1 Flash-Lite en Vertex AI para corregir errores probables, preservar la intención y mejorar legibilidad sin forzar vocabulario no relacionado.";
-"ai.polish.vertex_info_title" = "Gemini en Vertex AI";
-"ai.polish.requires_google" = "Requiere Google Cloud conectado.";
+"ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad manteniéndose literal: tus palabras, tu orden. Una guardia de fidelidad pega el texto original si la IA se desvía.";
+"ai.polish.fidelity_info_title" = "Fidelidad primero";
+"ai.provider.section" = "Proveedor";
+"ai.provider.endpoint" = "Endpoint";
+"ai.provider.endpoint_custom" = "Personalizado";
+"ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
+"ai.provider.model" = "Modelo";
+"ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
+"ai.provider.api_key" = "API key";
+"ai.provider.api_key_placeholder" = "Pega tu API key";
+"ai.provider.api_key_hint" = "Se guarda de forma segura en el Llavero de macOS.";
+"ai.provider.test" = "Probar conexión";
+"ai.provider.test_success" = "Funciona · %@";
+"ai.provider.needs_key" = "Agrega una API key y un modelo para usar la mejora por IA. Consigue una key en openrouter.ai.";
+"ai.provider.error_not_configured" = "La mejora por IA no está configurada (falta API key o modelo).";
+"ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
+"ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
 "ai.google_connected" = "Google Cloud conectado";
 "ai.google_missing" = "Google Cloud no conectado";
 "ai.google_connected_desc" = "Estas credenciales activan Chirp 3 y tambien habilitan Gemini en Vertex AI.";
@@ -232,6 +246,7 @@
 "ai.status.applied" = "Aplicada";
 "ai.status.skipped_short" = "Saltada por texto corto";
 "ai.status.skipped_duration" = "Saltada por grabacion corta";
+"ai.status.rejected_fidelity" = "Rechazada — se alejó de tus palabras";
 "ai.status.failed" = "Falló";
 
 /* Badges & Labels */

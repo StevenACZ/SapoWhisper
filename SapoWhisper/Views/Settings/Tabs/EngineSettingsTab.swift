@@ -23,7 +23,7 @@ struct EngineSettingsTab: View {
                     }
                     .frame(width: inner * 0.60, alignment: .topLeading)
 
-                    AIPolishSettingsCard(credentials: googleCredentials)
+                    AIPolishSettingsCard()
                         .frame(width: inner * 0.40, alignment: .topLeading)
                 }
                 .padding(16)

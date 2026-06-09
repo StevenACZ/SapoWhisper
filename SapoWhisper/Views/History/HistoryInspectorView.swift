@@ -140,7 +140,7 @@ struct HistoryInspectorView: View {
         switch entry.transcriptAIStatus {
         case .applied:
             return .sapoGreen
-        case .failed:
+        case .failed, .rejectedFidelity:
             return .orange
         case .skippedShort, .skippedDuration, .none:
             return .secondary
