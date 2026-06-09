@@ -50,6 +50,21 @@ class TranscriptionHistoryManager {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
+    /// Steps a mutating statement and surfaces SQLite errors in diagnostics
+    /// instead of failing silently. Returns true on SQLITE_DONE.
+    @discardableResult
+    func stepStatement(_ stmt: OpaquePointer?, operation: String) -> Bool {
+        let result = sqlite3_step(stmt)
+        guard result == SQLITE_DONE else {
+            let message = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
+            SapoLog.recording.error(
+                "failure=History/\(operation, privacy: .public) code=\(result, privacy: .public) detail=\(message, privacy: .public)"
+            )
+            return false
+        }
+        return true
+    }
+
     // MARK: - CRUD
 
     /// Save a transcription entry. Returns the row ID.
@@ -109,8 +124,7 @@ class TranscriptionHistoryManager {
             sqlite3_bind_null(stmt, 12)
         }
 
-        let result = sqlite3_step(stmt)
-        guard result == SQLITE_DONE else { return -1 }
+        guard stepStatement(stmt, operation: "save") else { return -1 }
         let rowID = sqlite3_last_insert_rowid(db)
         enforceAudioStorageLimit()
         notifyDidChange()
@@ -139,7 +153,7 @@ class TranscriptionHistoryManager {
         } else {
             sqlite3_bind_int64(stmt, 2, id)
         }
-        sqlite3_step(stmt)
+        stepStatement(stmt, operation: "updateStatus")
         notifyDidChange()
     }
 
@@ -181,7 +195,55 @@ class TranscriptionHistoryManager {
             sqlite3_bind_null(stmt, 6)
         }
         sqlite3_bind_int64(stmt, 7, id)
-        sqlite3_step(stmt)
+        stepStatement(stmt, operation: "updateAIProcessing")
+        notifyDidChange()
+    }
+
+    /// Applies a retranscription onto the original row instead of inserting a
+    /// duplicate. The first engine is preserved in original_engine for audit.
+    func updateRetranscription(
+        id: Int64,
+        engine: String,
+        finalText: String,
+        rawText: String,
+        aiStatus: TranscriptAIStatus,
+        aiModel: String?,
+        aiMode: String?,
+        aiError: String?
+    ) {
+        let sql = """
+            UPDATE transcriptions
+            SET original_engine = COALESCE(original_engine, engine), engine = ?,
+                transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?,
+                ai_error = ?, status = 'completed'
+            WHERE id = ?;
+            """
+
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        bindText(stmt, 1, engine)
+        bindText(stmt, 2, finalText)
+        bindText(stmt, 3, rawText)
+        bindText(stmt, 4, aiStatus.rawValue)
+        if let aiModel {
+            bindText(stmt, 5, aiModel)
+        } else {
+            sqlite3_bind_null(stmt, 5)
+        }
+        if let aiMode {
+            bindText(stmt, 6, aiMode)
+        } else {
+            sqlite3_bind_null(stmt, 6)
+        }
+        if let aiError {
+            bindText(stmt, 7, aiError)
+        } else {
+            sqlite3_bind_null(stmt, 7)
+        }
+        sqlite3_bind_int64(stmt, 8, id)
+        stepStatement(stmt, operation: "updateRetranscription")
         notifyDidChange()
     }
 }

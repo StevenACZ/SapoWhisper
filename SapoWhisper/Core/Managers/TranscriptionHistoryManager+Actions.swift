@@ -18,7 +18,7 @@ extension TranscriptionHistoryManager {
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
         bindText(deleteStmt, 1, iso)
-        sqlite3_step(deleteStmt)
+        stepStatement(deleteStmt, operation: "cleanupOldAudio")
 
         for path in pathsToDelete {
             audioStorage.deleteAudioFile(at: path)
@@ -45,7 +45,7 @@ extension TranscriptionHistoryManager {
         defer { sqlite3_finalize(updateStmt) }
         guard sqlite3_prepare_v2(db, updateSql, -1, &updateStmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_int64(updateStmt, 1, id)
-        sqlite3_step(updateStmt)
+        guard stepStatement(updateStmt, operation: "toggleFavorite") else { return false }
 
         let selectSql = "SELECT is_favorite FROM transcriptions WHERE id = ?;"
         var selectStmt: OpaquePointer?
@@ -67,7 +67,7 @@ extension TranscriptionHistoryManager {
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_int64(deleteStmt, 1, id)
-        sqlite3_step(deleteStmt)
+        guard stepStatement(deleteStmt, operation: "delete") else { return }
 
         if let audioPath {
             audioStorage.deleteAudioFile(at: audioPath)

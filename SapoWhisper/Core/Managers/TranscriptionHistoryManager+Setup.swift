@@ -44,6 +44,7 @@ extension TranscriptionHistoryManager {
         addColumnIfNeeded(named: "ai_model", definition: "TEXT")
         addColumnIfNeeded(named: "ai_mode", definition: "TEXT")
         addColumnIfNeeded(named: "ai_error", definition: "TEXT")
+        addColumnIfNeeded(named: "original_engine", definition: "TEXT")
         backfillRawTranscriptions()
     }
 

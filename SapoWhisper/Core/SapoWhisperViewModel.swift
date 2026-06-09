@@ -1213,10 +1213,12 @@ class SapoWhisperViewModel: ObservableObject {
                 appState = .idle
                 if playSoundEnabled { SoundManager.shared.play(.success) }
 
-                // Update history entry
+                // Update history entry in place; the retry may run on a
+                // different engine than the failed attempt.
                 if let historyId = lastFailedHistoryId {
-                    historyManager.updateAIProcessing(
+                    historyManager.updateRetranscription(
                         id: historyId,
+                        engine: historyEngineName(for: engine),
                         finalText: aiResult.finalText,
                         rawText: aiResult.rawText,
                         aiStatus: aiResult.status,
@@ -1254,33 +1256,25 @@ class SapoWhisperViewModel: ObservableObject {
                 source: "history-retranscribe",
                 duration: entry.duration
             )
-            let persistedEntry = persistHistoryEntry(
-                from: audioURL,
-                engine: engine,
-                engineName: historyEngineName(for: engine),
-                language: entry.language,
-                duration: entry.duration,
-                aiResult: aiResult,
-                status: "completed"
+            // Update the original row in place — no duplicate rows, no second
+            // audio copy; the first engine is kept in original_engine.
+            historyManager.updateRetranscription(
+                id: entry.id,
+                engine: historyEngineName(for: engine),
+                finalText: aiResult.finalText,
+                rawText: aiResult.rawText,
+                aiStatus: aiResult.status,
+                aiModel: aiResult.model,
+                aiMode: aiResult.mode,
+                aiError: aiResult.error
             )
 
-            return HistoryRetranscriptionResult(
-                entryId: persistedEntry.id > 0 ? persistedEntry.id : entry.id,
-                errorMessage: nil
-            )
+            return HistoryRetranscriptionResult(entryId: entry.id, errorMessage: nil)
         } catch {
-            let persistedEntry = persistHistoryEntry(
-                from: audioURL,
-                engine: engine,
-                engineName: historyEngineName(for: engine),
-                language: entry.language,
-                duration: entry.duration,
-                aiResult: nil,
-                status: "failed"
-            )
-
+            // A failed retranscribe must not degrade the existing row; the
+            // error only surfaces in the UI.
             return HistoryRetranscriptionResult(
-                entryId: persistedEntry.id > 0 ? persistedEntry.id : entry.id,
+                entryId: entry.id,
                 errorMessage: error.localizedDescription
             )
         }
@@ -1772,6 +1766,17 @@ class SapoWhisperViewModel: ObservableObject {
             aiMode: aiResult?.mode,
             aiError: aiResult?.error
         )
+
+        // The copy + insert pair is not atomic: when the insert fails, roll
+        // back the copied file and keep the source WAV around for retry.
+        if historyID < 0, let savedPath {
+            historyManager.audioStorage.deleteAudioFile(at: savedPath)
+            return PersistedHistoryEntry(
+                id: historyID,
+                audioURL: fallbackPath.map { URL(fileURLWithPath: $0) },
+                copiedAudioToHistory: false
+            )
+        }
 
         return PersistedHistoryEntry(
             id: historyID,
