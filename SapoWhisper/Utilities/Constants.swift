@@ -12,7 +12,7 @@ enum Constants {
     // MARK: - App Info
 
     static let appName = "SapoWhisper"
-    static let appVersion = "2.1.0"
+    static let appVersion = "2.3.0"
     static let appDescription = "Speech-to-Text 100% local"
 
     // MARK: - Colores de la Marca
