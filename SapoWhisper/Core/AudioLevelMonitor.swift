@@ -302,8 +302,7 @@ class AudioLevelMonitor: ObservableObject {
         guard let audioEngine = monitorSnapshot.engine, monitorSnapshot.isRunning else { return }
 
         let tapFormat = monitorSnapshot.tapFormat ?? audioEngine.inputNode.outputFormat(forBus: 0)
-        let tempDir = FileManager.default.temporaryDirectory
-        let rawURL = tempDir.appendingPathComponent("mic_test_raw_\(Date().timeIntervalSince1970).wav")
+        let rawURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_raw")
 
         do {
             sampleFile = try AVAudioFile(forWriting: rawURL, settings: tapFormat.settings)
@@ -340,8 +339,7 @@ class AudioLevelMonitor: ObservableObject {
         rawSampleMetadata = buildMetadata(for: rawURL)
 
         // Convert to compressed (16kHz int16 mono)
-        let compressedURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mic_test_compressed_\(Date().timeIntervalSince1970).wav")
+        let compressedURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_compressed")
 
         if convertToCompressed(from: rawURL, to: compressedURL) {
             self.compressedSampleURL = compressedURL

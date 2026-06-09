@@ -11,7 +11,6 @@ import os
 struct SettingsTransferCard: View {
     let viewModel: SapoWhisperViewModel
 
-    @State private var includeAPIKeys = false
     @State private var importDocument: SettingsTransferDocument?
     @State private var selectedImportSections: Set<SettingsTransferSection> = []
     @State private var transferMessage: String?
@@ -25,9 +24,6 @@ struct SettingsTransferCard: View {
                 Text("settings.transfer.desc".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
-
-                Toggle("settings.transfer.include_api_keys".localized, isOn: $includeAPIKeys)
-                    .font(.caption)
 
                 HStack(spacing: 10) {
                     Button(action: exportSettings) {
@@ -73,10 +69,10 @@ struct SettingsTransferCard: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            let data = try transferManager.encodedSettings(includeAPIKeys: includeAPIKeys)
+            let data = try transferManager.encodedSettings()
             try data.write(to: url, options: .atomic)
             setMessage("settings.transfer.export_success".localized, isError: false)
-            SapoLog.settings.info("Settings exported includeAPIKeys=\(includeAPIKeys, privacy: .public)")
+            SapoLog.settings.info("Settings exported")
         } catch {
             setMessage(error.localizedDescription, isError: true)
         }

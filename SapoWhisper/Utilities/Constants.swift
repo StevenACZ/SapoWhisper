@@ -111,10 +111,14 @@ enum Constants {
         static let aiPolishModel = "aiPolishModel"
 
         // Deepgram
+        /// Legacy plaintext location, kept only so the launch migration can
+        /// move the value into the Keychain. Read keys via KeychainStore.
         static let deepgramAPIKey = "deepgramAPIKey"
         static let deepgramTranscriptionMode = "deepgramTranscriptionMode"
 
         // ElevenLabs
+        /// Legacy plaintext location, kept only so the launch migration can
+        /// move the value into the Keychain. Read keys via KeychainStore.
         static let elevenLabsAPIKey = "elevenLabsAPIKey"
         static let elevenLabsTranscriptionMode = "elevenLabsTranscriptionMode"
 

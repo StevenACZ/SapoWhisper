@@ -50,6 +50,8 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var aiPolishCustomBaseURL: String?
 }
 
+/// Legacy section: old export files may still carry plaintext engine keys.
+/// New exports never include them; importing routes them to the Keychain.
 struct SettingsTransferAPIKeys: Codable, Equatable {
     var deepgramAPIKey: String?
     var elevenLabsAPIKey: String?
@@ -135,11 +137,21 @@ struct SettingsTransferManager {
     static let shared = SettingsTransferManager()
 
     private let defaults: UserDefaults
+    private let readEngineKey: (KeychainStore.Key) -> String?
+    private let writeEngineKey: (String, KeychainStore.Key) -> Void
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        readEngineKey: @escaping (KeychainStore.Key) -> String? = { KeychainStore.string(for: $0) },
+        writeEngineKey: @escaping (String, KeychainStore.Key) -> Void = {
+            KeychainStore.setString($0, for: $1)
+        }
+    ) {
         self.defaults = defaults
+        self.readEngineKey = readEngineKey
+        self.writeEngineKey = writeEngineKey
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -151,8 +163,8 @@ struct SettingsTransferManager {
         self.decoder = decoder
     }
 
-    func encodedSettings(includeAPIKeys: Bool) throws -> Data {
-        try encoder.encode(makeSettingsDocument(includeAPIKeys: includeAPIKeys))
+    func encodedSettings() throws -> Data {
+        try encoder.encode(makeSettingsDocument())
     }
 
     func encodedVocabulary() throws -> Data {
@@ -229,16 +241,16 @@ struct SettingsTransferManager {
         VocabularyManager.shared.merge(snapshot: vocabulary)
     }
 
-    private func makeSettingsDocument(includeAPIKeys: Bool) -> SettingsTransferDocument {
-        let apiKeys = includeAPIKeys ? currentAPIKeys() : nil
-        return SettingsTransferDocument(
+    private func makeSettingsDocument() -> SettingsTransferDocument {
+        // API keys are never exported: shareable JSON must not carry secrets.
+        SettingsTransferDocument(
             schemaVersion: 1,
             appVersion: Constants.appVersion,
             exportedAt: Date(),
             preferences: currentPreferences(),
             vocabulary: VocabularyManager.shared.snapshot(),
             promptContext: PromptContextManager.shared.snapshot(),
-            apiKeys: apiKeys?.isEmpty == true ? nil : apiKeys
+            apiKeys: nil
         )
     }
 
@@ -282,13 +294,6 @@ struct SettingsTransferManager {
         )
     }
 
-    private func currentAPIKeys() -> SettingsTransferAPIKeys {
-        SettingsTransferAPIKeys(
-            deepgramAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey)),
-            elevenLabsAPIKey: emptyStringAsNil(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey))
-        )
-    }
-
     private func importPreferences(_ preferences: SettingsTransferPreferences, sections: Set<SettingsTransferSection>) {
         if sections.contains(.behavior) {
             defaults.set(preferences.appLanguage, forKey: Constants.StorageKeys.appLanguage)
@@ -309,8 +314,8 @@ struct SettingsTransferManager {
             // Old export files may carry removed engines; map them like the launch migration.
             let importedEngine = EnginePortfolioMigration.migratedEngine(
                 from: preferences.transcriptionEngine,
-                hasDeepgramKey: !(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? "").isEmpty,
-                hasElevenLabsKey: !(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? "").isEmpty
+                hasDeepgramKey: !(readEngineKey(.deepgramAPIKey) ?? "").isEmpty,
+                hasElevenLabsKey: !(readEngineKey(.elevenLabsAPIKey) ?? "").isEmpty
             )
             defaults.set(importedEngine, forKey: Constants.StorageKeys.transcriptionEngine)
             defaults.set(preferences.whisperKitModel, forKey: Constants.StorageKeys.whisperKitModel)
@@ -358,11 +363,12 @@ struct SettingsTransferManager {
     }
 
     private func importAPIKeys(_ apiKeys: SettingsTransferAPIKeys) {
-        if let deepgramAPIKey = apiKeys.deepgramAPIKey {
-            defaults.set(deepgramAPIKey, forKey: Constants.StorageKeys.deepgramAPIKey)
+        // Keys from legacy export files land in the Keychain, never UserDefaults.
+        if let deepgramAPIKey = emptyStringAsNil(apiKeys.deepgramAPIKey) {
+            writeEngineKey(deepgramAPIKey, .deepgramAPIKey)
         }
-        if let elevenLabsAPIKey = apiKeys.elevenLabsAPIKey {
-            defaults.set(elevenLabsAPIKey, forKey: Constants.StorageKeys.elevenLabsAPIKey)
+        if let elevenLabsAPIKey = emptyStringAsNil(apiKeys.elevenLabsAPIKey) {
+            writeEngineKey(elevenLabsAPIKey, .elevenLabsAPIKey)
         }
     }
 

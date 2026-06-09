@@ -17,10 +17,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
         NSApp.setActivationPolicy(.accessory)
+        APIKeyKeychainMigration.run()
         EnginePortfolioMigration.run()
         menuBarStatusController.start()
         observeScreenChanges()
         scheduleInitialOnboardingCheck()
+        Task.detached(priority: .utility) {
+            TemporaryAudioStorage.sweepStaleFiles()
+        }
         PerformanceDiagnostics.logDiagnosticsFileLocation()
         PerformanceDiagnostics.logRuntimeSnapshot(reason: "launch", force: true)
     }

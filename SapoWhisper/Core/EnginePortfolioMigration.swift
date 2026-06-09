@@ -51,8 +51,8 @@ enum EnginePortfolioMigration {
 
         let migrated = migratedEngine(
             from: stored,
-            hasDeepgramKey: !(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? "").isEmpty,
-            hasElevenLabsKey: !(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? "").isEmpty
+            hasDeepgramKey: !(KeychainStore.string(for: .deepgramAPIKey) ?? "").isEmpty,
+            hasElevenLabsKey: !(KeychainStore.string(for: .elevenLabsAPIKey) ?? "").isEmpty
         )
         defaults.set(migrated, forKey: Constants.StorageKeys.transcriptionEngine)
         SapoLog.lifecycle.info(

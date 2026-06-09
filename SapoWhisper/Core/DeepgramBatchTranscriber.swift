@@ -18,7 +18,7 @@ class DeepgramBatchTranscriber: ObservableObject {
 
     /// Check if Deepgram API key is configured
     var isConfigured: Bool {
-        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? ""
+        let key = KeychainStore.string(for: .deepgramAPIKey) ?? ""
         return !key.isEmpty
     }
 
@@ -26,7 +26,7 @@ class DeepgramBatchTranscriber: ObservableObject {
 
     /// Transcribe audio file using Deepgram REST API (pre-recorded)
     func transcribe(audioURL: URL, language: String) async throws -> String {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
+        guard let apiKey = KeychainStore.string(for: .deepgramAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)

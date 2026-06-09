@@ -561,8 +561,8 @@ private struct WelcomeCloudEngineCard: View {
         case invalid(String)
     }
 
-    private var storageKey: String {
-        engine == .deepgram ? Constants.StorageKeys.deepgramAPIKey : Constants.StorageKeys.elevenLabsAPIKey
+    private var keychainKey: KeychainStore.Key {
+        engine == .deepgram ? .deepgramAPIKey : .elevenLabsAPIKey
     }
 
     private var isReady: Bool {
@@ -619,7 +619,7 @@ private struct WelcomeCloudEngineCard: View {
         Task { @MainActor in
             do {
                 try await EngineKeyValidator.validate(engine: engine, key: key)
-                UserDefaults.standard.set(key, forKey: storageKey)
+                KeychainStore.setString(key, for: keychainKey)
                 viewModel.setEngine(engine)
                 withAnimation(.smooth(duration: 0.3)) {
                     validation = .valid

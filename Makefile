@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build test release size-check ci-check release-check notarized-dmg hooks-install
+.PHONY: help tools format format-all lint lint-all build test release size-check secrets-scan ci-check release-check notarized-dmg hooks-install
 
 .DEFAULT_GOAL := help
 
@@ -22,6 +22,7 @@ help:
 	@printf "  make test          Run unit tests\n"
 	@printf "  make release       Build Release for Apple Silicon\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
+	@printf "  make secrets-scan  Scan the working tree for leaked secrets\n"
 	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
 	@printf "  make release-check Release gate: lint + Release build + size check\n"
 	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
@@ -66,7 +67,10 @@ release:
 size-check:
 	@scripts/measure_release_bundle.sh $(RELEASE_APP)
 
-ci-check: lint build test
+secrets-scan:
+	@scripts/secrets_scan.sh tree
+
+ci-check: lint secrets-scan build test
 	@printf "ci-check: passed\n"
 
 release-check: lint release size-check

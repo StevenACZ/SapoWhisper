@@ -56,11 +56,10 @@ final class WelcomeWindowController: NSWindowController {
     }
 
     private static var hasUsableEngine: Bool {
-        let defaults = UserDefaults.standard
-        if !(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? "").isEmpty {
+        if !(KeychainStore.string(for: .deepgramAPIKey) ?? "").isEmpty {
             return true
         }
-        if !(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? "").isEmpty {
+        if !(KeychainStore.string(for: .elevenLabsAPIKey) ?? "").isEmpty {
             return true
         }
         let viewModel = SapoWhisperAppEnvironment.shared.viewModel

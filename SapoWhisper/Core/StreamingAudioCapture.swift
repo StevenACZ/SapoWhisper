@@ -104,8 +104,7 @@ final class StreamingAudioCapture: ObservableObject {
                         return
                     }
 
-                    let recordingURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("flux_recording_\(Date().timeIntervalSince1970).wav")
+                    let recordingURL = TemporaryAudioStorage.makeWAVURL(prefix: "flux_recording")
                     pendingURL = recordingURL
 
                     let audioFile = try AVAudioFile(

@@ -4,7 +4,7 @@ struct DeepgramSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     let isEmbedded: Bool
 
-    @AppStorage(Constants.StorageKeys.deepgramAPIKey) private var deepgramAPIKey = ""
+    @State private var deepgramAPIKey = ""
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedMode = DeepgramTranscriptionMode.nova3.rawValue
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
@@ -26,10 +26,14 @@ struct DeepgramSettingsCard: View {
                 }
             }
         }
-        .onChange(of: deepgramAPIKey) { _, _ in
+        .onChange(of: deepgramAPIKey) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed != (KeychainStore.string(for: .deepgramAPIKey) ?? "") else { return }
+            KeychainStore.setString(trimmed, for: .deepgramAPIKey)
             viewModel.setEngine(.deepgram)
         }
         .onAppear {
+            deepgramAPIKey = KeychainStore.string(for: .deepgramAPIKey) ?? ""
             viewModel.setDeepgramMode(currentMode)
         }
     }

@@ -395,7 +395,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     var isConfigured: Bool {
-        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? ""
+        let key = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
         return !key.isEmpty
     }
 
@@ -404,7 +404,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     func start(microphone: String, language: String) async throws {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey),
+        guard let apiKey = KeychainStore.string(for: .elevenLabsAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)

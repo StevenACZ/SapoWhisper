@@ -24,7 +24,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     /// Check if the ElevenLabs API key is configured.
     var isConfigured: Bool {
-        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? ""
+        let key = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
         return !key.isEmpty
     }
 
@@ -32,7 +32,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     /// Transcribe an audio file using the ElevenLabs Scribe v2 batch endpoint.
     func transcribe(audioURL: URL, language: String) async throws -> String {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey),
+        guard let apiKey = KeychainStore.string(for: .elevenLabsAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)

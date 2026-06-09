@@ -163,9 +163,7 @@ class AudioRecorder: ObservableObject {
                     }
 
                     // Crear archivo temporal para guardar el audio
-                    let tempDir = FileManager.default.temporaryDirectory
-                    let fileName = "recording_\(Date().timeIntervalSince1970).wav"
-                    let recordingURL = tempDir.appendingPathComponent(fileName)
+                    let recordingURL = TemporaryAudioStorage.makeWAVURL(prefix: "recording")
                     pendingRecordingURL = recordingURL
 
                     // AVAudioFile(forWriting:settings:) always uses float32 as processing format.

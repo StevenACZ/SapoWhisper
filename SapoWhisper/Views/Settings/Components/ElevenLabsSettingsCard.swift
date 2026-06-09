@@ -9,7 +9,7 @@ struct ElevenLabsSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     let isEmbedded: Bool
 
-    @AppStorage(Constants.StorageKeys.elevenLabsAPIKey) private var elevenLabsAPIKey = ""
+    @State private var elevenLabsAPIKey = ""
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
 
@@ -32,10 +32,14 @@ struct ElevenLabsSettingsCard: View {
                 }
             }
         }
-        .onChange(of: elevenLabsAPIKey) { _, _ in
+        .onChange(of: elevenLabsAPIKey) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed != (KeychainStore.string(for: .elevenLabsAPIKey) ?? "") else { return }
+            KeychainStore.setString(trimmed, for: .elevenLabsAPIKey)
             viewModel.setEngine(.elevenLabsScribe)
         }
         .onAppear {
+            elevenLabsAPIKey = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
             viewModel.setElevenLabsMode(currentMode)
         }
     }
