@@ -13,39 +13,40 @@ import os
 struct GeneralSettingsTab: View {
     let viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "es"
+    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
+        .rawValue
     @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
     @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
     @AppStorage(Constants.StorageKeys.soundVolume) private var soundVolume: Double = 1.0
     @AppStorage(Constants.StorageKeys.autoDuckingEnabled) private var autoDuckingEnabled = false
     @AppStorage(Constants.StorageKeys.autoDuckingAmount) private var autoDuckingAmount: Double = 0.8
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramPreviousLanguage) private var deepgramPreviousLanguage = ""
+
+    @AppStorage(Constants.StorageKeys.historyAudioMaxMB) private var historyAudioMaxMB =
+        HistoryAudioStorage.defaultMaxStorageMB
+    @AppStorage(Constants.StorageKeys.historyAutoDeleteDays) private var historyAutoDeleteDays = 0
+    @AppStorage(Constants.StorageKeys.overlayPosition) private var overlayPosition =
+        OverlayPosition.bottom.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+        TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    @State private var historyAudioUsageBytes: Int64 = 0
+    @State private var showClearHistoryConfirmation = false
     private let preferredMicrophoneCoordinator = PreferredMicrophoneCoordinator.shared
+
+    private static let audioLimitOptionsMB = [250, 500, 1024, 2048]
+    private static let autoDeleteOptionsDays = [0, 30, 90, 180]
 
     private var appBinding: Binding<String> {
         Binding(
             get: { LocalizationManager.shared.language },
             set: { LocalizationManager.shared.language = $0 }
-        )
-    }
-
-    private var isInputLanguageLocked: Bool {
-        selectedEngine == TranscriptionEngine.deepgram.rawValue && selectedDeepgramMode == DeepgramTranscriptionMode.fluxLive.rawValue
-    }
-
-    private var inputLanguageBinding: Binding<String> {
-        Binding(
-            get: { isInputLanguageLocked ? "auto" : selectedLanguage },
-            set: { newValue in
-                guard !isInputLanguageLocked else { return }
-                selectedLanguage = newValue
-            }
         )
     }
 
@@ -63,6 +64,7 @@ struct GeneralSettingsTab: View {
                 VStack(spacing: 12) {
                     autoDuckingCard
                     soundCard
+                    historyRetentionCard
                     permissionsCard
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -72,13 +74,6 @@ struct GeneralSettingsTab: View {
         .tint(Constants.Colors.sapoGreen)
         .onAppear {
             refreshAudioDevicesForAppearance()
-            enforceFluxLanguageLock()
-        }
-        .onChange(of: selectedEngine) { _, _ in
-            enforceFluxLanguageLock()
-        }
-        .onChange(of: selectedDeepgramMode) { _, _ in
-            enforceFluxLanguageLock()
         }
     }
 
@@ -132,6 +127,31 @@ struct GeneralSettingsTab: View {
 
     // MARK: - Language Card
 
+    /// Flux Multilingual accepts a `language_hint` for a subset of the
+    /// catalog; anything else falls back to auto-detect. Make that visible
+    /// instead of silent when Flux live is the active mode.
+    private var showsFluxHintUnsupportedBadge: Bool {
+        guard selectedEngine == TranscriptionEngine.deepgram.rawValue,
+            selectedDeepgramMode == DeepgramTranscriptionMode.fluxLive.rawValue,
+            selectedLanguage != "auto"
+        else {
+            return false
+        }
+        return TranscriptionLanguageCatalog.deepgramFluxLanguageHint(for: selectedLanguage) == nil
+    }
+
+    /// Explicit AI-polish output language currently in effect, or nil when
+    /// translation is off. Mirrors the override in TranscriptPostProcessor:
+    /// a mode that forces English wins over the picker.
+    private var aiTranslationTarget: TranscriptPolishOutputLanguage? {
+        guard aiPolishEnabled else { return nil }
+        var language = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
+            language = .english
+        }
+        return language.requiresTranslation ? language : nil
+    }
+
     private var languageCard: some View {
         SettingsCard(icon: "globe", title: "settings.language_header".localized) {
             VStack(alignment: .leading, spacing: 14) {
@@ -140,20 +160,37 @@ struct GeneralSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    HStack(spacing: 8) {
-                        LanguageButton(
-                            name: "lang.spanish".localized, flag: "🇪🇸", languageCode: "es", selectedLanguage: inputLanguageBinding)
-                        LanguageButton(
-                            name: "lang.english".localized, flag: "🇺🇸", languageCode: "en", selectedLanguage: inputLanguageBinding)
-                        LanguageButton(name: "lang.auto".localized, flag: "🌐", languageCode: "auto", selectedLanguage: inputLanguageBinding)
+                    Picker("settings.input_language".localized, selection: $selectedLanguage) {
+                        ForEach(TranscriptionLanguageCatalog.languages) { language in
+                            Text(language.displayName).tag(language.code)
+                        }
                     }
-                    .disabled(isInputLanguageLocked)
-                    .opacity(isInputLanguageLocked ? 0.65 : 1)
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if isInputLanguageLocked {
-                        Label("settings.flux_language_locked".localized, systemImage: "lock.fill")
+                    if showsFluxHintUnsupportedBadge {
+                        Label("settings.flux_hint_unsupported".localized, systemImage: "info.circle")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let target = aiTranslationTarget {
+                        // Pinning the engine to the same language the AI
+                        // outputs is coherent (speak X, get X) — only warn
+                        // when the pin and the translation target diverge.
+                        let pinMatchesTarget =
+                            selectedLanguage == "auto" || selectedLanguage == target.nlLanguageCode
+                        Label(
+                            pinMatchesTarget
+                                ? "settings.ai_translation_active".localized(target.displayName)
+                                : "settings.ai_translation_language_pinned".localized(target.displayName),
+                            systemImage: "sparkles"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(pinMatchesTarget ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -178,8 +215,13 @@ struct GeneralSettingsTab: View {
     private var soundCard: some View {
         SettingsCard(icon: "speaker.wave.2.fill", title: "settings.sounds".localized) {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("settings.play_sounds".localized, isOn: $playSound)
-                    .toggleStyle(.switch)
+                HStack(spacing: 12) {
+                    Text("settings.play_sounds".localized)
+                    Spacer()
+                    Toggle("", isOn: $playSound)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
                 if playSound {
                     VStack(alignment: .leading, spacing: 8) {
@@ -220,8 +262,13 @@ struct GeneralSettingsTab: View {
     private var autoDuckingCard: some View {
         SettingsCard(icon: "speaker.minus.fill", title: "settings.auto_ducking_header".localized) {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("settings.auto_ducking".localized, isOn: $autoDuckingEnabled)
-                    .toggleStyle(.switch)
+                HStack(spacing: 12) {
+                    Text("settings.auto_ducking".localized)
+                    Spacer()
+                    Toggle("", isOn: $autoDuckingEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
                 if autoDuckingEnabled {
                     VStack(alignment: .leading, spacing: 8) {
@@ -248,19 +295,141 @@ struct GeneralSettingsTab: View {
         }
     }
 
+    // MARK: - History Retention Card (H6)
+
+    private var historyRetentionCard: some View {
+        SettingsCard(icon: "internaldrive", title: "settings.history_header".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("settings.history_audio_limit".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("", selection: $historyAudioMaxMB) {
+                        ForEach(Self.audioLimitOptionsMB, id: \.self) { megabytes in
+                            Text(formattedMB(megabytes)).tag(megabytes)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                HStack {
+                    Text("settings.history_audio_usage".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(
+                        ByteCountFormatter.string(
+                            fromByteCount: historyAudioUsageBytes, countStyle: .file)
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Constants.Colors.sapoGreen)
+                    .monospacedDigit()
+                }
+
+                HStack {
+                    Text("settings.history_auto_delete".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("", selection: $historyAutoDeleteDays) {
+                        ForEach(Self.autoDeleteOptionsDays, id: \.self) { days in
+                            Text(autoDeleteOptionLabel(days)).tag(days)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                Text("settings.history_retention_desc".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                Divider()
+
+                Button(role: .destructive) {
+                    showClearHistoryConfirmation = true
+                } label: {
+                    Label("history.clear_all".localized, systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .confirmationDialog(
+            "history.clear_all".localized,
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("history.delete".localized, role: .destructive) {
+                TranscriptionHistoryManager.shared.deleteAll()
+                refreshHistoryAudioUsage()
+            }
+        } message: {
+            Text("history.clear_all_confirm_message".localized)
+        }
+        .task {
+            refreshHistoryAudioUsage()
+        }
+    }
+
+    private func formattedMB(_ megabytes: Int) -> String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(megabytes) * 1024 * 1024, countStyle: .file)
+    }
+
+    private func autoDeleteOptionLabel(_ days: Int) -> String {
+        days == 0
+            ? "settings.history_auto_delete_never".localized
+            : "settings.history_auto_delete_days".localized(String(days))
+    }
+
+    private func refreshHistoryAudioUsage() {
+        Task.detached(priority: .utility) {
+            let usage = TranscriptionHistoryManager.shared.audioStorage.directorySize()
+            await MainActor.run {
+                historyAudioUsageBytes = usage
+            }
+        }
+    }
+
     // MARK: - Behavior Card
 
     private var behaviorCard: some View {
         SettingsCard(icon: "gearshape", title: "settings.behavior".localized) {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle("settings.auto_paste".localized, isOn: $autoPaste)
-                    .toggleStyle(.switch)
+                HStack(spacing: 12) {
+                    Text("settings.auto_paste".localized)
+                    Spacer()
+                    Toggle("", isOn: $autoPaste)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
-                Toggle("settings.launch_at_login".localized, isOn: $launchAtLogin)
-                    .toggleStyle(.switch)
-                    .onChange(of: launchAtLogin) { _, newValue in
-                        setLaunchAtLogin(enabled: newValue)
+                HStack(spacing: 12) {
+                    Text("settings.launch_at_login".localized)
+                    Spacer()
+                    Toggle("", isOn: $launchAtLogin)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .onChange(of: launchAtLogin) { _, newValue in
+                            setLaunchAtLogin(enabled: newValue)
+                        }
+                }
+
+                HStack(spacing: 12) {
+                    Text("settings.overlay_position".localized)
+                    Spacer()
+                    Picker("", selection: $overlayPosition) {
+                        ForEach(OverlayPosition.allCases) { position in
+                            Text(position.displayName).tag(position.rawValue)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                }
 
                 Text("settings.auto_paste_desc".localized)
                     .font(.caption2)
@@ -297,13 +466,6 @@ struct GeneralSettingsTab: View {
         }
     }
 
-    private func enforceFluxLanguageLock() {
-        guard isInputLanguageLocked else { return }
-        if selectedLanguage != "auto" {
-            deepgramPreviousLanguage = selectedLanguage
-        }
-        selectedLanguage = "auto"
-    }
 }
 
 #Preview("General Settings") {

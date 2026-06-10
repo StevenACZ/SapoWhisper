@@ -50,6 +50,11 @@ class WhisperKitTranscriber: ObservableObject {
 
     private var currentModel: WhisperKitModel?
 
+    /// R4: model being loaded by the in-flight task, so a second `loadModel`
+    /// for the same model awaits it instead of cancelling and restarting.
+    private var loadingModel: WhisperKitModel?
+    private var idleUnloadTimer: Timer?
+
     /// Key para guardar modelos descargados en UserDefaults
     private let downloadedModelsKey = "whisperkit_downloaded_models"
 
@@ -94,6 +99,13 @@ class WhisperKitTranscriber: ObservableObject {
                 return
             }
 
+            // R4: a load already in flight for this model is awaited, not
+            // cancelled — the on-demand reload path may race the kick-off.
+            if loadingModel == model, let inFlight = loadTask {
+                try await inFlight.value
+                return
+            }
+
             // Cancelar tarea anterior si existe
             if let existingTask = loadTask {
                 SapoLog.recording.info("Cancelling previous WhisperKit load")
@@ -109,8 +121,10 @@ class WhisperKitTranscriber: ObservableObject {
             }
 
             loadTask = task
+            loadingModel = model
 
             // Esperar a que termine (si lanza error, se propaga)
+            defer { loadingModel = nil }
             try await task.value
             loadTask = nil
 
@@ -274,6 +288,7 @@ class WhisperKitTranscriber: ObservableObject {
                 currentModel = model
                 currentModelName = model.displayName
                 isModelLoaded = true
+                noteActivityForIdleUnload()
 
                 // Marcar como descargado para actualizar la UI
                 markAsDownloaded(model)
@@ -325,6 +340,8 @@ class WhisperKitTranscriber: ObservableObject {
 
     /// Descarga el modelo actual de memoria
     func unloadModel() {
+        idleUnloadTimer?.invalidate()
+        idleUnloadTimer = nil
         loadTask?.cancel()
         loadTask = nil
         #if canImport(WhisperKit)
@@ -339,6 +356,40 @@ class WhisperKitTranscriber: ObservableObject {
         currentModel = nil
         currentModelName = nil
         SapoLog.recording.info("WhisperKit model unloaded")
+    }
+
+    // MARK: - R4: idle unload
+
+    /// Re-arms the idle timer after model activity (load, transcription).
+    /// With the setting at 0 (default) the model stays pinned in RAM.
+    func noteActivityForIdleUnload() {
+        idleUnloadTimer?.invalidate()
+        idleUnloadTimer = nil
+
+        let minutes = UserDefaults.standard.integer(forKey: Constants.StorageKeys.whisperKitUnloadAfterMinutes)
+        guard minutes > 0, isModelLoaded else { return }
+
+        let timer = Timer(timeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
+            // Scheduled on RunLoop.main, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                self?.unloadAfterIdle(configuredMinutes: minutes)
+            }
+        }
+        timer.tolerance = 30
+        RunLoop.main.add(timer, forMode: .common)
+        idleUnloadTimer = timer
+    }
+
+    private func unloadAfterIdle(configuredMinutes: Int) {
+        guard isModelLoaded, !isTranscribing, !isLoading else {
+            // Busy right at the deadline: try again on the next activity tick.
+            noteActivityForIdleUnload()
+            return
+        }
+        SapoLog.performance.info(
+            "WhisperKit model unloaded after idle minutes=\(configuredMinutes, privacy: .public)"
+        )
+        unloadModel()
     }
 
     // MARK: - Transcription
@@ -357,6 +408,7 @@ class WhisperKitTranscriber: ObservableObject {
             defer {
                 isTranscribing = false
                 progress = 1.0
+                noteActivityForIdleUnload()
             }
 
             do {
@@ -367,7 +419,7 @@ class WhisperKitTranscriber: ObservableObject {
 
                 // Configurar opciones de decodificacion
                 var options = DecodingOptions()
-                options.language = language == "auto" ? nil : language
+                options.language = TranscriptionLanguageCatalog.whisperLanguageCode(for: language)
 
                 progress = 0.3
 

@@ -7,7 +7,6 @@
 
 import AppKit
 import ApplicationServices
-import Speech
 
 enum PermissionPrimingResult {
     case granted
@@ -17,8 +16,21 @@ enum PermissionPrimingResult {
 
 enum AppPermission: CaseIterable, Hashable, Identifiable {
     case microphone
-    case speechRecognition
     case accessibility
+    case inputMonitoring
+
+    /// Permissions the current configuration actually needs. Input Monitoring
+    /// only powers the double-tap trigger's listen-only event tap, so it joins
+    /// the guided flow only while that trigger kind is selected.
+    static var required: [AppPermission] {
+        let triggerKind =
+            UserDefaults.standard.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
+            ?? Constants.Hotkey.defaultTriggerKind
+        if triggerKind == HotkeyTriggerKind.doubleModifier.rawValue {
+            return [.microphone, .accessibility, .inputMonitoring]
+        }
+        return [.microphone, .accessibility]
+    }
 
     var id: Self { self }
 
@@ -26,10 +38,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "permissions.microphone.title".localized
-        case .speechRecognition:
-            return "permissions.speech.title".localized
         case .accessibility:
             return "permissions.accessibility.title".localized
+        case .inputMonitoring:
+            return "permissions.input_monitoring.title".localized
         }
     }
 
@@ -37,10 +49,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "permissions.microphone.summary".localized
-        case .speechRecognition:
-            return "permissions.speech.summary".localized
         case .accessibility:
             return "permissions.accessibility.summary".localized
+        case .inputMonitoring:
+            return "permissions.input_monitoring.summary".localized
         }
     }
 
@@ -48,10 +60,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "mic.fill"
-        case .speechRecognition:
-            return "waveform.and.mic"
         case .accessibility:
             return "accessibility"
+        case .inputMonitoring:
+            return "keyboard.fill"
         }
     }
 
@@ -59,10 +71,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return .systemBlue
-        case .speechRecognition:
-            return .systemGreen
         case .accessibility:
             return .systemOrange
+        case .inputMonitoring:
+            return .systemPurple
         }
     }
 
@@ -70,10 +82,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "permissions.microphone.overlay_title".localized
-        case .speechRecognition:
-            return "permissions.speech.overlay_title".localized
         case .accessibility:
             return "permissions.accessibility.overlay_title".localized
+        case .inputMonitoring:
+            return "permissions.input_monitoring.overlay_title".localized
         }
     }
 
@@ -81,10 +93,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "permissions.microphone.overlay_message".localized
-        case .speechRecognition:
-            return "permissions.speech.overlay_message".localized
         case .accessibility:
             return "permissions.accessibility.overlay_message".localized
+        case .inputMonitoring:
+            return "permissions.input_monitoring.overlay_message".localized
         }
     }
 
@@ -96,10 +108,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "permissions.microphone.helper_title".localized
-        case .speechRecognition:
-            return "permissions.speech.helper_title".localized
         case .accessibility:
             return "permissions.accessibility.helper_title".localized
+        case .inputMonitoring:
+            return "permissions.input_monitoring.helper_title".localized
         }
     }
 
@@ -107,15 +119,16 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "permissions.microphone.helper_message".localized
-        case .speechRecognition:
-            return "permissions.speech.helper_message".localized
         case .accessibility:
             return "permissions.accessibility.helper_message".localized
+        case .inputMonitoring:
+            return "permissions.input_monitoring.helper_message".localized
         }
     }
 
     var supportsAppDragInSettings: Bool {
-        self == .accessibility
+        // Both panes hold an app list the user can drop SapoWhisper into.
+        self == .accessibility || self == .inputMonitoring
     }
 
     var settingsURLs: [URL] {
@@ -130,10 +143,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return MicrophonePermission.isGranted
-        case .speechRecognition:
-            return SFSpeechRecognizer.authorizationStatus() == .authorized
         case .accessibility:
             return AXIsProcessTrusted()
+        case .inputMonitoring:
+            return CGPreflightListenEventAccess()
         }
     }
 
@@ -143,14 +156,14 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
             return isGranted
                 ? "permissions.microphone.active_detail".localized
                 : "permissions.microphone.pending_detail".localized
-        case .speechRecognition:
-            return isGranted
-                ? "permissions.speech.active_detail".localized
-                : "permissions.speech.pending_detail".localized
         case .accessibility:
             return isGranted
                 ? "permissions.accessibility.active_detail".localized
                 : "permissions.accessibility.pending_detail".localized
+        case .inputMonitoring:
+            return isGranted
+                ? "permissions.input_monitoring.active_detail".localized
+                : "permissions.input_monitoring.pending_detail".localized
         }
     }
 
@@ -159,17 +172,12 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return await MicrophonePermission.primeIfNeeded()
-        case .speechRecognition:
-            let status = SFSpeechRecognizer.authorizationStatus()
-            guard status == .notDetermined else { return .skipped }
-            let granted = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { authorizationStatus in
-                    continuation.resume(returning: authorizationStatus == .authorized)
-                }
-            }
-            return granted ? .granted : .needsSystemSettings
         case .accessibility:
             return .skipped
+        case .inputMonitoring:
+            // Shows the system "Keystroke Receiving" dialog once; afterwards
+            // the toggle lives in System Settings, so guide the user there.
+            return CGRequestListenEventAccess() ? .granted : .needsSystemSettings
         }
     }
 
@@ -177,10 +185,10 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
         switch self {
         case .microphone:
             return "Privacy_Microphone"
-        case .speechRecognition:
-            return "Privacy_SpeechRecognition"
         case .accessibility:
             return "Privacy_Accessibility"
+        case .inputMonitoring:
+            return "Privacy_ListenEvent"
         }
     }
 }

@@ -7,12 +7,12 @@
 import SwiftUI
 
 /// Constantes globales de la aplicación
-enum Constants {
+nonisolated enum Constants {
 
     // MARK: - App Info
 
     static let appName = "SapoWhisper"
-    static let appVersion = "2.1.0"
+    static let appVersion = "2.3.0"
     static let appDescription = "Speech-to-Text 100% local"
 
     // MARK: - Colores de la Marca
@@ -91,6 +91,11 @@ enum Constants {
         static let language = "language"
         static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"
+        /// cdhash of the build that last wrote the keychain item, to re-own it after rebuilds
+        static let keychainOwnerCodeHash = "keychainOwnerCodeHash"
+        /// Which keychain keys hold a value (names only, never secrets), so
+        /// launch/settings "is X configured" checks skip the keychain prompt
+        static let keychainStoredKeyHints = "keychainStoredKeyHints"
         static let hotkeyTriggerKind = "hotkeyTriggerKind"
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
@@ -100,27 +105,39 @@ enum Constants {
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
         static let whisperKitModel = "whisperKitModel"
-        static let googleCloudAPIKey = "googleCloudAPIKey"
-        static let serviceAccountConfigured = "serviceAccountConfigured"
+        /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
+        static let whisperKitUnloadAfterMinutes = "whisperKitUnloadAfterMinutes"
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
         static let aiPolishMode = "aiPolishMode"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
         static let aiPolishMinimumDuration = "aiPolishMinimumDuration"
-        static let geminiAudioModel = "geminiAudioModel"
+        static let aiPolishEndpoint = "aiPolishEndpoint"
+        static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
+        static let aiPolishModel = "aiPolishModel"
 
         // Deepgram
+        /// Legacy plaintext location, kept only so the launch migration can
+        /// move the value into the Keychain. Read keys via KeychainStore.
         static let deepgramAPIKey = "deepgramAPIKey"
         static let deepgramTranscriptionMode = "deepgramTranscriptionMode"
-        static let deepgramPreviousLanguage = "deepgramPreviousLanguage"
 
         // ElevenLabs
+        /// Legacy plaintext location, kept only so the launch migration can
+        /// move the value into the Keychain. Read keys via KeychainStore.
         static let elevenLabsAPIKey = "elevenLabsAPIKey"
         static let elevenLabsTranscriptionMode = "elevenLabsTranscriptionMode"
 
         // Audio
         static let audioGain = "audioGain"
+
+        // Overlay
+        static let overlayPosition = "overlayPosition"
+
+        // History retention (H6)
+        static let historyAudioMaxMB = "historyAudioMaxMB"
+        static let historyAutoDeleteDays = "historyAutoDeleteDays"  // 0 = never
 
         // Launch at Login
         static let launchAtLogin = "launchAtLogin"

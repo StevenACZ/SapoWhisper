@@ -6,25 +6,47 @@
 import Foundation
 import SQLite3
 
-extension TranscriptionHistoryManager {
-    /// Clean up audio files older than `days`.
-    func cleanupOldAudio(olderThanDays days: Int = 7) {
+nonisolated extension TranscriptionHistoryManager {
+    /// H5: delete entries (and their audio) older than `days`, keeping pinned
+    /// rows. Returns the number of deleted rows.
+    @discardableResult
+    func deleteEntries(olderThanDays days: Int) -> Int {
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
         let iso = Self.isoFormatter.string(from: cutoff)
-        let pathsToDelete = audioPaths(olderThan: iso)
 
-        let deleteSql = "DELETE FROM transcriptions WHERE timestamp < ?;"
+        let deleteSql = "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0;"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
-        guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
+        guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
         bindText(deleteStmt, 1, iso)
-        sqlite3_step(deleteStmt)
+        guard stepStatement(deleteStmt, operation: "deleteOlderThan") else { return 0 }
+        let deleted = Int(sqlite3_changes(db))
 
-        for path in pathsToDelete {
+        // Pinned rows survive the DELETE: sweep only audio that lost its row.
+        audioStorage.deleteOrphanedAudioFiles(referencedPaths: referencedAudioPaths())
+
+        notifyDidChange()
+        return deleted
+    }
+
+    /// H5: clear the whole history (audio included). Returns the row count.
+    @discardableResult
+    func deleteAll() -> Int {
+        let paths = referencedAudioPaths()
+
+        let deleteSql = "DELETE FROM transcriptions;"
+        var deleteStmt: OpaquePointer?
+        defer { sqlite3_finalize(deleteStmt) }
+        guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
+        guard stepStatement(deleteStmt, operation: "deleteAll") else { return 0 }
+        let deleted = Int(sqlite3_changes(db))
+
+        for path in paths {
             audioStorage.deleteAudioFile(at: path)
         }
 
         notifyDidChange()
+        return deleted
     }
 
     func enforceAudioStorageLimit() {
@@ -45,7 +67,7 @@ extension TranscriptionHistoryManager {
         defer { sqlite3_finalize(updateStmt) }
         guard sqlite3_prepare_v2(db, updateSql, -1, &updateStmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_int64(updateStmt, 1, id)
-        sqlite3_step(updateStmt)
+        guard stepStatement(updateStmt, operation: "toggleFavorite") else { return false }
 
         let selectSql = "SELECT is_favorite FROM transcriptions WHERE id = ?;"
         var selectStmt: OpaquePointer?
@@ -67,7 +89,7 @@ extension TranscriptionHistoryManager {
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_int64(deleteStmt, 1, id)
-        sqlite3_step(deleteStmt)
+        guard stepStatement(deleteStmt, operation: "delete") else { return }
 
         if let audioPath {
             audioStorage.deleteAudioFile(at: audioPath)
@@ -100,22 +122,6 @@ extension TranscriptionHistoryManager {
             rows.append((sqlite3_column_int64(stmt, 0), String(cString: cString)))
         }
         return rows
-    }
-
-    private func audioPaths(olderThan isoDate: String) -> [String] {
-        let selectSql = "SELECT audio_path FROM transcriptions WHERE timestamp < ? AND audio_path IS NOT NULL;"
-        var selectStmt: OpaquePointer?
-        defer { sqlite3_finalize(selectStmt) }
-        guard sqlite3_prepare_v2(db, selectSql, -1, &selectStmt, nil) == SQLITE_OK else { return [] }
-        bindText(selectStmt, 1, isoDate)
-
-        var paths: [String] = []
-        while sqlite3_step(selectStmt) == SQLITE_ROW {
-            if let cString = sqlite3_column_text(selectStmt, 0) {
-                paths.append(String(cString: cString))
-            }
-        }
-        return paths
     }
 
     private func audioPath(for id: Int64) -> String? {

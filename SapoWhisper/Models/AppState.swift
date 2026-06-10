@@ -6,13 +6,37 @@
 
 import SwiftUI
 
+/// Typed error payload so the overlay, menu bar, and sounds derive their
+/// behavior (dismiss time, retry button, sound) from the failure kind instead
+/// of ad-hoc decisions at every call site.
+struct ErrorState: Equatable {
+    let kind: TranscriptionFailure.Kind
+    let isRetryable: Bool
+    let message: String
+
+    init(failure: TranscriptionFailure) {
+        self.kind = failure.kind
+        self.isRetryable = failure.isRetryable
+        self.message = failure.errorDescription ?? failure.diagnosticCode
+    }
+
+    init(message: String) {
+        self.kind = .unknown
+        self.isRetryable = false
+        self.message = message
+    }
+
+    /// No-speech gets gentle treatment: short overlay, no retry, no error sound.
+    var isNoSpeech: Bool { kind == .emptyTranscription }
+}
+
 /// Estados posibles de la aplicación
 enum AppState: Equatable {
     case idle  // Verde - Listo para grabar
     case recording  // Rojo - Grabando audio
     case processing  // Amarillo - Transcribiendo
     case polishing  // Azul - Mejorando con IA
-    case error(String)  // Naranja - Error
+    case error(ErrorState)  // Naranja - Error
     case noModel  // Gris - Sin modelo instalado
 
     var statusText: String {
@@ -25,8 +49,8 @@ enum AppState: Equatable {
             return "menu.transcribing".localized
         case .polishing:
             return "menu.ai_polishing".localized
-        case .error(let message):
-            return "status.error".localized(message)
+        case .error(let state):
+            return "status.error".localized(state.message)
         case .noModel:
             return "status.no_model".localized
         }

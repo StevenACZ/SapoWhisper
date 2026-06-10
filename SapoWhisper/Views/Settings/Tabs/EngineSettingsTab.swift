@@ -4,35 +4,37 @@ import SwiftUI
 struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.appleOnline.rawValue
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
+    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
+        DeepgramTranscriptionMode.nova3.rawValue
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
+        ElevenLabsTranscriptionMode.defaultMode.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+        TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
-    @StateObject private var googleCredentials = GoogleCredentialsState()
 
     private var currentEngine: TranscriptionEngine {
-        TranscriptionEngine(rawValue: selectedEngine) ?? .appleOnline
+        TranscriptionEngine(rawValue: selectedEngine) ?? .whisperLocal
     }
 
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
-                let inner = max(0, proxy.size.width - Self.outerPadding - Self.columnSpacing)
-                HStack(alignment: .top, spacing: Self.columnSpacing) {
-                    VStack(spacing: 16) {
-                        transcriptionEngineCard
-                        GoogleCloudCredentialsCard(credentials: googleCredentials)
-                    }
-                    .frame(width: inner * 0.60, alignment: .topLeading)
-
-                    AIPolishSettingsCard(credentials: googleCredentials)
-                        .frame(width: inner * 0.40, alignment: .topLeading)
+                VStack(spacing: 12) {
+                    transcriptionEngineCard
+                    currentSetupCard
                 }
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
                 .padding(16)
+                .frame(minHeight: proxy.size.height)
             }
         }
     }
-
-    private static let columnSpacing: CGFloat = 16
-    private static let outerPadding: CGFloat = 32
 
     private var transcriptionEngineCard: some View {
         SettingsCard(icon: "cpu", title: "config.engine".localized) {
@@ -67,30 +69,116 @@ struct EngineSettingsTab: View {
     @ViewBuilder
     private func selectedEngineSettings(for engine: TranscriptionEngine) -> some View {
         switch engine {
-        case .appleOnline:
-            EmptyView()
         case .whisperLocal:
             WhisperKitSettingsCard(viewModel: viewModel, isEmbedded: true)
-        case .googleCloud:
-            GoogleCloudSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .deepgram:
             DeepgramSettingsCard(viewModel: viewModel, isEmbedded: true)
-        case .geminiAudio:
-            GeminiAudioSettingsCard(credentials: googleCredentials, isEmbedded: true)
         case .elevenLabsScribe:
             ElevenLabsSettingsCard(viewModel: viewModel, isEmbedded: true)
         }
+    }
+
+    // MARK: - Current setup summary
+
+    /// At-a-glance summary of the active dictation setup: engine, processing
+    /// mode (or local model), and recognition language.
+    private var currentSetupCard: some View {
+        SettingsCard(icon: "checkmark.seal", title: "config.engine_summary".localized) {
+            HStack(spacing: 16) {
+                summaryItem(
+                    icon: currentEngine.icon,
+                    label: "config.engine_summary_engine".localized,
+                    value: currentEngine.displayName
+                )
+                summaryDivider
+                summaryItem(icon: modeSummary.icon, label: modeSummary.label, value: modeSummary.value)
+                summaryDivider
+                summaryItem(
+                    icon: "globe",
+                    label: "config.engine_summary_language".localized,
+                    value: languageSummaryValue
+                )
+                if aiPolishEnabled {
+                    summaryDivider
+                    summaryItem(
+                        icon: "sparkles",
+                        label: "config.engine_summary_ai".localized,
+                        value: aiSummaryValue
+                    )
+                }
+            }
+        }
+    }
+
+    /// What the AI polish step does to the language of the final text:
+    /// translates to an explicit target, or keeps the spoken language.
+    private var aiSummaryValue: String {
+        var outputLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
+            outputLanguage = .english
+        }
+        guard outputLanguage.requiresTranslation else {
+            return "config.engine_summary_ai_active".localized
+        }
+        return "config.engine_summary_ai_translate".localized(outputLanguage.shortDisplayName)
+    }
+
+    private var summaryDivider: some View {
+        Divider().frame(height: 30)
+    }
+
+    private func summaryItem(icon: String, label: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.sapoGreen.opacity(0.12))
+                    .frame(width: 32, height: 32)
+
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(.sapoGreen)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var modeSummary: (icon: String, label: String, value: String) {
+        switch currentEngine {
+        case .whisperLocal:
+            let model = WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
+            return ("memorychip", "config.engine_summary_model".localized, model.displayName)
+        case .deepgram:
+            let mode = DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3
+            return (mode.icon, "config.engine_summary_mode".localized, mode.displayName)
+        case .elevenLabsScribe:
+            let mode = ElevenLabsTranscriptionMode(rawValue: selectedElevenLabsMode) ?? .defaultMode
+            return (mode.icon, "config.engine_summary_mode".localized, mode.displayName)
+        }
+    }
+
+    private var languageSummaryValue: String {
+        TranscriptionLanguageCatalog.language(for: selectedLanguage)?.displayName
+            ?? TranscriptionLanguageCatalog.languages[0].displayName
     }
 }
 
 extension TranscriptionEngine {
     fileprivate var hasInlineSettings: Bool {
-        switch self {
-        case .appleOnline:
-            return false
-        case .whisperLocal, .googleCloud, .deepgram, .geminiAudio, .elevenLabsScribe:
-            return true
-        }
+        true
     }
 }
 

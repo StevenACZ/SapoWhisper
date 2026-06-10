@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-struct DeepgramFluxAudioSenderStats {
+nonisolated struct DeepgramFluxAudioSenderStats {
     let enqueuedChunks: Int
     let sentChunks: Int
     let failedChunks: Int
@@ -21,7 +21,9 @@ struct DeepgramFluxAudioSenderStats {
     }
 }
 
-final class DeepgramFluxAudioSender {
+/// Concurrency: nonisolated by design — chunk sends run on the serial send
+/// queue and every counter sits behind `statsLock`/`stateLock`.
+nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.sapowhisper.fluxAudioSender", qos: .userInitiated)
     private let statsLock = NSLock()
     private let stateLock = NSLock()
@@ -59,14 +61,15 @@ final class DeepgramFluxAudioSender {
         let startedAt = CFAbsoluteTimeGetCurrent()
 
         return await withCheckedContinuation { continuation in
-            let resumeLock = NSLock()
-            var didResume = false
+            let resumeGate = OSAllocatedUnfairLock(initialState: false)
 
-            func resumeOnce(returning stats: DeepgramFluxAudioSenderStats) -> Bool {
-                resumeLock.lock()
-                defer { resumeLock.unlock() }
-                guard !didResume else { return false }
-                didResume = true
+            @Sendable func resumeOnce(returning stats: DeepgramFluxAudioSenderStats) -> Bool {
+                let claimed = resumeGate.withLock { (didResume: inout Bool) -> Bool in
+                    guard !didResume else { return false }
+                    didResume = true
+                    return true
+                }
+                guard claimed else { return false }
                 continuation.resume(returning: stats)
                 return true
             }
@@ -132,45 +135,55 @@ final class DeepgramFluxAudioSender {
     }
 
     private func send(_ data: Data, chunkIndex: Int) {
-        guard let task = currentTaskIfActive() else {
-            registerFailedChunk()
-            return
-        }
-
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        let semaphore = DispatchSemaphore(value: 0)
-        let completionLock = NSLock()
-        var sendError: Error?
-
-        task.send(.data(data)) { error in
-            completionLock.lock()
-            sendError = error
-            completionLock.unlock()
-            semaphore.signal()
-        }
-
-        let didFinish = semaphore.wait(timeout: .now() + 2.0) == .success
-        let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-        completionLock.lock()
-        let completedError = sendError
-        completionLock.unlock()
-
-        if didFinish, completedError == nil {
-            registerSentChunk(byteCount: data.count, waitMs: waitMs)
-            if chunkIndex == 1 || chunkIndex % 100 == 0 || waitMs > 250 {
-                let stats = snapshot()
-                SapoLog.flux.info(
-                    "Flux audio chunk sent index=\(chunkIndex, privacy: .public) wait=\(waitMs, privacy: .public)ms pending=\(stats.pendingChunks, privacy: .public) sent=\(stats.sentChunks, privacy: .public)"
-                )
+        // One retry per chunk: a single transient send timeout must not poison
+        // the session (failed chunks trigger the batch fallback upstream).
+        // The serial queue keeps chunk order intact while retrying.
+        for attempt in 1...2 {
+            guard let task = currentTaskIfActive() else {
+                registerFailedChunk()
+                return
             }
-            return
-        }
 
-        registerFailedChunk(waitMs: waitMs, timedOut: !didFinish)
-        let reason = didFinish ? (completedError?.localizedDescription ?? "unknown") : "timeout"
-        SapoLog.flux.warning(
-            "Flux audio chunk send failed index=\(chunkIndex, privacy: .public) wait=\(waitMs, privacy: .public)ms reason=\(reason, privacy: .public)"
-        )
+            let startedAt = CFAbsoluteTimeGetCurrent()
+            let semaphore = DispatchSemaphore(value: 0)
+            let sendErrorBox = OSAllocatedUnfairLock<Error?>(initialState: nil)
+
+            task.send(.data(data)) { error in
+                sendErrorBox.withLock { $0 = error }
+                semaphore.signal()
+            }
+
+            // The first chunk absorbs the WebSocket handshake (capture starts
+            // concurrently with the connect), so give it a longer budget.
+            let sendTimeout: TimeInterval = chunkIndex == 1 ? 8.0 : 2.0
+            let didFinish = semaphore.wait(timeout: .now() + sendTimeout) == .success
+            let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+            let completedError = sendErrorBox.withLock { $0 }
+
+            if didFinish, completedError == nil {
+                registerSentChunk(byteCount: data.count, waitMs: waitMs)
+                if chunkIndex == 1 || chunkIndex % 100 == 0 || waitMs > 250 || attempt > 1 {
+                    let stats = snapshot()
+                    SapoLog.flux.info(
+                        "Flux audio chunk sent index=\(chunkIndex, privacy: .public) attempt=\(attempt, privacy: .public) wait=\(waitMs, privacy: .public)ms pending=\(stats.pendingChunks, privacy: .public) sent=\(stats.sentChunks, privacy: .public)"
+                    )
+                }
+                return
+            }
+
+            let reason = didFinish ? (completedError?.localizedDescription ?? "unknown") : "timeout"
+            if attempt == 1 {
+                SapoLog.flux.warning(
+                    "Flux audio chunk send retrying index=\(chunkIndex, privacy: .public) wait=\(waitMs, privacy: .public)ms reason=\(reason, privacy: .public)"
+                )
+                continue
+            }
+
+            registerFailedChunk(waitMs: waitMs, timedOut: !didFinish)
+            SapoLog.flux.warning(
+                "Flux audio chunk send failed index=\(chunkIndex, privacy: .public) wait=\(waitMs, privacy: .public)ms reason=\(reason, privacy: .public)"
+            )
+        }
     }
 
     private func resetStats() {
@@ -237,7 +250,7 @@ final class DeepgramFluxAudioSender {
     }
 }
 
-extension DeepgramFluxAudioSenderStats {
+nonisolated extension DeepgramFluxAudioSenderStats {
     fileprivate static let empty = DeepgramFluxAudioSenderStats(
         enqueuedChunks: 0,
         sentChunks: 0,

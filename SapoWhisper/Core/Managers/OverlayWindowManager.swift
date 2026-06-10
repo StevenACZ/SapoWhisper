@@ -22,6 +22,10 @@ class OverlayWindowManager: ObservableObject {
 
     @Published private(set) var state: RecordingOverlayState = .hidden
 
+    /// Live "no voice?" hint while recording (NS2): set by the ViewModel when
+    /// the session peak stays under the silence threshold for a few seconds.
+    @Published private(set) var showsNoSpeechHint = false
+
     let audioLevelPublisher: AnyPublisher<Float, Never>
 
     // MARK: - Callbacks
@@ -78,7 +82,7 @@ class OverlayWindowManager: ObservableObject {
         let revision = presentationRevision
         isAnimating = false
 
-        window.positionAtBottom()
+        window.applyConfiguredPosition()
         window.contentView?.layer?.removeAllAnimations()
 
         // Preparar animacion de entrada
@@ -162,18 +166,7 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.layer?.isOpaque = false
 
-        let windowWidth: CGFloat = 380
-        let windowHeight: CGFloat = 48
-
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
-        containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.clear.cgColor
-        containerView.layer?.isOpaque = false
-        containerView.addSubview(hostingView)
-        hostingView.frame = containerView.bounds
-        hostingView.autoresizingMask = [.width, .height]
-
-        overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
+        overlayWindow = RecordingOverlayWindow(contentView: hostingView)
         isAnimating = false
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         SapoLog.overlay.info("Overlay window created in \(Int(elapsed), privacy: .public)ms")
@@ -197,6 +190,10 @@ class OverlayWindowManager: ObservableObject {
 
         updateDisplayedSecond(for: newState)
         state = newState
+        if case .recording = newState {
+        } else {
+            showsNoSpeechHint = false
+        }
         SapoLog.overlay.info("Overlay state changed to \(newState.stateCategory, privacy: .public)")
 
         if case .recording = newState {
@@ -207,6 +204,21 @@ class OverlayWindowManager: ObservableObject {
         if shouldShowOverlay(for: newState) {
             show()
         }
+    }
+
+    /// Resizes the panel to the pill's measured size (reported by the SwiftUI
+    /// root) so long error messages grow the window instead of clipping at a
+    /// fixed frame; the window delegate re-anchors after every resize.
+    func updateWindowSize(to size: CGSize) {
+        guard let window = overlayWindow else { return }
+        let target = NSSize(width: ceil(size.width), height: ceil(size.height))
+        guard target.width > 1, target.height > 1 else { return }
+        guard abs(window.frame.width - target.width) > 0.5 || abs(window.frame.height - target.height) > 0.5
+        else { return }
+        window.setContentSize(target)
+        SapoLog.overlay.info(
+            "Overlay resized to \(Int(target.width), privacy: .public)x\(Int(target.height), privacy: .public)"
+        )
     }
 
     /// Actualiza el nivel de audio (para el ecualizador)
@@ -275,6 +287,26 @@ class OverlayWindowManager: ObservableObject {
                 self.hide()
             }
         }
+    }
+
+    /// Kind-aware error presentation: no-speech dismisses fast with no retry
+    /// affordance; everything else keeps the standard 5s + retry behavior.
+    func showError(_ errorState: ErrorState) {
+        showError(
+            message: errorState.message,
+            isRetryable: errorState.isNoSpeech ? false : errorState.isRetryable,
+            autoDismissAfter: errorState.isNoSpeech ? 1.8 : 5.0
+        )
+    }
+
+    /// Toggles the live "no voice?" pill while recording.
+    func setNoSpeechHint(_ shows: Bool) {
+        guard showsNoSpeechHint != shows else { return }
+        if shows {
+            guard case .recording = state else { return }
+        }
+        showsNoSpeechHint = shows
+        SapoLog.overlay.info("Overlay no-speech hint \(shows ? "shown" : "cleared", privacy: .public)")
     }
 
     private func updateDisplayedSecond(for state: RecordingOverlayState) {

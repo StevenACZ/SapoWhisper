@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build release size-check ci-check release-check notarized-dmg hooks-install
+.PHONY: help tools format format-all lint lint-all build test release size-check secrets-scan ci-check release-check notarized-dmg hooks-install idle-cpu-note
 
 .DEFAULT_GOAL := help
 
@@ -19,12 +19,29 @@ help:
 	@printf "  make lint          Check changed Swift files without editing files\n"
 	@printf "  make lint-all      Check all Swift sources explicitly\n"
 	@printf "  make build         Build Debug for Apple Silicon\n"
+	@printf "  make test          Run unit tests\n"
 	@printf "  make release       Build Release for Apple Silicon\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
-	@printf "  make ci-check      Fast local gate: lint + Debug build\n"
+	@printf "  make secrets-scan  Scan the working tree for leaked secrets\n"
+	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
 	@printf "  make release-check Release gate: lint + Release build + size check\n"
 	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
 	@printf "  make hooks-install Install optional Lefthook git hooks\n"
+	@printf "  make idle-cpu-note Print the manual idle-CPU verification steps (R6)\n"
+
+idle-cpu-note:
+	@printf "Idle CPU manual check (R6) - the app must sit at 0%% CPU while idle:\n"
+	@printf "  1. Launch the Release app and leave it idle in the menu bar (no recording,\n"
+	@printf "     Settings/History/Welcome closed, overlay hidden).\n"
+	@printf "  2. Run: top -pid \"\x24(pgrep -x SapoWhisper)\" -stats cpu -l 30 | tail -25\n"
+	@printf "     Expected: 0.0%% on virtually every sample.\n"
+	@printf "  3. Repeat after a sleep/wake cycle and after 24h of residency.\n"
+	@printf "  4. Deeper pass: Instruments Time Profiler for 5 idle minutes; only the\n"
+	@printf "     10-min hotkey watchdog and the daily RSS tick may fire.\n"
+	@printf "Timer inventory (all activity-gated): recorder/streaming 0.1s timers only\n"
+	@printf "while capturing; AudioLevelMonitor only while the Settings audio UI is\n"
+	@printf "visible; overlay polish countdown only while that pill is visible;\n"
+	@printf "permission/welcome refresh timers only while those windows exist.\n"
 
 tools:
 	@xcrun --find swift-format >/dev/null
@@ -52,6 +69,11 @@ build:
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
 		-derivedDataPath $(DEBUG_DERIVED_DATA) build
 
+test:
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
+		-configuration Debug -destination 'platform=macOS,arch=arm64' \
+		-derivedDataPath $(DEBUG_DERIVED_DATA) test
+
 release:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
@@ -60,7 +82,10 @@ release:
 size-check:
 	@scripts/measure_release_bundle.sh $(RELEASE_APP)
 
-ci-check: lint build
+secrets-scan:
+	@scripts/secrets_scan.sh tree
+
+ci-check: lint secrets-scan build test
 	@printf "ci-check: passed\n"
 
 release-check: lint release size-check

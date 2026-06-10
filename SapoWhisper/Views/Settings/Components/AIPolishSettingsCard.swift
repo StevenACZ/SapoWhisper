@@ -4,12 +4,12 @@
 //
 
 import SwiftUI
+import os
 
-/// AI polish (Gemini in Vertex AI) controls. Reads its enabled-state requirement
-/// from [[GoogleCredentialsState]] — credential lifecycle lives in
-/// `GoogleCloudCredentialsCard`.
+/// AI polish settings: one OpenAI-compatible provider (OpenRouter by default),
+/// an API key stored in the Keychain, a model, and the polish behavior pickers.
+/// Paste a key, press Test, done — no cloud-project setup anywhere.
 struct AIPolishSettingsCard: View {
-    @ObservedObject var credentials: GoogleCredentialsState
     @ObservedObject private var promptContextManager = PromptContextManager.shared
 
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
@@ -18,6 +18,35 @@ struct AIPolishSettingsCard: View {
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishMinimumDuration) private var aiPolishMinimumDuration =
         TranscriptPolishMinimumDuration.defaultPolicy.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishModel) private var model = PolishEndpoint.default.defaultModel
+    @AppStorage(Constants.StorageKeys.aiPolishCustomBaseURL) private var customBaseURL = ""
+    @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
+
+    @State private var apiKey = ""
+    @State private var keychainReadDenied = false
+    @State private var testState: ProviderTestState = .idle
+    @State private var isProviderExpanded = false
+    /// The keychain is only read once the provider section actually expands,
+    /// so opening Settings never touches the keychain (guardrail: gate on
+    /// `hasValue` hints, never `string(for:)`, in launch/settings paths).
+    @State private var hasLoadedAPIKey = false
+
+    private var endpoint: PolishEndpoint {
+        PolishEndpoint(rawValue: endpointValue) ?? .default
+    }
+
+    private var isProviderUsable: Bool {
+        if hasLoadedAPIKey {
+            return PolishProviderConfiguration.isUsable(
+                endpoint: endpoint,
+                model: model,
+                customBaseURL: customBaseURL,
+                apiKey: apiKey
+            )
+        }
+        return PolishProviderConfiguration.hasUsableConfiguration()
+    }
 
     private var currentPrompt: PromptProfile {
         promptContextManager.promptProfile(for: aiPolishMode)
@@ -28,10 +57,6 @@ struct AIPolishSettingsCard: View {
             return .english
         }
         return TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-    }
-
-    private var canEditPolish: Bool {
-        credentials.isConfigured && aiPolishEnabled
     }
 
     private var currentMinimumDuration: TranscriptPolishMinimumDuration {
@@ -51,31 +76,110 @@ struct AIPolishSettingsCard: View {
         SettingsCard(icon: "sparkles", title: "ai.polish.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
                 AIPolishHeroToggle(
-                    isOn: aiPolishBinding,
-                    isEnabled: credentials.isConfigured,
+                    isOn: $aiPolishEnabled,
                     activeSubtitle: activeSubtitle
                 )
 
-                VStack(alignment: .leading, spacing: 10) {
+                // With the hero toggle off nothing below is in effect, so the
+                // whole configuration reads (and is) inert.
+                AIPolishProviderSection(
+                    endpointValue: $endpointValue,
+                    model: $model,
+                    customBaseURL: $customBaseURL,
+                    apiKey: $apiKey,
+                    keychainReadDenied: $keychainReadDenied,
+                    testState: $testState,
+                    isExpanded: $isProviderExpanded,
+                    isProviderUsable: isProviderUsable,
+                    onWillExpand: loadAPIKeyIfNeeded
+                )
+                .disabled(!aiPolishEnabled)
+                .opacity(aiPolishEnabled ? 1 : 0.62)
+
+                if aiPolishEnabled && !isProviderUsable {
+                    Label("ai.provider.needs_key".localized, systemImage: "key.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.sapoError)
+                }
+
+                Divider()
+
+                // The three behavior pickers share one row — they are small
+                // menus, stacking them only added scrolling. fixedSize makes
+                // the row take its ideal (tallest-tile) height so the
+                // maxHeight: .infinity tiles equalize instead of expanding.
+                HStack(alignment: .top, spacing: 8) {
                     modePicker
                     outputLanguagePicker
                     minimumDurationPicker
                 }
-                .opacity(canEditPolish ? 1 : 0.62)
-
-                if !credentials.isConfigured {
-                    Label("ai.polish.requires_google".localized, systemImage: "lock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                AIPolishInfoCallout(
-                    title: "ai.polish.vertex_info_title".localized,
-                    detail: "ai.polish.desc".localized
-                )
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(aiPolishEnabled ? 1 : 0.62)
+            }
+            .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
+        }
+        .onAppear {
+            // Start collapsed when the provider already works; expand (and
+            // only then read the keychain) when setup is still pending.
+            isProviderExpanded = !PolishProviderConfiguration.hasUsableConfiguration()
+            if isProviderExpanded {
+                loadAPIKeyIfNeeded()
+            }
+            // The curated-catalog picker needs a valid selection to render
+            if endpoint.suggestedModels.isEmpty == false,
+                model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                model = endpoint.defaultModel
             }
         }
+        .onChange(of: apiKey) { _, newValue in
+            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: .aiPolishAPIKey)
+            testState = .idle
+        }
+        .onChange(of: endpointValue) { oldValue, _ in
+            let previous = PolishEndpoint(rawValue: oldValue) ?? .default
+            if model.isEmpty || model == previous.defaultModel {
+                model = endpoint.defaultModel
+            }
+            testState = .idle
+        }
+        .onChange(of: model) { _, _ in
+            testState = .idle
+        }
+        .onChange(of: aiPolishOutputLanguage) { _, _ in
+            syncTranscriptionLanguageWithTranslation()
+        }
+        .onChange(of: aiPolishMode) { _, _ in
+            syncTranscriptionLanguageWithTranslation()
+        }
+        .onChange(of: aiPolishEnabled) { _, _ in
+            syncTranscriptionLanguageWithTranslation()
+        }
     }
+
+    /// Engines never translate — a pinned recognition language makes them
+    /// mis-transcribe any other spoken language, which then feeds the
+    /// translator garbage. The moment AI translation becomes active the
+    /// spoken language is unknown, so reset the hint to auto-detect; the
+    /// user can still re-pin a language afterwards.
+    private func syncTranscriptionLanguageWithTranslation() {
+        guard aiPolishEnabled, currentOutputLanguage.requiresTranslation, transcriptionLanguage != "auto" else {
+            return
+        }
+        transcriptionLanguage = "auto"
+        SapoLog.settings.info(
+            "Transcription language reset to auto reason=ai-translation target=\(currentOutputLanguage.rawValue, privacy: .public)"
+        )
+    }
+
+    private func loadAPIKeyIfNeeded() {
+        guard !hasLoadedAPIKey else { return }
+        hasLoadedAPIKey = true
+        apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+        keychainReadDenied = KeychainStore.isReadDenied
+    }
+
+    // MARK: - Behavior
 
     private var modePicker: some View {
         AIPolishSettingRow(
@@ -90,14 +194,16 @@ struct AIPolishSettingsCard: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!canEditPolish)
+            .disabled(!aiPolishEnabled)
         }
     }
 
     private var outputLanguagePicker: some View {
         AIPolishSettingRow(
             title: "ai.polish.output_language".localized,
-            detail: "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
+            detail: currentOutputLanguage.requiresTranslation
+                ? "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName)
+                : "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
         ) {
             if currentPrompt.forcesEnglish {
                 FixedValuePill(text: currentOutputLanguage.displayName)
@@ -111,7 +217,7 @@ struct AIPolishSettingsCard: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!canEditPolish)
+                .disabled(!aiPolishEnabled)
             }
         }
     }
@@ -131,169 +237,22 @@ struct AIPolishSettingsCard: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!canEditPolish)
-        }
-    }
-
-    private var aiPolishBinding: Binding<Bool> {
-        Binding(
-            get: { aiPolishEnabled && credentials.isConfigured },
-            set: { newValue in
-                aiPolishEnabled = newValue && credentials.isConfigured
-                if newValue && !credentials.isConfigured {
-                    credentials.connectionMessage = "ai.google_required".localized
-                }
-            }
-        )
-    }
-}
-
-private struct AIPolishSettingRow<Control: View>: View {
-    let title: String
-    let detail: String
-    @ViewBuilder let control: () -> Control
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.subheadline)
-
-            control()
-
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .disabled(!aiPolishEnabled)
+        } footer: {
+            AIPolishFidelityBadge()
         }
     }
 }
 
-private struct FixedValuePill: View {
-    let text: String
-
-    var body: some View {
-        HStack {
-            Text(text)
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 8)
-
-            Image(systemName: "lock.fill")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-}
-
-private struct AIPolishInfoCallout: View {
-    let title: String
-    let detail: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 5) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.sapoGreen)
-                Text(title)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Color.sapoGreen)
-                    .textCase(.uppercase)
-                    .tracking(0.3)
-            }
-
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.sapoGreen.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Color.sapoGreen.opacity(0.16), lineWidth: 1)
-        )
-    }
-}
-
-private struct AIPolishHeroToggle: View {
-    @Binding var isOn: Bool
-    let isEnabled: Bool
-    let activeSubtitle: String
-
-    var body: some View {
-        HStack(spacing: 11) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(iconBackground)
-                    .frame(width: 34, height: 34)
-                    .shadow(color: isOn ? Color.sapoGreen.opacity(0.35) : .clear, radius: 4, y: 1)
-
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(isOn ? Color.white : Color.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("ai.polish.enable".localized)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Text(isOn ? activeSubtitle : "ai.polish.enable_subtitle".localized)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .tint(Color.sapoGreen)
-                .disabled(!isEnabled)
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 9)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isOn ? Color.sapoGreen.opacity(0.12) : Color.secondary.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isOn ? Color.sapoGreen.opacity(0.38) : Color.secondary.opacity(0.18), lineWidth: 1)
-        )
-        .opacity(isEnabled ? 1 : 0.55)
-        .animation(.easeInOut(duration: 0.18), value: isOn)
-    }
-
-    private var iconBackground: LinearGradient {
-        if isOn {
-            return LinearGradient(
-                colors: [Color.purple, Color.sapoGreen],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        return LinearGradient(
-            colors: [Color.secondary.opacity(0.22), Color.secondary.opacity(0.14)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
+enum ProviderTestState: Equatable {
+    case idle
+    case running
+    case success(String)
+    case failure(String)
 }
 
 #Preview("AI Polish Settings") {
-    AIPolishSettingsCard(credentials: GoogleCredentialsState())
+    AIPolishSettingsCard()
         .frame(width: 400)
         .padding()
 }

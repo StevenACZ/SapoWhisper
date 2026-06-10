@@ -9,14 +9,26 @@ import SwiftUI
 /// Vista principal del popup del menu bar - Diseño limpio y moderno
 struct MenuBarView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
+    @ObservedObject private var reachability = NetworkReachability.shared
     @Environment(\.openWindow) var openWindow
     var missingPermissions: [AppPermission] = []
     var openSettingsAction: (() -> Void)?
     var openHistoryAction: (() -> Void)?
     var openPermissionsAction: (() -> Void)?
+    var openWelcomeAction: (() -> Void)?
     var closeMenuBarAction: (() -> Void)?
+    @AppStorage(Constants.StorageKeys.onboardingComplete) private var onboardingComplete = false
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
+
+    private var needsEngineSetup: Bool {
+        !onboardingComplete && !viewModel.isLoadingWhisperKit && !viewModel.isEngineReady(viewModel.currentEngine)
+    }
+
+    /// R7: only the cloud engines lose anything while offline.
+    private var showsOfflineHint: Bool {
+        reachability.isOffline && viewModel.currentEngine.requiresInternet
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,6 +36,14 @@ struct MenuBarView: View {
 
             MenuBarPermissionReminderView(missingPermissions: missingPermissions) {
                 openPermissionsWindow()
+            }
+
+            if showsOfflineHint {
+                offlineHintBanner
+            }
+
+            if needsEngineSetup {
+                setupReminderBanner
             }
 
             recordingSection
@@ -258,9 +278,20 @@ struct MenuBarView: View {
             ActionRow(
                 icon: "gearshape",
                 title: "menu.settings".localized,
-                subtitle: viewModel.transcriber.loadedModelName ?? "Speech Recognition"
+                subtitle: viewModel.currentEngine.displayName
             ) {
                 openSettingsWindow()
+            }
+
+            Divider()
+                .padding(.horizontal)
+
+            ActionRow(
+                icon: "sparkles.rectangle.stack",
+                title: "menu.welcome_tour".localized,
+                subtitle: nil
+            ) {
+                openWelcomeWindow()
             }
 
             Divider()
@@ -278,6 +309,76 @@ struct MenuBarView: View {
         .padding(.vertical, 4)
     }
 
+    // MARK: - Offline Hint (R7)
+
+    private var offlineHintBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            Text("menu.offline_hint".localized)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.orange.opacity(0.1))
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Setup Reminder
+
+    private var setupReminderBanner: some View {
+        Button(action: openWelcomeWindow) {
+            HStack(spacing: 10) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.sapoGreen)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("menu.setup_pending_title".localized)
+                        .font(.caption.weight(.semibold))
+                    Text("menu.setup_pending_subtitle".localized)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.sapoGreen.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.sapoGreen.opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openWelcomeWindow() {
+        if let openWelcomeAction {
+            openWelcomeAction()
+        } else {
+            closeMenuBarAction?()
+            WelcomeWindowController.shared.show()
+        }
+    }
 }
 
 #Preview("Menu Bar Popup") {

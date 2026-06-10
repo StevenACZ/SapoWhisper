@@ -15,7 +15,7 @@ struct SettingsPermissionsSection: View {
     @State private var isHoveringSummary = false
 
     private var allPermissionsGranted: Bool {
-        grantedPermissions.count == AppPermission.allCases.count
+        grantedPermissions.count == AppPermission.required.count
     }
 
     var body: some View {
@@ -64,7 +64,7 @@ struct SettingsPermissionsSection: View {
 
     private var permissionRows: some View {
         VStack(spacing: 6) {
-            ForEach(AppPermission.allCases) { permission in
+            ForEach(AppPermission.required) { permission in
                 PermissionStatusRow(permission: permission)
             }
         }
@@ -102,7 +102,7 @@ struct SettingsPermissionsSection: View {
 
             Spacer(minLength: 8)
 
-            Text("settings.permissions_all_active_badge".localized(AppPermission.allCases.count))
+            Text("settings.permissions_all_active_badge".localized(AppPermission.required.count))
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
@@ -131,8 +131,8 @@ struct SettingsPermissionsSection: View {
     }
 
     private func refreshPermissionStatuses() {
-        let nextPermissions = Set(AppPermission.allCases.filter { PermissionService.shared.isGranted($0) })
-        let nextAllGranted = nextPermissions.count == AppPermission.allCases.count
+        let nextPermissions = Set(AppPermission.required.filter { PermissionService.shared.isGranted($0) })
+        let nextAllGranted = nextPermissions.count == AppPermission.required.count
 
         grantedPermissions = nextPermissions
 

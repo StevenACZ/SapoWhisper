@@ -13,37 +13,37 @@ struct PermissionRequirementsIntroView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 16) {
-                HStack(alignment: .center, spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        accentColor.opacity(0.22),
-                                        accentColor.opacity(0.08),
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+        // One compact header row: icon, title + subtitle, status badge. The
+        // helper note rides along as a plain caption instead of a second box.
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    accentColor.opacity(0.22),
+                                    accentColor.opacity(0.08),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
-                            .frame(width: 52, height: 52)
+                        )
+                        .frame(width: 40, height: 40)
 
-                        Image(systemName: "hand.raised.circle.fill")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(accentColor)
-                    }
+                    Image(systemName: "hand.raised.circle.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(accentColor)
+                }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(titleText)
-                            .font(.title2.weight(.semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(titleText)
+                        .font(.headline)
 
-                        Text("permissions.window.subtitle".localized)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("permissions.window.subtitle".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 12)
@@ -52,25 +52,24 @@ struct PermissionRequirementsIntroView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(accentColor)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, 6)
                     .background(
                         Capsule(style: .continuous)
                             .fill(accentColor.opacity(colorScheme == .dark ? 0.18 : 0.10))
                     )
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 20)
-            .frame(minHeight: 122, alignment: .topLeading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.88 : 1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .stroke(headerBorderColor, lineWidth: 1)
                     )
             )
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: helperIconName)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(accentColor)
@@ -82,16 +81,7 @@ struct PermissionRequirementsIntroView: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(accentColor.opacity(colorScheme == .dark ? 0.16 : 0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.12), lineWidth: 1)
-                    )
-            )
+            .padding(.horizontal, 4)
         }
     }
 

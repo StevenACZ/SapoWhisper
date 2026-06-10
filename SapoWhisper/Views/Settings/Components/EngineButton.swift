@@ -26,13 +26,14 @@ struct EngineOptionRow<Details: View>: View {
                 HStack(spacing: 12) {
                     icon
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         titleRow
 
                         Text(engine.description)
                             .font(.caption)
                             .foregroundColor(.secondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
@@ -50,7 +51,7 @@ struct EngineOptionRow<Details: View>: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(12)
+        .padding(14)
         .background(isSelected ? Color.sapoGreen.opacity(0.1) : Color(NSColor.windowBackgroundColor))
         .cornerRadius(10)
         .overlay(
@@ -63,10 +64,10 @@ struct EngineOptionRow<Details: View>: View {
         ZStack {
             Circle()
                 .fill(isSelected ? Color.sapoGreen.opacity(0.2) : Color(NSColor.controlBackgroundColor))
-                .frame(width: 36, height: 36)
+                .frame(width: 40, height: 40)
 
             Image(systemName: engine.icon)
-                .font(.system(size: 15))
+                .font(.system(size: 16))
                 .foregroundColor(isSelected ? .sapoGreen : .secondary)
         }
     }
@@ -117,7 +118,7 @@ struct EngineOptionRow<Details: View>: View {
     private var inlineSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
             Divider()
-                .padding(.leading, 48)
+                .padding(.leading, 52)
 
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) {
@@ -197,7 +198,7 @@ extension View {
 #Preview("Engine Buttons") {
     VStack(spacing: 8) {
         EngineOptionRow(
-            engine: .appleOnline,
+            engine: .elevenLabsScribe,
             isSelected: true,
             isLoading: false,
             loadingProgress: 0,
@@ -224,7 +225,7 @@ extension View {
         }
 
         EngineOptionRow(
-            engine: .googleCloud,
+            engine: .deepgram,
             isSelected: false,
             isLoading: true,
             loadingProgress: 0.6,
@@ -233,7 +234,7 @@ extension View {
             isExpanded: .constant(true)
         ) {
         } details: {
-            Text("Google settings")
+            Text("Deepgram settings")
                 .font(.caption)
         }
 

@@ -10,11 +10,27 @@
 		B0ED1FE12EE7BF1700CBF41C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = B0ED1FE02EE7BF1700CBF41C /* WhisperKit */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D40000000000000006 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0C2482D2EE7820500131DB7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0C248342EE7820500131DB7;
+			remoteInfo = SapoWhisper;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		A1B2C3D40000000000000001 /* SapoWhisperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapoWhisperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0C248352EE7820500131DB7 /* SapoWhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SapoWhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A1B2C3D40000000000000002 /* SapoWhisperTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SapoWhisperTests;
+			sourceTree = "<group>";
+		};
 		B0C248372EE7820500131DB7 /* SapoWhisper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SapoWhisper;
@@ -23,6 +39,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A1B2C3D40000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B0C248322EE7820500131DB7 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -38,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				B0C248372EE7820500131DB7 /* SapoWhisper */,
+				A1B2C3D40000000000000002 /* SapoWhisperTests */,
 				B0C248362EE7820500131DB7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				B0C248352EE7820500131DB7 /* SapoWhisper.app */,
+				A1B2C3D40000000000000001 /* SapoWhisperTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,6 +78,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A1B2C3D40000000000000008 /* SapoWhisperTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D40000000000000009 /* Build configuration list for PBXNativeTarget "SapoWhisperTests" */;
+			buildPhases = (
+				A1B2C3D40000000000000003 /* Sources */,
+				A1B2C3D40000000000000004 /* Frameworks */,
+				A1B2C3D40000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3D40000000000000007 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D40000000000000002 /* SapoWhisperTests */,
+			);
+			name = SapoWhisperTests;
+			packageProductDependencies = (
+			);
+			productName = SapoWhisperTests;
+			productReference = A1B2C3D40000000000000001 /* SapoWhisperTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		B0C248342EE7820500131DB7 /* SapoWhisper */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B0C248402EE7820600131DB7 /* Build configuration list for PBXNativeTarget "SapoWhisper" */;
@@ -86,6 +134,10 @@
 				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					A1B2C3D40000000000000008 = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = B0C248342EE7820500131DB7;
+					};
 					B0C248342EE7820500131DB7 = {
 						CreatedOnToolsVersion = 26.1.1;
 					};
@@ -110,11 +162,19 @@
 			projectRoot = "";
 			targets = (
 				B0C248342EE7820500131DB7 /* SapoWhisper */,
+				A1B2C3D40000000000000008 /* SapoWhisperTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A1B2C3D40000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B0C248332EE7820500131DB7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -125,6 +185,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A1B2C3D40000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B0C248312EE7820500131DB7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -134,7 +201,58 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A1B2C3D40000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B0C248342EE7820500131DB7 /* SapoWhisper */;
+			targetProxy = A1B2C3D40000000000000006 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		A1B2C3D4000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 4;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisperTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SapoWhisper.app/Contents/MacOS/SapoWhisper";
+			};
+			name = Debug;
+		};
+		A1B2C3D4000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 4;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisperTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SapoWhisper.app/Contents/MacOS/SapoWhisper";
+			};
+			name = Release;
+		};
 		B0C2483E2EE7820600131DB7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -205,6 +323,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -241,7 +360,6 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				ARCHS = arm64;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -265,11 +383,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_ENTITLEMENTS = SapoWhisper/SapoWhisper.entitlements;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-					CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -280,12 +398,11 @@
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SapoWhisper necesita acceso al reconocimiento de voz para transcribir audio a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-					MARKETING_VERSION = 2.2.1;
+				MARKETING_VERSION = 2.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -293,6 +410,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -301,15 +419,15 @@
 		B0C248422EE7820600131DB7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ARCHS = arm64;
-				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_ENTITLEMENTS = SapoWhisper/SapoWhisper.entitlements;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-					CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -320,12 +438,11 @@
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SapoWhisper necesita acceso al reconocimiento de voz para transcribir audio a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-					MARKETING_VERSION = 2.2.1;
+				MARKETING_VERSION = 2.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -333,6 +450,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -341,6 +459,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A1B2C3D40000000000000009 /* Build configuration list for PBXNativeTarget "SapoWhisperTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4000000000000000A /* Debug */,
+				A1B2C3D4000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B0C248302EE7820500131DB7 /* Build configuration list for PBXProject "SapoWhisper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -366,8 +493,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
 			requirement = {
-				branch = main;
-				kind = branch;
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

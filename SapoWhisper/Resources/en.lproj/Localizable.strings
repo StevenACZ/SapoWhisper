@@ -29,7 +29,6 @@
 "history.empty" = "No history";
 "history.empty_sub" = "Transcriptions will appear here";
 "history.copy" = "Copy";
-"history.retranscribe" = "Re-transcribe";
 "history.retranscribe_create" = "Create new transcription";
 "history.retranscribing" = "Re-transcribing...";
 "history.retranscribe_sheet_title" = "Re-transcribe audio";
@@ -49,6 +48,14 @@
 "history.download_audio" = "Download audio";
 "history.audio_missing_error" = "The audio file for this entry could not be found.";
 "history.action_failed" = "Action could not be completed";
+"history.export" = "Export";
+"history.export_as" = "As %@";
+"history.export_empty" = "There are no entries to export.";
+"history.delete_old" = "Delete older than 30 days…";
+"history.delete_old_confirm_message" = "Entries older than 30 days will be permanently deleted, along with their audio. Pinned entries are kept.";
+"history.clear_all" = "Clear all history…";
+"history.clear_all_confirm_message" = "All history entries and their audio files will be permanently deleted.";
+"history.ai_first_polish" = "First polish";
 "history.current_selection" = "Current";
 "history.engine_unavailable" = "Unavailable";
 "history.pin" = "Pin";
@@ -73,10 +80,9 @@
 "history.pause" = "Pause";
 "history.filter_all" = "All";
 "history.filter_deepgram" = "Deepgram";
-"history.filter_gemini" = "Gemini";
-"history.filter_google" = "Google";
 "history.filter_whisper" = "Whisper";
-"history.filter_apple" = "Apple";
+"history.filter_elevenlabs" = "ElevenLabs";
+"history.filter_other" = "Other engines";
 "history.final_text" = "Final text";
 "history.original_text" = "Original text";
 "history.ai_polish" = "AI polish";
@@ -97,6 +103,9 @@
 "settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";
 "settings.input_language_desc" = "The language you will speak";
+"settings.flux_hint_unsupported" = "Deepgram Flux has no hint for this language — auto-detect will be used.";
+"settings.ai_translation_active" = "AI polish: the final text is translated into %@.";
+"settings.ai_translation_language_pinned" = "The AI translates into %@, but a pinned language makes the engine recognize only that spoken language. Use Auto to dictate in any language.";
 "settings.behavior" = "Behavior";
 "settings.auto_paste" = "Auto-paste";
 "settings.auto_paste_desc" = "Text will be pasted at cursor position";
@@ -108,7 +117,6 @@
 "settings.current_hotkey" = "Current Hotkey";
 "settings.current_hotkey_desc" = "Press to record/stop from any app";
 "settings.change_hotkey" = "Change Hotkey";
-"settings.presets" = "Presets";
 "settings.permissions" = "Permissions";
 "settings.permissions_title" = "Accessibility Permissions";
 "settings.permissions_desc" = "For the hotkey to work in all apps, SapoWhisper needs Accessibility permissions.";
@@ -121,21 +129,35 @@
 "config.tab_settings" = "Settings";
 "config.tab_info" = "Info";
 "config.engine" = "Transcription Engine";
+"config.engine_summary" = "Current Setup";
+"config.engine_summary_engine" = "Engine";
+"config.engine_summary_mode" = "Mode";
+"config.engine_summary_model" = "Model";
+"config.engine_summary_language" = "Language";
+"config.engine_summary_ai" = "AI polish";
+"config.engine_summary_ai_active" = "Active";
+"config.engine_summary_ai_translate" = "→ %@";
 "config.whisper_model" = "Whisper Model";
 "config.downloading" = "Downloading";
 "config.space_used" = "Space used: %@";
+"config.whisper_vocabulary_hint" = "Vocabulary hints are not supported by the local Whisper model; your replacements still apply after transcription.";
 "config.models_download_auto" = "Models are downloaded automatically the first time";
+"config.unload_after_idle" = "Unload model after idle";
+"config.unload_never" = "Keep loaded";
+"config.unload_minutes" = "%@ min";
 "config.hotkey_instruction" = "Click and press your key combination (min 2 keys)";
 "config.app_language" = "App Language";
 "config.app_language_desc" = "User interface language";
 
 /* Info Tab */
-"info.how_to_title" = "How does it work?";
-"info.how_to_body" = "1. Press the hotkey to start\n2. Speak clearly into the microphone\n3. Press the hotkey again to stop\n4. Text is automatically copied\n5. With \"Auto-paste\" enabled, it pastes where your cursor is";
 "info.privacy_title" = "Privacy";
-"info.privacy_body" = "Whisper (Local): Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.\n\nApple (Online): Audio is processed on Apple's servers. Your voice is not stored permanently.\n\nGoogle Cloud: Audio is sent to Speech-to-Text with Chirp 3 for maximum accuracy. Requires a Google Cloud account.\n\nDeepgram: Uses Nova-3 or Flux Live for cloud transcription. Requires an API key.\n\nGemini Audio: Sends saved WAV audio directly to Gemini on Vertex AI for native audio transcription.\n\nAI Polish: Optional. Uses Gemini on Vertex AI to organize, correct, and improve readability without inventing details.";
+"info.privacy.whisper" = "Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.";
+"info.privacy.deepgram" = "Nova-3 or Flux Live cloud transcription. Requires an API key.";
+"info.privacy.elevenlabs" = "Scribe v2 (batch or realtime) cloud transcription. Requires an API key.";
+"info.privacy.ai_polish" = "Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
+"about.version_copy_help" = "Click to copy the version";
 "info.permissions_title" = "Required Permissions";
-"info.permissions_body" = "• Microphone: To capture your voice\n• Speech Recognition: To transcribe audio\n• Accessibility: For global hotkey support";
+"info.permissions_body" = "• Microphone: To capture your voice\n• Accessibility: For global hotkey support and auto-paste";
 
 /* Languages */
 "lang.spanish" = "Spanish";
@@ -149,47 +171,27 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Download a model first";
 "status.recording_generic" = "Recording...";
-"config.subtitle_info" = "Speech-to-Text with WhisperKit, Apple, Google Cloud, Deepgram, and AI Polish";
+"config.subtitle_info" = "Speech-to-Text with WhisperKit, Deepgram, ElevenLabs, and AI Polish";
 "app.description" = "Speech-to-Text local and cloud";
 "config.coming_soon" = "Coming Soon";
 "config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
 "menu.copy_clipboard" = "Copy to clipboard";
 
 /* Engine Descriptions */
-"engine.apple.description" = "Free, requires internet. Uses Apple servers.";
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
-"engine.google.description" = "Chirp 3: maximum accuracy. Requires internet and Google Cloud account.";
-
-/* Google Cloud Engine */
-"config.api_key" = "Google Cloud API Key";
-"config.api_key_placeholder" = "Enter your API key...";
-"config.api_key_desc" = "Uses V1 (latest_long). Create your API key at:\nconsole.cloud.google.com > APIs & Services > Credentials\nStored locally.";
-"config.api_key_missing" = "API key not configured";
-"config.api_key_configured" = "API key configured";
-
-/* Google Cloud Service Account */
-"config.service_account" = "Service Account (Chirp 3)";
-"config.service_account_desc" = "Use Chirp 3 (V2) for maximum accuracy. Setup:\n1. Install gcloud: brew install google-cloud-sdk\n2. Run: gcloud auth application-default login\n3. Sign in with your browser\n4. Click 'Detect' or restart the app";
-"config.service_account_configured" = "Chirp 3 active — %@";
-"config.service_account_import" = "Import JSON";
-"config.service_account_change" = "Change";
-"config.service_account_remove" = "Remove";
-"config.service_account_detect" = "Detect";
-"config.api_key_fallback" = "API Key (alternative)";
 
 /* AI Polish */
-"ai.google_ai.title" = "Google Cloud and AI Polish";
-"ai.google_credentials.title" = "Google Cloud credentials";
 "ai.polish.title" = "AI Polish";
 "ai.polish.enable" = "Improve text with AI";
-"ai.polish.enable_subtitle" = "Polish longer transcripts with Gemini.";
-"ai.polish.enable_active" = "Active — Gemini refines longer transcripts.";
+"ai.polish.enable_subtitle" = "Polish longer transcripts with AI.";
+"ai.polish.enable_active" = "Active — AI refines longer transcripts.";
 "ai.polish.enable_active_after" = "Active — runs after %@ of speech.";
 "ai.polish.enable_active_always" = "Active — runs on every eligible transcript.";
 "ai.polish.mode" = "Mode";
 "ai.polish.mode_desc" = "Uses %@ to organize and clean the text before copying it.";
 "ai.polish.output_language" = "Output language";
 "ai.polish.output_language_desc" = "Generates the text in %@.";
+"ai.polish.output_language_translation_desc" = "Speak any language — the AI translates the final text into %@.";
 "ai.polish.minimum_duration" = "Run after";
 "ai.polish.minimum_duration.always" = "Always";
 "ai.polish.minimum_duration.20" = "20 seconds";
@@ -197,41 +199,39 @@
 "ai.polish.minimum_duration_desc.always" = "Runs on any transcript that is not trivially short.";
 "ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
 "ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
-"ai.polish.desc" = "Uses Gemini 3.1 Flash-Lite on Vertex AI to fix likely mistakes, preserve intent, and improve readability without forcing unrelated vocabulary.";
-"ai.polish.vertex_info_title" = "Gemini on Vertex AI";
-"ai.polish.requires_google" = "Requires Google Cloud connection.";
-"ai.google_connected" = "Google Cloud connected";
-"ai.google_missing" = "Google Cloud not connected";
-"ai.google_connected_desc" = "These credentials enable Chirp 3 and also unlock Gemini on Vertex AI.";
-"ai.google_missing_desc" = "Connect Google Cloud to use Chirp 3 and enable AI Polish.";
-"ai.google_connect" = "Connect Google Cloud";
-"ai.google_setup_intro" = "SapoWhisper uses local Google Cloud credentials for Chirp 3 and Vertex AI. Do these steps once:";
-"ai.google_setup_desc" = "To connect: install gcloud, run 'gcloud auth application-default login', then press Detect. You can also import the credentials JSON.";
-"ai.google_step1_title" = "Install Google Cloud CLI";
-"ai.google_step1_detail" = "If gcloud is already installed, skip this step.";
-"ai.google_step2_title" = "Sign in to Google";
-"ai.google_step2_detail" = "This command opens the browser and stores local ADC credentials for Vertex AI.";
-"ai.google_step3_title" = "Return to SapoWhisper";
-"ai.google_step3_detail" = "Press Detect gcloud login. If you use a credentials file, import the JSON here instead.";
-"ai.google_detect_adc" = "Detect gcloud login";
-"ai.google_import_json" = "Import credentials JSON";
+"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while staying literal — your words, your order. A fidelity guard pastes the raw transcript whenever the AI drifts.";
+"ai.provider.section" = "Provider";
+"ai.provider.endpoint" = "Endpoint";
+"ai.provider.endpoint_custom" = "Custom";
+"ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
+"ai.provider.model" = "Model";
+"ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
+"ai.provider.api_key" = "API key";
+"ai.provider.api_key_placeholder" = "Paste your API key";
+"ai.provider.api_key_hint" = "Stored securely in your macOS Keychain.";
+"ai.provider.test" = "Test connection";
+"ai.provider.test_success" = "Works · %@";
+"ai.provider.needs_key" = "Add an API key and model to run AI polish. Get a key at openrouter.ai.";
+"ai.provider.summary_edit" = "Edit";
+"ai.provider.summary_done" = "Done";
+"ai.provider.summary_key_help" = "API key saved in the macOS Keychain.";
+"ai.provider.model_suggestions_help" = "Suggested models";
+"ai.provider.model_custom_hint" = "Accepts any model ID from openrouter.ai/models (e.g. qwen/qwen3-32b).";
+"ai.polish.fidelity_max" = "Fidelity at max";
+"ai.provider.error_not_configured" = "AI polish is not configured (missing API key or model).";
+"ai.provider.error_empty" = "The AI provider returned an empty response.";
+"ai.provider.error_http" = "AI provider error (%@): %@";
 "ai.google_change_json" = "Change JSON";
-"ai.google_json_hint" = "Importing JSON does not sign in to Google. Use it only if you already have a Google Cloud credentials file.";
-"ai.google_copy_command" = "Copy command";
-"ai.google_import_panel_desc" = "Select a Google Cloud credentials JSON. For normal sign-in, cancel and run gcloud auth application-default login.";
-"ai.google_required" = "Connect Google Cloud to enable AI Polish.";
-"ai.google_not_detected" = "No ADC credentials were detected. Run gcloud auth application-default login or import the JSON.";
 "ai.mode.automatic" = "Automatic";
 "ai.mode.ai" = "AI Mode";
 "ai.mode.work" = "Work";
 "ai.mode.translate_english" = "Translate to English";
 "ai.output_language.same" = "Same as audio";
-"ai.output_language.spanish" = "Spanish";
-"ai.output_language.english" = "English";
 "ai.status.none" = "Not applied";
 "ai.status.applied" = "Applied";
 "ai.status.skipped_short" = "Skipped for short text";
 "ai.status.skipped_duration" = "Skipped for short recording";
+"ai.status.rejected_fidelity" = "Rejected — drifted from your words";
 "ai.status.failed" = "Failed";
 
 /* Badges & Labels */
@@ -257,13 +257,24 @@
 "tab.about" = "About";
 
 /* Hotkey Settings */
-"settings.presets_desc" = "Select a preset hotkey or customize your own";
 "settings.hotkey_activation_mode" = "Activation mode";
 "settings.hotkey_mode_combination" = "Combination";
 "settings.hotkey_mode_double_modifier" = "Double press";
-"settings.hotkey_double_modifier_desc" = "Press the same modifier twice quickly.";
-"settings.hotkey_presets_combinations" = "Combinations";
-"settings.hotkey_presets_double_tap" = "Double press";
+"settings.hotkey_mode_combination_caption" = "Press the combo once to start dictating, press it again to stop.";
+"settings.hotkey_mode_double_caption" = "Tap the modifier twice quickly — nothing else to hold down.";
+"settings.hotkey_conflict" = "May collide with %@ on some systems.";
+"settings.hotkey_conflict_spotlight" = "Spotlight";
+"settings.hotkey_conflict_input_source" = "keyboard input source switching";
+"settings.hotkey_conflict_character_viewer" = "the Character Viewer";
+"settings.hotkey_double_tap_try" = "Try it now: double-tap the key.";
+"settings.hotkey_double_tap_success" = "Double tap detected!";
+"settings.hotkey_double_pick_hint" = "Click a key to make it your double-press trigger.";
+"settings.hotkey_modifier_option" = "Option";
+"settings.hotkey_modifier_command" = "Command";
+"settings.hotkey_modifier_control" = "Control";
+"settings.hotkey_modifier_shift" = "Shift";
+"settings.permissions_accessibility_active" = "Accessibility active — auto-paste is ready.";
+"config.hotkey_recorder_listening" = "Press your shortcut…";
 
 /* Microphone Level Meter */
 
@@ -276,14 +287,6 @@
 "permissions.microphone.helper_message" = "Once enabled, we will validate the status automatically.";
 "permissions.microphone.active_detail" = "SapoWhisper can already use the microphone to record.";
 "permissions.microphone.pending_detail" = "Required to record audio before transcription.";
-"permissions.speech.title" = "Speech Recognition";
-"permissions.speech.summary" = "Required to use the Apple Speech engine.";
-"permissions.speech.overlay_title" = "Enable Speech Recognition";
-"permissions.speech.overlay_message" = "Find SapoWhisper in the list and enable speech recognition access. If macOS does not show it yet, allow the system dialog first and then come back here.";
-"permissions.speech.helper_title" = "Enable Apple Speech access";
-"permissions.speech.helper_message" = "This setting allows Apple Speech to process the audio recorded by SapoWhisper.";
-"permissions.speech.active_detail" = "Apple Speech is already ready to transcribe from SapoWhisper.";
-"permissions.speech.pending_detail" = "Required to transcribe with the Apple Speech engine.";
 "permissions.accessibility.title" = "Accessibility";
 "permissions.accessibility.summary" = "Required for auto-paste and the smoothest global flow.";
 "permissions.accessibility.overlay_title" = "Enable Accessibility";
@@ -292,6 +295,14 @@
 "permissions.accessibility.helper_message" = "The card below lets you drop the app into the Accessibility list when it is not visible yet.";
 "permissions.accessibility.active_detail" = "SapoWhisper can already auto-paste and complete the global flow more reliably.";
 "permissions.accessibility.pending_detail" = "Recommended for auto-paste and for completing the flow from any app.";
+"permissions.input_monitoring.title" = "Input Monitoring";
+"permissions.input_monitoring.summary" = "Required to detect the double-tap shortcut from any app.";
+"permissions.input_monitoring.overlay_title" = "Enable Input Monitoring";
+"permissions.input_monitoring.overlay_message" = "If SapoWhisper already shows in the list, just enable it. If it is not visible yet, drag it from the card below into the list.";
+"permissions.input_monitoring.helper_title" = "Drag SapoWhisper in if needed";
+"permissions.input_monitoring.helper_message" = "Once enabled, the double-tap trigger reactivates by itself within seconds.";
+"permissions.input_monitoring.active_detail" = "SapoWhisper can now detect the double-tap shortcut.";
+"permissions.input_monitoring.pending_detail" = "Required for the double-tap trigger (e.g. ⌥ ⌥) to work.";
 "permissions.overlay.footnote" = "When you return to SapoWhisper, we will refresh this status automatically.";
 "permissions.overlay.drag_subtitle" = "Drag me into the list if needed";
 "permissions.banner.title" = "Permissions pending";
@@ -314,12 +325,13 @@
 "permissions.window.badge_many" = "%d pending";
 "permissions.window.helper_ready" = "You can go back to the menu or start recording normally.";
 "permissions.window.helper_pending" = "All permissions stay visible here even when one is already active, so you can finish onboarding without losing context.";
+"keychain.read_denied" = "macOS blocked reading your API key saved in the Keychain.";
+"keychain.retry_access" = "Allow again";
 "permissions.status.active" = "Active";
 "permissions.status.pending" = "Pending";
 "permissions.card.ready" = "Ready";
 "permissions.activate" = "Enable";
 "permissions.settings.row_hint" = "SapoWhisper takes you to the right panel and refreshes the status when you come back.";
-"permissions.speech.denied_error" = "Speech recognition permission was denied";
 "settings.permissions_guided_footer" = "You can open the guided onboarding for each permission and watch the live status update when you return from System Settings.";
 "settings.permissions_guided_desc" = "Accessibility is still key for auto-paste and for the smoothest flow from any app. If you want to review all permissions together, open the guided onboarding.";
 "settings.permissions_all_active" = "All permissions active";
@@ -354,17 +366,15 @@
 
 /* Deepgram Engine */
 "engine.deepgram.description" = "Deepgram Nova-3. High accuracy, requires internet.";
-"engine.gemini_audio.description" = "Native Gemini audio-to-text on Vertex AI. Requires Google Cloud.";
 "config.deepgram_mode" = "Transcription mode";
 "deepgram.mode_nova" = "Nova-3";
 "deepgram.mode_nova_desc" = "Classic batch mode. Keeps your preferred language.";
 "deepgram.mode_flux" = "Flux Live";
-"deepgram.mode_flux_desc" = "Near real-time streaming with automatic language detection.";
+"deepgram.mode_flux_desc" = "Near real-time streaming with language hints when supported.";
 "config.deepgram_key_placeholder" = "Enter your Deepgram API key...";
 "config.deepgram_key_desc" = "Create your API key at deepgram.com > Dashboard > API Keys.\nStored locally.";
 "config.deepgram_key_missing" = "API key not configured";
 "config.deepgram_key_configured" = "API key configured";
-"settings.flux_language_locked" = "Flux Live uses Auto language.";
 
 /* ElevenLabs Engine */
 "engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Highest accuracy, requires internet and an API key.";
@@ -379,23 +389,14 @@
 "config.elevenlabs_key_configured" = "API key configured";
 
 /* Gemini Audio Engine */
-"gemini.audio.title" = "Gemini Audio";
-"gemini.audio.model" = "Audio model";
-"gemini.audio.requires_google" = "Requires Google Cloud credentials.";
-"gemini.audio.cost_title" = "Approx. 4 min: %@";
-"gemini.audio.cost_desc" = "Estimate includes audio input plus a short text transcript. Real billing comes from Vertex token usage.";
-"gemini.audio.elevenlabs_note" = "ElevenLabs is not included in this version; this engine only compares Gemini audio models.";
-"gemini.audio.model_31_pro_desc" = "Premium quality for hard audio and technical dictation.";
-"gemini.audio.model_3_flash_desc" = "Higher-cost Flash option for fast high-quality trials.";
-"gemini.audio.model_25_flash_desc" = "Stable Flash baseline for comparison.";
-"gemini.audio.model_31_lite_desc" = "Recommended default: low cost with strong audio understanding.";
-"gemini.audio.model_25_lite_desc" = "Cheapest legacy Flash-Lite option for experiments.";
 
 /* Vocabulary */
 "config.vocabulary" = "Vocabulary";
 "config.keyterms" = "Keywords";
 "config.keyterm_placeholder" = "e.g. Claude Code";
 "config.keyterms_desc" = "Words that supported cloud engines will prioritize when transcribing";
+"config.keyterm_limit_batch" = "%@ saved term(s) exceed the ElevenLabs batch limits (50 characters, 5 words) and will be skipped on that engine.";
+"config.keyterm_limit_realtime" = "%@ saved term(s) exceed the ElevenLabs realtime limit (20 characters) and will be skipped on that mode.";
 "config.replacements" = "Auto-corrections";
 "config.replace_from" = "Original";
 "config.replace_to" = "Replace with";
@@ -403,7 +404,6 @@
 "config.add" = "Add";
 "settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by Deepgram and AI polish.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
-"settings.vocabulary.counts" = "%d words · %d corrections";
 "settings.vocabulary.empty" = "No results";
 "settings.vocabulary.export" = "Export";
 "settings.vocabulary.import" = "Import";
@@ -411,30 +411,60 @@
 "settings.vocabulary.import_panel_message" = "Choose a SapoWhisper vocabulary or settings JSON.";
 "settings.vocabulary.export_success" = "Vocabulary exported.";
 "settings.vocabulary.import_success" = "Vocabulary imported.";
+"settings.vocabulary.transfer_help" = "Export or import vocabulary";
+
+/* Vocabulary metrics & empty states */
+"vocab.metrics.pace" = "Pace";
+"vocab.metrics.pace_unit" = "%@ wpm";
+"vocab.metrics.pace_help" = "Average words per minute across your recent dictations.";
+"vocab.metrics.terms" = "Terms";
+"vocab.metrics.terms_help" = "Saved keywords versus the active engine's limit.";
+"vocab.metrics.top" = "Most used";
+"vocab.metrics.top_help" = "Vocabulary terms that appear most in your recent transcripts.";
+"vocab.metrics.top_empty" = "No uses yet";
+"vocab.add_return_hint" = "Press Return to add";
+"vocab.add_over_batch" = "This term exceeds the ElevenLabs batch limits (50 characters, 5 words); it will be skipped on that engine.";
+"vocab.add_over_realtime" = "This term exceeds the ElevenLabs realtime limit (20 characters); it will be skipped in that mode.";
+"vocab.empty.search_title" = "No results for “%@”";
+"vocab.empty.clear_search" = "Clear search";
+"vocab.empty.keywords_title" = "No keywords yet";
+"vocab.empty.keywords_subtitle" = "Add names, commands, or files so engines get them right.";
+"vocab.empty.corrections_title" = "No auto-corrections yet";
+"vocab.empty.corrections_subtitle" = "Turn a frequent mistake into the text you actually want.";
+"vocab.empty.add_first" = "Add the first one";
+"config.delete_term_accessibility" = "Delete term";
 
 /* Prompts & Context */
 "prompts.title" = "Prompts and context";
-"prompts.personal_context" = "Personal context";
-"prompts.personal_context_desc" = "Applies to every AI mode so Gemini can understand your profile, tools, and style without inventing details.";
-"prompts.personal_context_hint" = "Example: I am a mobile developer, I mix Spanish with technical English, and I work with SwiftUI, KMP, and Xcode.";
-"prompts.save_context" = "Save context";
 "prompts.project_prompts" = "Project or destination prompts";
 "prompts.project_prompts_desc" = "Create editable modes for Codex, Claude Code, Slack, issues, or any dictation workflow.";
 "prompts.add_prompt" = "Add prompt";
 "prompts.name" = "Name";
 "prompts.description" = "Description";
 "prompts.force_english" = "Force English output";
-"prompts.instruction_hint" = "This instruction is sent to Gemini together with personal context, vocabulary, and the raw transcript.";
+"prompts.instruction_hint" = "This instruction is sent to the AI together with personal context, vocabulary, and the raw transcript.";
+"prompts.duplicate_prompt" = "Duplicate";
+"prompts.prompt_duplicated" = "Prompt duplicated.";
+"prompts.base_rules_note" = "Every mode inherits the fidelity-first base rules: never paraphrase, never add facts. Your instruction runs on top of them.";
+"prompts.preview_polish" = "Preview polish";
+"prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how this mode cleans it.";
+"prompts.preview_run" = "Polish sample";
+"prompts.preview_raw" = "Raw";
+"prompts.preview_polished" = "Polished";
+"prompts.preview_needs_provider" = "Configure the AI provider above to run a preview.";
+"prompts.preview_sample" = "um so basically I wanted to confirm that tomorrow I will push the fix to the feature login branch and then run npm run build";
 "prompts.save_prompt" = "Save";
 "prompts.delete_prompt" = "Delete";
-"prompts.context_saved" = "Personal context saved.";
 "prompts.prompt_saved" = "Prompt saved.";
 "prompts.prompt_deleted" = "Prompt deleted.";
+"prompts.unsaved_changes" = "Unsaved changes";
+"prompts.delete_confirm_title" = "Delete “%@”?";
+"prompts.delete_confirm_message" = "This prompt will be removed permanently.";
+"prompts.delete_confirm_action" = "Delete";
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrate settings";
 "settings.transfer.desc" = "Export a portable JSON file to move preferences, vocabulary, prompts, and context to another Mac. Microphone selection, system permissions, and Google credentials imported as a file are not included.";
-"settings.transfer.include_api_keys" = "Include API keys stored on this Mac";
 "settings.transfer.export" = "Export settings";
 "settings.transfer.import" = "Import settings";
 "settings.transfer.export_panel_message" = "Save SapoWhisper portable settings.";
@@ -444,27 +474,10 @@
 "settings.transfer.import_options_title" = "What do you want to import?";
 "settings.transfer.import_options_desc" = "The file can include everything, but only selected categories will be applied.";
 "settings.transfer.import_selected" = "Import selected";
-"settings.transfer.section_behavior" = "Behavior and language";
-"settings.transfer.section_behavior_desc" = "App language, transcription language, and auto-paste.";
-"settings.transfer.section_audio" = "Audio";
-"settings.transfer.section_audio_desc" = "Sounds, volume, gain, and auto-ducking.";
-"settings.transfer.section_engine" = "Engine";
-"settings.transfer.section_engine_desc" = "Transcription engine, local model, and Deepgram mode.";
-"settings.transfer.section_hotkey" = "Hotkey";
-"settings.transfer.section_hotkey_desc" = "Global key used to start or stop recording.";
-"settings.transfer.section_ai" = "AI polish";
-"settings.transfer.section_ai_desc" = "Polish mode and output language.";
-"settings.transfer.section_vocabulary" = "Vocabulary";
-"settings.transfer.section_vocabulary_desc" = "Keywords and automatic corrections.";
-"settings.transfer.section_prompt_context" = "Prompts and context";
-"settings.transfer.section_prompt_context_desc" = "Personal context and editable AI modes.";
-"settings.transfer.section_api_keys" = "API keys";
-"settings.transfer.section_api_keys_desc" = "Deepgram and Google API key if the file contains them.";
 
 "overlay.no_speech" = "No speech detected";
 
 /* Errors */
-"error.no_audio" = "Could not capture audio";
 "error.input_not_ready" = "Microphone unavailable. Retry or choose another.";
 "overlay.retry" = "Retry";
 
@@ -485,10 +498,62 @@
 "failure.unknown" = "%@: an unexpected error occurred. Please retry.";
 
 /* Google Cloud Warning */
-"config.google_60s_warning" = "Limited to 60 seconds per recording";
 
 /* Auto-Ducking */
 "settings.auto_ducking" = "Auto-duck system audio";
 "settings.ducking_amount" = "Volume reduction";
 "settings.auto_ducking_header" = "Auto-Ducking";
 "settings.auto_ducking_desc" = "Automatically lower system audio volume while recording";
+"settings.overlay_position" = "Indicator position";
+"settings.overlay_position_bottom" = "Bottom";
+"settings.overlay_position_top" = "Top";
+"settings.overlay_position_center" = "Center";
+"settings.history_header" = "History storage";
+"settings.history_audio_limit" = "Audio storage limit";
+"settings.history_audio_usage" = "Current usage";
+"settings.history_auto_delete" = "Auto-delete old entries";
+"settings.history_auto_delete_never" = "Never";
+"settings.history_auto_delete_days" = "After %@ days";
+"settings.history_retention_desc" = "When the audio limit is exceeded, the oldest recordings are removed first (pinned entries last). Auto-delete runs at launch and keeps pinned entries.";
+
+/* Welcome flow */
+"welcome.window_title" = "Welcome to SapoWhisper";
+"welcome.close" = "Close";
+"welcome.title" = "Welcome to SapoWhisper";
+"welcome.subtitle" = "Speak anywhere on your Mac and get clean text pasted right where you were typing.";
+"welcome.hotkey_caption" = "Your shortcut: %@ — you can change it later in Settings.";
+"welcome.start" = "Get started";
+"welcome.back" = "Back";
+"welcome.continue" = "Continue";
+"welcome.skip_step" = "Skip this step";
+"welcome.finish" = "Finish";
+"welcome.permissions_title" = "Two permissions";
+"welcome.permissions_subtitle" = "SapoWhisper needs these to record your voice and paste the text for you.";
+"welcome.permissions_footnote" = "Required for dictation and auto-paste. You can grant them later, but recording stays blocked until then.";
+"welcome.grant" = "Grant";
+"welcome.engine_title" = "Choose your engine";
+"welcome.engine_subtitle" = "Pick how your voice becomes text. You can switch anytime in Settings.";
+"welcome.engine_required" = "Set up one engine to continue";
+"welcome.whisper_tagline" = "Free · Private · Offline";
+"welcome.deepgram_tagline" = "Fastest · nova-3 / Flux live";
+"welcome.elevenlabs_tagline" = "Scribe v2 · batch / realtime";
+"welcome.whisper_pick_model" = "Pick a model to download:";
+"welcome.whisper_downloading" = "Downloading model…";
+"welcome.key_placeholder" = "Paste your API key";
+"welcome.key_validate" = "Validate";
+"welcome.key_invalid" = "That key was rejected. Check it and try again.";
+"welcome.key_server_error" = "The service answered with an error (%@). Try again.";
+"welcome.ai_title" = "AI polish (optional)";
+"welcome.ai_subtitle" = "Have an OpenRouter, OpenAI, or Groq API key? Turn on AI polish: it removes fillers and fixes punctuation without changing your words. If not, just skip — dictation works fully without it.";
+"welcome.ai_footnote" = "You can enable or tune this later in Settings → Engine. The key is stored in your macOS Keychain.";
+"welcome.ready_title" = "You're all set!";
+"welcome.ready_subtitle" = "Press %@, say something, and press it again. The text lands wherever your cursor is.";
+"welcome.ready_subtitle_double" = "Double-tap %@, say something, then double-tap it again. The text lands wherever your cursor is.";
+"welcome.ready_try_title" = "Try it right now";
+"welcome.ready_try_hint" = "Use your shortcut — this window closes by itself as soon as recording starts.";
+"welcome.ready_perfect" = "Perfect!";
+"welcome.ready_perfect_caption" = "You're recording — speak now and the text lands at your cursor.";
+"menu.welcome_tour" = "Welcome tour";
+"menu.setup_pending_title" = "Finish setting up";
+"menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";
+"menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";

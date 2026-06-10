@@ -10,6 +10,7 @@ struct RecordingPillView: View {
     let duration: TimeInterval
     let onPause: () -> Void
     let audioLevelPublisher: AnyPublisher<Float, Never>
+    var showsNoSpeechHint: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -17,9 +18,20 @@ struct RecordingPillView: View {
             PillDivider()
             MiniEqualizerView(audioLevelPublisher: audioLevelPublisher)
 
-            Text("overlay.recording".localized)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
+            if showsNoSpeechHint {
+                HStack(spacing: 5) {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("overlay.no_speech".localized)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(.sapoError)
+                .transition(.opacity)
+            } else {
+                Text("overlay.recording".localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+            }
 
             Spacer(minLength: 12)
 
@@ -89,6 +101,10 @@ struct TranscribingPillView: View {
 }
 
 struct AIPolishingPillView: View {
+    let timeoutSeconds: UInt64
+
+    @State private var startedAt = Date()
+
     var body: some View {
         HStack(spacing: 10) {
             FloatingSapoIcon(state: .polishing, size: 32)
@@ -98,7 +114,20 @@ struct AIPolishingPillView: View {
             Text("overlay.ai_polishing".localized)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
+
+            // L10: countdown to the polish timeout — the user sees the worst
+            // case shrinking instead of an open-ended spinner.
+            TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                let elapsed = Int(context.date.timeIntervalSince(startedAt))
+                let remaining = max(0, Int(timeoutSeconds) - elapsed)
+                Text("\(remaining)s")
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+                    .contentTransition(.numericText(countsDown: true))
+            }
         }
+        .onAppear { startedAt = Date() }
     }
 }
 
@@ -163,9 +192,13 @@ struct ErrorPillView: View {
             Text(message)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .lineLimit(2)
+                .lineLimit(3)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
+                // A concrete width (maxWidth cannot wrap under the pill's
+                // ideal-size layout) so long failure messages break into
+                // lines instead of widening the pill past the screen.
+                .frame(width: message.count > 50 ? 340 : nil, alignment: .leading)
 
             Spacer()
 

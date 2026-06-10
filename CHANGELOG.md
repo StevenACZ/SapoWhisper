@@ -6,7 +6,63 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased]
+## [2.3.0] - 2026-06-10
+
+### Added
+
+- **Vocabulary usage metrics** — the Vocabulary tab opens with three tiles computed on-device from the last 200 dictations: saved-term capacity against the active engine's limit, average words per minute, and the most used terms; chips carry per-term usage badges. Pure read of existing history — no new tracking is stored.
+- **Free-text polish model** — the AI polish model field accepts any model ID (anything on openrouter.ai/models, e.g. qwen or deepseek) with a curated suggestions menu beside it.
+- **Clear all history from Settings** — the storage card in General gains a confirmed clear-all button that removes every entry and its audio, mirroring the History window action.
+- **Esc cancels dictation** — while a recording session is active (including paused), pressing Esc discards the audio and hides the overlay instantly: nothing is transcribed or pasted. The key is only captured during an active session and never reaches the frontmost app.
+- **Live try-it finish for the welcome flow** — the final step shows the user's actual configured trigger as animated keycaps (tap-tap rhythm for double-modifier triggers) with a "Try it right now" card; firing the shortcut celebrates with a "Perfect!" animation and closes the flow by itself while dictation continues.
+- **Developer UI preview mode** — launching a Debug build with `SAPO_UI_PREVIEW=1` skips keychain access, hotkey event-tap registration, and startup permission windows, so ad-hoc rebuilds never re-trigger macOS consent prompts while iterating on UI; `SAPO_UI_PREVIEW_SCREEN=history|welcome|settings` (plus `SAPO_UI_PREVIEW_WELCOME_STEP`) opens that window directly for screenshots. The unit-test host gets the same bypass automatically. Normal user launches are unaffected.
+- **Sleep/wake residency** — On system sleep any active dictation stops cleanly: the WAV is preserved and the entry is saved as failed with retry available. On wake the app re-validates the global hotkey, refreshes the audio device caches, and re-runs the input preflight.
+- **Hotkey watchdog** — The global hotkey re-enables or re-creates itself if macOS silently kills the event tap, checked on every wake and every 10 minutes.
+- **Offline fast-fail** — With no network, cloud engines fail instantly with a clear network error (before the mic even opens) instead of burning the request timeout, and the menu bar shows an offline hint that clears on reconnect. Local WhisperKit dictation is unaffected.
+- Per-dictation performance log line (`perf stop→paste totalMs=… stages={tail,finalize,engine,polish,paste,persist}`) plus a daily resident-memory log line, so latency and long-run memory are provable from sanitized logs.
+- `make idle-cpu-note` prints the manual idle-CPU (0%) verification procedure.
+- Native transcription-language menu with Auto plus 15 common languages shared by the supported providers.
+- **OpenAI-compatible AI polish provider** — AI polish now talks to any `chat/completions` endpoint (OpenRouter by default, OpenAI, Groq, or a custom URL such as Ollama). Paste an API key, pick a model (default `openai/gpt-5.4-nano`), press Test, done. The key is stored in the macOS Keychain.
+- **Fidelity guard for AI polish** — Polished text is checked against the raw transcript (length ratio + anchor tokens: numbers, URLs, names, vocabulary). If the AI drifts, the raw transcript is pasted instead and the entry is marked `rejected_fidelity`.
+- History engine filter now includes ElevenLabs and an "Other engines" bucket for entries created by removed engines.
+- **Animated Welcome flow** — A five-step onboarding window (welcome → permissions → choose your engine → optional AI polish → ready) guides first-run setup: WhisperKit downloads a model with a progress ring, Deepgram/ElevenLabs keys validate inline, and the AI polish step is prominently skippable. Re-openable any time from the menu bar ("Welcome tour"); a menu hint appears while the engine is unconfigured.
+
+### Changed
+
+- **Vocabulary tab redesigned** — alphabetical chips with hover-revealed delete and usage badges, live ElevenLabs limit validation while typing a new term, and real empty states for empty lists and fruitless searches.
+- **Prompts tab decluttered** — the provider configuration collapses into a one-line summary once it is usable (the keychain is only read when it expands), the behavior pickers became equal-height tiles with a compact "fidelity at max" badge, and the prompt editor shows an unsaved-changes dot, disables Save without changes, and asks before deleting a profile.
+- **Info tab simplified** — privacy is listed per engine with icons and the version copies itself on click; the how-it-works list was removed. The hotkey tab centers its content vertically.
+- **AI polish output language now translates faithfully** — the output language picker offers the full 15-language catalog, and when the transcript is in another language the target is authoritative: the prompt requires a faithful full translation, and the fidelity guard checks only translation-invariant anchors (numbers, URLs, emails, vocabulary) instead of rejecting the translated text. Picking an explicit target resets the transcription language to auto so the spoken language is detected.
+- **Auto-ducking is a smooth fade** — system volume ramps down over ~400 ms starting the instant recording begins (the start beep rides the top of the ramp) and ramps back over ~250 ms, replacing the delayed single-step drop.
+- **History window redesigned as a two-pane reading layout** — wider sidebar (search with one-tap clear, real empty states for no history / no results) and a single wide reading pane that replaces the cramped third-column inspector: relative-date header with engine and language chips, a visible action bar (Copy, Polish with AI, re-transcribe, download audio, pin, delete), a stats strip (duration · words · language · AI polish · audio), larger transcript typography, and a scrubbable audio player card. Failed entries show their failure code with a prominent re-transcribe button. The window now opens at 1000×640.
+- **Welcome flow polish** — removed the dead band above the progress dots left by the transparent titlebar, and the AI polish step's form now follows its header instead of floating mid-window.
+- **Faster stop→paste** — Auto-paste fires the moment macOS confirms the target app is active (150 ms hard fallback) instead of polling; history persistence (audio copy + database insert) moved off the paste path to a background task; the overlay switches to "transcribing" the instant stop is pressed; the WAV finalize runs on the audio queue without blocking the UI.
+- **AI polish timeout reduced from 8 s to 5 s**, and the polishing overlay now shows a per-second countdown.
+- The audio input preflight now genuinely warms the input route (brief muted engine start), so the first dictation after a device change starts faster; the mic indicator may blink briefly on device changes. The preflight also defers itself while any recording is active.
+- Auto-ducking always restores the saved volume after recording; the old "respect user volume" heuristic could leave Bluetooth audio permanently low.
+- The menu bar popover re-measures at most once per 150 ms and reuses its content controller across opens.
+- **Engine portfolio reduced to three engines** — WhisperKit (local), Deepgram (Nova-3 batch / Flux live), and ElevenLabs (Scribe v2 batch / realtime). Apple Speech, Google Cloud STT (V1 and Chirp), and Gemini Audio were removed, along with the entire Vertex AI / service-account stack. Existing selections migrate automatically (Deepgram key → Deepgram, ElevenLabs key → ElevenLabs, otherwise WhisperKit) and stored Google credentials are purged.
+- AI polish default mode is now literal clean-up: remove fillers and self-corrections, fix punctuation, never paraphrase.
+- The app no longer requests the Speech Recognition permission; only Microphone and Accessibility are needed.
+
+### Removed
+
+- The personal-context editor and the effective-prompt preview were removed from the Prompts tab to keep it focused on prompt profiles. A previously saved personal context still applies to polish runs.
+
+### Fixed
+
+- Pinning the transcription language to the same language AI polish outputs no longer shows the pinned-language warning; it only appears when the two languages actually diverge.
+- The double-tap trigger now starts working the moment Accessibility is granted on a fresh install: the event tap used to be created before the permission existed and stayed dead until the user changed the hotkey or relaunched. The app now polls until the process is trusted and re-registers automatically.
+- The global hotkey kept dying after visiting Settings: a focused API-key SecureField leaves macOS Secure Keyboard Entry enabled, which silently starves the hotkey event tap. Settings/history/welcome windows now drop the first responder when they close or resign key, releasing secure input immediately.
+- The macOS keychain consent prompt fires at most once per build and only when a key is actually needed: launch and settings "is X configured" checks read non-secret presence hints, saving keys re-creates the item instead of re-prompting on every keystroke, and a denied read can no longer wipe stored keys or make the welcome flow reappear for configured users.
+- The welcome flow is strictly for new users now: closing it explicitly marks it as seen, so it never auto-reopens on later launches.
+- Removed the dead band below the welcome footer button (the titled + fullSizeContentView window is taller than its content rect, so the fixed-height content floated centered).
+- History audio playback now uses one shared player: switching entries or closing the detail pane reliably stops playback, and the progress timer only runs while audio plays.
+- Transcription language now acts as provider recognition context only, avoiding hidden AI translation or output-language forcing.
+- ElevenLabs Scribe batch and realtime now pass explicit languages as `language_code` hints for the spoken audio without changing the transcript into another language.
+- Deepgram Flux Live now keeps the native language picker enabled and sends supported selections as `language_hint`.
+- AI polish stays fully disabled unless the user explicitly enables it, including forced/manual polish paths.
+- ElevenLabs vocabulary hints now send saved terms first, include auto-correction replacement values as recognition hints, and sanitize hints before cloud requests.
 
 ## [2.2.1] - 2026-05-29
 

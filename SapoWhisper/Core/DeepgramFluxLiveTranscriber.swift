@@ -16,6 +16,10 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     @Published private(set) var audioLevel: Float = 0
     private(set) var lastCaptureResult: StreamingAudioCaptureResult?
 
+    /// A2: fired on the main thread when the local capture died mid-session
+    /// and could not be recovered; the owner aborts preserving the WAV.
+    var onCaptureInterrupted: ((String) -> Void)?
+
     private let capture = StreamingAudioCapture()
     private var cancellables = Set<AnyCancellable>()
     private var webSocketTask: URLSessionWebSocketTask?
@@ -27,6 +31,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private let audioSender = DeepgramFluxAudioSender()
     private var sessionStartedAt: CFAbsoluteTime = 0
     private var stopStartedAt: CFAbsoluteTime = 0
+    private var currentLanguage = "auto"
 
     /// Brand name surfaced in user-facing failures and logs.
     private static let engineName = "Deepgram"
@@ -39,29 +44,29 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     var isConfigured: Bool {
-        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .deepgramAPIKey)
     }
 
     init() {
         bindCapture()
     }
 
-    func start(microphone: String) async throws {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
+    func start(microphone: String, language: String) async throws {
+        guard let apiKey = KeychainStore.string(for: .deepgramAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
 
         resetSessionState()
-        let task = DeepgramFluxRequestFactory.makeWebSocketTask(apiKey: apiKey)
+        currentLanguage = language
+        let task = DeepgramFluxRequestFactory.makeWebSocketTask(apiKey: apiKey, language: language)
         webSocketTask = task
         audioSender.start(task: task)
         task.resume()
         isStreaming = true
         sessionStartedAt = CFAbsoluteTimeGetCurrent()
-        SapoLog.flux.info("Flux stream opened")
+        SapoLog.flux.info("Flux stream opened language=\(language, privacy: .public)")
 
         receiveTask = Task { [weak self] in
             await self?.receiveMessages()
@@ -152,7 +157,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
-            language: "auto",
+            language: currentLanguage,
             diagnostics: captureResult.diagnostics
         )
     }
@@ -164,6 +169,16 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         resetPublishedState()
     }
 
+    /// Stops the local capture and tears down the socket without any network
+    /// wait. Used on system sleep; the WAV is preserved for manual retry.
+    func abortPreservingAudio() -> StreamingAudioCaptureResult? {
+        let captureResult = capture.stopRecording(logSummary: false)
+        cleanupWebSocket()
+        lastCaptureResult = nil
+        resetPublishedState()
+        return captureResult
+    }
+
     func pauseRecording() {
         capture.pauseRecording()
     }
@@ -173,21 +188,30 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func bindCapture() {
-        capture.$recordingDuration
+        // A2: a capture that died mid-session (device gone, recovery failed)
+        // bubbles up so the owner can abort preserving the WAV. The capture
+        // always delivers this callback on the main queue.
+        capture.onCaptureInterrupted = { [weak self] reason in
+            MainActor.assumeIsolated {
+                self?.onCaptureInterrupted?(reason)
+            }
+        }
+
+        capture.recordingDurationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
 
-        capture.$audioLevel
+        capture.audioLevelPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.audioLevel = level
             }
             .store(in: &cancellables)
 
-        capture.$isPaused
+        capture.isPausedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isPaused in
                 self?.isPaused = isPaused
@@ -236,6 +260,12 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         switch type {
         case "TurnInfo":
             transcriptAccumulator.update(with: json)
+            // After CloseStream the server flushes a final TurnInfo with
+            // event=EndOfTurn — resume immediately instead of riding the
+            // stop timeout or waiting for the socket to close.
+            if isStopping, (json["event"] as? String) == "EndOfTurn" {
+                finishStopIfNeeded(error: nil)
+            }
         case "FatalError":
             let description = (json["description"] as? String) ?? "Unknown Flux error"
             let error = TranscriptionFailure(
@@ -282,7 +312,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await DeepgramBatchTranscriber().transcribe(
             audioURL: captureResult.audioURL,
-            language: "auto"
+            language: currentLanguage
         )
         let cleanedTranscript = VocabularyManager.shared
             .applyingReplacements(to: transcript)
@@ -301,7 +331,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
-            language: "auto",
+            language: currentLanguage,
             diagnostics: captureResult.diagnostics
         )
     }
@@ -327,6 +357,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         isStopping = false
         sessionStartedAt = 0
         stopStartedAt = 0
+        currentLanguage = "auto"
     }
 
     private func resetPublishedState() {

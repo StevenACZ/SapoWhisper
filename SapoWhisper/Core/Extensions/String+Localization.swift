@@ -6,7 +6,7 @@
 
 import Foundation
 
-extension String {
+nonisolated extension String {
     /// Devuelve el string localizado usando el LocalizationManager global
     var localized: String {
         LocalizationManager.shared.localizedString(self)

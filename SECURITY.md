@@ -12,7 +12,7 @@ Do not commit:
 - Logs, crash reports, DMGs, archives, or notarization/signing files
 - Personal Apple Developer Team IDs or local Xcode user data
 
-The app stores user-provided cloud credentials locally on the user's Mac. They should never appear in source control.
+The app stores user-provided cloud credentials in the macOS Keychain (one consolidated item); only non-secret presence hints (key names) are mirrored to UserDefaults. Credentials should never appear in source control.
 
 ## Reporting
 

@@ -16,17 +16,16 @@ class DeepgramBatchTranscriber: ObservableObject {
     /// Brand name surfaced in user-facing failures and logs.
     private static let engineName = "Deepgram"
 
-    /// Check if Deepgram API key is configured
+    /// Check if Deepgram API key is configured (hint-based: no keychain prompt)
     var isConfigured: Bool {
-        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .deepgramAPIKey)
     }
 
     // MARK: - Transcription
 
     /// Transcribe audio file using Deepgram REST API (pre-recorded)
     func transcribe(audioURL: URL, language: String) async throws -> String {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.deepgramAPIKey),
+        guard let apiKey = KeychainStore.string(for: .deepgramAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
@@ -67,18 +66,13 @@ class DeepgramBatchTranscriber: ObservableObject {
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = audioData
 
-        // Send request
+        // Send request, retrying transient 5xx responses once or twice.
         let data: Data
-        let response: URLResponse
+        let httpResponse: HTTPURLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, httpResponse) = try await TransientRequestRetry.data(for: request, engine: Self.engineName)
         } catch {
             throw TranscriptionFailure.from(error, engine: Self.engineName)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName, technicalDetail: "non-HTTP response")
         }
 
         guard httpResponse.statusCode == 200 else {
@@ -89,7 +83,9 @@ class DeepgramBatchTranscriber: ObservableObject {
             throw failure
         }
 
-        // Parse response
+        // Parse response. A 200 without parsable transcript means "nothing was
+        // recognized", which must surface as emptyTranscription (not retryable),
+        // matching every other engine.
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let results = json["results"] as? [String: Any],
             let channels = results["channels"] as? [[String: Any]],
@@ -101,11 +97,16 @@ class DeepgramBatchTranscriber: ObservableObject {
                 "Deepgram batch parse failure status=\(httpResponse.statusCode, privacy: .public) audioBytes=\(audioData.count, privacy: .public)"
             )
             throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName,
+                kind: .emptyTranscription, engine: Self.engineName,
                 technicalDetail: "could not parse 200 response bytes=\(data.count)")
         }
 
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw TranscriptionFailure(
+                kind: .emptyTranscription, engine: Self.engineName,
+                technicalDetail: "empty transcript in 200 response")
+        }
         return trimmed
     }
 
@@ -211,11 +212,6 @@ class DeepgramBatchTranscriber: ObservableObject {
     // MARK: - Language Mapping
 
     private func deepgramLanguageCode(for appLanguage: String) -> String {
-        switch appLanguage {
-        case "es": return "es"
-        case "en": return "en"
-        case "auto": return "multi"
-        default: return "es"
-        }
+        TranscriptionLanguageCatalog.deepgramLanguageCode(for: appLanguage)
     }
 }

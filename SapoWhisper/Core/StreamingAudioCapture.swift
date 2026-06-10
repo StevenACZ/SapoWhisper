@@ -16,13 +16,35 @@ struct StreamingAudioCaptureResult {
     let diagnostics: RecordingCaptureDiagnostics
 }
 
-final class StreamingAudioCapture: ObservableObject {
+/// Concurrency: opts out of default MainActor isolation like `AudioRecorder`
+/// — synchronized by its setup queue, the tap thread draining into the write
+/// queue (A1), and the unfair locks. Published state mutates on main only.
+nonisolated final class StreamingAudioCapture: @unchecked Sendable {
     typealias PCMChunkHandler = (Data) -> Void
 
-    @Published var isRecording = false
-    @Published var isPaused = false
-    @Published var recordingDuration: TimeInterval = 0
-    @Published var audioLevel: Float = 0
+    // Subjects instead of @Published (property wrappers cannot live in a
+    // nonisolated type yet); mutated on main only.
+    let isRecordingPublisher = CurrentValueSubject<Bool, Never>(false)
+    let isPausedPublisher = CurrentValueSubject<Bool, Never>(false)
+    let recordingDurationPublisher = CurrentValueSubject<TimeInterval, Never>(0)
+    let audioLevelPublisher = CurrentValueSubject<Float, Never>(0)
+
+    var isRecording: Bool {
+        get { isRecordingPublisher.value }
+        set { isRecordingPublisher.send(newValue) }
+    }
+    var isPaused: Bool {
+        get { isPausedPublisher.value }
+        set { isPausedPublisher.send(newValue) }
+    }
+    var recordingDuration: TimeInterval {
+        get { recordingDurationPublisher.value }
+        set { recordingDurationPublisher.send(newValue) }
+    }
+    var audioLevel: Float {
+        get { audioLevelPublisher.value }
+        set { audioLevelPublisher.send(newValue) }
+    }
 
     var selectedDeviceUID: String = AudioDevice.systemDefault.uid
 
@@ -53,7 +75,24 @@ final class StreamingAudioCapture: ObservableObject {
 
     let tapBufferSize: AVAudioFrameCount = 1024
     let audioSetupQueue = DispatchQueue(label: "com.sapowhisper.streamingAudioSetup", qos: .userInitiated)
+    /// A1: disk writes drain here so a slow flush never stalls the audio tap thread.
+    let audioWriteQueue = DispatchQueue(label: "com.sapowhisper.streamingCapture.write", qos: .userInitiated)
     let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
+
+    // Used on audioSetupQueue only.
+    let deviceSentinel: CaptureDeviceSentinel
+    var captureRecoveryAttempts = 0
+    var captureHealthProbePending = false
+    var captureActive = false
+
+    init() {
+        deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
+    }
+
+    /// A2: called on the main thread when an interrupted capture (dead device,
+    /// failed route recovery) cannot be rebuilt; the owner aborts preserving
+    /// the WAV recorded so far.
+    var onCaptureInterrupted: (@Sendable (String) -> Void)?
 
     func prepareInputDeviceForRecording() -> TimeInterval {
         let deviceManager = AudioDeviceManager.shared
@@ -81,6 +120,7 @@ final class StreamingAudioCapture: ObservableObject {
         firstInputBufferLogged = false
         lastInputBufferTime = 0
         lastAudioLevelPublishTime = 0
+        captureRecoveryAttempts = 0
 
         let result: (engine: AVAudioEngine, url: URL) = try await withCheckedThrowingContinuation { continuation in
             audioSetupQueue.async { [weak self] in
@@ -104,8 +144,7 @@ final class StreamingAudioCapture: ObservableObject {
                         return
                     }
 
-                    let recordingURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("flux_recording_\(Date().timeIntervalSince1970).wav")
+                    let recordingURL = TemporaryAudioStorage.makeWAVURL(prefix: "flux_recording")
                     pendingURL = recordingURL
 
                     let audioFile = try AVAudioFile(
@@ -128,6 +167,15 @@ final class StreamingAudioCapture: ObservableObject {
                     try localEngine.start()
                     MicrophonePermission.noteAudioInputGranted()
 
+                    // A2: keep the engine reachable from the setup queue and watch
+                    // the bound device + engine configuration for the whole capture.
+                    self.audioEngine = localEngine
+                    self.setCaptureActive(true)
+                    let boundDeviceID =
+                        deviceUID == AudioDevice.systemDefault.uid
+                        ? nil : AudioDeviceManager.shared.getDeviceID(for: deviceUID)
+                    self.beginDeviceSentinel(engine: localEngine, deviceID: boundDeviceID)
+
                     continuation.resume(returning: (localEngine, recordingURL))
                 } catch {
                     self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingURL, deleteTemporaryFile: true)
@@ -148,14 +196,21 @@ final class StreamingAudioCapture: ObservableObject {
     func stopRecording(logSummary: Bool = true) -> StreamingAudioCaptureResult? {
         let stopStart = CFAbsoluteTimeGetCurrent()
         let duration = recordingDuration
+        // A2: flipped before entering the queue so a sentinel event already
+        // enqueued behind this stop becomes a no-op instead of a recovery.
+        setCaptureActive(false)
         timer?.invalidate()
         timer = nil
 
         let url = audioSetupQueue.sync { () -> URL? in
+            deviceSentinel.end()
             audioEngine?.inputNode.removeTap(onBus: 0)
             audioEngine?.stop()
             audioEngine?.reset()
             _ = flushRemainingConvertedAudio()
+            // A1: drain pending async writes before releasing the file so the
+            // WAV is complete when the URL is returned.
+            audioWriteQueue.sync {}
 
             let currentURL = recordingURL
             audioFile = nil

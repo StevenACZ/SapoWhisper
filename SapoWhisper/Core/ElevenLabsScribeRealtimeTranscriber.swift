@@ -68,12 +68,15 @@ private struct ElevenLabsRealtimeTranscriptAccumulator {
     }
 }
 
-final class ElevenLabsRealtimeAudioSender {
+/// Concurrency: nonisolated by design — audio batching runs on the serial
+/// send queue and every counter sits behind `statsLock`/`stateLock`.
+nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private enum Constants {
         static let sampleRate = 16000
         static let targetChunkBytes = 6_400  // 0.2s of pcm_16000 mono int16.
         static let finalSilenceBytes = 6_400
         static let sendTimeout: TimeInterval = 2.0
+        static let firstSendTimeout: TimeInterval = 8.0
     }
 
     private let queue = DispatchQueue(label: "com.sapowhisper.elevenlabsRealtimeAudioSender", qos: .userInitiated)
@@ -82,6 +85,7 @@ final class ElevenLabsRealtimeAudioSender {
 
     private var task: URLSessionWebSocketTask?
     private var isActive = false
+    private var hasUsedFirstSendBudget = false
     private var pendingAudio = Data()
     private var enqueuedChunks = 0
     private var sentMessages = 0
@@ -114,14 +118,15 @@ final class ElevenLabsRealtimeAudioSender {
         let startedAt = CFAbsoluteTimeGetCurrent()
 
         return await withCheckedContinuation { continuation in
-            let resumeLock = NSLock()
-            var didResume = false
+            let resumeGate = OSAllocatedUnfairLock(initialState: false)
 
-            func resumeOnce(returning stats: ElevenLabsRealtimeAudioSenderStats) -> Bool {
-                resumeLock.lock()
-                defer { resumeLock.unlock() }
-                guard !didResume else { return false }
-                didResume = true
+            @Sendable func resumeOnce(returning stats: ElevenLabsRealtimeAudioSenderStats) -> Bool {
+                let claimed = resumeGate.withLock { (didResume: inout Bool) -> Bool in
+                    guard !didResume else { return false }
+                    didResume = true
+                    return true
+                }
+                guard claimed else { return false }
                 continuation.resume(returning: stats)
                 return true
             }
@@ -226,21 +231,19 @@ final class ElevenLabsRealtimeAudioSender {
 
         let startedAt = CFAbsoluteTimeGetCurrent()
         let semaphore = DispatchSemaphore(value: 0)
-        let completionLock = NSLock()
-        var sendError: Error?
+        let sendErrorBox = OSAllocatedUnfairLock<Error?>(initialState: nil)
 
         task.send(.string(message)) { error in
-            completionLock.lock()
-            sendError = error
-            completionLock.unlock()
+            sendErrorBox.withLock { $0 = error }
             semaphore.signal()
         }
 
-        let didFinish = semaphore.wait(timeout: .now() + Constants.sendTimeout) == .success
+        // The first message absorbs the WebSocket handshake (capture starts
+        // concurrently with the connect), so give it a longer budget.
+        let sendTimeout = consumeFirstSendBudgetIfNeeded() ?? Constants.sendTimeout
+        let didFinish = semaphore.wait(timeout: .now() + sendTimeout) == .success
         let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-        completionLock.lock()
-        let completedError = sendError
-        completionLock.unlock()
+        let completedError = sendErrorBox.withLock { $0 }
 
         if didFinish, completedError == nil {
             registerSentMessage(byteCount: data.count, waitMs: waitMs)
@@ -277,9 +280,19 @@ final class ElevenLabsRealtimeAudioSender {
         return text
     }
 
+    /// Returns the extended handshake budget exactly once per session.
+    private func consumeFirstSendBudgetIfNeeded() -> TimeInterval? {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        guard !hasUsedFirstSendBudget else { return nil }
+        hasUsedFirstSendBudget = true
+        return Constants.firstSendTimeout
+    }
+
     private func reset() {
         statsLock.lock()
         pendingAudio.removeAll(keepingCapacity: true)
+        hasUsedFirstSendBudget = false
         enqueuedChunks = 0
         sentMessages = 0
         failedMessages = 0
@@ -355,6 +368,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
     private(set) var lastCaptureResult: StreamingAudioCaptureResult?
 
+    /// A2: fired on the main thread when the local capture died mid-session
+    /// and could not be recovered; the owner aborts preserving the WAV.
+    var onCaptureInterrupted: ((String) -> Void)?
+
     private let capture = StreamingAudioCapture()
     private let audioSender = ElevenLabsRealtimeAudioSender()
     private var webSocketTask: URLSessionWebSocketTask?
@@ -365,10 +382,11 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var lastStreamingError: Error?
     private var cancellables = Set<AnyCancellable>()
     private var stopStartedAt: CFAbsoluteTime = 0
+    private var requestedLanguage = "auto"
 
     private static let engineName = "ElevenLabs"
-    private static let maxRealtimeKeyterms = 50
-    private static let maxRealtimeKeytermLength = 20
+    private static let maxRealtimeKeyterms = ElevenLabsKeytermLimits.realtimeMaxCount
+    private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
     private static let sampleRate = 16000
 
     private enum StartRecovery {
@@ -379,8 +397,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     var isConfigured: Bool {
-        let key = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .elevenLabsAPIKey)
     }
 
     init() {
@@ -388,16 +405,18 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     func start(microphone: String, language: String) async throws {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey),
+        guard let apiKey = KeychainStore.string(for: .elevenLabsAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
 
         resetSessionState()
+        requestedLanguage = language
         let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
             maxCount: Self.maxRealtimeKeyterms,
-            maxLength: Self.maxRealtimeKeytermLength
+            maxLength: Self.maxRealtimeKeytermLength,
+            includeReplacementValues: true
         )
         let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
@@ -473,8 +492,17 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
 
         let finalWaitStartedAt = CFAbsoluteTimeGetCurrent()
-        let finalWaitTimeout: TimeInterval =
-            committedCountBeforeFinalCommit == 0 || hadUncommittedPartialBeforeFinalCommit ? 4.0 : 0.75
+        let finalWaitTimeout: TimeInterval
+        if committedCountBeforeFinalCommit == 0 && !hadUncommittedPartialBeforeFinalCommit {
+            // Zero partials and zero commits: VAD never fired, so nothing is
+            // coming — fail fast instead of riding the 4s wait. The local WAV
+            // is preserved either way.
+            finalWaitTimeout = 0.5
+        } else if committedCountBeforeFinalCommit == 0 || hadUncommittedPartialBeforeFinalCommit {
+            finalWaitTimeout = 4.0
+        } else {
+            finalWaitTimeout = 0.75
+        }
         let transcript = try await waitForFinalTranscript(
             timeout: finalWaitTimeout,
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
@@ -504,7 +532,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
-            language: "auto",
+            language: requestedLanguage,
             diagnostics: captureResult.diagnostics
         )
     }
@@ -517,10 +545,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
 
         resetSessionState()
+        requestedLanguage = language
         isStopping = true
         let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
             maxCount: Self.maxRealtimeKeyterms,
-            maxLength: Self.maxRealtimeKeytermLength
+            maxLength: Self.maxRealtimeKeytermLength,
+            includeReplacementValues: true
         )
         let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
@@ -575,6 +605,16 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         resetPublishedState()
     }
 
+    /// Stops the local capture and tears down the socket without any network
+    /// wait. Used on system sleep; the WAV is preserved for manual retry.
+    func abortPreservingAudio() -> StreamingAudioCaptureResult? {
+        let captureResult = capture.stopRecording(logSummary: false)
+        cleanupWebSocket()
+        lastCaptureResult = nil
+        resetPublishedState()
+        return captureResult
+    }
+
     func pauseRecording() {
         capture.pauseRecording()
     }
@@ -613,30 +653,34 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     private static func scribeLanguageCode(for appLanguage: String) -> String? {
-        switch appLanguage {
-        case "es": return "es"
-        case "en": return "en"
-        case "auto": return nil
-        default: return nil
-        }
+        TranscriptionLanguageCatalog.elevenLabsLanguageCode(for: appLanguage)
     }
 
     private func bindCapture() {
-        capture.$recordingDuration
+        // A2: a capture that died mid-session (device gone, recovery failed)
+        // bubbles up so the owner can abort preserving the WAV. The capture
+        // always delivers this callback on the main queue.
+        capture.onCaptureInterrupted = { [weak self] reason in
+            MainActor.assumeIsolated {
+                self?.onCaptureInterrupted?(reason)
+            }
+        }
+
+        capture.recordingDurationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
 
-        capture.$audioLevel
+        capture.audioLevelPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.audioLevel = level
             }
             .store(in: &cancellables)
 
-        capture.$isPaused
+        capture.isPausedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isPaused in
                 self?.isPaused = isPaused
@@ -946,7 +990,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 }
 
-extension ElevenLabsRealtimeAudioSenderStats {
+nonisolated extension ElevenLabsRealtimeAudioSenderStats {
     fileprivate static let empty = ElevenLabsRealtimeAudioSenderStats(
         enqueuedChunks: 0,
         sentMessages: 0,

@@ -11,12 +11,13 @@ struct AboutSettingsTab: View {
     @State private var tapCount = 0
     @State private var showLoadingIcon = false
     @State private var iconBounce = false
+    @State private var versionCopied = false
+    @State private var isHoveringVersion = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 heroSection
-                howToSection
                 privacySection
                 permissionsSection
                 creditsSection
@@ -70,9 +71,7 @@ struct AboutSettingsTab: View {
                     .font(.title2)
                     .fontWeight(.bold)
 
-                Text("v\(Constants.appVersion)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                versionButton
 
                 Text("config.subtitle_info".localized)
                     .font(.subheadline)
@@ -81,6 +80,43 @@ struct AboutSettingsTab: View {
             }
         }
         .padding(.top, 8)
+    }
+
+    /// Version pill that copies "SapoWhisper vX.Y.Z" to the clipboard.
+    private var versionButton: some View {
+        Button(action: copyVersion) {
+            HStack(spacing: 4) {
+                Text(versionCopied ? "history.copied".localized : "v\(Constants.appVersion)")
+                    .font(.caption)
+                    .foregroundColor(versionCopied ? Color.sapoGreen : .secondary)
+                    .contentTransition(.opacity)
+
+                Image(systemName: versionCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 8))
+                    .foregroundColor(versionCopied ? Color.sapoGreen : .secondary)
+                    .opacity(versionCopied || isHoveringVersion ? 1 : 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(isHoveringVersion ? Color.secondary.opacity(0.12) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHoveringVersion = $0 }
+        .help("about.version_copy_help".localized)
+        .animation(.easeOut(duration: 0.15), value: isHoveringVersion)
+        .animation(.easeOut(duration: 0.15), value: versionCopied)
+    }
+
+    private func copyVersion() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("\(Constants.appName) v\(Constants.appVersion)", forType: .string)
+        versionCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            versionCopied = false
+        }
     }
 
     // MARK: - Easter Egg Handler
@@ -127,24 +163,51 @@ struct AboutSettingsTab: View {
         }
     }
 
-    // MARK: - How To Section
-
-    private var howToSection: some View {
-        InfoSection(
-            icon: "questionmark.circle.fill",
-            title: "info.how_to_title".localized,
-            content: "info.how_to_body".localized
-        )
-    }
-
     // MARK: - Privacy Section
 
     private var privacySection: some View {
-        InfoSection(
-            icon: "lock.shield.fill",
-            title: "info.privacy_title".localized,
-            content: "info.privacy_body".localized
-        )
+        SettingsCard(icon: "lock.shield.fill", title: "info.privacy_title".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                privacyRow(
+                    icon: TranscriptionEngine.whisperLocal.icon,
+                    title: TranscriptionEngine.whisperLocal.displayName,
+                    detail: "info.privacy.whisper".localized
+                )
+                privacyRow(
+                    icon: TranscriptionEngine.deepgram.icon,
+                    title: TranscriptionEngine.deepgram.displayName,
+                    detail: "info.privacy.deepgram".localized
+                )
+                privacyRow(
+                    icon: TranscriptionEngine.elevenLabsScribe.icon,
+                    title: TranscriptionEngine.elevenLabsScribe.displayName,
+                    detail: "info.privacy.elevenlabs".localized
+                )
+                privacyRow(
+                    icon: "sparkles",
+                    title: "ai.polish.title".localized,
+                    detail: "info.privacy.ai_polish".localized
+                )
+            }
+        }
+    }
+
+    private func privacyRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.sapoGreen)
+                .frame(width: 20, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     // MARK: - Permissions Section

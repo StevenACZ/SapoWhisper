@@ -8,9 +8,11 @@
 import AVFoundation
 import Foundation
 
-enum MicrophonePermission {
+/// Concurrency: nonisolated — checks run from capture queues too; the cached
+/// flag sits behind `cacheLock`. UI-driven priming flows stay `@MainActor`.
+nonisolated enum MicrophonePermission {
     private static let cacheLock = NSLock()
-    private static var cachedGranted = false
+    private static nonisolated(unsafe) var cachedGranted = false
 
     static var isGranted: Bool {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
@@ -50,6 +52,9 @@ enum MicrophonePermission {
 
             if granted || isGranted {
                 noteAudioInputGranted()
+                // The launch preflight skipped itself while the permission was
+                // missing; warm the route now that capture is allowed.
+                AudioInputPreflightManager.shared.preflightSoon(reason: "mic-granted")
                 return .granted
             }
         }
@@ -65,6 +70,7 @@ enum MicrophonePermission {
                 let granted = await AVAudioApplication.requestRecordPermission()
                 if granted || isGranted {
                     noteAudioInputGranted()
+                    AudioInputPreflightManager.shared.preflightSoon(reason: "mic-granted")
                     return .granted
                 }
             @unknown default:

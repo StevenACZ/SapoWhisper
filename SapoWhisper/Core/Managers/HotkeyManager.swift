@@ -67,11 +67,24 @@ class HotkeyManager: ObservableObject {
 
     static let shared = HotkeyManager()
 
+    /// Live double-tap feedback for the Hotkey settings tab: a valid first tap
+    /// landed, or the second tap triggered the hotkey.
+    static let doubleTapFirstTapNotification = Notification.Name("HotkeyManager.doubleTapFirstTap")
+    static let doubleTapTriggeredNotification = Notification.Name("HotkeyManager.doubleTapTriggered")
+
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
+    private var cancelHotkeyRef: EventHotKeyRef?
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
+    private var cancelCallback: (() -> Void)?
+    private var permissionRetryTimer: Timer?
+    private static let hotkeySignature = OSType(0x5357_5049)  // "SWPI"
+    private static let mainHotkeyID: UInt32 = 1
+    private static let cancelHotkeyID: UInt32 = 2
+    private var watchdogTimer: Timer?
+    private static let watchdogInterval: TimeInterval = 600
     private var hotkeyPressCount: UInt64 = 0
     private var isDoubleTapModifierPressed = false
     private var isSuppressingCurrentDoubleTapPress = false
@@ -104,7 +117,17 @@ class HotkeyManager: ObservableObject {
 
     /// Registra el hotkey global
     func registerHotkey(callback: @escaping () -> Void) {
+        // UI preview and test launches skip the event tap: each ad-hoc
+        // rebuild would re-trigger the Accessibility consent prompt.
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
+
         self.hotkeyCallback = callback
+
+        // One-line state snapshot per registration attempt: enough to read a
+        // user log and know which trigger ran with which permissions.
+        SapoLog.hotkey.info(
+            "Hotkey register trigger=\(self.currentTriggerKind.rawValue, privacy: .public) hotkey=\(self.hotkeyDescription, privacy: .public) inputMonitoring=\(CGPreflightListenEventAccess(), privacy: .public) accessibility=\(AXIsProcessTrusted(), privacy: .public)"
+        )
 
         // Desregistrar hotkey anterior si existe
         unregisterHotkey()
@@ -115,18 +138,92 @@ class HotkeyManager: ObservableObject {
         case .doubleModifier:
             registerDoubleModifierHotkey()
         }
+
+        startWatchdogIfNeeded()
     }
 
-    private func registerKeyCombinationHotkey() {
-        // Configurar el event handler
+    // MARK: - Watchdog (R2)
+
+    /// R2: macOS can silently kill the CGEventTap (wake, login, Secure Input
+    /// churn) and the app would look fine with a dead hotkey. Re-validate on
+    /// wake and on a cheap periodic tick; re-create when the tap is gone.
+    func assertHotkeyAlive(reason: String) {
+        guard let callback = hotkeyCallback else { return }
+
+        switch currentTriggerKind {
+        case .keyCombination:
+            if hotkeyRef == nil {
+                SapoLog.hotkey.warning(
+                    "Hotkey check reason=\(reason, privacy: .public) result=missing-registration action=re-register"
+                )
+                registerHotkey(callback: callback)
+            } else {
+                SapoLog.hotkey.info("Hotkey check reason=\(reason, privacy: .public) result=alive")
+            }
+        case .doubleModifier:
+            guard let eventTap else {
+                SapoLog.hotkey.warning(
+                    "Hotkey check reason=\(reason, privacy: .public) result=missing-tap action=re-register"
+                )
+                registerHotkey(callback: callback)
+                return
+            }
+            if CGEvent.tapIsEnabled(tap: eventTap) {
+                SapoLog.hotkey.info("Hotkey check reason=\(reason, privacy: .public) result=alive")
+            } else {
+                SapoLog.hotkey.warning(
+                    "Hotkey check reason=\(reason, privacy: .public) result=disabled-tap action=re-enable"
+                )
+                enableEventTap()
+                if !CGEvent.tapIsEnabled(tap: eventTap) {
+                    SapoLog.hotkey.warning("Hotkey tap stayed disabled; re-creating it")
+                    registerHotkey(callback: callback)
+                }
+            }
+        }
+    }
+
+    private func startWatchdogIfNeeded() {
+        guard watchdogTimer == nil else { return }
+
+        let timer = Timer(timeInterval: Self.watchdogInterval, repeats: true) { [weak self] _ in
+            // Scheduled on RunLoop.main, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                self?.assertHotkeyAlive(reason: "watchdog")
+            }
+        }
+        timer.tolerance = 60
+        RunLoop.main.add(timer, forMode: .common)
+        watchdogTimer = timer
+    }
+
+    /// One Carbon handler dispatches every hotkey this app registers (main
+    /// trigger and the transient Esc cancel key) by its EventHotKeyID.
+    private func installCarbonHandlerIfNeeded() -> Bool {
+        guard eventHandler == nil else { return true }
+
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
 
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { (_, event, userData) -> OSStatus in
                 guard let userData = userData else { return noErr }
+                var hotkeyID = EventHotKeyID()
+                GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotkeyID
+                )
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                manager.handleHotkeyPressed(source: "key-combination")
+                if hotkeyID.id == HotkeyManager.cancelHotkeyID {
+                    manager.handleCancelKeyPressed()
+                } else {
+                    manager.handleHotkeyPressed(source: "key-combination")
+                }
                 return noErr
             },
             1,
@@ -137,11 +234,15 @@ class HotkeyManager: ObservableObject {
 
         if status != noErr {
             SapoLog.hotkey.error("Failed to install event handler status=\(status, privacy: .public)")
-            return
+            return false
         }
+        return true
+    }
 
-        // Registrar el hotkey
-        let hotkeyID = EventHotKeyID(signature: OSType(0x53575049), id: 1)  // "SWPI"
+    private func registerKeyCombinationHotkey() {
+        guard installCarbonHandlerIfNeeded() else { return }
+
+        let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.mainHotkeyID)
 
         let registerStatus = RegisterEventHotKey(
             currentKeyCode,
@@ -159,7 +260,62 @@ class HotkeyManager: ObservableObject {
         }
     }
 
+    // MARK: - Esc cancel key (active only while dictating)
+
+    /// Registers/unregisters Esc as a global hotkey for the duration of a
+    /// dictation session. Registered, the key is consumed system-wide, so it
+    /// cancels the recording without reaching the frontmost app.
+    func setCancelKeyActive(_ active: Bool, callback: (() -> Void)? = nil) {
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
+
+        if let callback {
+            cancelCallback = callback
+        }
+
+        if active {
+            guard cancelHotkeyRef == nil, installCarbonHandlerIfNeeded() else { return }
+            let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.cancelHotkeyID)
+            let status = RegisterEventHotKey(
+                UInt32(kVK_Escape),
+                0,
+                hotkeyID,
+                GetApplicationEventTarget(),
+                0,
+                &cancelHotkeyRef
+            )
+            if status != noErr {
+                SapoLog.hotkey.error("Failed to register Esc cancel key status=\(status, privacy: .public)")
+            }
+        } else {
+            unregisterCancelKey()
+        }
+    }
+
+    private func unregisterCancelKey() {
+        if let cancelHotkeyRef {
+            UnregisterEventHotKey(cancelHotkeyRef)
+            self.cancelHotkeyRef = nil
+        }
+    }
+
+    private func handleCancelKeyPressed() {
+        SapoLog.hotkey.info("Esc cancel key pressed")
+        cancelCallback?()
+    }
+
     private func registerDoubleModifierHotkey() {
+        // The listen-only tap below needs Input Monitoring, not Accessibility.
+        // Creating it without the permission both fails AND makes macOS throw
+        // its own "Keystroke Receiving" dialog at the user mid-launch, so
+        // preflight first and let the guided permission flow request access.
+        guard CGPreflightListenEventAccess() else {
+            SapoLog.hotkey.warning(
+                "Double modifier registration blocked permission=input-monitoring granted=false accessibility=\(AXIsProcessTrusted(), privacy: .public) action=wait-for-grant"
+            )
+            scheduleInputMonitoringRetry()
+            return
+        }
+
         let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         guard
             let tap = CGEvent.tapCreate(
@@ -188,7 +344,12 @@ class HotkeyManager: ObservableObject {
                 userInfo: Unmanaged.passUnretained(self).toOpaque()
             )
         else {
-            SapoLog.hotkey.error("Failed to register double modifier hotkey")
+            // Permission preflight passed but the tap still failed: macOS can
+            // require a relaunch right after the grant. Surface that clearly.
+            SapoLog.hotkey.error(
+                "Double modifier tap creation failed permission=input-monitoring granted=true hint=may-need-relaunch"
+            )
+            scheduleInputMonitoringRetry()
             return
         }
 
@@ -202,12 +363,43 @@ class HotkeyManager: ObservableObject {
         SapoLog.hotkey.info("Double modifier hotkey registered \(self.hotkeyDescription, privacy: .public)")
     }
 
+    /// On a fresh install the double-tap trigger stays dead until the user
+    /// grants Input Monitoring (the listen-only tap's actual requirement —
+    /// Accessibility alone is not enough). Poll until access is granted, then
+    /// re-register on the spot so no relaunch or hotkey change is needed.
+    private func scheduleInputMonitoringRetry() {
+        guard permissionRetryTimer == nil else { return }
+
+        let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
+            // Scheduled on RunLoop.main, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                guard let self, CGPreflightListenEventAccess() else { return }
+                self.permissionRetryTimer?.invalidate()
+                self.permissionRetryTimer = nil
+                SapoLog.hotkey.info("Input Monitoring granted; re-registering double modifier hotkey")
+                if let callback = self.hotkeyCallback {
+                    self.registerHotkey(callback: callback)
+                }
+            }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        permissionRetryTimer = timer
+    }
+
     /// Desregistra el hotkey actual
     func unregisterHotkey() {
+        permissionRetryTimer?.invalidate()
+        permissionRetryTimer = nil
+
         if let hotkeyRef = hotkeyRef {
             UnregisterEventHotKey(hotkeyRef)
             self.hotkeyRef = nil
         }
+
+        // The Esc ref must never outlive the shared Carbon handler: a
+        // registered hotkey without a handler would swallow Esc system-wide.
+        unregisterCancelKey()
 
         if let eventHandler = eventHandler {
             RemoveEventHandler(eventHandler)
@@ -322,6 +514,7 @@ class HotkeyManager: ObservableObject {
                     "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
                 )
                 DispatchQueue.main.async { [weak self] in
+                    NotificationCenter.default.post(name: Self.doubleTapTriggeredNotification, object: nil)
                     self?.handleHotkeyPressed(source: "double-modifier")
                 }
             }
@@ -335,6 +528,11 @@ class HotkeyManager: ObservableObject {
                 lastDoubleTapReleaseAt = nil
             } else {
                 lastDoubleTapReleaseAt = pressDuration <= Self.doubleTapMaxHoldDuration ? now : nil
+                if lastDoubleTapReleaseAt != nil {
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: Self.doubleTapFirstTapNotification, object: nil)
+                    }
+                }
             }
         } else if modifierFlags != option.cgFlag {
             resetDoubleTapState()
@@ -370,47 +568,7 @@ class HotkeyManager: ObservableObject {
     }
 
     private func keyName(for keyCode: Int) -> String {
-        switch keyCode {
-        case kVK_Space: return "Space"
-        case kVK_Return: return "Return"
-        case kVK_Tab: return "Tab"
-        case kVK_Delete: return "Delete"
-        case kVK_Escape: return "Esc"
-        case kVK_LeftArrow: return "←"
-        case kVK_RightArrow: return "→"
-        case kVK_DownArrow: return "↓"
-        case kVK_UpArrow: return "↑"
-        case kVK_ANSI_A: return "A"
-        case kVK_ANSI_S: return "S"
-        case kVK_ANSI_D: return "D"
-        case kVK_ANSI_F: return "F"
-        case kVK_ANSI_H: return "H"
-        case kVK_ANSI_G: return "G"
-        case kVK_ANSI_Z: return "Z"
-        case kVK_ANSI_X: return "X"
-        case kVK_ANSI_C: return "C"
-        case kVK_ANSI_V: return "V"
-        case kVK_ANSI_B: return "B"
-        case kVK_ANSI_Q: return "Q"
-        case kVK_ANSI_W: return "W"
-        case kVK_ANSI_E: return "E"
-        case kVK_ANSI_R: return "R"
-        case kVK_ANSI_Y: return "Y"
-        case kVK_ANSI_T: return "T"
-        case kVK_ANSI_O: return "O"
-        case kVK_ANSI_U: return "U"
-        case kVK_ANSI_I: return "I"
-        case kVK_ANSI_P: return "P"
-        case kVK_ANSI_L: return "L"
-        case kVK_ANSI_J: return "J"
-        case kVK_ANSI_K: return "K"
-        case kVK_ANSI_N: return "N"
-        case kVK_ANSI_M: return "M"
-        default: return "Key\(keyCode)"
-        }
+        HotkeyKeyName.name(for: keyCode)
     }
 
-    deinit {
-        unregisterHotkey()
-    }
 }

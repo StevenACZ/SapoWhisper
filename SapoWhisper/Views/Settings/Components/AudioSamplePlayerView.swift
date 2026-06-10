@@ -3,6 +3,8 @@
 //  SapoWhisper
 //
 
+// AVAudioPlayer predates Sendable annotations; it is only touched on main.
+@preconcurrency import AVFAudio
 import AVFoundation
 import SwiftUI
 import os
@@ -94,11 +96,14 @@ struct AudioSamplePlayerView: View {
         } else {
             player.play()
             timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                currentTime = player.currentTime
-                if !player.isPlaying {
-                    isPlaying = false
-                    timer?.invalidate()
-                    currentTime = 0
+                // Scheduled on the main run loop, so the timer always fires on main.
+                MainActor.assumeIsolated {
+                    currentTime = player.currentTime
+                    if !player.isPlaying {
+                        isPlaying = false
+                        timer?.invalidate()
+                        currentTime = 0
+                    }
                 }
             }
         }

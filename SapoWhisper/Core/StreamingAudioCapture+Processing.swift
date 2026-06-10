@@ -3,11 +3,14 @@
 //  SapoWhisper
 //
 
+// AVFAudio's converter/tap callbacks predate Sendable annotations; buffers are
+// handed off queue-to-queue under the class's own synchronization.
+@preconcurrency import AVFAudio
 import AVFoundation
 import Foundation
 import os
 
-extension StreamingAudioCapture {
+nonisolated extension StreamingAudioCapture {
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let audioFile, let outputFormat = converterOutputFormat else { return }
         let inputTime = CFAbsoluteTimeGetCurrent()
@@ -28,7 +31,13 @@ extension StreamingAudioCapture {
         os_unfair_lock_lock(&converterLock)
         defer { os_unfair_lock_unlock(&converterLock) }
 
-        if converter == nil {
+        // A2: rebuilt when the tap format changes mid-capture (route recovery rebinds the input).
+        if converter == nil || converter?.inputFormat != buffer.format {
+            if converter != nil {
+                SapoLog.recording.info(
+                    "Streaming tap format changed, rebuilding converter inHz=\(Int(buffer.format.sampleRate), privacy: .public)"
+                )
+            }
             converter = AVAudioConverter(from: buffer.format, to: outputFormat)
         }
         guard let converter else { return }
@@ -38,17 +47,23 @@ extension StreamingAudioCapture {
             AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         )
         var didPublishLevel = false
-        var inputConsumed = false
+        // The input block runs synchronously inside convert(); the lock only
+        // satisfies the Sendable contract of the SDK callback.
+        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
 
         while true {
             guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                if inputConsumed {
+                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
+                    if consumed { return true }
+                    consumed = true
+                    return false
+                }
+                if alreadyConsumed {
                     outStatus.pointee = .noDataNow
                     return nil
                 }
-                inputConsumed = true
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -75,20 +90,27 @@ extension StreamingAudioCapture {
         applyGainIfNeeded(to: buffer)
         if publishLevel { publishAudioLevel(from: buffer) }
 
-        do {
-            try audioFile.write(from: buffer)
-            registerWrittenFrames(buffer.frameLength)
-            if let data = pcmData(from: buffer) {
-                let chunkCount = registerEmittedChunk()
-                if chunkCount % 100 == 0 {
-                    SapoLog.flux.info("Flux local audio chunks emitted count=\(chunkCount, privacy: .public)")
-                }
-                chunkHandler?(data)
+        // Emit to the streaming engine first: the WAV is the local backup and
+        // a slow (or failing) disk must never delay or drop live chunks.
+        if let data = pcmData(from: buffer) {
+            let chunkCount = registerEmittedChunk()
+            if chunkCount % 100 == 0 {
+                SapoLog.flux.info("Flux local audio chunks emitted count=\(chunkCount, privacy: .public)")
             }
-        } catch {
-            SapoLog.flux.error(
-                "Capture write failed error=\(error.localizedDescription, privacy: .public)"
-            )
+            chunkHandler?(data)
+        }
+
+        // A1: the disk write runs on a dedicated serial queue; the stop path
+        // drains it before closing the file.
+        audioWriteQueue.async { [weak self] in
+            do {
+                try audioFile.write(from: buffer)
+                self?.registerWrittenFrames(buffer.frameLength)
+            } catch {
+                SapoLog.flux.error(
+                    "Capture write failed error=\(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     }
 

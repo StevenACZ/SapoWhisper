@@ -7,45 +7,31 @@
 import Foundation
 
 /// Motor de transcripción disponible
-enum TranscriptionEngine: String, CaseIterable, Identifiable {
-    case appleOnline = "apple"
+nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
     case whisperLocal = "whisper"
-    case googleCloud = "google"
     case deepgram = "deepgram"
-    case geminiAudio = "gemini_audio"
     case elevenLabsScribe = "elevenlabs_scribe"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .appleOnline:
-            return "Apple (Online)"
         case .whisperLocal:
             return "Whisper (Local)"
-        case .googleCloud:
-            return "Google Cloud"
         case .deepgram:
             return "Deepgram"
-        case .geminiAudio:
-            return "Gemini Audio"
         case .elevenLabsScribe:
             return "ElevenLabs Scribe v2"
         }
     }
 
-    var description: String {
+    /// Localized copy is UI-only; localization lookups stay on the main actor.
+    @MainActor var description: String {
         switch self {
-        case .appleOnline:
-            return "engine.apple.description".localized
         case .whisperLocal:
             return "engine.whisper.description".localized
-        case .googleCloud:
-            return "engine.google.description".localized
         case .deepgram:
             return "engine.deepgram.description".localized
-        case .geminiAudio:
-            return "engine.gemini_audio.description".localized
         case .elevenLabsScribe:
             return "engine.elevenlabs_scribe.description".localized
         }
@@ -53,16 +39,10 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .appleOnline:
-            return "icloud"
         case .whisperLocal:
             return "desktopcomputer"
-        case .googleCloud:
-            return "cloud"
         case .deepgram:
             return "waveform.badge.mic"
-        case .geminiAudio:
-            return "sparkles"
         case .elevenLabsScribe:
             return "waveform.badge.magnifyingglass"
         }
@@ -72,7 +52,7 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
         switch self {
         case .whisperLocal:
             return false
-        case .appleOnline, .googleCloud, .deepgram, .geminiAudio, .elevenLabsScribe:
+        case .deepgram, .elevenLabsScribe:
             return true
         }
     }
@@ -80,67 +60,6 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
     /// Engine surfaced as the recommended high-accuracy option in the picker.
     var isRecommended: Bool {
         self == .elevenLabsScribe
-    }
-}
-
-enum GeminiAudioModel: String, CaseIterable, Identifiable {
-    case gemini31ProPreview = "gemini-3.1-pro-preview"
-    case gemini3FlashPreview = "gemini-3-flash-preview"
-    case gemini25Flash = "gemini-2.5-flash"
-    case gemini31FlashLite = "gemini-3.1-flash-lite"
-    case gemini25FlashLite = "gemini-2.5-flash-lite"
-
-    static let defaultModel: GeminiAudioModel = .gemini31FlashLite
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .gemini31ProPreview:
-            return "Gemini 3.1 Pro Preview"
-        case .gemini3FlashPreview:
-            return "Gemini 3 Flash Preview"
-        case .gemini25Flash:
-            return "Gemini 2.5 Flash"
-        case .gemini31FlashLite:
-            return "Gemini 3.1 Flash-Lite"
-        case .gemini25FlashLite:
-            return "Gemini 2.5 Flash-Lite"
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .gemini31ProPreview:
-            return "gemini.audio.model_31_pro_desc".localized
-        case .gemini3FlashPreview:
-            return "gemini.audio.model_3_flash_desc".localized
-        case .gemini25Flash:
-            return "gemini.audio.model_25_flash_desc".localized
-        case .gemini31FlashLite:
-            return "gemini.audio.model_31_lite_desc".localized
-        case .gemini25FlashLite:
-            return "gemini.audio.model_25_lite_desc".localized
-        }
-    }
-
-    var approximateFourMinuteCost: String {
-        switch self {
-        case .gemini31ProPreview:
-            return "~$0.027"
-        case .gemini3FlashPreview:
-            return "~$0.011"
-        case .gemini25Flash:
-            return "~$0.010"
-        case .gemini31FlashLite:
-            return "~$0.005"
-        case .gemini25FlashLite:
-            return "~$0.003"
-        }
-    }
-
-    var isRecommended: Bool {
-        self == Self.defaultModel
     }
 }
 

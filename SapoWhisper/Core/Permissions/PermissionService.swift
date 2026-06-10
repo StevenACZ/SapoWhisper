@@ -18,21 +18,15 @@ final class PermissionService {
     }
 
     func missingPermissions() -> [AppPermission] {
-        AppPermission.allCases.filter { !isGranted($0) }
+        AppPermission.required.filter { !isGranted($0) }
     }
 
-    func recordingBlockingPermissions(for engine: TranscriptionEngine) -> [AppPermission] {
-        var permissions: [AppPermission] = [.microphone]
-
-        if engine == .appleOnline {
-            permissions.append(.speechRecognition)
-        }
-
-        return permissions
+    func recordingBlockingPermissions() -> [AppPermission] {
+        [.microphone]
     }
 
-    func missingRecordingPermissions(for engine: TranscriptionEngine) -> [AppPermission] {
-        recordingBlockingPermissions(for: engine).filter { !isGranted($0) }
+    func missingRecordingPermissions() -> [AppPermission] {
+        recordingBlockingPermissions().filter { !isGranted($0) }
     }
 
     func requestInteractively(_ permission: AppPermission, sourceFrameInScreen: CGRect? = nil) {

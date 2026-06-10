@@ -21,6 +21,10 @@ final class AudioInputPreflightManager {
     private var hasStarted = false
     private var generation: UInt64 = 0
 
+    /// A8: set by the ViewModel; evaluated on the main thread before each run
+    /// so the preflight engine never touches the device mid-capture.
+    var isCaptureActive: (() -> Bool)?
+
     private init(deviceManager: AudioDeviceManager = .shared) {
         self.deviceManager = deviceManager
     }
@@ -58,6 +62,30 @@ final class AudioInputPreflightManager {
 
     private func runPreflight(reason: String, generation: UInt64) {
         guard generation == self.generation else { return }
+
+        // Starting the muted warm-up engine counts as capture for TCC, so on
+        // a fresh install this background task would pop the system
+        // microphone dialog out of nowhere. The guided permission flow owns
+        // the first request; until then the route cache simply stays cold.
+        guard MicrophonePermission.isGranted else {
+            SapoLog.audioRoute.info(
+                "Audio input preflight skipped reason=\(reason, privacy: .public) permission=microphone granted=false"
+            )
+            return
+        }
+
+        // A8: defer instead of fighting an active capture for the device; the
+        // retry keeps the cache warm for the route in place after recording.
+        let captureActive = DispatchQueue.main.sync { isCaptureActive?() ?? false }
+        if captureActive {
+            SapoLog.audioRoute.info(
+                "Audio input preflight deferred reason=\(reason, privacy: .public) capture-active"
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.schedulePreflight(reason: "\(reason)-deferred", delayOverride: 1.0)
+            }
+            return
+        }
 
         let t0 = CFAbsoluteTimeGetCurrent()
         let selectedUID =
@@ -99,7 +127,22 @@ final class AudioInputPreflightManager {
         }
 
         _ = inputNode.outputFormat(forBus: 0)
+
+        // L4: prepare()+reset() never touched the HAL, so the first recording
+        // still paid full route setup. A brief muted start()/stop() forces the
+        // I/O unit to open the device; the tap discards every buffer.
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { _, _ in }
+        inputNode.volume = 0
         engine.prepare()
+        do {
+            try engine.start()
+            engine.stop()
+        } catch {
+            SapoLog.audioRoute.warning(
+                "Audio input preflight start failed error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+        inputNode.removeTap(onBus: 0)
         engine.reset()
     }
 

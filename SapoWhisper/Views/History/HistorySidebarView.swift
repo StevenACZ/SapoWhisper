@@ -3,7 +3,6 @@
 //  SapoWhisper
 //
 
-import AppKit
 import SwiftUI
 
 /// Sidebar list with date-grouped sections and search
@@ -14,53 +13,133 @@ struct HistorySidebarView: View {
     @Binding var engineFilter: EngineFilter
     let onTogglePin: (HistoryEntry) -> Void
     let onDelete: (HistoryEntry) -> Void
+    /// H3: lets the owner grow the page window when the last row scrolls in.
+    var onRowAppear: ((HistoryEntry) -> Void)?
 
     var body: some View {
-        List(selection: $selection) {
-            ForEach(groupedEntries, id: \.group) { section in
-                Section(section.group.localizedTitle) {
-                    ForEach(section.entries) { entry in
-                        HistoryRowView(entry: entry)
-                            .tag(entry)
-                            .contextMenu {
-                                contextMenuItems(for: entry)
-                            }
-                    }
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 8) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.tertiary)
-                    TextField("history.search".localized, text: $searchText)
-                        .textFieldStyle(.plain)
-                }
-                .padding(8)
-                .background(.quaternary.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(EngineFilter.allCases) { filter in
-                            EngineFilterChip(
-                                filter: filter,
-                                isSelected: engineFilter == filter
-                            ) {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    engineFilter = filter
-                                }
+        Group {
+            if entries.isEmpty {
+                emptyState
+            } else {
+                List(selection: $selection) {
+                    ForEach(groupedEntries, id: \.group) { section in
+                        Section(section.group.localizedTitle) {
+                            ForEach(section.entries) { entry in
+                                HistoryRowView(entry: entry)
+                                    .tag(entry)
+                                    .contextMenu {
+                                        contextMenuItems(for: entry)
+                                    }
+                                    .onAppear {
+                                        onRowAppear?(entry)
+                                    }
                             }
                         }
                     }
-                    .padding(.vertical, 1)
                 }
+                .listStyle(.sidebar)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                    TextField("history.search".localized, text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.callout)
+
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(.quaternary.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                engineFilterMenu
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
             .background(.bar)
+        }
+    }
+
+    /// Search/filter combinations that come back empty deserve a real answer,
+    /// not a blank list.
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Spacer()
+            Image(systemName: hasActiveFilter ? "magnifyingglass" : "clock.arrow.circlepath")
+                .font(.system(size: 26))
+                .foregroundStyle(.tertiary)
+            Text((hasActiveFilter ? "history.no_results" : "history.empty").localized)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var hasActiveFilter: Bool {
+        !searchText.isEmpty || engineFilter != .all
+    }
+
+    /// Engine filter as a compact menu next to the search field; the chip row
+    /// never fit the sidebar width and clipped mid-label. The pill grows to
+    /// name the active filter so a narrowed list is never a mystery.
+    private var engineFilterMenu: some View {
+        Menu {
+            Picker("", selection: $engineFilter.animation(.easeInOut(duration: 0.18))) {
+                ForEach(EngineFilter.allCases) { filter in
+                    Label(filter.displayName, systemImage: filter.iconName)
+                        .tag(filter)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: engineFilter.iconName)
+                    .font(.system(size: 13, weight: .medium))
+
+                if engineFilter != .all {
+                    Text(engineFilter.displayName)
+                        .font(.caption.weight(.semibold))
+                }
+            }
+            .foregroundStyle(engineFilter == .all ? Color.secondary : activeFilterTint)
+            .padding(.horizontal, engineFilter == .all ? 5 : 9)
+            .padding(.vertical, 7)
+            .background {
+                if engineFilter != .all {
+                    Capsule().fill(activeFilterTint.opacity(0.14))
+                }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .animation(.smooth(duration: 0.2), value: engineFilter)
+        .help(engineFilter.displayName)
+    }
+
+    private var activeFilterTint: Color {
+        switch engineFilter {
+        case .all: return .secondary
+        case .whisper: return .purple
+        case .deepgram: return .blue
+        case .elevenLabs: return .teal
+        case .other: return .gray
         }
     }
 
@@ -130,73 +209,6 @@ struct HistorySidebarView: View {
         } label: {
             Label("history.delete".localized, systemImage: "trash")
         }
-    }
-}
-
-private struct EngineFilterChip: View {
-    let filter: EngineFilter
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: filter.iconName)
-                    .font(.caption)
-                Text(filter.displayName)
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? Color.white : foregroundColor)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                Capsule()
-                    .fill(isSelected ? selectedBackground : Color(NSColor.controlBackgroundColor))
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(borderColor, lineWidth: isSelected ? 0 : 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var foregroundColor: Color {
-        switch filter {
-        case .all:
-            return .primary
-        case .deepgram:
-            return .blue
-        case .gemini:
-            return .cyan
-        case .google:
-            return .orange
-        case .whisper:
-            return .purple
-        case .apple:
-            return .green
-        }
-    }
-
-    private var selectedBackground: Color {
-        switch filter {
-        case .all:
-            return .accentColor
-        case .deepgram:
-            return .blue
-        case .gemini:
-            return .cyan
-        case .google:
-            return .orange
-        case .whisper:
-            return .purple
-        case .apple:
-            return .green
-        }
-    }
-
-    private var borderColor: Color {
-        foregroundColor.opacity(0.18)
     }
 }
 

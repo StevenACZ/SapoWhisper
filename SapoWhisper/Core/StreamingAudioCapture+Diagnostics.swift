@@ -7,11 +7,14 @@ import AVFoundation
 import Foundation
 import os
 
-extension StreamingAudioCapture {
+nonisolated extension StreamingAudioCapture {
     func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
+        setCaptureActive(false)
+        deviceSentinel.end()
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine?.reset()
+        audioWriteQueue.sync {}
         audioFile = nil
         audioEngine = nil
         converter = nil
@@ -77,6 +80,32 @@ extension StreamingAudioCapture {
         let count = emittedChunkCount
         os_unfair_lock_unlock(&captureStateLock)
         return count
+    }
+
+    func setCaptureActive(_ active: Bool) {
+        os_unfair_lock_lock(&captureStateLock)
+        captureActive = active
+        os_unfair_lock_unlock(&captureStateLock)
+    }
+
+    func isCaptureActiveFlag() -> Bool {
+        os_unfair_lock_lock(&captureStateLock)
+        let active = captureActive
+        os_unfair_lock_unlock(&captureStateLock)
+        return active
+    }
+
+    func setCaptureDeviceUID(_ uid: String) {
+        os_unfair_lock_lock(&captureStateLock)
+        captureDeviceUID = uid
+        os_unfair_lock_unlock(&captureStateLock)
+    }
+
+    func currentCaptureDeviceUID() -> String {
+        os_unfair_lock_lock(&captureStateLock)
+        let uid = captureDeviceUID
+        os_unfair_lock_unlock(&captureStateLock)
+        return uid
     }
 
     func hasReceivedInputBuffer() -> Bool {

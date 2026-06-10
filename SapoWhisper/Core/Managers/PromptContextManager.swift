@@ -106,12 +106,28 @@ final class PromptContextManager: ObservableObject {
             sanitized.details = Self.sanitizedMultiline(prompt.details, limit: 600)
             sanitized.instruction = Self.sanitizedMultiline(prompt.instruction, limit: 1_600)
             guard !sanitized.id.isEmpty, !sanitized.instruction.isEmpty else { return nil }
-            return sanitized
+            return Self.upgradedLegacyDefault(sanitized)
         }
 
         prompts = sanitizedPrompts.isEmpty ? Self.defaultPrompts : sanitizedPrompts
         repairSelectedPromptIfNeeded()
         save()
+    }
+
+    /// Built-in profiles whose stored instruction still matches a superseded
+    /// default are refreshed to the current fidelity-first wording. Profiles
+    /// the user edited are never touched.
+    private static func upgradedLegacyDefault(_ prompt: PromptProfile) -> PromptProfile {
+        guard let legacyInstructions = legacyDefaultInstructions[prompt.id],
+            legacyInstructions.contains(prompt.instruction),
+            let fresh = defaultPrompts.first(where: { $0.id == prompt.id })
+        else {
+            return prompt
+        }
+        var upgraded = prompt
+        upgraded.details = fresh.details
+        upgraded.instruction = fresh.instruction
+        return upgraded
     }
 
     func makePersonalContextBlock() -> String {
@@ -168,10 +184,10 @@ final class PromptContextManager: ObservableObject {
     static let defaultPrompts: [PromptProfile] = [
         PromptProfile(
             id: TranscriptPolishMode.automatic.rawValue,
-            name: "Automatic",
-            details: "Balanced cleanup for everyday dictation.",
+            name: "Clean-up (literal)",
+            details: "Removes fillers and fixes punctuation — nothing else.",
             instruction:
-                "Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.",
+                "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order — translated faithfully when the output language requires another language. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
             forcesEnglish: false
         ),
         PromptProfile(
@@ -179,7 +195,7 @@ final class PromptContextManager: ObservableObject {
             name: "AI Assistant Prompt",
             details: "Turns dictation into a clear request for coding or reasoning assistants.",
             instruction:
-                "Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas.",
+                "Optimize the text for pasting into an AI assistant without rephrasing the user's words. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas.",
             forcesEnglish: false
         ),
         PromptProfile(
@@ -187,7 +203,7 @@ final class PromptContextManager: ObservableObject {
             name: "Work Message",
             details: "Polishes Slack, email, and teammate messages.",
             instruction:
-                "Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown.",
+                "Optimize the text for a work message such as Slack or email. Keep it natural and easy to read while preserving the user's original wording, intent, and tone — trim fillers, do not rewrite. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown.",
             forcesEnglish: false
         ),
         PromptProfile(
@@ -198,5 +214,20 @@ final class PromptContextManager: ObservableObject {
                 "Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability.",
             forcesEnglish: true
         ),
+    ]
+
+    /// Superseded built-in instruction texts, used to auto-upgrade stored
+    /// profiles that were never customized by the user.
+    private static let legacyDefaultInstructions: [String: [String]] = [
+        TranscriptPolishMode.automatic.rawValue: [
+            "Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.",
+            "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
+        ],
+        TranscriptPolishMode.ai.rawValue: [
+            "Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas."
+        ],
+        TranscriptPolishMode.work.rawValue: [
+            "Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown."
+        ],
     ]
 }

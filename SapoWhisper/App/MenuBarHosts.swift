@@ -13,6 +13,7 @@ struct MenuBarPopoverHost: View {
     let openSettings: () -> Void
     let openHistory: () -> Void
     let openPermissions: () -> Void
+    let openWelcome: () -> Void
     let closePopover: () -> Void
 
     var body: some View {
@@ -22,6 +23,7 @@ struct MenuBarPopoverHost: View {
             openSettingsAction: openSettings,
             openHistoryAction: openHistory,
             openPermissionsAction: openPermissions,
+            openWelcomeAction: openWelcome,
             closeMenuBarAction: closePopover
         )
         .environment(\.locale, localizationManager.locale)

@@ -9,7 +9,8 @@ struct ElevenLabsSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     let isEmbedded: Bool
 
-    @AppStorage(Constants.StorageKeys.elevenLabsAPIKey) private var elevenLabsAPIKey = ""
+    @State private var elevenLabsAPIKey = ""
+    @State private var keychainReadDenied = false
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
 
@@ -32,10 +33,15 @@ struct ElevenLabsSettingsCard: View {
                 }
             }
         }
-        .onChange(of: elevenLabsAPIKey) { _, _ in
+        .onChange(of: elevenLabsAPIKey) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed != (KeychainStore.string(for: .elevenLabsAPIKey) ?? "") else { return }
+            KeychainStore.setString(trimmed, for: .elevenLabsAPIKey)
             viewModel.setEngine(.elevenLabsScribe)
         }
         .onAppear {
+            elevenLabsAPIKey = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
+            keychainReadDenied = KeychainStore.isReadDenied
             viewModel.setElevenLabsMode(currentMode)
         }
     }
@@ -47,6 +53,13 @@ struct ElevenLabsSettingsCard: View {
             Divider()
 
             apiKeyStatus
+
+            if keychainReadDenied {
+                KeychainAccessRetryNotice {
+                    elevenLabsAPIKey = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
+                    keychainReadDenied = KeychainStore.isReadDenied
+                }
+            }
 
             SecureField("config.elevenlabs_key_placeholder".localized, text: $elevenLabsAPIKey)
                 .textFieldStyle(.roundedBorder)

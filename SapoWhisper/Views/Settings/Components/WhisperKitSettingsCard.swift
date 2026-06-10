@@ -6,6 +6,10 @@ struct WhisperKitSettingsCard: View {
     let isEmbedded: Bool
 
     @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
+    @AppStorage(Constants.StorageKeys.whisperKitUnloadAfterMinutes) private var unloadAfterMinutes = 0
+
+    /// R4: 0 keeps the model in RAM; other values unload it after idle.
+    private static let unloadOptionsMinutes = [0, 15, 30, 60]
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
         self.viewModel = viewModel
@@ -36,10 +40,16 @@ struct WhisperKitSettingsCard: View {
 
             modelsList
             storageInfo
+            idleUnloadRow
 
             Text("config.models_download_auto".localized)
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            Label("config.whisper_vocabulary_hint".localized, systemImage: "info.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -130,9 +140,36 @@ struct WhisperKitSettingsCard: View {
         }
     }
 
+    /// R4: frees 0.5–3 GB of RAM after dictation pauses; the next dictation
+    /// reloads on demand (recording starts immediately, transcription waits).
+    private var idleUnloadRow: some View {
+        HStack {
+            Text("config.unload_after_idle".localized)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+            Picker("", selection: $unloadAfterMinutes) {
+                ForEach(Self.unloadOptionsMinutes, id: \.self) { minutes in
+                    Text(unloadOptionLabel(minutes)).tag(minutes)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .onChange(of: unloadAfterMinutes) { _, _ in
+                viewModel.whisperKitTranscriber.noteActivityForIdleUnload()
+            }
+        }
+    }
+
+    private func unloadOptionLabel(_ minutes: Int) -> String {
+        minutes == 0
+            ? "config.unload_never".localized
+            : "config.unload_minutes".localized(String(minutes))
+    }
+
     private func deleteModel(_ model: WhisperKitModel) {
         if currentWhisperKitModel == model && viewModel.whisperKitTranscriber.isModelLoaded {
-            viewModel.setEngine(.appleOnline)
+            viewModel.whisperKitTranscriber.unloadModel()
         }
 
         let success = viewModel.whisperKitTranscriber.deleteDownloadedModel(model)

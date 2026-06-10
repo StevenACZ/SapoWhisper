@@ -21,6 +21,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var isPopoverTransitioning = false
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
+    private let secureInputReleaseDelegate = SecureInputReleasingWindowDelegate()
     private var pendingPopoverRefresh = false
     private var hiddenPopoverRefreshSkipCount = 0
     private var lastHiddenRefreshSkipLogTime: CFAbsoluteTime = 0
@@ -99,8 +100,16 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             .map { _ in "whisper-loading" }
             .eraseToAnyPublisher()
 
-        Publishers.Merge3(appStateRefreshes, transcriptionRefreshes, loadingRefreshes)
-            .receive(on: RunLoop.main)
+        let reachabilityRefreshes = NetworkReachability.shared.$isOnline
+            .dropFirst()
+            .removeDuplicates()
+            .map { _ in "reachability" }
+            .eraseToAnyPublisher()
+
+        // L9: state ticks can burst (recording → processing → polishing →
+        // idle); one re-measure per 150ms window is plenty for a popover.
+        Publishers.Merge4(appStateRefreshes, transcriptionRefreshes, loadingRefreshes, reachabilityRefreshes)
+            .throttle(for: .milliseconds(150), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] reason in
                 self?.schedulePopoverRefresh(reason: reason)
             }
@@ -128,7 +137,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             SapoLog.menuBar.info("Popover toggle closed elapsed=\(elapsed, privacy: .public)ms")
         } else {
             popoverOpenCount += 1
-            popover.contentViewController = makePopoverContentController()
+            // R3: reuse the hosting controller across opens; only the root
+            // view is refreshed (missing permissions may have changed).
+            if let hostingController = popover.contentViewController as? NSHostingController<MenuBarPopoverHost> {
+                hostingController.rootView = makePopoverHost()
+            } else {
+                popover.contentViewController = makePopoverContentController()
+            }
             refreshPopoverSize(reason: "open", force: true)
             button.state = .on
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -216,17 +231,18 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func makePopoverContentController() -> NSHostingController<MenuBarPopoverHost> {
-        let missingPermissions = PermissionService.shared.missingPermissions()
+        NSHostingController(rootView: makePopoverHost())
+    }
 
-        return NSHostingController(
-            rootView: MenuBarPopoverHost(
-                viewModel: viewModel,
-                missingPermissions: missingPermissions,
-                openSettings: { [weak self] in self?.openSettingsWindow() },
-                openHistory: { [weak self] in self?.openHistoryWindow() },
-                openPermissions: { [weak self] in self?.openPermissionsWindow() },
-                closePopover: { [weak self] in self?.closePopover() }
-            )
+    private func makePopoverHost() -> MenuBarPopoverHost {
+        MenuBarPopoverHost(
+            viewModel: viewModel,
+            missingPermissions: PermissionService.shared.missingPermissions(),
+            openSettings: { [weak self] in self?.openSettingsWindow() },
+            openHistory: { [weak self] in self?.openHistoryWindow() },
+            openPermissions: { [weak self] in self?.openPermissionsWindow() },
+            openWelcome: { [weak self] in self?.openWelcomeWindow() },
+            closePopover: { [weak self] in self?.closePopover() }
         )
     }
 
@@ -253,7 +269,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         button.layer?.add(animation, forKey: "sapoStatusPress")
     }
 
-    private func openSettingsWindow() {
+    func openSettingsWindow() {
         settingsOpenCount += 1
         SapoLog.settings.info("Settings open requested from menu bar")
         PerformanceDiagnostics.logRuntimeSnapshot(
@@ -283,7 +299,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         SapoLog.settings.info("Settings window presented elapsed=\(elapsed, privacy: .public)ms")
     }
 
-    private func openHistoryWindow() {
+    func openHistoryWindow() {
         historyOpenCount += 1
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "history-open",
@@ -295,7 +311,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let controller =
             historyWindowController
             ?? makeWindowController(
-                size: NSSize(width: 900, height: 560),
+                size: NSSize(width: 1000, height: 640),
                 resizable: true,
                 rootView: HistoryWindowHost(viewModel: viewModel)
             )
@@ -307,6 +323,11 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         closePopover()
         PermissionRequirementsWindowController.shared.showWindow(force: true)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openWelcomeWindow() {
+        closePopover()
+        WelcomeWindowController.shared.show()
     }
 
     private func makeWindowController<Content: View>(
@@ -330,8 +351,12 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
+        window.delegate = secureInputReleaseDelegate
         window.contentViewController = NSHostingController(rootView: rootView)
         window.contentView?.wantsLayer = true
+        // NSHostingController shrinks the window to the view's minimum once
+        // assigned; restore the size this window was asked to open at.
+        window.setContentSize(size)
 
         if resizable {
             window.contentMinSize = NSSize(width: 700, height: 420)
@@ -383,5 +408,21 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
                 SapoLog.menuBar.info("Window deferred render refreshed elapsed=\(elapsed, privacy: .public)ms")
             }
         }
+    }
+}
+
+/// A focused SecureField (API key inputs) keeps macOS Secure Keyboard Entry
+/// enabled, which silently starves the global hotkey event tap until focus
+/// moves inside the app. Dropping the first responder whenever a settings or
+/// history window closes or resigns key releases it immediately.
+@MainActor
+final class SecureInputReleasingWindowDelegate: NSObject, NSWindowDelegate {
+    func windowDidResignKey(_ notification: Notification) {
+        (notification.object as? NSWindow)?.makeFirstResponder(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        (notification.object as? NSWindow)?.makeFirstResponder(nil)
+        HotkeyManager.shared.assertHotkeyAlive(reason: "window-closed")
     }
 }

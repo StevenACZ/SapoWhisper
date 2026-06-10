@@ -16,14 +16,14 @@ Open `SapoWhisper.xcodeproj` in Xcode and run the `SapoWhisper` scheme.
 ```bash
 make format
 make lint
-make build
+make test
 ```
 
 - Keep changes focused and small.
 - Do not commit credentials, recordings, DMGs, logs, crash reports, local docs, or signing files.
 - Keep Release output Apple Silicon only unless Intel support is explicitly re-approved.
 - Use `make release-check` before release-size or packaging changes.
-- The project does not have a test target yet; `make ci-check` is the current PR gate.
+- `make ci-check` (lint + Debug build + unit tests) is the PR gate.
 
 ## Pull Requests
 

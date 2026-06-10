@@ -13,3 +13,9 @@ pre-commit:
         Swift format/lint failed. Run:
           make format
           make lint
+
+    secrets:
+      run: scripts/secrets_scan.sh staged
+      fail_text: |
+        Potential secret detected in staged changes. Review the gitleaks
+        report above; never commit API keys or credentials.

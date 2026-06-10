@@ -6,7 +6,7 @@
 import Foundation
 import SQLite3
 
-extension TranscriptionHistoryManager {
+nonisolated extension TranscriptionHistoryManager {
     /// Fetch all transcription entries, newest first.
     func fetchAll() -> [HistoryEntry] {
         fetchEntries(limit: nil)
@@ -18,33 +18,75 @@ extension TranscriptionHistoryManager {
         limit: Int? = 250,
         offset: Int = 0
     ) -> [HistoryEntry] {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // H2: searches go through the FTS5 index (linear LIKE scans get slow
+        // past a few thousand rows). LIKE remains as the fallback when the
+        // index is unavailable or the FTS query fails.
+        if !trimmedSearch.isEmpty, schemaVersion() >= 3,
+            let ftsQuery = Self.ftsPrefixQuery(from: trimmedSearch)
+        {
+            let entries = runFetch(
+                searchCondition: (
+                    sql: "id IN (SELECT rowid FROM transcriptions_fts WHERE transcriptions_fts MATCH ?)",
+                    bindings: [ftsQuery]
+                ),
+                engineFilter: engineFilter, limit: limit, offset: offset
+            )
+            if let entries {
+                return entries
+            }
+        }
+
+        var searchCondition: (sql: String, bindings: [String])?
+        if !trimmedSearch.isEmpty {
+            let likePattern = "%\(escapeLike(trimmedSearch))%"
+            searchCondition = (
+                sql:
+                    "(transcription LIKE ? ESCAPE '\\' COLLATE NOCASE OR raw_transcription LIKE ? ESCAPE '\\' COLLATE NOCASE)",
+                bindings: [likePattern, likePattern]
+            )
+        }
+
+        return runFetch(
+            searchCondition: searchCondition,
+            engineFilter: engineFilter, limit: limit, offset: offset
+        ) ?? []
+    }
+
+    /// Builds the SELECT shared by the FTS and LIKE paths. Returns nil when
+    /// the statement fails to prepare or step (so FTS errors can fall back).
+    private func runFetch(
+        searchCondition: (sql: String, bindings: [String])?,
+        engineFilter: EngineFilter,
+        limit: Int?,
+        offset: Int
+    ) -> [HistoryEntry]? {
         var sql =
             """
             SELECT id, timestamp, engine, language, duration_seconds, transcription, raw_transcription,
-                   audio_path, status, is_favorite, ai_status, ai_model, ai_mode, ai_error
+                   audio_path, status, is_favorite, ai_status, ai_model, ai_mode, ai_error,
+                   failure_code, ai_first_status, ai_first_model, ai_first_mode
             FROM transcriptions
             """
         var conditions: [String] = []
         var binders: [(OpaquePointer?, Int32) -> Void] = []
 
-        if let enginePattern = enginePattern(for: engineFilter) {
-            conditions.append("engine LIKE ? COLLATE NOCASE")
-            binders.append { [enginePattern] stmt, index in
-                self.bindText(stmt, index, enginePattern)
+        if let engineCondition = engineCondition(for: engineFilter) {
+            conditions.append(engineCondition.sql)
+            for pattern in engineCondition.patterns {
+                binders.append { [pattern] stmt, index in
+                    self.bindText(stmt, index, pattern)
+                }
             }
         }
 
-        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedSearch.isEmpty {
-            let likePattern = "%\(escapeLike(trimmedSearch))%"
-            conditions.append(
-                "(transcription LIKE ? ESCAPE '\\' COLLATE NOCASE OR raw_transcription LIKE ? ESCAPE '\\' COLLATE NOCASE)"
-            )
-            binders.append { [likePattern] stmt, index in
-                self.bindText(stmt, index, likePattern)
-            }
-            binders.append { [likePattern] stmt, index in
-                self.bindText(stmt, index, likePattern)
+        if let searchCondition {
+            conditions.append(searchCondition.sql)
+            for binding in searchCondition.bindings {
+                binders.append { [binding] stmt, index in
+                    self.bindText(stmt, index, binding)
+                }
             }
         }
 
@@ -63,17 +105,37 @@ extension TranscriptionHistoryManager {
         sql += ";"
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
 
         for (index, binder) in binders.enumerated() {
             binder(stmt, Int32(index + 1))
         }
 
         var entries: [HistoryEntry] = []
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            entries.append(makeEntry(from: stmt))
+        while true {
+            let result = sqlite3_step(stmt)
+            if result == SQLITE_ROW {
+                entries.append(makeEntry(from: stmt))
+            } else if result == SQLITE_DONE {
+                return entries
+            } else {
+                return nil
+            }
         }
-        return entries
+    }
+
+    /// Turns free text into a safe FTS5 prefix query: each whitespace-separated
+    /// term becomes a quoted prefix token ("term"*), joined with implicit AND.
+    static func ftsPrefixQuery(from searchText: String) -> String? {
+        let terms =
+            searchText
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { term -> String in
+                let escaped = term.replacingOccurrences(of: "\"", with: "\"\"")
+                return "\"\(escaped)\"*"
+            }
+        guard !terms.isEmpty else { return nil }
+        return terms.joined(separator: " ")
     }
 
     func referencedAudioPaths() -> Set<String> {
@@ -118,6 +180,18 @@ extension TranscriptionHistoryManager {
         let aiError: String? =
             sqlite3_column_type(stmt, 13) != SQLITE_NULL
             ? String(cString: sqlite3_column_text(stmt, 13)) : nil
+        let failureCode: String? =
+            sqlite3_column_type(stmt, 14) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(stmt, 14)) : nil
+        let aiFirstStatus: String? =
+            sqlite3_column_type(stmt, 15) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(stmt, 15)) : nil
+        let aiFirstModel: String? =
+            sqlite3_column_type(stmt, 16) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(stmt, 16)) : nil
+        let aiFirstMode: String? =
+            sqlite3_column_type(stmt, 17) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(stmt, 17)) : nil
         let timestamp = Self.isoFormatter.date(from: timestampStr) ?? Date()
 
         return HistoryEntry(
@@ -134,24 +208,29 @@ extension TranscriptionHistoryManager {
             aiModel: aiModel,
             aiMode: aiMode,
             aiError: aiError,
-            isFavorite: isFavorite
+            isFavorite: isFavorite,
+            failureCode: failureCode,
+            aiFirstStatus: aiFirstStatus,
+            aiFirstModel: aiFirstModel,
+            aiFirstMode: aiFirstMode
         )
     }
 
-    private func enginePattern(for filter: EngineFilter) -> String? {
+    private func engineCondition(for filter: EngineFilter) -> (sql: String, patterns: [String])? {
         switch filter {
         case .all:
             return nil
-        case .deepgram:
-            return "%deepgram%"
-        case .gemini:
-            return "%gemini%"
-        case .google:
-            return "%google%"
         case .whisper:
-            return "%whisper%"
-        case .apple:
-            return "%apple%"
+            return ("engine LIKE ? COLLATE NOCASE", ["%whisper%"])
+        case .deepgram:
+            return ("engine LIKE ? COLLATE NOCASE", ["%deepgram%"])
+        case .elevenLabs:
+            return ("engine LIKE ? COLLATE NOCASE", ["%elevenlabs%"])
+        case .other:
+            return (
+                "engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE",
+                ["%whisper%", "%deepgram%", "%elevenlabs%"]
+            )
         }
     }
 
