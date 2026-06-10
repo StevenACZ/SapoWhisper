@@ -177,14 +177,19 @@ struct GeneralSettingsTab: View {
                     }
 
                     if let target = aiTranslationTarget {
+                        // Pinning the engine to the same language the AI
+                        // outputs is coherent (speak X, get X) — only warn
+                        // when the pin and the translation target diverge.
+                        let pinMatchesTarget =
+                            selectedLanguage == "auto" || selectedLanguage == target.nlLanguageCode
                         Label(
-                            selectedLanguage == "auto"
+                            pinMatchesTarget
                                 ? "settings.ai_translation_active".localized(target.displayName)
                                 : "settings.ai_translation_language_pinned".localized(target.displayName),
                             systemImage: "sparkles"
                         )
                         .font(.caption)
-                        .foregroundStyle(selectedLanguage == "auto" ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                        .foregroundStyle(pinMatchesTarget ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
                         .fixedSize(horizontal: false, vertical: true)
                     }
                 }
