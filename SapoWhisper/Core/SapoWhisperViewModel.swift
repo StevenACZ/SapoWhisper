@@ -710,8 +710,9 @@ class SapoWhisperViewModel: ObservableObject {
         let playSound = playSoundEnabled
         isStartPending = true
         // El beep de inicio suena antes de abrir el micrófono en todos los
-        // motores: feedback instantáneo del hotkey, y el AutoDucking pospone
-        // la bajada de volumen para que el beep no quede atenuado.
+        // motores: feedback instantáneo del hotkey. El AutoDucking baja el
+        // volumen en una rampa suave que arranca al instante, así el beep
+        // se oye al comienzo de la bajada sin un corte brusco.
         if playSound {
             SoundManager.shared.play(.startRecording)
         }

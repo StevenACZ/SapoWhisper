@@ -26,17 +26,26 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     /// Si el sistema está actualmente ducked
     private(set) var isDucked = false
 
-    /// Volumen original guardado antes de duckear
+    /// Volumen original guardado antes de duckear; se conserva hasta que la
+    /// rampa de restauración termina, por si un duck la interrumpe.
     private var originalVolume: Float?
 
     /// Device ID del output al que se le aplicó duck
     private var duckedDeviceID: AudioDeviceID?
 
-    /// Duck programado (espera a que termine el beep de inicio antes de bajar el volumen)
-    private var pendingDuckItem: DispatchWorkItem?
+    /// Invalida las rampas en curso cuando empieza una nueva
+    private var fadeGeneration: UInt64 = 0
 
     /// Serial queue para operaciones thread-safe
     private let queue = DispatchQueue(label: "com.sapowhisper.autoducking", qos: .userInteractive)
+
+    // MARK: - Fade tuning
+
+    /// La bajada empieza al instante y dura lo justo para sentirse suave sin
+    /// tapar el beep de inicio (~150 ms audibles al comienzo de la rampa).
+    private static let duckFadeDuration: TimeInterval = 0.40
+    private static let restoreFadeDuration: TimeInterval = 0.25
+    private static let fadeStepInterval: TimeInterval = 0.02
 
     // MARK: - Settings (read from UserDefaults)
 
@@ -63,9 +72,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     func handleStateChange(_ state: AppState) {
         switch state {
         case .recording:
-            // El beep de inicio debe sonar al volumen original: duckear de
-            // inmediato lo atenuaba (su cuerpo audible dura ~150 ms).
-            duck(afterDelay: startSoundGrace())
+            duck()
         case .processing, .polishing:
             // Restaurar volumen al transcribir — el mic ya no está activo,
             // y la transcripción puede tardar 3-30s. Que el usuario siga
@@ -80,55 +87,35 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
         }
     }
 
-    /// Reduce el volumen del sistema al nivel configurado
-    func duck(afterDelay delay: TimeInterval = 0) {
+    /// Reduce el volumen del sistema al nivel configurado con una rampa suave
+    func duck() {
         queue.async { [weak self] in
-            guard let self else { return }
-            self.pendingDuckItem?.cancel()
-            self.pendingDuckItem = nil
-
-            guard delay > 0 else {
-                self._duck()
-                return
-            }
-
-            let item = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.pendingDuckItem = nil
-                self._duck()
-            }
-            self.pendingDuckItem = item
-            self.queue.asyncAfter(deadline: .now() + delay, execute: item)
+            self?._duck()
         }
     }
 
     /// Restaura el volumen del sistema al nivel original
     func restore() {
         queue.async { [weak self] in
-            guard let self else { return }
-            self.pendingDuckItem?.cancel()
-            self.pendingDuckItem = nil
-            self._restore()
+            self?._restore()
         }
     }
 
-    /// Restaura forzosamente sin verificar isEnabled (para app termination)
+    /// Restaura forzosamente sin rampa ni verificar isEnabled (para app termination)
     func forceRestore() {
         queue.sync { [weak self] in
             guard let self else { return }
-            self.pendingDuckItem?.cancel()
-            self.pendingDuckItem = nil
-            self._restore()
+            self.fadeGeneration &+= 1
+            if let original = self.originalVolume, let deviceID = self.duckedDeviceID {
+                self.setDeviceVolume(deviceID: deviceID, volume: original)
+                SapoLog.audioRoute.info(
+                    "Auto-ducking force-restored volume=\(Int(original * 100), privacy: .public)%"
+                )
+            }
+            self.isDucked = false
+            self.originalVolume = nil
+            self.duckedDeviceID = nil
         }
-    }
-
-    /// Retraso del duck mientras suena el beep de inicio; 0 si está apagado.
-    private func startSoundGrace() -> TimeInterval {
-        let defaults = UserDefaults.standard
-        let soundEnabled =
-            defaults.object(forKey: Constants.StorageKeys.playSound) == nil
-            || defaults.bool(forKey: Constants.StorageKeys.playSound)
-        return soundEnabled ? 0.35 : 0
     }
 
     // MARK: - Core Audio Implementation
@@ -136,7 +123,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     private func _duck() {
         guard isEnabled, !isDucked else { return }
 
-        guard let deviceID = getSystemDefaultOutputDevice() else {
+        guard let deviceID = duckedDeviceID ?? getSystemDefaultOutputDevice() else {
             SapoLog.audioRoute.warning("Auto-ducking: no output device found")
             return
         }
@@ -146,22 +133,23 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
             return
         }
 
-        // Guardar estado original
-        originalVolume = currentVolume
+        // Si una restauración seguía en rampa, el volumen actual es parcial:
+        // el original verdadero es el que esa rampa estaba devolviendo.
+        let baseline = originalVolume ?? currentVolume
+        originalVolume = baseline
         duckedDeviceID = deviceID
+        isDucked = true
 
         // Calcular volumen reducido: original × (1 - duckAmount)
         // duckAmount=0.5 → volumen baja al 50%
         // duckAmount=0.8 → volumen baja al 20%
-        let reducedVolume = currentVolume * Float(1.0 - duckAmount)
+        let reducedVolume = baseline * Float(1.0 - duckAmount)
         let clampedVolume = max(0.0, min(1.0, reducedVolume))
 
-        if setDeviceVolume(deviceID: deviceID, volume: clampedVolume) {
-            isDucked = true
-            SapoLog.audioRoute.info(
-                "Auto-ducking applied from=\(Int(currentVolume * 100), privacy: .public)% to=\(Int(clampedVolume * 100), privacy: .public)% amount=\(Int(self.duckAmount * 100), privacy: .public)%"
-            )
-        }
+        fade(deviceID: deviceID, from: currentVolume, to: clampedVolume, duration: Self.duckFadeDuration)
+        SapoLog.audioRoute.info(
+            "Auto-ducking fading from=\(Int(currentVolume * 100), privacy: .public)% to=\(Int(clampedVolume * 100), privacy: .public)% amount=\(Int(self.duckAmount * 100), privacy: .public)% durationMs=\(Int(Self.duckFadeDuration * 1000), privacy: .public)"
+        )
     }
 
     private func _restore() {
@@ -175,15 +163,44 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
         // A7: always restore the saved volume. The old "respect a user volume
         // change" heuristic compared against quantized Bluetooth volumes and
         // could leave audio ducked forever — the duck is temporary by design.
-        if setDeviceVolume(deviceID: deviceID, volume: original) {
-            SapoLog.audioRoute.info(
-                "Auto-ducking restored volume=\(Int(original * 100), privacy: .public)%"
-            )
-        }
-
         isDucked = false
-        originalVolume = nil
-        duckedDeviceID = nil
+        let currentVolume = getDeviceVolume(deviceID: deviceID) ?? original
+        fade(deviceID: deviceID, from: currentVolume, to: original, duration: Self.restoreFadeDuration) {
+            [weak self] in
+            guard let self else { return }
+            self.originalVolume = nil
+            self.duckedDeviceID = nil
+        }
+        SapoLog.audioRoute.info(
+            "Auto-ducking restoring volume=\(Int(original * 100), privacy: .public)%"
+        )
+    }
+
+    /// Rampa de volumen por pasos en la cola serial. `onCompleted` solo corre
+    /// si la rampa llega al final sin que otra la invalide.
+    private func fade(
+        deviceID: AudioDeviceID,
+        from: Float,
+        to: Float,
+        duration: TimeInterval,
+        onCompleted: (@Sendable () -> Void)? = nil
+    ) {
+        fadeGeneration &+= 1
+        let generation = fadeGeneration
+        let stepCount = max(1, Int(duration / Self.fadeStepInterval))
+
+        for step in 1...stepCount {
+            queue.asyncAfter(deadline: .now() + Self.fadeStepInterval * Double(step)) { [weak self] in
+                guard let self, self.fadeGeneration == generation else { return }
+                let progress = Float(step) / Float(stepCount)
+                // smoothstep: arranca y termina sin escalones audibles
+                let eased = progress * progress * (3 - 2 * progress)
+                self.setDeviceVolume(deviceID: deviceID, volume: from + (to - from) * eased)
+                if step == stepCount {
+                    onCompleted?()
+                }
+            }
+        }
     }
 
     // MARK: - Core Audio Helpers
