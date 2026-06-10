@@ -11,7 +11,13 @@ import SwiftUI
 class LocalizationManager: ObservableObject {
     static let shared = LocalizationManager()
 
-    @AppStorage("appLanguage") var language: String = "es" {
+    /// New installs follow the macOS UI language (es/en supported); users can
+    /// still override it in Settings, which persists to the same key.
+    static var systemDefaultLanguage: String {
+        Locale.preferredLanguages.first?.hasPrefix("es") == true ? "es" : "en"
+    }
+
+    @AppStorage("appLanguage") var language: String = LocalizationManager.systemDefaultLanguage {
         didSet {
             updateBundle()
         }

@@ -28,6 +28,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .utility) {
             TemporaryAudioStorage.sweepStaleFiles()
         }
+        TemporaryAudioStorage.startDailySweep()
+        runHistoryAutoDeleteIfConfigured()
         _ = NetworkReachability.shared
         PerformanceDiagnostics.startDailyResidencyLog()
         PerformanceDiagnostics.logDiagnosticsFileLocation()
@@ -90,6 +92,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             SapoLog.performance.info("Screen parameters changed")
             PerformanceDiagnostics.logRuntimeSnapshot(reason: "screen-change", force: true)
             AudioInputPreflightManager.shared.preflightSoon(reason: "screen-change")
+        }
+    }
+
+    /// H6: optional age-based retention. 0 (default) means never delete.
+    private func runHistoryAutoDeleteIfConfigured() {
+        let days = UserDefaults.standard.integer(forKey: Constants.StorageKeys.historyAutoDeleteDays)
+        guard days > 0 else { return }
+        Task.detached(priority: .utility) {
+            let deleted = TranscriptionHistoryManager.shared.deleteEntries(olderThanDays: days)
+            if deleted > 0 {
+                SapoLog.lifecycle.info(
+                    "History auto-delete removed rows=\(deleted, privacy: .public) olderThanDays=\(days, privacy: .public)"
+                )
+            }
         }
     }
 

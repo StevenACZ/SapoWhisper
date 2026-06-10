@@ -82,7 +82,7 @@ class OverlayWindowManager: ObservableObject {
         let revision = presentationRevision
         isAnimating = false
 
-        window.positionAtBottom()
+        window.applyConfiguredPosition()
         window.contentView?.layer?.removeAllAnimations()
 
         // Preparar animacion de entrada

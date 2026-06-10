@@ -13,7 +13,7 @@ import os
 struct GeneralSettingsTab: View {
     let viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "es"
+    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
         .rawValue
@@ -24,9 +24,19 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.autoDuckingEnabled) private var autoDuckingEnabled = false
     @AppStorage(Constants.StorageKeys.autoDuckingAmount) private var autoDuckingAmount: Double = 0.8
 
+    @AppStorage(Constants.StorageKeys.historyAudioMaxMB) private var historyAudioMaxMB =
+        HistoryAudioStorage.defaultMaxStorageMB
+    @AppStorage(Constants.StorageKeys.historyAutoDeleteDays) private var historyAutoDeleteDays = 0
+    @AppStorage(Constants.StorageKeys.overlayPosition) private var overlayPosition =
+        OverlayPosition.bottom.rawValue
+
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    @State private var historyAudioUsageBytes: Int64 = 0
     private let preferredMicrophoneCoordinator = PreferredMicrophoneCoordinator.shared
+
+    private static let audioLimitOptionsMB = [250, 500, 1024, 2048]
+    private static let autoDeleteOptionsDays = [0, 30, 90, 180]
 
     private var appBinding: Binding<String> {
         Binding(
@@ -49,6 +59,7 @@ struct GeneralSettingsTab: View {
                 VStack(spacing: 12) {
                     autoDuckingCard
                     soundCard
+                    historyRetentionCard
                     permissionsCard
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -250,6 +261,83 @@ struct GeneralSettingsTab: View {
         }
     }
 
+    // MARK: - History Retention Card (H6)
+
+    private var historyRetentionCard: some View {
+        SettingsCard(icon: "internaldrive", title: "settings.history_header".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("settings.history_audio_limit".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("", selection: $historyAudioMaxMB) {
+                        ForEach(Self.audioLimitOptionsMB, id: \.self) { megabytes in
+                            Text(formattedMB(megabytes)).tag(megabytes)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                HStack {
+                    Text("settings.history_audio_usage".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(
+                        ByteCountFormatter.string(
+                            fromByteCount: historyAudioUsageBytes, countStyle: .file)
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Constants.Colors.sapoGreen)
+                    .monospacedDigit()
+                }
+
+                HStack {
+                    Text("settings.history_auto_delete".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("", selection: $historyAutoDeleteDays) {
+                        ForEach(Self.autoDeleteOptionsDays, id: \.self) { days in
+                            Text(autoDeleteOptionLabel(days)).tag(days)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                Text("settings.history_retention_desc".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .task {
+            refreshHistoryAudioUsage()
+        }
+    }
+
+    private func formattedMB(_ megabytes: Int) -> String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(megabytes) * 1024 * 1024, countStyle: .file)
+    }
+
+    private func autoDeleteOptionLabel(_ days: Int) -> String {
+        days == 0
+            ? "settings.history_auto_delete_never".localized
+            : "settings.history_auto_delete_days".localized(String(days))
+    }
+
+    private func refreshHistoryAudioUsage() {
+        Task.detached(priority: .utility) {
+            let usage = TranscriptionHistoryManager.shared.audioStorage.directorySize()
+            await MainActor.run {
+                historyAudioUsageBytes = usage
+            }
+        }
+    }
+
     // MARK: - Behavior Card
 
     private var behaviorCard: some View {
@@ -272,6 +360,18 @@ struct GeneralSettingsTab: View {
                         .onChange(of: launchAtLogin) { _, newValue in
                             setLaunchAtLogin(enabled: newValue)
                         }
+                }
+
+                HStack(spacing: 12) {
+                    Text("settings.overlay_position".localized)
+                    Spacer()
+                    Picker("", selection: $overlayPosition) {
+                        ForEach(OverlayPosition.allCases) { position in
+                            Text(position.displayName).tag(position.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
                 }
 
                 Text("settings.auto_paste_desc".localized)

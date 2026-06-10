@@ -233,7 +233,7 @@ extension View {
             isExpanded: .constant(true)
         ) {
         } details: {
-            Text("Google settings")
+            Text("Deepgram settings")
                 .font(.caption)
         }
 

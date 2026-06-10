@@ -15,6 +15,23 @@ enum TemporaryAudioStorage {
     /// Files older than this are considered abandoned by the launch sweep.
     private static let staleAge: TimeInterval = 24 * 60 * 60
 
+    private static var dailySweepTimer: Timer?
+
+    /// R5: the app is resident for days — repeat the stale sweep daily so
+    /// abandoned temp WAVs cannot pile up between launches.
+    static func startDailySweep() {
+        guard dailySweepTimer == nil else { return }
+
+        let timer = Timer(timeInterval: 86_400, repeats: true) { _ in
+            Task.detached(priority: .utility) {
+                sweepStaleFiles()
+            }
+        }
+        timer.tolerance = 3_600
+        RunLoop.main.add(timer, forMode: .common)
+        dailySweepTimer = timer
+    }
+
     /// Prefixes of WAVs that older app versions wrote to the shared temp dir.
     private static let legacyPrefixes = [
         "recording_", "flux_recording_", "mic_test_raw_", "mic_test_compressed_",

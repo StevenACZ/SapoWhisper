@@ -256,8 +256,9 @@ struct SettingsTransferManager {
 
     private func currentPreferences() -> SettingsTransferPreferences {
         SettingsTransferPreferences(
-            appLanguage: defaults.string(forKey: Constants.StorageKeys.appLanguage) ?? "es",
-            transcriptionLanguage: defaults.string(forKey: Constants.StorageKeys.language) ?? "es",
+            appLanguage: defaults.string(forKey: Constants.StorageKeys.appLanguage)
+                ?? LocalizationManager.systemDefaultLanguage,
+            transcriptionLanguage: defaults.string(forKey: Constants.StorageKeys.language) ?? "auto",
             autoPaste: boolValue(forKey: Constants.StorageKeys.autoPaste, defaultValue: true),
             playSound: boolValue(forKey: Constants.StorageKeys.playSound, defaultValue: true),
             soundVolume: doubleValue(forKey: Constants.StorageKeys.soundVolume, defaultValue: 1.0),
