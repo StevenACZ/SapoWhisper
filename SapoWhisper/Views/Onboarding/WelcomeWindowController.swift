@@ -149,6 +149,9 @@ final class WelcomeWindowController: NSWindowController {
     }
 
     private func cleanup() {
+        // A still-focused SecureField would keep Secure Keyboard Entry on and
+        // starve the global hotkey event tap after the window closes.
+        window?.makeFirstResponder(nil)
         dictationObserver?.cancel()
         dictationObserver = nil
 

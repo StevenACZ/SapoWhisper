@@ -21,6 +21,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var isPopoverTransitioning = false
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
+    private let secureInputReleaseDelegate = SecureInputReleasingWindowDelegate()
     private var pendingPopoverRefresh = false
     private var hiddenPopoverRefreshSkipCount = 0
     private var lastHiddenRefreshSkipLogTime: CFAbsoluteTime = 0
@@ -350,6 +351,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
+        window.delegate = secureInputReleaseDelegate
         window.contentViewController = NSHostingController(rootView: rootView)
         window.contentView?.wantsLayer = true
         // NSHostingController shrinks the window to the view's minimum once
@@ -406,5 +408,21 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
                 SapoLog.menuBar.info("Window deferred render refreshed elapsed=\(elapsed, privacy: .public)ms")
             }
         }
+    }
+}
+
+/// A focused SecureField (API key inputs) keeps macOS Secure Keyboard Entry
+/// enabled, which silently starves the global hotkey event tap until focus
+/// moves inside the app. Dropping the first responder whenever a settings or
+/// history window closes or resigns key releases it immediately.
+@MainActor
+final class SecureInputReleasingWindowDelegate: NSObject, NSWindowDelegate {
+    func windowDidResignKey(_ notification: Notification) {
+        (notification.object as? NSWindow)?.makeFirstResponder(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        (notification.object as? NSWindow)?.makeFirstResponder(nil)
+        HotkeyManager.shared.assertHotkeyAlive(reason: "window-closed")
     }
 }
