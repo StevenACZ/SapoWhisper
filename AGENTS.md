@@ -74,6 +74,7 @@ make release-check
 - `make format` and `make lint` only inspect changed Swift files by default.
 - `make test` runs the `SapoWhisperTests` unit bundle (pure logic: fidelity guard, failure mapping, engine migration, settings import); `make ci-check` = lint + Debug build + tests.
 - Run `git diff --check` before staging or reporting a docs/code patch done.
+- UI screenshots without consent prompts: launch a Debug build with `SAPO_UI_PREVIEW=1` and optional `SAPO_UI_PREVIEW_SCREEN=history|welcome` + `SAPO_UI_PREVIEW_WELCOME_STEP=<0-4>`. Preview launches and the unit-test host skip keychain reads, hotkey event-tap registration, and startup permission windows (`UIPreviewMode`); normal user launches are unaffected.
 
 ## Packaging
 

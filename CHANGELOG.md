@@ -10,6 +10,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Developer UI preview mode** — launching a Debug build with `SAPO_UI_PREVIEW=1` skips keychain access, hotkey event-tap registration, and startup permission windows, so ad-hoc rebuilds never re-trigger macOS consent prompts while iterating on UI; `SAPO_UI_PREVIEW_SCREEN=history|welcome` (plus `SAPO_UI_PREVIEW_WELCOME_STEP`) opens that window directly for screenshots. The unit-test host gets the same bypass automatically. Normal user launches are unaffected.
 - **Sleep/wake residency** — On system sleep any active dictation stops cleanly: the WAV is preserved and the entry is saved as failed with retry available. On wake the app re-validates the global hotkey, refreshes the audio device caches, and re-runs the input preflight.
 - **Hotkey watchdog** — The global hotkey re-enables or re-creates itself if macOS silently kills the event tap, checked on every wake and every 10 minutes.
 - **Offline fast-fail** — With no network, cloud engines fail instantly with a clear network error (before the mic even opens) instead of burning the request timeout, and the menu bar shows an offline hint that clears on reconnect. Local WhisperKit dictation is unaffected.
@@ -18,6 +19,8 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **History window redesigned as a two-pane reading layout** — wider sidebar (search with one-tap clear, real empty states for no history / no results) and a single wide reading pane that replaces the cramped third-column inspector: relative-date header with engine and language chips, a visible action bar (Copy, Polish with AI, re-transcribe, download audio, pin, delete), a stats strip (duration · words · language · AI polish · audio), larger transcript typography, and a scrubbable audio player card. Failed entries show their failure code with a prominent re-transcribe button. The window now opens at 1000×640.
+- **Welcome flow polish** — removed the dead band above the progress dots left by the transparent titlebar, and the AI polish step's form now follows its header instead of floating mid-window.
 - **Faster stop→paste** — Auto-paste fires the moment macOS confirms the target app is active (150 ms hard fallback) instead of polling; history persistence (audio copy + database insert) moved off the paste path to a background task; the overlay switches to "transcribing" the instant stop is pressed; the WAV finalize runs on the audio queue without blocking the UI.
 - **AI polish timeout reduced from 8 s to 5 s**, and the polishing overlay now shows a per-second countdown.
 - The audio input preflight now genuinely warms the input route (brief muted engine start), so the first dictation after a device change starts faster; the mic indicator may blink briefly on device changes. The preflight also defers itself while any recording is active.
