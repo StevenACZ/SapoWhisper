@@ -101,7 +101,12 @@ final class TranscriptPostProcessor {
                 )
             }
 
-            let verdict = PolishFidelityGuard.evaluate(raw: trimmed, polished: cleaned, vocabularyTerms: keyterms)
+            let verdict = PolishFidelityGuard.evaluate(
+                raw: trimmed,
+                polished: cleaned,
+                vocabularyTerms: keyterms,
+                translationExpected: outputLanguage.requiresTranslation
+            )
             guard verdict.isAcceptable else {
                 SapoLog.ai.warning(
                     "AI polish rejected by fidelity guard \(verdict.diagnosticSummary, privacy: .public)"

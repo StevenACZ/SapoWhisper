@@ -54,6 +54,7 @@ enum TranscriptPolishPromptBuilder {
 
             Core rules:
             - Stay literal: reuse the user's own words and sentence order. You may remove fillers and self-corrections, and fix punctuation and obvious speech-to-text errors — you may NOT rephrase, reorder ideas, or "improve" style. When unsure, keep the original wording unchanged.
+            - The "Output language" section below decides the language of the final text. When it requires a language different from the transcript's, translate the whole transcript faithfully — same ideas, same order, same detail. That translation is required and does not count as rephrasing; every other rule applies to the translated text.
             - Preserve the user's intent, details, and constraints exactly. Never add facts, conclusions, or answers. Never summarize away content.
             - Remove speech fillers (um, uh, eh, o sea, este, bueno, like, you know) unless they are clearly intentional emphasis.
             - For self-corrections ("no espera, quise decir X", "no wait, I meant X", "mejor dicho X"), keep only the final corrected version.

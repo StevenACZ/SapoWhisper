@@ -48,6 +48,23 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertFalse(verdict.isAcceptable)
     }
 
+    func testAcceptsTranslationWhenOutputLanguageForcesIt() {
+        let raw = "avísale al equipo de Ventas que la demo del producto queda para el 15 a las 3"
+        let polished = "Let the Sales team know the product demo is set for the 15th at 3."
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [], translationExpected: true)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testTranslationStillRequiresNumbersAndVocabulary() {
+        let raw = "dile a soporte que SapoWhisper falla desde la versión 2.3 en las llamadas largas de la mañana"
+        let polished = "Tell support that the app has been failing on long morning calls."
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: ["SapoWhisper"], translationExpected: true)
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
     // MARK: - Output sanitizer
 
     func testSanitizerStripsWrappingCodeFence() {

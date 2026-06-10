@@ -36,7 +36,16 @@ enum PolishFidelityGuard {
         "scratch that", "correction", "sorry",
     ]
 
-    static func evaluate(raw: String, polished: String, vocabularyTerms: [String]) -> PolishFidelityVerdict {
+    /// `translationExpected` relaxes the language-bound anchors: a requested
+    /// output language legitimately rewrites every regular word, so only
+    /// translation-invariant tokens (numbers, URLs, emails, vocabulary) must
+    /// survive.
+    static func evaluate(
+        raw: String,
+        polished: String,
+        vocabularyTerms: [String],
+        translationExpected: Bool = false
+    ) -> PolishFidelityVerdict {
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let polishedTrimmed = polished.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawTrimmed.isEmpty else {
@@ -44,7 +53,11 @@ enum PolishFidelityGuard {
         }
 
         let ratio = Double(polishedTrimmed.count) / Double(rawTrimmed.count)
-        let anchors = extractAnchors(from: rawTrimmed, vocabularyTerms: vocabularyTerms)
+        let anchors = extractAnchors(
+            from: rawTrimmed,
+            vocabularyTerms: vocabularyTerms,
+            translationExpected: translationExpected
+        )
         let polishedLowercased = polishedTrimmed.lowercased()
         let missing = anchors.filter { !polishedLowercased.contains($0.lowercased()) }
 
@@ -59,7 +72,13 @@ enum PolishFidelityGuard {
 
     /// Tokens that must survive a literal polish: numbers, URLs, emails,
     /// mid-sentence capitalized words, and vocabulary terms present in raw.
-    static func extractAnchors(from raw: String, vocabularyTerms: [String]) -> [String] {
+    /// Capitalized words are skipped when a translation is expected — they
+    /// are regular words in the source language and legitimately change.
+    static func extractAnchors(
+        from raw: String,
+        vocabularyTerms: [String],
+        translationExpected: Bool = false
+    ) -> [String] {
         var anchors: [String] = []
         var seen = Set<String>()
 
@@ -88,8 +107,10 @@ enum PolishFidelityGuard {
             }
         }
 
-        for word in midSentenceCapitalizedWords(in: raw) where !isExempt(word) {
-            add(word)
+        if !translationExpected {
+            for word in midSentenceCapitalizedWords(in: raw) where !isExempt(word) {
+                add(word)
+            }
         }
 
         let rawLowercased = raw.lowercased()

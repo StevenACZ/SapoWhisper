@@ -187,7 +187,7 @@ final class PromptContextManager: ObservableObject {
             name: "Clean-up (literal)",
             details: "Removes fillers and fixes punctuation — nothing else.",
             instruction:
-                "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
+                "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order — translated faithfully when the output language requires another language. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
             forcesEnglish: false
         ),
         PromptProfile(
@@ -220,7 +220,8 @@ final class PromptContextManager: ObservableObject {
     /// profiles that were never customized by the user.
     private static let legacyDefaultInstructions: [String: [String]] = [
         TranscriptPolishMode.automatic.rawValue: [
-            "Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers."
+            "Choose the most natural compact format for the text. Use short paragraphs for thoughts, bullets for tasks or lists, and inline code formatting for commands, files, branch names, APIs, and product names. Keep formatting plain and avoid emphasis markers.",
+            "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
         ],
         TranscriptPolishMode.ai.rawValue: [
             "Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas."
