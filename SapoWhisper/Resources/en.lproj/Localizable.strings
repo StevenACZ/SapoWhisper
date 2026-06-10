@@ -128,6 +128,11 @@
 "config.tab_settings" = "Settings";
 "config.tab_info" = "Info";
 "config.engine" = "Transcription Engine";
+"config.engine_summary" = "Current Setup";
+"config.engine_summary_engine" = "Engine";
+"config.engine_summary_mode" = "Mode";
+"config.engine_summary_model" = "Model";
+"config.engine_summary_language" = "Language";
 "config.whisper_model" = "Whisper Model";
 "config.downloading" = "Downloading";
 "config.space_used" = "Space used: %@";

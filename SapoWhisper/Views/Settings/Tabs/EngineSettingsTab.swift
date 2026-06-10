@@ -5,6 +5,12 @@ struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
+    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
+        DeepgramTranscriptionMode.nova3.rawValue
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
+        ElevenLabsTranscriptionMode.defaultMode.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
 
     private var currentEngine: TranscriptionEngine {
@@ -12,11 +18,17 @@ struct EngineSettingsTab: View {
     }
 
     var body: some View {
-        ScrollView {
-            transcriptionEngineCard
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 12) {
+                    transcriptionEngineCard
+                    currentSetupCard
+                }
                 .frame(maxWidth: 720)
                 .frame(maxWidth: .infinity)
                 .padding(16)
+                .frame(minHeight: proxy.size.height)
+            }
         }
     }
 
@@ -60,6 +72,82 @@ struct EngineSettingsTab: View {
         case .elevenLabsScribe:
             ElevenLabsSettingsCard(viewModel: viewModel, isEmbedded: true)
         }
+    }
+
+    // MARK: - Current setup summary
+
+    /// At-a-glance summary of the active dictation setup: engine, processing
+    /// mode (or local model), and recognition language.
+    private var currentSetupCard: some View {
+        SettingsCard(icon: "checkmark.seal", title: "config.engine_summary".localized) {
+            HStack(spacing: 16) {
+                summaryItem(
+                    icon: currentEngine.icon,
+                    label: "config.engine_summary_engine".localized,
+                    value: currentEngine.displayName
+                )
+                summaryDivider
+                summaryItem(icon: modeSummary.icon, label: modeSummary.label, value: modeSummary.value)
+                summaryDivider
+                summaryItem(
+                    icon: "globe",
+                    label: "config.engine_summary_language".localized,
+                    value: languageSummaryValue
+                )
+            }
+        }
+    }
+
+    private var summaryDivider: some View {
+        Divider().frame(height: 30)
+    }
+
+    private func summaryItem(icon: String, label: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.sapoGreen.opacity(0.12))
+                    .frame(width: 32, height: 32)
+
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(.sapoGreen)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var modeSummary: (icon: String, label: String, value: String) {
+        switch currentEngine {
+        case .whisperLocal:
+            let model = WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
+            return ("memorychip", "config.engine_summary_model".localized, model.displayName)
+        case .deepgram:
+            let mode = DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3
+            return (mode.icon, "config.engine_summary_mode".localized, mode.displayName)
+        case .elevenLabsScribe:
+            let mode = ElevenLabsTranscriptionMode(rawValue: selectedElevenLabsMode) ?? .defaultMode
+            return (mode.icon, "config.engine_summary_mode".localized, mode.displayName)
+        }
+    }
+
+    private var languageSummaryValue: String {
+        TranscriptionLanguageCatalog.language(for: selectedLanguage)?.displayName
+            ?? TranscriptionLanguageCatalog.languages[0].displayName
     }
 }
 
