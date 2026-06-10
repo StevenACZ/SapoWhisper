@@ -60,16 +60,6 @@ struct VocabularyMetricsHeader: View {
         // maxHeight: .infinity tiles equalize and center their content.
         HStack(alignment: .top, spacing: 8) {
             metricTile(
-                label: "vocab.metrics.pace".localized,
-                help: "vocab.metrics.pace_help".localized
-            ) {
-                Text(paceValue)
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(metrics.averageWordsPerMinute == nil ? .secondary : .primary)
-                    .contentTransition(.numericText())
-            }
-
-            metricTile(
                 label: "vocab.metrics.terms".localized,
                 detail: capacityDetail,
                 help: "vocab.metrics.terms_help".localized
@@ -77,6 +67,16 @@ struct VocabularyMetricsHeader: View {
                 Text(capacityValue)
                     .font(.system(size: 15, weight: .semibold).monospacedDigit())
                     .foregroundStyle(isOverLimit ? Color.orange : .primary)
+                    .contentTransition(.numericText())
+            }
+
+            metricTile(
+                label: "vocab.metrics.pace".localized,
+                help: "vocab.metrics.pace_help".localized
+            ) {
+                Text(paceValue)
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(metrics.averageWordsPerMinute == nil ? .secondary : .primary)
                     .contentTransition(.numericText())
             }
 
