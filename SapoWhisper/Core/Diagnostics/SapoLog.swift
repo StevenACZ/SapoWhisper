@@ -6,7 +6,10 @@
 import Foundation
 import OSLog
 
-enum SapoLog {
+/// Loggers are Sendable and safe from any thread — the whole namespace opts
+/// out of the project's default MainActor isolation so queue-confined audio
+/// code can log without hopping actors.
+nonisolated enum SapoLog {
     static let subsystem = Bundle.main.bundleIdentifier ?? "oli.SapoWhisper"
 
     static let audioRoute = Logger(subsystem: subsystem, category: "AudioRoute")
@@ -21,7 +24,7 @@ enum SapoLog {
     static let lifecycle = Logger(subsystem: subsystem, category: "Lifecycle")
 }
 
-enum SapoSignpost {
+nonisolated enum SapoSignpost {
     #if DEBUG
         private static let signposter = OSSignposter(subsystem: SapoLog.subsystem, category: "Signpost")
     #endif
@@ -48,8 +51,8 @@ enum SapoSignpost {
     }
 }
 
-enum PerformanceDiagnostics {
-    private static var residencyTimer: Timer?
+nonisolated enum PerformanceDiagnostics {
+    @MainActor private static var residencyTimer: Timer?
 
     static func logMemorySnapshot(reason: String, force: Bool = false) {
         _ = reason
@@ -68,7 +71,7 @@ enum PerformanceDiagnostics {
 
     /// R3: one RSS line per day (plus launch) proves flat memory over weeks of
     /// residency without any heavier tooling.
-    static func startDailyResidencyLog() {
+    @MainActor static func startDailyResidencyLog() {
         guard residencyTimer == nil else { return }
 
         logResidentMemory(reason: "launch")

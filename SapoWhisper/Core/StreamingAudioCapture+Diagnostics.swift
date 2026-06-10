@@ -7,7 +7,7 @@ import AVFoundation
 import Foundation
 import os
 
-extension StreamingAudioCapture {
+nonisolated extension StreamingAudioCapture {
     func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
         setCaptureActive(false)
         deviceSentinel.end()

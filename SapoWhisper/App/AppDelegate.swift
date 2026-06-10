@@ -89,9 +89,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            SapoLog.performance.info("Screen parameters changed")
-            PerformanceDiagnostics.logRuntimeSnapshot(reason: "screen-change", force: true)
-            AudioInputPreflightManager.shared.preflightSoon(reason: "screen-change")
+            MainActor.assumeIsolated {
+                SapoLog.performance.info("Screen parameters changed")
+                PerformanceDiagnostics.logRuntimeSnapshot(reason: "screen-change", force: true)
+                AudioInputPreflightManager.shared.preflightSoon(reason: "screen-change")
+            }
         }
     }
 

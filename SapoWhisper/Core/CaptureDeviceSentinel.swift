@@ -13,8 +13,9 @@ import os
 /// event instead of silently recording nothing.
 ///
 /// Not thread-safe on its own: `begin`/`end` must be called from the capture's
-/// setup queue, and events are delivered on that same queue.
-final class CaptureDeviceSentinel {
+/// setup queue, and events are delivered on that same queue (hence
+/// nonisolated rather than the project's default MainActor isolation).
+nonisolated final class CaptureDeviceSentinel {
 
     enum Event: String {
         case deviceDied = "device-died"
@@ -34,7 +35,7 @@ final class CaptureDeviceSentinel {
         end()
     }
 
-    func begin(engine: AVAudioEngine, deviceID: AudioDeviceID?, onEvent: @escaping (Event) -> Void) {
+    func begin(engine: AVAudioEngine, deviceID: AudioDeviceID?, onEvent: @escaping @Sendable (Event) -> Void) {
         end()
 
         configObserver = NotificationCenter.default.addObserver(

@@ -4,6 +4,9 @@
 //
 //
 
+// AVFAudio's converter/tap callbacks predate Sendable annotations; buffers are
+// handed off queue-to-queue under this file's own synchronization.
+@preconcurrency import AVFAudio
 import AVFoundation
 import AudioToolbox
 import Combine
@@ -13,7 +16,13 @@ import OSLog
 import os
 
 /// Maneja la grabación de audio usando AVAudioEngine
-class AudioRecorder: ObservableObject {
+///
+/// Concurrency: opts out of the project's default MainActor isolation — the
+/// real synchronization is `audioSetupQueue` (engine lifecycle), the tap
+/// thread draining into `audioWriteQueue` (A1), and the two unfair locks for
+/// converter and capture-diagnostics state. Published state is only mutated
+/// on the main thread.
+nonisolated class AudioRecorder: @unchecked Sendable {
 
     private var audioEngine: AVAudioEngine?
     private var audioFile: AVAudioFile?
@@ -21,10 +30,30 @@ class AudioRecorder: ObservableObject {
     private var converter: AVAudioConverter?
     private var converterOutputFormat: AVAudioFormat?
 
-    @Published var isRecording = false
-    @Published var isPaused = false
-    @Published var recordingDuration: TimeInterval = 0
-    @Published var audioLevel: Float = 0.0
+    // Subjects instead of @Published (property wrappers cannot live in a
+    // nonisolated type yet); mutated on main only, flags are read from the
+    // setup queue when deciding cleanup (same pre-existing discipline).
+    let isRecordingPublisher = CurrentValueSubject<Bool, Never>(false)
+    let isPausedPublisher = CurrentValueSubject<Bool, Never>(false)
+    let recordingDurationPublisher = CurrentValueSubject<TimeInterval, Never>(0)
+    let audioLevelPublisher = CurrentValueSubject<Float, Never>(0)
+
+    var isRecording: Bool {
+        get { isRecordingPublisher.value }
+        set { isRecordingPublisher.send(newValue) }
+    }
+    var isPaused: Bool {
+        get { isPausedPublisher.value }
+        set { isPausedPublisher.send(newValue) }
+    }
+    var recordingDuration: TimeInterval {
+        get { recordingDurationPublisher.value }
+        set { recordingDurationPublisher.send(newValue) }
+    }
+    var audioLevel: Float {
+        get { audioLevelPublisher.value }
+        set { audioLevelPublisher.send(newValue) }
+    }
 
     private var timer: Timer?
     private var startTime: Date?
@@ -42,13 +71,18 @@ class AudioRecorder: ObservableObject {
     private let setupGenerationQueue = DispatchQueue(label: "com.sapowhisper.audioSetup.generation", qos: .userInitiated)
     /// A1: disk writes drain here so a slow flush never stalls the audio tap thread.
     private let audioWriteQueue = DispatchQueue(label: "com.sapowhisper.audioRecorder.write", qos: .userInitiated)
-    private lazy var deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
+    // Used on audioSetupQueue only.
+    private let deviceSentinel: CaptureDeviceSentinel
     private var captureRecoveryAttempts = 0
+
+    init() {
+        deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
+    }
 
     /// A2: called on the main thread when an interrupted capture (dead device,
     /// failed route recovery) cannot be rebuilt; the owner aborts the session
     /// preserving the WAV recorded so far.
-    var onCaptureInterrupted: ((String) -> Void)?
+    var onCaptureInterrupted: (@Sendable (String) -> Void)?
     private var inputBufferCount = 0
     private var writtenFrameCount: AVAudioFramePosition = 0
     private var firstInputLatencyMs: Double?
@@ -386,19 +420,25 @@ class AudioRecorder: ObservableObject {
             AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         )
         var didPublishLevel = false
-        var inputConsumed = false
+        // The input block runs synchronously inside convert(); the lock only
+        // satisfies the Sendable contract of the SDK callback.
+        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
 
         while true {
             guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCapacity) else { return }
 
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                if inputConsumed {
+                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
+                    if consumed { return true }
+                    consumed = true
+                    return false
+                }
+                if alreadyConsumed {
                     outStatus.pointee = .noDataNow
                     return nil
                 }
 
-                inputConsumed = true
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -914,7 +954,7 @@ class AudioRecorder: ObservableObject {
     }
 }
 
-struct RecordingCaptureDiagnostics {
+nonisolated struct RecordingCaptureDiagnostics {
     let selectedDeviceUID: String
     let inputBufferCount: Int
     let writtenFrameCount: AVAudioFramePosition

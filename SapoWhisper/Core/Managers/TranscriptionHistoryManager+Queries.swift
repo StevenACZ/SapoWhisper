@@ -6,7 +6,7 @@
 import Foundation
 import SQLite3
 
-extension TranscriptionHistoryManager {
+nonisolated extension TranscriptionHistoryManager {
     /// Fetch all transcription entries, newest first.
     func fetchAll() -> [HistoryEntry] {
         fetchEntries(limit: nil)

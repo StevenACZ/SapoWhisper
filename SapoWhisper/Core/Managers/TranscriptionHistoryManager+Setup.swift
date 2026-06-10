@@ -7,7 +7,7 @@ import Foundation
 import SQLite3
 import os
 
-extension TranscriptionHistoryManager {
+nonisolated extension TranscriptionHistoryManager {
     func configureDatabase() {
         sqlite3_busy_timeout(db, 1000)
         sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nil, nil, nil)

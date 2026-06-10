@@ -190,26 +190,29 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     private func bindCapture() {
         // A2: a capture that died mid-session (device gone, recovery failed)
-        // bubbles up so the owner can abort preserving the WAV.
+        // bubbles up so the owner can abort preserving the WAV. The capture
+        // always delivers this callback on the main queue.
         capture.onCaptureInterrupted = { [weak self] reason in
-            self?.onCaptureInterrupted?(reason)
+            MainActor.assumeIsolated {
+                self?.onCaptureInterrupted?(reason)
+            }
         }
 
-        capture.$recordingDuration
+        capture.recordingDurationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
 
-        capture.$audioLevel
+        capture.audioLevelPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.audioLevel = level
             }
             .store(in: &cancellables)
 
-        capture.$isPaused
+        capture.isPausedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isPaused in
                 self?.isPaused = isPaused

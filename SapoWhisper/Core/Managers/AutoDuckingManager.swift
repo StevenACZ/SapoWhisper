@@ -14,7 +14,10 @@ import os
 ///
 /// Usa Core Audio HAL APIs directamente ya que macOS no tiene
 /// AVAudioSession.setCategory(.duckOthers) como iOS.
-final class AutoDuckingManager {
+///
+/// Concurrency: nonisolated by design — all state is confined to the serial
+/// ducking queue; public methods only dispatch onto it.
+nonisolated final class AutoDuckingManager: @unchecked Sendable {
 
     static let shared = AutoDuckingManager()
 

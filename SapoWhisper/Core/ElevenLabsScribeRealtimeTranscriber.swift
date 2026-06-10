@@ -68,7 +68,9 @@ private struct ElevenLabsRealtimeTranscriptAccumulator {
     }
 }
 
-final class ElevenLabsRealtimeAudioSender {
+/// Concurrency: nonisolated by design — audio batching runs on the serial
+/// send queue and every counter sits behind `statsLock`/`stateLock`.
+nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private enum Constants {
         static let sampleRate = 16000
         static let targetChunkBytes = 6_400  // 0.2s of pcm_16000 mono int16.
@@ -116,14 +118,15 @@ final class ElevenLabsRealtimeAudioSender {
         let startedAt = CFAbsoluteTimeGetCurrent()
 
         return await withCheckedContinuation { continuation in
-            let resumeLock = NSLock()
-            var didResume = false
+            let resumeGate = OSAllocatedUnfairLock(initialState: false)
 
-            func resumeOnce(returning stats: ElevenLabsRealtimeAudioSenderStats) -> Bool {
-                resumeLock.lock()
-                defer { resumeLock.unlock() }
-                guard !didResume else { return false }
-                didResume = true
+            @Sendable func resumeOnce(returning stats: ElevenLabsRealtimeAudioSenderStats) -> Bool {
+                let claimed = resumeGate.withLock { (didResume: inout Bool) -> Bool in
+                    guard !didResume else { return false }
+                    didResume = true
+                    return true
+                }
+                guard claimed else { return false }
                 continuation.resume(returning: stats)
                 return true
             }
@@ -228,13 +231,10 @@ final class ElevenLabsRealtimeAudioSender {
 
         let startedAt = CFAbsoluteTimeGetCurrent()
         let semaphore = DispatchSemaphore(value: 0)
-        let completionLock = NSLock()
-        var sendError: Error?
+        let sendErrorBox = OSAllocatedUnfairLock<Error?>(initialState: nil)
 
         task.send(.string(message)) { error in
-            completionLock.lock()
-            sendError = error
-            completionLock.unlock()
+            sendErrorBox.withLock { $0 = error }
             semaphore.signal()
         }
 
@@ -243,9 +243,7 @@ final class ElevenLabsRealtimeAudioSender {
         let sendTimeout = consumeFirstSendBudgetIfNeeded() ?? Constants.sendTimeout
         let didFinish = semaphore.wait(timeout: .now() + sendTimeout) == .success
         let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-        completionLock.lock()
-        let completedError = sendError
-        completionLock.unlock()
+        let completedError = sendErrorBox.withLock { $0 }
 
         if didFinish, completedError == nil {
             registerSentMessage(byteCount: data.count, waitMs: waitMs)
@@ -661,26 +659,29 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
     private func bindCapture() {
         // A2: a capture that died mid-session (device gone, recovery failed)
-        // bubbles up so the owner can abort preserving the WAV.
+        // bubbles up so the owner can abort preserving the WAV. The capture
+        // always delivers this callback on the main queue.
         capture.onCaptureInterrupted = { [weak self] reason in
-            self?.onCaptureInterrupted?(reason)
+            MainActor.assumeIsolated {
+                self?.onCaptureInterrupted?(reason)
+            }
         }
 
-        capture.$recordingDuration
+        capture.recordingDurationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
 
-        capture.$audioLevel
+        capture.audioLevelPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
                 self?.audioLevel = level
             }
             .store(in: &cancellables)
 
-        capture.$isPaused
+        capture.isPausedPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isPaused in
                 self?.isPaused = isPaused
@@ -990,7 +991,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 }
 
-extension ElevenLabsRealtimeAudioSenderStats {
+nonisolated extension ElevenLabsRealtimeAudioSenderStats {
     fileprivate static let empty = ElevenLabsRealtimeAudioSenderStats(
         enqueuedChunks: 0,
         sentMessages: 0,

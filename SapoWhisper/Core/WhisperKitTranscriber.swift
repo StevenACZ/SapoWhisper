@@ -370,7 +370,10 @@ class WhisperKitTranscriber: ObservableObject {
         guard minutes > 0, isModelLoaded else { return }
 
         let timer = Timer(timeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
-            self?.unloadAfterIdle(configuredMinutes: minutes)
+            // Scheduled on RunLoop.main, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                self?.unloadAfterIdle(configuredMinutes: minutes)
+            }
         }
         timer.tolerance = 30
         RunLoop.main.add(timer, forMode: .common)

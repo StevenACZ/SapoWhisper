@@ -6,7 +6,7 @@
 import Foundation
 import SQLite3
 
-extension TranscriptionHistoryManager {
+nonisolated extension TranscriptionHistoryManager {
     /// H5: delete entries (and their audio) older than `days`, keeping pinned
     /// rows. Returns the number of deleted rows.
     @discardableResult

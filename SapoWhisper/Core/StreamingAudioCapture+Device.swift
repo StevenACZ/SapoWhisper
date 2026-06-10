@@ -9,7 +9,7 @@ import CoreAudio
 import Foundation
 import os
 
-extension StreamingAudioCapture {
+nonisolated extension StreamingAudioCapture {
     func bindPreferredInputDevice(to inputNode: AVAudioInputNode, deviceUID: String) throws -> AVAudioFormat? {
         guard deviceUID != AudioDevice.systemDefault.uid else { return nil }
         let deviceManager = AudioDeviceManager.shared

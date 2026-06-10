@@ -8,9 +8,11 @@
 import AVFoundation
 import Foundation
 
-enum MicrophonePermission {
+/// Concurrency: nonisolated — checks run from capture queues too; the cached
+/// flag sits behind `cacheLock`. UI-driven priming flows stay `@MainActor`.
+nonisolated enum MicrophonePermission {
     private static let cacheLock = NSLock()
-    private static var cachedGranted = false
+    private static nonisolated(unsafe) var cachedGranted = false
 
     static var isGranted: Bool {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {

@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct HistoryEntry: Identifiable, Hashable {
+nonisolated struct HistoryEntry: Identifiable, Hashable {
     let id: Int64
     let timestamp: Date
     let engine: String
@@ -46,7 +46,8 @@ struct HistoryEntry: Identifiable, Hashable {
         TranscriptAIStatus(rawValue: aiStatus) ?? .none
     }
 
-    var aiModeDisplayName: String? {
+    /// UI-only: resolves against localized mode names and the prompt store.
+    @MainActor var aiModeDisplayName: String? {
         guard let aiMode, !aiMode.isEmpty else { return nil }
         if let mode = TranscriptPolishMode(rawValue: aiMode) {
             return mode.displayName

@@ -7,7 +7,7 @@
 import Foundation
 
 /// Motor de transcripción disponible
-enum TranscriptionEngine: String, CaseIterable, Identifiable {
+nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
     case whisperLocal = "whisper"
     case deepgram = "deepgram"
     case elevenLabsScribe = "elevenlabs_scribe"
@@ -25,7 +25,8 @@ enum TranscriptionEngine: String, CaseIterable, Identifiable {
         }
     }
 
-    var description: String {
+    /// Localized copy is UI-only; localization lookups stay on the main actor.
+    @MainActor var description: String {
         switch self {
         case .whisperLocal:
             return "engine.whisper.description".localized

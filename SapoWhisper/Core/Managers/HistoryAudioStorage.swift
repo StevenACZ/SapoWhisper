@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-final class HistoryAudioStorage {
+nonisolated final class HistoryAudioStorage: Sendable {
     static let defaultMaxStorageMB = 500
     /// H6: user-selectable cap in Settings; enforcement trims to 80% so the
     /// sweep does not retrigger on every save.

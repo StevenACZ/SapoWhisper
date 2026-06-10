@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-struct DeepgramFluxAudioSenderStats {
+nonisolated struct DeepgramFluxAudioSenderStats {
     let enqueuedChunks: Int
     let sentChunks: Int
     let failedChunks: Int
@@ -21,7 +21,9 @@ struct DeepgramFluxAudioSenderStats {
     }
 }
 
-final class DeepgramFluxAudioSender {
+/// Concurrency: nonisolated by design — chunk sends run on the serial send
+/// queue and every counter sits behind `statsLock`/`stateLock`.
+nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.sapowhisper.fluxAudioSender", qos: .userInitiated)
     private let statsLock = NSLock()
     private let stateLock = NSLock()
@@ -59,14 +61,15 @@ final class DeepgramFluxAudioSender {
         let startedAt = CFAbsoluteTimeGetCurrent()
 
         return await withCheckedContinuation { continuation in
-            let resumeLock = NSLock()
-            var didResume = false
+            let resumeGate = OSAllocatedUnfairLock(initialState: false)
 
-            func resumeOnce(returning stats: DeepgramFluxAudioSenderStats) -> Bool {
-                resumeLock.lock()
-                defer { resumeLock.unlock() }
-                guard !didResume else { return false }
-                didResume = true
+            @Sendable func resumeOnce(returning stats: DeepgramFluxAudioSenderStats) -> Bool {
+                let claimed = resumeGate.withLock { (didResume: inout Bool) -> Bool in
+                    guard !didResume else { return false }
+                    didResume = true
+                    return true
+                }
+                guard claimed else { return false }
                 continuation.resume(returning: stats)
                 return true
             }
@@ -143,13 +146,10 @@ final class DeepgramFluxAudioSender {
 
             let startedAt = CFAbsoluteTimeGetCurrent()
             let semaphore = DispatchSemaphore(value: 0)
-            let completionLock = NSLock()
-            var sendError: Error?
+            let sendErrorBox = OSAllocatedUnfairLock<Error?>(initialState: nil)
 
             task.send(.data(data)) { error in
-                completionLock.lock()
-                sendError = error
-                completionLock.unlock()
+                sendErrorBox.withLock { $0 = error }
                 semaphore.signal()
             }
 
@@ -158,9 +158,7 @@ final class DeepgramFluxAudioSender {
             let sendTimeout: TimeInterval = chunkIndex == 1 ? 8.0 : 2.0
             let didFinish = semaphore.wait(timeout: .now() + sendTimeout) == .success
             let waitMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-            completionLock.lock()
-            let completedError = sendError
-            completionLock.unlock()
+            let completedError = sendErrorBox.withLock { $0 }
 
             if didFinish, completedError == nil {
                 registerSentChunk(byteCount: data.count, waitMs: waitMs)
@@ -252,7 +250,7 @@ final class DeepgramFluxAudioSender {
     }
 }
 
-extension DeepgramFluxAudioSenderStats {
+nonisolated extension DeepgramFluxAudioSenderStats {
     fileprivate static let empty = DeepgramFluxAudioSenderStats(
         enqueuedChunks: 0,
         sentChunks: 0,

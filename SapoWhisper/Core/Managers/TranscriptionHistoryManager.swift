@@ -9,11 +9,17 @@ import os
 
 /// Manages transcription history using SQLite
 /// DB at ~/Library/Application Support/SapoWhisper/history.db
-class TranscriptionHistoryManager {
+///
+/// Thread-safety: the connection opens with FULLMUTEX and every operation
+/// prepares its own statement, so calls are safe from any thread — the UI
+/// reads on main while persistence runs on background tasks (L3). UI change
+/// notifications always post on main via `notifyDidChange`.
+nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
 
     static let shared = TranscriptionHistoryManager()
     static let didChangeNotification = Notification.Name("TranscriptionHistoryManager.didChange")
-    static let isoFormatter = ISO8601DateFormatter()
+    // nonisolated(unsafe): ISO8601DateFormatter is documented thread-safe.
+    static nonisolated(unsafe) let isoFormatter = ISO8601DateFormatter()
 
     var db: OpaquePointer?
     let audioStorage: HistoryAudioStorage

@@ -4,6 +4,8 @@
 //
 //
 
+// AVFAudio's converter/tap callbacks predate Sendable annotations.
+@preconcurrency import AVFAudio
 import AVFoundation
 import AudioToolbox
 import Combine
@@ -26,12 +28,17 @@ struct SampleMetadata {
 }
 
 /// Monitor de nivel de audio en tiempo real para el micrófono
-class AudioLevelMonitor: ObservableObject {
+///
+/// Concurrency: engine lifecycle is confined to `monitorQueue` (those members
+/// are `nonisolated`); Published state stays on the main actor and is only
+/// touched through main-queue hops.
+class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     static let shared = AudioLevelMonitor()
 
-    private var audioEngine: AVAudioEngine?
-    private var isMonitoring = false
+    // nonisolated(unsafe): confined to monitorQueue.
+    private nonisolated(unsafe) var audioEngine: AVAudioEngine?
+    private nonisolated(unsafe) var isMonitoring = false
 
     /// Nivel de audio actual (0.0 - 1.0)
     @Published var audioLevel: Float = 0.0
@@ -43,7 +50,14 @@ class AudioLevelMonitor: ObservableObject {
     @Published var isActive = false
 
     /// Gain/boost de audio (1.0 = normal, 2.0 = 2x amplificación)
-    @Published var gain: Float = 1.0
+    @Published var gain: Float = 1.0 {
+        didSet { tapGain = gain }
+    }
+
+    // nonisolated(unsafe): tap-thread mirrors of UI state (benign races —
+    // a buffer processed during a toggle uses the previous value).
+    private nonisolated(unsafe) var tapGain: Float = 1.0
+    private nonisolated(unsafe) var sampleWriteActive = false
 
     /// Si hubo un error al iniciar el monitoreo
     @Published var hasError = false
@@ -58,21 +72,25 @@ class AudioLevelMonitor: ObservableObject {
     @Published var rawSampleMetadata: SampleMetadata?
     @Published var compressedSampleMetadata: SampleMetadata?
 
-    private var sampleFile: AVAudioFile?
-    private var sampleTapFormat: AVAudioFormat?
+    // nonisolated(unsafe): written on main, read by the tap thread.
+    private nonisolated(unsafe) var sampleFile: AVAudioFile?
+    private nonisolated(unsafe) var sampleTapFormat: AVAudioFormat?
     private var sampleRecordingTimer: Timer?
     private var sampleStartTime: Date?
 
     private var peakDecayTimer: Timer?
     private let monitorQueue = DispatchQueue(label: "com.sapowhisper.audioMonitor.control", qos: .userInitiated)
-    private var selectedDeviceUID: String = "default"
-    private var restartGeneration: UInt64 = 0
-    private var monitoringRequested = false
-    private var resumeAfterRecorder = false
+    // nonisolated(unsafe): confined to monitorQueue.
+    private nonisolated(unsafe) var selectedDeviceUID: String = "default"
+    private nonisolated(unsafe) var restartGeneration: UInt64 = 0
+    private nonisolated(unsafe) var monitoringRequested = false
+    private nonisolated(unsafe) var resumeAfterRecorder = false
 
     private init() {
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
-        self.gain = savedGain > 0 ? Float(savedGain) : 1.0
+        let initialGain = savedGain > 0 ? Float(savedGain) : 1.0
+        self.gain = initialGain
+        self.tapGain = initialGain
     }
 
     /// Inicia el monitoreo del micrófono
@@ -81,7 +99,7 @@ class AudioLevelMonitor: ObservableObject {
     }
 
     /// Inicia el AVAudioEngine y bindea el dispositivo directamente al AudioUnit
-    private func startAudioEngineOnQueue(deviceUID: String) {
+    private nonisolated func startAudioEngineOnQueue(deviceUID: String) {
         let audioEngine = AVAudioEngine()
 
         selectedDeviceUID = deviceUID
@@ -109,12 +127,14 @@ class AudioLevelMonitor: ObservableObject {
             self.audioEngine = audioEngine
             isMonitoring = true
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.hasError = false
-                self.errorMessage = nil
-                self.isActive = true
-                self.startPeakDecayTimer()
-                SapoLog.audioRoute.info("Audio level monitoring started")
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.hasError = false
+                    self.errorMessage = nil
+                    self.isActive = true
+                    self.startPeakDecayTimer()
+                    SapoLog.audioRoute.info("Audio level monitoring started")
+                }
             }
         } catch {
             setError("Error al iniciar: \(error.localizedDescription)")
@@ -123,7 +143,7 @@ class AudioLevelMonitor: ObservableObject {
     }
 
     /// Binds the selected device directly on the AudioUnit (does NOT change system default)
-    private func bindMonitorDevice(to inputNode: AVAudioInputNode) throws -> AVAudioFormat? {
+    private nonisolated func bindMonitorDevice(to inputNode: AVAudioInputNode) throws -> AVAudioFormat? {
         guard selectedDeviceUID != "default" else { return nil }
 
         let deviceManager = AudioDeviceManager.shared
@@ -172,7 +192,7 @@ class AudioLevelMonitor: ObservableObject {
     }
 
     /// Limpia recursos sin cambiar el estado de monitoreo
-    private func cleanupEngineOnQueue() {
+    private nonisolated func cleanupEngineOnQueue() {
         if let engine = audioEngine {
             if engine.isRunning {
                 engine.inputNode.removeTap(onBus: 0)
@@ -249,7 +269,7 @@ class AudioLevelMonitor: ObservableObject {
         }
     }
 
-    private func stopMonitoringOnQueue(clearIntent: Bool, logStop: Bool) {
+    private nonisolated func stopMonitoringOnQueue(clearIntent: Bool, logStop: Bool) {
         if clearIntent {
             monitoringRequested = false
             resumeAfterRecorder = false
@@ -260,20 +280,22 @@ class AudioLevelMonitor: ObservableObject {
         cleanupEngineOnQueue()
 
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.peakDecayTimer?.invalidate()
-            self.peakDecayTimer = nil
-            self.isActive = false
-            self.audioLevel = 0
-            self.peakLevel = 0
-            if logStop && wasMonitoring {
-                SapoLog.audioRoute.info("Audio level monitoring stopped")
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.peakDecayTimer?.invalidate()
+                self.peakDecayTimer = nil
+                self.isActive = false
+                self.audioLevel = 0
+                self.peakLevel = 0
+                if logStop && wasMonitoring {
+                    SapoLog.audioRoute.info("Audio level monitoring stopped")
+                }
             }
         }
     }
 
     @discardableResult
-    private func bumpRestartGeneration() -> UInt64 {
+    private nonisolated func bumpRestartGeneration() -> UInt64 {
         restartGeneration &+= 1
         return restartGeneration
     }
@@ -281,9 +303,12 @@ class AudioLevelMonitor: ObservableObject {
     private func startPeakDecayTimer() {
         peakDecayTimer?.invalidate()
         peakDecayTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            if self.peakLevel > self.audioLevel {
-                self.peakLevel = max(self.audioLevel, self.peakLevel - 0.02)
+            // Scheduled on the main run loop, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.peakLevel > self.audioLevel {
+                    self.peakLevel = max(self.audioLevel, self.peakLevel - 0.02)
+                }
             }
         }
     }
@@ -308,12 +333,16 @@ class AudioLevelMonitor: ObservableObject {
             sampleFile = try AVAudioFile(forWriting: rawURL, settings: tapFormat.settings)
             rawSampleURL = rawURL
             isRecordingSample = true
+            sampleWriteActive = true
             sampleStartTime = Date()
             sampleRecordingDuration = 0
 
             sampleRecordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                guard let self, let start = self.sampleStartTime else { return }
-                self.sampleRecordingDuration = Date().timeIntervalSince(start)
+                // Scheduled on the main run loop, so the timer always fires on main.
+                MainActor.assumeIsolated {
+                    guard let self, let start = self.sampleStartTime else { return }
+                    self.sampleRecordingDuration = Date().timeIntervalSince(start)
+                }
             }
 
             SapoLog.audioRoute.info("Mic sample recording started")
@@ -328,6 +357,7 @@ class AudioLevelMonitor: ObservableObject {
     func stopSampleRecording() {
         guard isRecordingSample else { return }
 
+        sampleWriteActive = false
         sampleRecordingTimer?.invalidate()
         sampleRecordingTimer = nil
         isRecordingSample = false
@@ -352,6 +382,7 @@ class AudioLevelMonitor: ObservableObject {
 
     /// Clears recorded sample files
     func clearSampleRecording() {
+        sampleWriteActive = false
         sampleFile = nil
         sampleRecordingTimer?.invalidate()
         sampleRecordingTimer = nil
@@ -416,13 +447,19 @@ class AudioLevelMonitor: ObservableObject {
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrameCount) else { return false }
 
         var error: NSError?
-        var inputConsumed = false
+        // The input block runs synchronously inside convert(); the lock only
+        // satisfies the Sendable contract of the SDK callback.
+        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
         let status = converter.convert(to: outputBuffer, error: &error) { _, outStatus in
-            if inputConsumed {
+            let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
+                if consumed { return true }
+                consumed = true
+                return false
+            }
+            if alreadyConsumed {
                 outStatus.pointee = .endOfStream
                 return nil
             }
-            inputConsumed = true
             outStatus.pointee = .haveData
             return inputBuffer
         }
@@ -441,7 +478,7 @@ class AudioLevelMonitor: ObservableObject {
     // MARK: - Audio Level Processing
 
     /// Applies gain to a copy of the buffer (leaves original untouched)
-    private func bufferWithGain(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    private nonisolated func bufferWithGain(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         guard let srcData = buffer.floatChannelData else { return nil }
         guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return nil }
         copy.frameLength = buffer.frameLength
@@ -449,17 +486,17 @@ class AudioLevelMonitor: ObservableObject {
 
         let count = Int(buffer.frameLength)
         for i in 0..<count {
-            dstData[0][i] = max(-1.0, min(1.0, srcData[0][i] * gain))
+            dstData[0][i] = max(-1.0, min(1.0, srcData[0][i] * tapGain))
         }
         return copy
     }
 
     /// Procesa el buffer de audio y extrae el nivel
-    private func processBuffer(_ buffer: AVAudioPCMBuffer) {
+    private nonisolated func processBuffer(_ buffer: AVAudioPCMBuffer) {
         // Write to sample file if recording — apply gain so playback matches real transcription
-        if isRecordingSample, let sampleFile {
+        if sampleWriteActive, let sampleFile {
             do {
-                if gain != 1.0, let gained = bufferWithGain(buffer) {
+                if tapGain != 1.0, let gained = bufferWithGain(buffer) {
                     try sampleFile.write(from: gained)
                 } else {
                     try sampleFile.write(from: buffer)
@@ -485,7 +522,7 @@ class AudioLevelMonitor: ObservableObject {
         let rms = sqrt(channelDataValueArray.map { $0 * $0 }.reduce(0, +) / Float(channelDataValueArray.count))
 
         // Aplicar gain
-        let amplifiedRms = rms * gain
+        let amplifiedRms = rms * tapGain
 
         // Convertir a escala logarítmica para mejor visualización
         let avgPower = 20 * log10(max(amplifiedRms, 0.0001))  // Evitar log(0)
@@ -496,35 +533,36 @@ class AudioLevelMonitor: ObservableObject {
         let normalizedLevel = max(0, min(1, (avgPower - minDb) / (maxDb - minDb)))
 
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
 
-            // Suavizar el nivel con interpolación
-            self.audioLevel = self.audioLevel * 0.7 + normalizedLevel * 0.3
+                // Suavizar el nivel con interpolación
+                self.audioLevel = self.audioLevel * 0.7 + normalizedLevel * 0.3
 
-            // Actualizar pico si es mayor
-            if normalizedLevel > self.peakLevel {
-                self.peakLevel = normalizedLevel
+                // Actualizar pico si es mayor
+                if normalizedLevel > self.peakLevel {
+                    self.peakLevel = normalizedLevel
+                }
             }
         }
     }
 
     /// Establece un error
-    private func setError(_ message: String) {
+    private nonisolated func setError(_ message: String) {
         DispatchQueue.main.async { [weak self] in
-            SapoLog.audioRoute.error(
-                "AudioLevelMonitor error message=\(message, privacy: .public)"
-            )
-            self?.hasError = true
-            self?.errorMessage = message
-            self?.isActive = false
-            self?.peakDecayTimer?.invalidate()
-            self?.peakDecayTimer = nil
-            self?.audioLevel = 0
-            self?.peakLevel = 0
+            MainActor.assumeIsolated {
+                SapoLog.audioRoute.error(
+                    "AudioLevelMonitor error message=\(message, privacy: .public)"
+                )
+                self?.hasError = true
+                self?.errorMessage = message
+                self?.isActive = false
+                self?.peakDecayTimer?.invalidate()
+                self?.peakDecayTimer = nil
+                self?.audioLevel = 0
+                self?.peakLevel = 0
+            }
         }
     }
 
-    deinit {
-        stopMonitoring()
-    }
 }

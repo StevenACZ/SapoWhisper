@@ -11,15 +11,15 @@ import os
 /// `~/Library/Caches/oli.SapoWhisper/audio-temp/` instead of timestamp names
 /// in the shared system temp directory, and a launch sweep removes anything
 /// stale that an earlier crash or abandoned retry left behind.
-enum TemporaryAudioStorage {
+nonisolated enum TemporaryAudioStorage {
     /// Files older than this are considered abandoned by the launch sweep.
     private static let staleAge: TimeInterval = 24 * 60 * 60
 
-    private static var dailySweepTimer: Timer?
+    @MainActor private static var dailySweepTimer: Timer?
 
     /// R5: the app is resident for days — repeat the stale sweep daily so
     /// abandoned temp WAVs cannot pile up between launches.
-    static func startDailySweep() {
+    @MainActor static func startDailySweep() {
         guard dailySweepTimer == nil else { return }
 
         let timer = Timer(timeInterval: 86_400, repeats: true) { _ in

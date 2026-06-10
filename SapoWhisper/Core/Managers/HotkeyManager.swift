@@ -171,7 +171,10 @@ class HotkeyManager: ObservableObject {
         guard watchdogTimer == nil else { return }
 
         let timer = Timer(timeInterval: Self.watchdogInterval, repeats: true) { [weak self] _ in
-            self?.assertHotkeyAlive(reason: "watchdog")
+            // Scheduled on RunLoop.main, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                self?.assertHotkeyAlive(reason: "watchdog")
+            }
         }
         timer.tolerance = 60
         RunLoop.main.add(timer, forMode: .common)
@@ -440,7 +443,4 @@ class HotkeyManager: ObservableObject {
         HotkeyKeyName.name(for: keyCode)
     }
 
-    deinit {
-        unregisterHotkey()
-    }
 }

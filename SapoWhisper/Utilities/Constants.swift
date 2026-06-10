@@ -7,7 +7,7 @@
 import SwiftUI
 
 /// Constantes globales de la aplicación
-enum Constants {
+nonisolated enum Constants {
 
     // MARK: - App Info
 

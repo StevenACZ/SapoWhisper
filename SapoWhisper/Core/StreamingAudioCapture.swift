@@ -16,13 +16,35 @@ struct StreamingAudioCaptureResult {
     let diagnostics: RecordingCaptureDiagnostics
 }
 
-final class StreamingAudioCapture: ObservableObject {
+/// Concurrency: opts out of default MainActor isolation like `AudioRecorder`
+/// — synchronized by its setup queue, the tap thread draining into the write
+/// queue (A1), and the unfair locks. Published state mutates on main only.
+nonisolated final class StreamingAudioCapture: @unchecked Sendable {
     typealias PCMChunkHandler = (Data) -> Void
 
-    @Published var isRecording = false
-    @Published var isPaused = false
-    @Published var recordingDuration: TimeInterval = 0
-    @Published var audioLevel: Float = 0
+    // Subjects instead of @Published (property wrappers cannot live in a
+    // nonisolated type yet); mutated on main only.
+    let isRecordingPublisher = CurrentValueSubject<Bool, Never>(false)
+    let isPausedPublisher = CurrentValueSubject<Bool, Never>(false)
+    let recordingDurationPublisher = CurrentValueSubject<TimeInterval, Never>(0)
+    let audioLevelPublisher = CurrentValueSubject<Float, Never>(0)
+
+    var isRecording: Bool {
+        get { isRecordingPublisher.value }
+        set { isRecordingPublisher.send(newValue) }
+    }
+    var isPaused: Bool {
+        get { isPausedPublisher.value }
+        set { isPausedPublisher.send(newValue) }
+    }
+    var recordingDuration: TimeInterval {
+        get { recordingDurationPublisher.value }
+        set { recordingDurationPublisher.send(newValue) }
+    }
+    var audioLevel: Float {
+        get { audioLevelPublisher.value }
+        set { audioLevelPublisher.send(newValue) }
+    }
 
     var selectedDeviceUID: String = AudioDevice.systemDefault.uid
 
@@ -57,14 +79,19 @@ final class StreamingAudioCapture: ObservableObject {
     let audioWriteQueue = DispatchQueue(label: "com.sapowhisper.streamingCapture.write", qos: .userInitiated)
     let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
 
-    lazy var deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
+    // Used on audioSetupQueue only.
+    let deviceSentinel: CaptureDeviceSentinel
     var captureRecoveryAttempts = 0
     var captureActive = false
+
+    init() {
+        deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
+    }
 
     /// A2: called on the main thread when an interrupted capture (dead device,
     /// failed route recovery) cannot be rebuilt; the owner aborts preserving
     /// the WAV recorded so far.
-    var onCaptureInterrupted: ((String) -> Void)?
+    var onCaptureInterrupted: (@Sendable (String) -> Void)?
 
     func prepareInputDeviceForRecording() -> TimeInterval {
         let deviceManager = AudioDeviceManager.shared

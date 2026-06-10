@@ -5,14 +5,15 @@
 //
 
 import AVFoundation
-import Combine
+// PassthroughSubject predates Sendable annotations; subjects are thread-safe.
+@preconcurrency import Combine
 import CoreAudio
 import Foundation
 import OSLog
 import os
 
 /// Representa un dispositivo de audio (micrófono)
-struct AudioDevice: Identifiable, Hashable {
+nonisolated struct AudioDevice: Identifiable, Hashable {
     let id: AudioDeviceID
     let name: String
     let uid: String
@@ -33,12 +34,17 @@ struct AudioDevice: Identifiable, Hashable {
 }
 
 /// Maneja la lista de dispositivos de audio disponibles
-class AudioDeviceManager: ObservableObject {
+///
+/// Concurrency: queried from capture setup queues as well as the UI, so every
+/// method is `nonisolated`; internal state lives behind `stateQueue`
+/// (`readState`/`writeState`). The Published properties stay on the main
+/// actor for SwiftUI and are only touched through the publish helpers.
+class AudioDeviceManager: ObservableObject, @unchecked Sendable {
 
-    static let shared = AudioDeviceManager()
-    private static let recorderInputSettleWindow: CFTimeInterval = 0.35
+    nonisolated static let shared = AudioDeviceManager()
+    private nonisolated static let recorderInputSettleWindow: CFTimeInterval = 0.35
 
-    private struct StateSnapshot {
+    private nonisolated struct StateSnapshot {
         var availableDevices: [AudioDevice] = [.systemDefault]
         var devicesByUID: [String: AudioDeviceID] = [:]
         var lastKnownDefaultInputDeviceID: AudioDeviceID?
@@ -58,12 +64,13 @@ class AudioDeviceManager: ObservableObject {
         routeChangeSubject.eraseToAnyPublisher()
     }
 
-    private let stateQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.state", qos: .userInitiated)
-    private let listenerQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.listeners", qos: .userInitiated)
-    private let routeChangeSubject = PassthroughSubject<Void, Never>()
-    private var state = StateSnapshot()
+    private nonisolated let stateQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.state", qos: .userInitiated)
+    private nonisolated let listenerQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.listeners", qos: .userInitiated)
+    private nonisolated let routeChangeSubject = PassthroughSubject<Void, Never>()
+    // nonisolated(unsafe): guarded by stateQueue via readState/writeState.
+    private nonisolated(unsafe) var state = StateSnapshot()
 
-    private init() {
+    private nonisolated init() {
         let initialDefaultInput = getSystemDefaultInputDevice()
         let initialDefaultOutput = getSystemDefaultOutputDevice()
         writeState { state in
@@ -77,14 +84,14 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Refresca la lista de dispositivos de audio disponibles
-    func refreshDevices() {
+    nonisolated func refreshDevices() {
         let devices = loadAvailableInputDevices()
         updateAvailableDevicesSnapshot(devices)
         publishAvailableDevices(devices)
     }
 
     /// Obtiene información de un dispositivo de entrada
-    private func loadAvailableInputDevices() -> [AudioDevice] {
+    private nonisolated func loadAvailableInputDevices() -> [AudioDevice] {
         var devices: [AudioDevice] = [.systemDefault]
         guard let deviceIDs = queryAllDeviceIDs() else {
             return devices
@@ -102,7 +109,7 @@ class AudioDeviceManager: ObservableObject {
         return devices
     }
 
-    private func getInputDevice(deviceID: AudioDeviceID) -> AudioDevice? {
+    private nonisolated func getInputDevice(deviceID: AudioDeviceID) -> AudioDevice? {
         // Verificar si tiene canales de entrada
         var inputChannels: UInt32 = 0
         var propertyAddress = AudioObjectPropertyAddress(
@@ -160,7 +167,7 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Configura un listener para cambios en dispositivos
-    private func setupDeviceChangeListener() {
+    private nonisolated func setupDeviceChangeListener() {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -182,7 +189,7 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Listens for changes to the system's default input device
-    private func setupDefaultInputDeviceListener() {
+    private nonisolated func setupDefaultInputDeviceListener() {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -199,7 +206,7 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Listens for changes to the system's default output device.
-    private func setupDefaultOutputDeviceListener() {
+    private nonisolated func setupDefaultOutputDeviceListener() {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -215,7 +222,7 @@ class AudioDeviceManager: ObservableObject {
         }
     }
 
-    private func handleDefaultInputDeviceChanged() {
+    private nonisolated func handleDefaultInputDeviceChanged() {
         // Skip if this change was triggered by our own setSystemDefaultInputDevice call
         let shouldSkip = writeState { state in
             if state.suppressNextDefaultInputNotification {
@@ -233,12 +240,12 @@ class AudioDeviceManager: ObservableObject {
         checkDefaultInputDeviceChange()
     }
 
-    private func handleDefaultOutputDeviceChanged() {
+    private nonisolated func handleDefaultOutputDeviceChanged() {
         checkDefaultOutputDeviceChange()
     }
 
     /// Checks if the default input device actually changed and notifies if so
-    private func checkDefaultInputDeviceChange() {
+    private nonisolated func checkDefaultInputDeviceChange() {
         guard let currentDeviceID = getSystemDefaultInputDevice() else { return }
         let timestamp = CFAbsoluteTimeGetCurrent()
 
@@ -256,7 +263,7 @@ class AudioDeviceManager: ObservableObject {
         notifyRouteChange()
     }
 
-    private func checkDefaultOutputDeviceChange() {
+    private nonisolated func checkDefaultOutputDeviceChange() {
         guard let currentDeviceID = getSystemDefaultOutputDevice() else { return }
         let timestamp = CFAbsoluteTimeGetCurrent()
 
@@ -274,12 +281,12 @@ class AudioDeviceManager: ObservableObject {
         notifyRouteChange()
     }
 
-    func recorderInputSettleDelay() -> TimeInterval {
+    nonisolated func recorderInputSettleDelay() -> TimeInterval {
         captureRouteSettleDelay()
     }
 
     /// Gets the name of a device by its ID
-    func getDeviceName(for deviceID: AudioDeviceID) -> String? {
+    nonisolated func getDeviceName(for deviceID: AudioDeviceID) -> String? {
         if let cachedName = readState({ state in
             state.availableDevices.first(where: { $0.id == deviceID })?.name
         }) {
@@ -290,7 +297,7 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Obtiene el AudioDeviceID para un UID dado
-    func getDeviceID(for uid: String) -> AudioDeviceID? {
+    nonisolated func getDeviceID(for uid: String) -> AudioDeviceID? {
         if uid == "default" {
             return getSystemDefaultInputDevice()
         }
@@ -301,7 +308,7 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Obtiene el dispositivo de entrada por defecto del sistema
-    func getSystemDefaultInputDevice() -> AudioDeviceID? {
+    nonisolated func getSystemDefaultInputDevice() -> AudioDeviceID? {
         var deviceID: AudioDeviceID = 0
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
@@ -323,7 +330,7 @@ class AudioDeviceManager: ObservableObject {
     }
 
     /// Obtiene el dispositivo de salida por defecto del sistema
-    func getSystemDefaultOutputDevice() -> AudioDeviceID? {
+    nonisolated func getSystemDefaultOutputDevice() -> AudioDeviceID? {
         var deviceID: AudioDeviceID = 0
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -347,7 +354,7 @@ class AudioDeviceManager: ObservableObject {
     /// Configura temporalmente un dispositivo como entrada por defecto del sistema
     /// Retorna true si tuvo éxito
     @discardableResult
-    func setSystemDefaultInputDevice(_ deviceID: AudioDeviceID) -> Bool {
+    nonisolated func setSystemDefaultInputDevice(_ deviceID: AudioDeviceID) -> Bool {
         guard deviceID != AudioObjectID(kAudioObjectUnknown) else {
             return false
         }
@@ -385,7 +392,7 @@ class AudioDeviceManager: ObservableObject {
         }
     }
 
-    func captureRouteSettleDelay() -> TimeInterval {
+    nonisolated func captureRouteSettleDelay() -> TimeInterval {
         let latestTransition = readState { state in
             max(state.lastDefaultInputTransitionTime, max(state.lastDefaultOutputTransitionTime, state.lastDeviceListChangeTime))
         }
@@ -397,28 +404,32 @@ class AudioDeviceManager: ObservableObject {
 
     /// Settle delay accounting for any device transition (list change OR default input change).
     /// Use this for specific device UIDs; `recorderInputSettleDelay` only tracks default input changes.
-    func deviceTransitionSettleDelay() -> TimeInterval {
+    nonisolated func deviceTransitionSettleDelay() -> TimeInterval {
         captureRouteSettleDelay()
     }
 
-    private func updateAvailableDevicesSnapshot(_ devices: [AudioDevice]) {
+    private nonisolated func updateAvailableDevicesSnapshot(_ devices: [AudioDevice]) {
         writeState { state in
             state.availableDevices = devices
             state.devicesByUID = Dictionary(uniqueKeysWithValues: devices.map { ($0.uid, $0.id) })
         }
     }
 
-    private func publishAvailableDevices(_ devices: [AudioDevice]) {
+    private nonisolated func publishAvailableDevices(_ devices: [AudioDevice]) {
         if Thread.isMainThread {
-            availableDevices = devices
+            MainActor.assumeIsolated {
+                availableDevices = devices
+            }
         } else {
             DispatchQueue.main.async { [weak self] in
-                self?.availableDevices = devices
+                MainActor.assumeIsolated {
+                    self?.availableDevices = devices
+                }
             }
         }
     }
 
-    private func recordDeviceListChange() {
+    private nonisolated func recordDeviceListChange() {
         let timestamp = CFAbsoluteTimeGetCurrent()
         writeState { state in
             state.lastDeviceListChangeTime = timestamp
@@ -427,20 +438,22 @@ class AudioDeviceManager: ObservableObject {
         notifyRouteChange()
     }
 
-    func publishDetectedDeviceName(_ deviceName: String) {
-        let publish = {
+    nonisolated func publishDetectedDeviceName(_ deviceName: String) {
+        let publish: @MainActor () -> Void = {
             self.detectedDeviceName = nil
             self.detectedDeviceName = deviceName
         }
 
         if Thread.isMainThread {
-            publish()
+            MainActor.assumeIsolated(publish)
         } else {
-            DispatchQueue.main.async(execute: publish)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated(publish)
+            }
         }
     }
 
-    private func queryAllDeviceIDs() -> [AudioDeviceID]? {
+    private nonisolated func queryAllDeviceIDs() -> [AudioDeviceID]? {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -475,7 +488,7 @@ class AudioDeviceManager: ObservableObject {
         return deviceIDs
     }
 
-    private func queryDeviceName(_ deviceID: AudioDeviceID) -> String? {
+    private nonisolated func queryDeviceName(_ deviceID: AudioDeviceID) -> String? {
         var namePropertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceNameCFString,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -490,20 +503,20 @@ class AudioDeviceManager: ObservableObject {
         return deviceName
     }
 
-    private func readState<T>(_ block: (StateSnapshot) -> T) -> T {
+    private nonisolated func readState<T>(_ block: (StateSnapshot) -> T) -> T {
         stateQueue.sync {
             block(state)
         }
     }
 
     @discardableResult
-    private func writeState<T>(_ block: (inout StateSnapshot) -> T) -> T {
+    private nonisolated func writeState<T>(_ block: (inout StateSnapshot) -> T) -> T {
         stateQueue.sync {
             block(&state)
         }
     }
 
-    private func notifyRouteChange() {
+    private nonisolated func notifyRouteChange() {
         DispatchQueue.main.async { [weak self] in
             self?.routeChangeSubject.send()
         }

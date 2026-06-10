@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum HistoryExportFormat: String, CaseIterable, Identifiable {
+nonisolated enum HistoryExportFormat: String, CaseIterable, Identifiable {
     case txt
     case json
     case csv
@@ -25,7 +25,7 @@ enum HistoryExportFormat: String, CaseIterable, Identifiable {
 
 /// H4: renders history entries into shareable text formats. Pure functions so
 /// the formats are unit-testable; file writing stays in the UI layer.
-enum HistoryExporter {
+nonisolated enum HistoryExporter {
 
     static func render(_ entries: [HistoryEntry], as format: HistoryExportFormat) -> String {
         switch format {

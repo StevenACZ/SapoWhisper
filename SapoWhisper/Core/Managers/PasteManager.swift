@@ -39,7 +39,7 @@ class PasteManager {
     /// Activa la app anterior y pega en cuanto el sistema notifica la
     /// activación (fallback fijo si la notificación no llega), en vez de
     /// esperar con polling.
-    static func simulatePaste(onPasted: (() -> Void)? = nil) {
+    static func simulatePaste(onPasted: (@MainActor () -> Void)? = nil) {
         let t0 = CFAbsoluteTimeGetCurrent()
         lastPasteTriggerTime = t0
         cancelPendingActivationWait()
@@ -62,14 +62,18 @@ class PasteManager {
             "Reactivating previous app name=\(targetApp.localizedName ?? "unknown", privacy: .public)"
         )
 
-        let pasteOnce: (String) -> Void = { trigger in
-            cancelPendingActivationWait()
-            let waitMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-            SapoLog.menuBar.info(
-                "Paste activation trigger=\(trigger, privacy: .public) waitMs=\(waitMs, privacy: .public)"
-            )
-            performPaste()
-            onPasted?()
+        // Both triggers (workspace notification with queue .main, and the
+        // main-queue fallback) deliver on the main thread.
+        let pasteOnce: @Sendable (String) -> Void = { trigger in
+            MainActor.assumeIsolated {
+                cancelPendingActivationWait()
+                let waitMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                SapoLog.menuBar.info(
+                    "Paste activation trigger=\(trigger, privacy: .public) waitMs=\(waitMs, privacy: .public)"
+                )
+                performPaste()
+                onPasted?()
+            }
         }
 
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(

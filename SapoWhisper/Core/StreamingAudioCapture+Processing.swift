@@ -3,11 +3,14 @@
 //  SapoWhisper
 //
 
+// AVFAudio's converter/tap callbacks predate Sendable annotations; buffers are
+// handed off queue-to-queue under the class's own synchronization.
+@preconcurrency import AVFAudio
 import AVFoundation
 import Foundation
 import os
 
-extension StreamingAudioCapture {
+nonisolated extension StreamingAudioCapture {
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let audioFile, let outputFormat = converterOutputFormat else { return }
         let inputTime = CFAbsoluteTimeGetCurrent()
@@ -44,17 +47,23 @@ extension StreamingAudioCapture {
             AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         )
         var didPublishLevel = false
-        var inputConsumed = false
+        // The input block runs synchronously inside convert(); the lock only
+        // satisfies the Sendable contract of the SDK callback.
+        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
 
         while true {
             guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return }
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                if inputConsumed {
+                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
+                    if consumed { return true }
+                    consumed = true
+                    return false
+                }
+                if alreadyConsumed {
                     outStatus.pointee = .noDataNow
                     return nil
                 }
-                inputConsumed = true
                 outStatus.pointee = .haveData
                 return buffer
             }
