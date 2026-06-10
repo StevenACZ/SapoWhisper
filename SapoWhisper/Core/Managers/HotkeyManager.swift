@@ -111,6 +111,10 @@ class HotkeyManager: ObservableObject {
 
     /// Registra el hotkey global
     func registerHotkey(callback: @escaping () -> Void) {
+        // UI preview and test launches skip the event tap: each ad-hoc
+        // rebuild would re-trigger the Accessibility consent prompt.
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
+
         self.hotkeyCallback = callback
 
         // Desregistrar hotkey anterior si existe

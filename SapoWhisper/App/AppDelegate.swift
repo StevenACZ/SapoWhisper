@@ -114,11 +114,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleInitialOnboardingCheck() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 650_000_000)
-            if WelcomeWindowController.isOnboardingNeeded {
+            guard !UIPreviewMode.isRunningTests else { return }
+            if UIPreviewMode.isActive {
+                presentPreviewScreen()
+            } else if WelcomeWindowController.isOnboardingNeeded {
                 WelcomeWindowController.shared.show()
             } else {
                 PermissionService.shared.showRequirementsWindow()
             }
+        }
+    }
+
+    /// UI preview launches open the requested window directly, with no
+    /// permission or onboarding windows competing for focus.
+    private func presentPreviewScreen() {
+        switch UIPreviewMode.screen {
+        case "history":
+            menuBarStatusController.openHistoryWindow()
+        case "welcome":
+            WelcomeWindowController.shared.show()
+        default:
+            break
         }
     }
 }

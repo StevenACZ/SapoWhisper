@@ -59,13 +59,19 @@ enum KeychainStore {
     private static func loadPayload() -> [String: String] {
         cachedPayload.withLock { cached in
             if let cached { return cached }
-            let payload = readOrMigratePayload()
+            // UI preview and test launches must never hit the keychain:
+            // every ad-hoc rebuild would re-trigger the consent dialog.
+            let payload = UIPreviewMode.skipsConsentPrompts ? [:] : readOrMigratePayload()
             cached = payload
             return payload
         }
     }
 
     private static func persist(_ payload: [String: String]) -> Bool {
+        if UIPreviewMode.skipsConsentPrompts {
+            cachedPayload.withLock { $0 = payload }
+            return true
+        }
         guard writePayload(payload) else { return false }
         cachedPayload.withLock { $0 = payload }
         rememberOwnership()
