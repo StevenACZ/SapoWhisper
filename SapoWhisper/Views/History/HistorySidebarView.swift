@@ -17,41 +17,81 @@ struct HistorySidebarView: View {
     var onRowAppear: ((HistoryEntry) -> Void)?
 
     var body: some View {
-        List(selection: $selection) {
-            ForEach(groupedEntries, id: \.group) { section in
-                Section(section.group.localizedTitle) {
-                    ForEach(section.entries) { entry in
-                        HistoryRowView(entry: entry)
-                            .tag(entry)
-                            .contextMenu {
-                                contextMenuItems(for: entry)
+        Group {
+            if entries.isEmpty {
+                emptyState
+            } else {
+                List(selection: $selection) {
+                    ForEach(groupedEntries, id: \.group) { section in
+                        Section(section.group.localizedTitle) {
+                            ForEach(section.entries) { entry in
+                                HistoryRowView(entry: entry)
+                                    .tag(entry)
+                                    .contextMenu {
+                                        contextMenuItems(for: entry)
+                                    }
+                                    .onAppear {
+                                        onRowAppear?(entry)
+                                    }
                             }
-                            .onAppear {
-                                onRowAppear?(entry)
-                            }
+                        }
                     }
                 }
+                .listStyle(.sidebar)
             }
         }
-        .listStyle(.sidebar)
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(spacing: 8) {
-                HStack {
+                HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.tertiary)
                     TextField("history.search".localized, text: $searchText)
                         .textFieldStyle(.plain)
+                        .font(.callout)
+
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding(8)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
                 .background(.quaternary.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
 
                 engineFilterMenu
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
             .background(.bar)
         }
+    }
+
+    /// Search/filter combinations that come back empty deserve a real answer,
+    /// not a blank list.
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Spacer()
+            Image(systemName: hasActiveFilter ? "magnifyingglass" : "clock.arrow.circlepath")
+                .font(.system(size: 26))
+                .foregroundStyle(.tertiary)
+            Text((hasActiveFilter ? "history.no_results" : "history.empty").localized)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var hasActiveFilter: Bool {
+        !searchText.isEmpty || engineFilter != .all
     }
 
     /// Engine filter as a compact menu next to the search field; the chip row

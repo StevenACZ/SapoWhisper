@@ -22,7 +22,9 @@ private struct SidebarMaterial: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-/// Main history window — custom HStack sidebar layout
+/// Main history window: sidebar list + wide reading pane. Metadata and
+/// actions live inside the detail pane, so the transcript always gets the
+/// full remaining width.
 struct HistoryView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     @State private var entries: [HistoryEntry] = []
@@ -30,7 +32,6 @@ struct HistoryView: View {
     @State private var searchText = ""
     @State private var engineFilter: EngineFilter = .all
     @State private var sidebarVisible = true
-    @State private var showInspector = false
     @State private var showDeleteConfirmation = false
     @State private var searchTask: Task<Void, Never>?
     @State private var retranscribeEntry: HistoryEntry?
@@ -128,7 +129,7 @@ struct HistoryView: View {
                     onDelete: handleDelete,
                     onRowAppear: loadMoreIfNeeded
                 )
-                .frame(width: 240)
+                .frame(width: 290)
                 .background(SidebarMaterial())
                 .transition(.move(edge: .leading))
             }
@@ -138,32 +139,26 @@ struct HistoryView: View {
             // MARK: - Detail
             Group {
                 if let entry = selectedEntry {
-                    HistoryDetailView(entry: entry)
-                        .inspector(isPresented: $showInspector) {
-                            HistoryInspectorView(
-                                entry: entry,
-                                onCopy: { PasteManager.copyToClipboard(entry.text) },
-                                onRetranscribe: { handleRetranscribe(entry) },
-                                onPolishWithAI: { handlePolishWithAI(entry) },
-                                onDownloadAudio: { handleDownloadAudio(entry) },
-                                onTogglePin: { handleTogglePin(entry) },
-                                onDelete: { showDeleteConfirmation = true },
-                                isAIPolishing: aiPolishingEntryID == entry.id
-                            )
-                            .inspectorColumnWidth(min: 200, ideal: 220, max: 260)
-                        }
+                    HistoryDetailView(
+                        entry: entry,
+                        isAIPolishing: aiPolishingEntryID == entry.id,
+                        onCopy: { PasteManager.copyToClipboard(entry.text) },
+                        onPolishWithAI: { handlePolishWithAI(entry) },
+                        onRetranscribe: { handleRetranscribe(entry) },
+                        onDownloadAudio: { handleDownloadAudio(entry) },
+                        onTogglePin: { handleTogglePin(entry) },
+                        onDelete: { showDeleteConfirmation = true }
+                    )
                 } else {
-                    HistoryEmptyDetailView()
+                    HistoryEmptyDetailView(hasEntries: !entries.isEmpty)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(.easeInOut(duration: 0.25), value: sidebarVisible)
-        .frame(minWidth: 800, minHeight: 500)
+        .frame(minWidth: 840, minHeight: 520)
+        .navigationTitle("history.title".localized)
         .toolbar { historyToolbar }
-        .onChange(of: selectedEntry) { _, newValue in
-            showInspector = newValue != nil
-        }
         .onChange(of: searchText) { _, _ in
             scheduleLoadEntries()
         }
@@ -401,5 +396,5 @@ struct HistoryView: View {
 
 #Preview("History Window") {
     HistoryView(viewModel: SapoWhisperViewModel())
-        .frame(width: 900, height: 560)
+        .frame(width: 980, height: 620)
 }

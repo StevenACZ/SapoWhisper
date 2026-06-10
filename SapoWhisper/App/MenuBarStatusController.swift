@@ -298,7 +298,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         SapoLog.settings.info("Settings window presented elapsed=\(elapsed, privacy: .public)ms")
     }
 
-    private func openHistoryWindow() {
+    func openHistoryWindow() {
         historyOpenCount += 1
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "history-open",
@@ -310,7 +310,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let controller =
             historyWindowController
             ?? makeWindowController(
-                size: NSSize(width: 900, height: 560),
+                size: NSSize(width: 1000, height: 640),
                 resizable: true,
                 rootView: HistoryWindowHost(viewModel: viewModel)
             )
@@ -352,6 +352,9 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: rootView)
         window.contentView?.wantsLayer = true
+        // NSHostingController shrinks the window to the view's minimum once
+        // assigned; restore the size this window was asked to open at.
+        window.setContentSize(size)
 
         if resizable {
             window.contentMinSize = NSSize(width: 700, height: 420)

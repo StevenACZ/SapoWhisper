@@ -11,7 +11,7 @@ struct HistoryRowView: View {
     private var isFailed: Bool { entry.status == "failed" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             // The transcript is the headline; engine and timing are metadata.
             if isFailed {
                 HStack(spacing: 4) {
@@ -55,7 +55,7 @@ struct HistoryRowView: View {
             .font(.caption2)
             .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Compact Relative Time
@@ -115,40 +115,6 @@ private struct EngineIndicator: View {
         case let e where e.contains("google"): return "Google"
         case let e where e.contains("apple"): return "Apple"
         default: return engine
-        }
-    }
-}
-
-// MARK: - Engine Badge (used in detail view)
-
-struct EngineBadge: View {
-    let engine: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(badgeColor)
-                .frame(width: 8, height: 8)
-
-            Text(engine)
-                .font(.caption)
-                .fontWeight(.medium)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(badgeColor.opacity(0.12))
-        .clipShape(Capsule())
-    }
-
-    private var badgeColor: Color {
-        switch engine.lowercased() {
-        case let e where e.contains("elevenlabs"): return .teal
-        case let e where e.contains("deepgram"): return .blue
-        case let e where e.contains("gemini"): return .cyan
-        case let e where e.contains("google"): return .orange
-        case let e where e.contains("whisper"): return .purple
-        case let e where e.contains("apple"): return .green
-        default: return .secondary
         }
     }
 }

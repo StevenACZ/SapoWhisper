@@ -119,55 +119,69 @@ final class HistoryAudioPlayerController: ObservableObject {
     }
 }
 
-/// Mini inline audio player for playback of saved transcription audio
+/// Inline audio player card: round play button, scrubbable progress bar,
+/// and current/total times under the bar.
 struct AudioPlayerView: View {
     let audioPath: String
 
     @ObservedObject private var controller = HistoryAudioPlayerController.shared
 
     var body: some View {
-        HStack(spacing: 10) {
-            // Play/Pause button
+        HStack(spacing: 14) {
             Button(action: { controller.togglePlayback(path: audioPath) }) {
-                Image(systemName: controller.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(controller.isPlaying ? Color.sapoGreen : Color.secondary)
+                Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.sapoGreen))
+                    .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
+            .help((controller.isPlaying ? "history.pause" : "history.play").localized)
 
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(.quaternary)
-                        .frame(height: 4)
+            VStack(spacing: 5) {
+                // Progress bar with click + drag scrubbing
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(.quaternary)
+                            .frame(height: 5)
 
-                    Capsule()
-                        .fill(Color.sapoGreen)
-                        .frame(
-                            width: controller.duration > 0
-                                ? geo.size.width * (controller.currentTime / controller.duration) : 0,
-                            height: 4
-                        )
+                        Capsule()
+                            .fill(Color.sapoGreen)
+                            .frame(
+                                width: controller.duration > 0
+                                    ? geo.size.width * (controller.currentTime / controller.duration) : 0,
+                                height: 5
+                            )
+                    }
+                    .frame(height: geo.size.height)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                controller.seek(path: audioPath, to: value.location.x / geo.size.width)
+                            }
+                    )
                 }
-                .frame(height: geo.size.height)
-                .contentShape(Rectangle())
-                .onTapGesture { location in
-                    controller.seek(path: audioPath, to: location.x / geo.size.width)
-                }
-            }
-            .frame(height: 20)
+                .frame(height: 14)
 
-            // Time display
-            Text("\(formatTime(controller.currentTime)) / \(formatTime(controller.duration))")
+                HStack {
+                    Text(formatTime(controller.currentTime))
+                    Spacer()
+                    Text(formatTime(controller.duration))
+                }
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
-                .frame(minWidth: 70, alignment: .trailing)
+            }
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.quaternary.opacity(0.4))
+        )
         .onAppear { controller.prepare(path: audioPath) }
         .onChange(of: audioPath) { _, newPath in
             controller.prepare(path: newPath)
