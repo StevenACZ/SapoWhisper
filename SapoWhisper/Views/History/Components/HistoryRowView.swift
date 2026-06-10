@@ -12,19 +12,7 @@ struct HistoryRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            // Top: engine indicator + relative time
-            HStack(spacing: 6) {
-                EngineIndicator(engine: entry.displayEngineName)
-
-                Spacer(minLength: 4)
-
-                Text(relativeTime)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize()
-            }
-
-            // Text preview or failed state
+            // The transcript is the headline; engine and timing are metadata.
             if isFailed {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -40,10 +28,11 @@ struct HistoryRowView: View {
                     .foregroundStyle(.primary)
             }
 
-            // Bottom: duration + audio icon
             HStack(spacing: 6) {
+                EngineIndicator(engine: entry.displayEngineName)
+
                 if entry.duration > 0 {
-                    Label(entry.formattedDuration, systemImage: "clock")
+                    Text(entry.formattedDuration)
                         .monospacedDigit()
                 }
 
@@ -51,6 +40,17 @@ struct HistoryRowView: View {
                     Image(systemName: "waveform")
                         .foregroundStyle(Color.sapoGreen)
                 }
+
+                if entry.isFavorite {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                }
+
+                Spacer(minLength: 4)
+
+                Text(relativeTime)
+                    .fixedSize()
             }
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -80,13 +80,12 @@ private struct EngineIndicator: View {
     let engine: String
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Circle()
                 .fill(color)
-                .frame(width: 7, height: 7)
+                .frame(width: 6, height: 6)
 
             Text(shortName)
-                .font(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -95,6 +94,7 @@ private struct EngineIndicator: View {
 
     private var color: Color {
         switch engine.lowercased() {
+        case let e where e.contains("elevenlabs"): return .teal
         case let e where e.contains("deepgram"): return .blue
         case let e where e.contains("gemini"): return .cyan
         case let e where e.contains("google"): return .orange
@@ -104,8 +104,18 @@ private struct EngineIndicator: View {
         }
     }
 
+    /// Family name only — the full engine/mode string lives in the detail
+    /// panel; repeating it on every row drowned the transcript preview.
     private var shortName: String {
-        engine
+        switch engine.lowercased() {
+        case let e where e.contains("elevenlabs"): return "ElevenLabs"
+        case let e where e.contains("deepgram"): return "Deepgram"
+        case let e where e.contains("whisper"): return "Whisper"
+        case let e where e.contains("gemini"): return "Gemini"
+        case let e where e.contains("google"): return "Google"
+        case let e where e.contains("apple"): return "Apple"
+        default: return engine
+        }
     }
 }
 
@@ -132,6 +142,7 @@ struct EngineBadge: View {
 
     private var badgeColor: Color {
         switch engine.lowercased() {
+        case let e where e.contains("elevenlabs"): return .teal
         case let e where e.contains("deepgram"): return .blue
         case let e where e.contains("gemini"): return .cyan
         case let e where e.contains("google"): return .orange
