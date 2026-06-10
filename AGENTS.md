@@ -26,7 +26,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Auto-ducking (`AutoDuckingManager`) fades system volume in a smooth ramp starting the instant recording begins (~400 ms down, ~250 ms up); do not reintroduce delayed or single-step volume drops.
 - Welcome flow is first-run only: explicit Close marks it seen, and the final step closes itself when recording starts. Keycaps render the user's actual trigger (combo or double-tap).
 - AI polish: optional OpenAI-compatible provider after any engine (`OpenAICompatiblePolisher`; OpenRouter default, model `openai/gpt-5.4-nano`, key in the macOS Keychain). A fidelity guard pastes the raw transcript when the output drifts. Keep `polishing` visually distinct from recording/transcribing.
-- AI polish output language (same/Spanish/English) is authoritative and may translate the transcript; pass `translationExpected` to the fidelity guard so only translation-invariant anchors (numbers, URLs, emails, vocabulary) are enforced.
+- AI polish output language (same-as-input or an explicit target from the 15-language catalog) is authoritative and may translate the transcript; pass `translationExpected` to the fidelity guard so only translation-invariant anchors (numbers, URLs, emails, vocabulary) are enforced. Engines never translate; selecting an explicit target resets the transcription language to auto so the spoken language is detected.
 - Transcription language is recognition context, not translation or output forcing; only the AI polish output language may translate.
 
 ## ElevenLabs

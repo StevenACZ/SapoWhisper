@@ -104,6 +104,8 @@
 "settings.input_language" = "Idioma de transcripción";
 "settings.input_language_desc" = "El idioma que usarás para hablar";
 "settings.flux_hint_unsupported" = "Deepgram Flux no tiene hint para este idioma — se usará detección automática.";
+"settings.ai_translation_active" = "Mejora por IA: el texto final se traduce a %@.";
+"settings.ai_translation_language_pinned" = "La IA traduce a %@, pero con un idioma fijado el motor solo reconoce ese idioma al hablar. Usa Auto para dictar en cualquier idioma.";
 "settings.behavior" = "Comportamiento";
 "settings.auto_paste" = "Pegar automáticamente";
 "settings.auto_paste_desc" = "El texto se pegará donde tengas el cursor";
@@ -132,6 +134,9 @@
 "config.engine_summary_mode" = "Modo";
 "config.engine_summary_model" = "Modelo";
 "config.engine_summary_language" = "Idioma";
+"config.engine_summary_ai" = "Mejora IA";
+"config.engine_summary_ai_active" = "Activa";
+"config.engine_summary_ai_translate" = "Traduce a %@";
 "config.whisper_model" = "Modelo de Whisper";
 "config.downloading" = "Descargando";
 "config.space_used" = "Espacio usado: %@";
@@ -184,6 +189,7 @@
 "ai.polish.mode_desc" = "Usa %@ para ordenar y limpiar el texto antes de copiarlo.";
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_desc" = "Genera el texto en %@.";
+"ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
 "ai.polish.minimum_duration" = "Activar desde";
 "ai.polish.minimum_duration.always" = "Siempre";
 "ai.polish.minimum_duration.20" = "20 segundos";
@@ -214,8 +220,6 @@
 "ai.mode.work" = "Trabajo";
 "ai.mode.translate_english" = "Traducir a inglés";
 "ai.output_language.same" = "Mismo idioma del audio";
-"ai.output_language.spanish" = "Español";
-"ai.output_language.english" = "English";
 "ai.status.none" = "No aplicada";
 "ai.status.applied" = "Aplicada";
 "ai.status.skipped_short" = "Saltada por texto corto";

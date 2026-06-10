@@ -29,6 +29,10 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.historyAutoDeleteDays) private var historyAutoDeleteDays = 0
     @AppStorage(Constants.StorageKeys.overlayPosition) private var overlayPosition =
         OverlayPosition.bottom.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+        TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
@@ -135,6 +139,18 @@ struct GeneralSettingsTab: View {
         return TranscriptionLanguageCatalog.deepgramFluxLanguageHint(for: selectedLanguage) == nil
     }
 
+    /// Explicit AI-polish output language currently in effect, or nil when
+    /// translation is off. Mirrors the override in TranscriptPostProcessor:
+    /// a mode that forces English wins over the picker.
+    private var aiTranslationTarget: TranscriptPolishOutputLanguage? {
+        guard aiPolishEnabled else { return nil }
+        var language = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
+            language = .english
+        }
+        return language.requiresTranslation ? language : nil
+    }
+
     private var languageCard: some View {
         SettingsCard(icon: "globe", title: "settings.language_header".localized) {
             VStack(alignment: .leading, spacing: 14) {
@@ -157,6 +173,18 @@ struct GeneralSettingsTab: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let target = aiTranslationTarget {
+                        Label(
+                            selectedLanguage == "auto"
+                                ? "settings.ai_translation_active".localized(target.displayName)
+                                : "settings.ai_translation_language_pinned".localized(target.displayName),
+                            systemImage: "sparkles"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(selectedLanguage == "auto" ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 

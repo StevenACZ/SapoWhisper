@@ -5,22 +5,38 @@
 
 import Foundation
 
+/// Target language for the AI-polished text. Translation always happens in
+/// the AI polish step: Deepgram and ElevenLabs only transcribe the spoken
+/// language, so an explicit target here never changes what the engine hears —
+/// it only tells the polisher to translate the transcript.
 enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
     case sameAsInput = "same_as_input"
-    case spanish
     case english
+    case spanish
+    case hindi
+    case french
+    case german
+    case russian
+    case chinese
+    case arabic
+    case portuguese
+    case turkish
+    case japanese
+    case indonesian
+    case italian
+    case korean
+    case vietnamese
 
     var id: String { rawValue }
 
     var displayName: String {
-        switch self {
-        case .sameAsInput:
+        guard let target else {
             return "ai.output_language.same".localized
-        case .spanish:
-            return "ai.output_language.spanish".localized
-        case .english:
-            return "ai.output_language.english".localized
         }
+        if target.nativeName == target.englishName {
+            return "\(target.flag) \(target.nativeName)"
+        }
+        return "\(target.flag) \(target.nativeName) (\(target.englishName))"
     }
 
     /// An explicit target language means the polished text may legitimately
@@ -30,20 +46,59 @@ enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
         self != .sameAsInput
     }
 
+    /// English language name as written into the AI prompt; nil for
+    /// same-as-input.
+    var englishName: String? {
+        target?.englishName
+    }
+
     var promptInstruction: String {
-        switch self {
-        case .sameAsInput:
+        guard let target else {
             return """
                 Keep the output in the same dominant language as the raw transcript. If the transcript is mostly Spanish, write Spanish prose and keep English technical terms as-is. If it is mostly English, write English prose. Never switch to English just because these instructions or label examples are in English.
                 """
-        case .spanish:
-            return """
-                Write the final text in Spanish — this overrides the language of the transcript. If the transcript is in another language, translate ALL of it into natural Spanish faithfully: same ideas, same order, same level of detail, nothing added and nothing dropped. Translating to comply is required and is not rephrasing. Keep code, commands, filenames, APIs, acronyms, product names, numbers, and user vocabulary exactly as spoken.
-                """
+        }
+        return """
+            Write the final text in \(target.englishName) — this overrides the language of the transcript. If the transcript is in another language, translate ALL of it into natural \(target.englishName) faithfully: same ideas, same order, same level of detail, nothing added and nothing dropped. Translating to comply is required and is not rephrasing. Keep code, commands, filenames, APIs, acronyms, product names, numbers, and user vocabulary exactly as spoken.
+            """
+    }
+
+    /// Mirrors `TranscriptionLanguageCatalog` flags and native names so the
+    /// output-language picker reads like the transcription-language picker.
+    private var target: (flag: String, nativeName: String, englishName: String)? {
+        switch self {
+        case .sameAsInput:
+            return nil
         case .english:
-            return """
-                Write the final text in English — this overrides the language of the transcript. If the transcript is in another language, translate ALL of it into natural English faithfully: same ideas, same order, same level of detail, nothing added and nothing dropped. Translating to comply is required and is not rephrasing. Keep code, commands, filenames, APIs, acronyms, product names, numbers, and user vocabulary exactly as spoken.
-                """
+            return ("🇺🇸", "English", "English")
+        case .spanish:
+            return ("🇪🇸", "Español", "Spanish")
+        case .hindi:
+            return ("🇮🇳", "हिन्दी", "Hindi")
+        case .french:
+            return ("🇫🇷", "Français", "French")
+        case .german:
+            return ("🇩🇪", "Deutsch", "German")
+        case .russian:
+            return ("🇷🇺", "Русский", "Russian")
+        case .chinese:
+            return ("🇨🇳", "中文", "Chinese")
+        case .arabic:
+            return ("🇸🇦", "العربية", "Arabic")
+        case .portuguese:
+            return ("🇧🇷", "Português", "Portuguese")
+        case .turkish:
+            return ("🇹🇷", "Türkçe", "Turkish")
+        case .japanese:
+            return ("🇯🇵", "日本語", "Japanese")
+        case .indonesian:
+            return ("🇮🇩", "Bahasa Indonesia", "Indonesian")
+        case .italian:
+            return ("🇮🇹", "Italiano", "Italian")
+        case .korean:
+            return ("🇰🇷", "한국어", "Korean")
+        case .vietnamese:
+            return ("🇻🇳", "Tiếng Việt", "Vietnamese")
         }
     }
 }

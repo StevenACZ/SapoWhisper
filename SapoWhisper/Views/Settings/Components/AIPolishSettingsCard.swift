@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import os
 
 /// AI polish settings: one OpenAI-compatible provider (OpenRouter by default),
 /// an API key stored in the Keychain, a model, and the polish behavior pickers.
@@ -20,6 +21,7 @@ struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishModel) private var model = PolishEndpoint.default.defaultModel
     @AppStorage(Constants.StorageKeys.aiPolishCustomBaseURL) private var customBaseURL = ""
+    @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
 
     @State private var apiKey = ""
     @State private var testState: ProviderTestState = .idle
@@ -122,6 +124,30 @@ struct AIPolishSettingsCard: View {
         .onChange(of: model) { _, _ in
             testState = .idle
         }
+        .onChange(of: aiPolishOutputLanguage) { _, _ in
+            syncTranscriptionLanguageWithTranslation()
+        }
+        .onChange(of: aiPolishMode) { _, _ in
+            syncTranscriptionLanguageWithTranslation()
+        }
+        .onChange(of: aiPolishEnabled) { _, _ in
+            syncTranscriptionLanguageWithTranslation()
+        }
+    }
+
+    /// Engines never translate — a pinned recognition language makes them
+    /// mis-transcribe any other spoken language, which then feeds the
+    /// translator garbage. The moment AI translation becomes active the
+    /// spoken language is unknown, so reset the hint to auto-detect; the
+    /// user can still re-pin a language afterwards.
+    private func syncTranscriptionLanguageWithTranslation() {
+        guard aiPolishEnabled, currentOutputLanguage.requiresTranslation, transcriptionLanguage != "auto" else {
+            return
+        }
+        transcriptionLanguage = "auto"
+        SapoLog.settings.info(
+            "Transcription language reset to auto reason=ai-translation target=\(currentOutputLanguage.rawValue, privacy: .public)"
+        )
     }
 
     // MARK: - Provider
@@ -254,7 +280,9 @@ struct AIPolishSettingsCard: View {
     private var outputLanguagePicker: some View {
         AIPolishSettingRow(
             title: "ai.polish.output_language".localized,
-            detail: "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
+            detail: currentOutputLanguage.requiresTranslation
+                ? "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName)
+                : "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
         ) {
             if currentPrompt.forcesEnglish {
                 FixedValuePill(text: currentOutputLanguage.displayName)

@@ -11,6 +11,10 @@ struct EngineSettingsTab: View {
         DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+        TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
 
     private var currentEngine: TranscriptionEngine {
@@ -94,8 +98,29 @@ struct EngineSettingsTab: View {
                     label: "config.engine_summary_language".localized,
                     value: languageSummaryValue
                 )
+                if aiPolishEnabled {
+                    summaryDivider
+                    summaryItem(
+                        icon: "sparkles",
+                        label: "config.engine_summary_ai".localized,
+                        value: aiSummaryValue
+                    )
+                }
             }
         }
+    }
+
+    /// What the AI polish step does to the language of the final text:
+    /// translates to an explicit target, or keeps the spoken language.
+    private var aiSummaryValue: String {
+        var outputLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
+            outputLanguage = .english
+        }
+        guard outputLanguage.requiresTranslation else {
+            return "config.engine_summary_ai_active".localized
+        }
+        return "config.engine_summary_ai_translate".localized(outputLanguage.displayName)
     }
 
     private var summaryDivider: some View {
