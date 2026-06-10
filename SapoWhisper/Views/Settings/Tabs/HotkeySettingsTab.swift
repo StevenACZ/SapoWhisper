@@ -36,14 +36,20 @@ struct HotkeySettingsTab: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                hotkeyCard
-                AccessibilityPermissionFooter()
+        // GeometryReader (not containerRelativeFrame — resolves to 0 inside
+        // the always-alive settings tabs) so short content centers vertically
+        // while taller content still scrolls.
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    hotkeyCard
+                    AccessibilityPermissionFooter()
+                }
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
+                .padding(16)
+                .frame(minHeight: proxy.size.height)
             }
-            .frame(maxWidth: 620)
-            .frame(maxWidth: .infinity)
-            .padding(16)
         }
     }
 

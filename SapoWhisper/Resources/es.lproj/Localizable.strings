@@ -150,10 +150,12 @@
 "config.app_language_desc" = "Idioma de la interfaz de usuario";
 
 /* Info Tab */
-"info.how_to_title" = "¿Cómo funciona?";
-"info.how_to_body" = "1. Presiona el atajo de teclado para iniciar\n2. Habla claramente al micrófono\n3. Presiona el atajo otra vez para detener\n4. El texto se copia automáticamente\n5. Con \"Auto-pegar\" activado, se pega donde tengas el cursor";
 "info.privacy_title" = "Privacidad";
-"info.privacy_body" = "Whisper (Local): El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.\n\nDeepgram: Usa Nova-3 o Flux Live para transcripcion en la nube. Requiere API key.\n\nElevenLabs: Usa Scribe v2 (batch o realtime) para transcripcion en la nube. Requiere API key.\n\nMejora por IA: Opcional. Envia el transcript a tu proveedor de IA configurado (OpenRouter por defecto) para limpiarlo sin cambiar tus palabras.";
+"info.privacy.whisper" = "El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.";
+"info.privacy.deepgram" = "Transcripción en la nube con Nova-3 o Flux Live. Requiere API key.";
+"info.privacy.elevenlabs" = "Transcripción en la nube con Scribe v2 (batch o realtime). Requiere API key.";
+"info.privacy.ai_polish" = "Opcional. Envía el transcript a tu proveedor de IA configurado (OpenRouter por defecto) para limpiarlo sin cambiar tus palabras.";
+"about.version_copy_help" = "Clic para copiar la versión";
 "info.permissions_title" = "Permisos necesarios";
 "info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Accesibilidad: Para el atajo de teclado global y el auto-pegado";
 
@@ -198,7 +200,6 @@
 "ai.polish.minimum_duration_desc.20" = "Salta la mejora en grabaciones menores de 20 segundos.";
 "ai.polish.minimum_duration_desc.30" = "Salta la mejora en grabaciones menores de 30 segundos.";
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad manteniéndose literal: tus palabras, tu orden. Una guardia de fidelidad pega el texto original si la IA se desvía.";
-"ai.polish.fidelity_info_title" = "Fidelidad primero";
 "ai.provider.section" = "Proveedor";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_custom" = "Personalizado";
@@ -211,6 +212,12 @@
 "ai.provider.test" = "Probar conexión";
 "ai.provider.test_success" = "Funciona · %@";
 "ai.provider.needs_key" = "Agrega una API key y un modelo para usar la mejora por IA. Consigue una key en openrouter.ai.";
+"ai.provider.summary_edit" = "Editar";
+"ai.provider.summary_done" = "Hecho";
+"ai.provider.summary_key_help" = "API key guardada en el Llavero de macOS.";
+"ai.provider.model_suggestions_help" = "Modelos sugeridos";
+"ai.provider.model_custom_hint" = "Acepta cualquier ID de modelo de openrouter.ai/models (ej. qwen/qwen3-32b).";
+"ai.polish.fidelity_max" = "Fidelidad al máximo";
 "ai.provider.error_not_configured" = "La mejora por IA no está configurada (falta API key o modelo).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
 "ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
@@ -406,12 +413,29 @@
 "settings.vocabulary.import_success" = "Vocabulario importado.";
 "settings.vocabulary.transfer_help" = "Exportar o importar vocabulario";
 
+/* Vocabulary metrics & empty states */
+"vocab.metrics.pace" = "Ritmo";
+"vocab.metrics.pace_unit" = "%@ ppm";
+"vocab.metrics.pace_help" = "Palabras por minuto promedio en tus dictados recientes.";
+"vocab.metrics.terms" = "Términos";
+"vocab.metrics.terms_help" = "Palabras clave guardadas frente al límite del motor activo.";
+"vocab.metrics.top" = "Más usados";
+"vocab.metrics.top_help" = "Términos del vocabulario que más aparecen en tus transcripts recientes.";
+"vocab.metrics.top_empty" = "Aún sin usos";
+"vocab.add_return_hint" = "Pulsa Intro para agregar";
+"vocab.add_over_batch" = "Este término supera los límites de ElevenLabs batch (50 caracteres, 5 palabras); se omitirá en ese motor.";
+"vocab.add_over_realtime" = "Este término supera el límite de ElevenLabs realtime (20 caracteres); se omitirá en ese modo.";
+"vocab.empty.search_title" = "Sin resultados para «%@»";
+"vocab.empty.clear_search" = "Limpiar búsqueda";
+"vocab.empty.keywords_title" = "Aún no hay palabras clave";
+"vocab.empty.keywords_subtitle" = "Agrega nombres, comandos o archivos para que los motores los reconozcan.";
+"vocab.empty.corrections_title" = "Aún no hay correcciones automáticas";
+"vocab.empty.corrections_subtitle" = "Convierte un error frecuente en el texto que realmente quieres.";
+"vocab.empty.add_first" = "Agregar la primera";
+"config.delete_term_accessibility" = "Eliminar término";
+
 /* Prompts & Context */
 "prompts.title" = "Prompts y contexto";
-"prompts.personal_context" = "Contexto personal";
-"prompts.personal_context_desc" = "Se aplica a todos los modos de IA para entender tu perfil, herramientas y estilo sin inventar detalles.";
-"prompts.personal_context_hint" = "Ej: soy desarrollador mobile, mezclo español con términos técnicos y trabajo con SwiftUI, KMP y Xcode.";
-"prompts.save_context" = "Guardar contexto";
 "prompts.project_prompts" = "Prompts por proyecto o destino";
 "prompts.project_prompts_desc" = "Crea modos editables para Codex, Claude Code, Slack, issues o cualquier flujo de dictado.";
 "prompts.add_prompt" = "Agregar prompt";
@@ -422,8 +446,6 @@
 "prompts.duplicate_prompt" = "Duplicar";
 "prompts.prompt_duplicated" = "Prompt duplicado.";
 "prompts.base_rules_note" = "Todos los modos heredan las reglas base de fidelidad: nunca parafrasear, nunca añadir datos. Tu instrucción se aplica sobre ellas.";
-"prompts.effective_prompt" = "Prompt efectivo";
-"prompts.effective_prompt_desc" = "Vista de solo lectura del system prompt exacto que se envía para este modo, incluyendo contexto personal y vocabulario.";
 "prompts.preview_polish" = "Probar el polish";
 "prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia este modo.";
 "prompts.preview_run" = "Pulir ejemplo";
@@ -433,9 +455,12 @@
 "prompts.preview_sample" = "eh bueno quería confirmarte que mañana subo el fix a la rama feature login y luego corro npm run build";
 "prompts.save_prompt" = "Guardar";
 "prompts.delete_prompt" = "Eliminar";
-"prompts.context_saved" = "Contexto personal guardado.";
 "prompts.prompt_saved" = "Prompt guardado.";
 "prompts.prompt_deleted" = "Prompt eliminado.";
+"prompts.unsaved_changes" = "Cambios sin guardar";
+"prompts.delete_confirm_title" = "¿Eliminar «%@»?";
+"prompts.delete_confirm_message" = "Este prompt se eliminará permanentemente.";
+"prompts.delete_confirm_action" = "Eliminar";
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrar configuración";

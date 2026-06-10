@@ -56,11 +56,19 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
     }
 
     /// Suggested model IDs for the model menu; free text always wins because
-    /// provider catalogs rotate.
+    /// provider catalogs rotate. Any ID from openrouter.ai/models is valid on
+    /// OpenRouter — these are just one-click starting points.
     var suggestedModels: [String] {
         switch self {
         case .openRouter:
-            return ["openai/gpt-5.4-nano", "openai/gpt-5.4-mini"]
+            return [
+                "openai/gpt-5.4-nano",
+                "openai/gpt-5.4-mini",
+                "google/gemini-2.5-flash-lite",
+                "deepseek/deepseek-chat-v3-0324",
+                "qwen/qwen3-32b",
+                "meta-llama/llama-3.3-70b-instruct",
+            ]
         case .openAI:
             return ["gpt-5.4-nano", "gpt-5.4-mini"]
         case .groq, .custom:

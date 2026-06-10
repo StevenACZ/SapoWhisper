@@ -133,6 +133,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menuBarStatusController.openHistoryWindow()
         case "welcome":
             WelcomeWindowController.shared.show()
+        case "settings":
+            menuBarStatusController.openSettingsWindow()
         default:
             break
         }

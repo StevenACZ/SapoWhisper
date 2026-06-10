@@ -37,6 +37,7 @@ struct GeneralSettingsTab: View {
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var historyAudioUsageBytes: Int64 = 0
+    @State private var showClearHistoryConfirmation = false
     private let preferredMicrophoneCoordinator = PreferredMicrophoneCoordinator.shared
 
     private static let audioLimitOptionsMB = [250, 500, 1024, 2048]
@@ -339,7 +340,30 @@ struct GeneralSettingsTab: View {
                 Text("settings.history_retention_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+
+                Divider()
+
+                Button(role: .destructive) {
+                    showClearHistoryConfirmation = true
+                } label: {
+                    Label("history.clear_all".localized, systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
+        }
+        .confirmationDialog(
+            "history.clear_all".localized,
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("history.delete".localized, role: .destructive) {
+                TranscriptionHistoryManager.shared.deleteAll()
+                refreshHistoryAudioUsage()
+            }
+        } message: {
+            Text("history.clear_all_confirm_message".localized)
         }
         .task {
             refreshHistoryAudioUsage()

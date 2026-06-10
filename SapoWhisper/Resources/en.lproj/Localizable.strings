@@ -150,10 +150,12 @@
 "config.app_language_desc" = "User interface language";
 
 /* Info Tab */
-"info.how_to_title" = "How does it work?";
-"info.how_to_body" = "1. Press the hotkey to start\n2. Speak clearly into the microphone\n3. Press the hotkey again to stop\n4. Text is automatically copied\n5. With \"Auto-paste\" enabled, it pastes where your cursor is";
 "info.privacy_title" = "Privacy";
-"info.privacy_body" = "Whisper (Local): Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.\n\nDeepgram: Uses Nova-3 or Flux Live for cloud transcription. Requires an API key.\n\nElevenLabs: Uses Scribe v2 (batch or realtime) for cloud transcription. Requires an API key.\n\nAI Polish: Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
+"info.privacy.whisper" = "Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.";
+"info.privacy.deepgram" = "Nova-3 or Flux Live cloud transcription. Requires an API key.";
+"info.privacy.elevenlabs" = "Scribe v2 (batch or realtime) cloud transcription. Requires an API key.";
+"info.privacy.ai_polish" = "Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
+"about.version_copy_help" = "Click to copy the version";
 "info.permissions_title" = "Required Permissions";
 "info.permissions_body" = "• Microphone: To capture your voice\n• Accessibility: For global hotkey support and auto-paste";
 
@@ -198,7 +200,6 @@
 "ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
 "ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
 "ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while staying literal — your words, your order. A fidelity guard pastes the raw transcript whenever the AI drifts.";
-"ai.polish.fidelity_info_title" = "Fidelity first";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_custom" = "Custom";
@@ -211,6 +212,12 @@
 "ai.provider.test" = "Test connection";
 "ai.provider.test_success" = "Works · %@";
 "ai.provider.needs_key" = "Add an API key and model to run AI polish. Get a key at openrouter.ai.";
+"ai.provider.summary_edit" = "Edit";
+"ai.provider.summary_done" = "Done";
+"ai.provider.summary_key_help" = "API key saved in the macOS Keychain.";
+"ai.provider.model_suggestions_help" = "Suggested models";
+"ai.provider.model_custom_hint" = "Accepts any model ID from openrouter.ai/models (e.g. qwen/qwen3-32b).";
+"ai.polish.fidelity_max" = "Fidelity at max";
 "ai.provider.error_not_configured" = "AI polish is not configured (missing API key or model).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
 "ai.provider.error_http" = "AI provider error (%@): %@";
@@ -406,12 +413,29 @@
 "settings.vocabulary.import_success" = "Vocabulary imported.";
 "settings.vocabulary.transfer_help" = "Export or import vocabulary";
 
+/* Vocabulary metrics & empty states */
+"vocab.metrics.pace" = "Pace";
+"vocab.metrics.pace_unit" = "%@ wpm";
+"vocab.metrics.pace_help" = "Average words per minute across your recent dictations.";
+"vocab.metrics.terms" = "Terms";
+"vocab.metrics.terms_help" = "Saved keywords versus the active engine's limit.";
+"vocab.metrics.top" = "Most used";
+"vocab.metrics.top_help" = "Vocabulary terms that appear most in your recent transcripts.";
+"vocab.metrics.top_empty" = "No uses yet";
+"vocab.add_return_hint" = "Press Return to add";
+"vocab.add_over_batch" = "This term exceeds the ElevenLabs batch limits (50 characters, 5 words); it will be skipped on that engine.";
+"vocab.add_over_realtime" = "This term exceeds the ElevenLabs realtime limit (20 characters); it will be skipped in that mode.";
+"vocab.empty.search_title" = "No results for “%@”";
+"vocab.empty.clear_search" = "Clear search";
+"vocab.empty.keywords_title" = "No keywords yet";
+"vocab.empty.keywords_subtitle" = "Add names, commands, or files so engines get them right.";
+"vocab.empty.corrections_title" = "No auto-corrections yet";
+"vocab.empty.corrections_subtitle" = "Turn a frequent mistake into the text you actually want.";
+"vocab.empty.add_first" = "Add the first one";
+"config.delete_term_accessibility" = "Delete term";
+
 /* Prompts & Context */
 "prompts.title" = "Prompts and context";
-"prompts.personal_context" = "Personal context";
-"prompts.personal_context_desc" = "Applies to every AI mode so the AI can understand your profile, tools, and style without inventing details.";
-"prompts.personal_context_hint" = "Example: I am a mobile developer, I mix Spanish with technical English, and I work with SwiftUI, KMP, and Xcode.";
-"prompts.save_context" = "Save context";
 "prompts.project_prompts" = "Project or destination prompts";
 "prompts.project_prompts_desc" = "Create editable modes for Codex, Claude Code, Slack, issues, or any dictation workflow.";
 "prompts.add_prompt" = "Add prompt";
@@ -422,8 +446,6 @@
 "prompts.duplicate_prompt" = "Duplicate";
 "prompts.prompt_duplicated" = "Prompt duplicated.";
 "prompts.base_rules_note" = "Every mode inherits the fidelity-first base rules: never paraphrase, never add facts. Your instruction runs on top of them.";
-"prompts.effective_prompt" = "Effective prompt";
-"prompts.effective_prompt_desc" = "Read-only preview of the exact system prompt sent for this mode, including personal context and vocabulary hints.";
 "prompts.preview_polish" = "Preview polish";
 "prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how this mode cleans it.";
 "prompts.preview_run" = "Polish sample";
@@ -433,9 +455,12 @@
 "prompts.preview_sample" = "um so basically I wanted to confirm that tomorrow I will push the fix to the feature login branch and then run npm run build";
 "prompts.save_prompt" = "Save";
 "prompts.delete_prompt" = "Delete";
-"prompts.context_saved" = "Personal context saved.";
 "prompts.prompt_saved" = "Prompt saved.";
 "prompts.prompt_deleted" = "Prompt deleted.";
+"prompts.unsaved_changes" = "Unsaved changes";
+"prompts.delete_confirm_title" = "Delete “%@”?";
+"prompts.delete_confirm_message" = "This prompt will be removed permanently.";
+"prompts.delete_confirm_action" = "Delete";
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrate settings";

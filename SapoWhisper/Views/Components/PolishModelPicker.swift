@@ -2,8 +2,9 @@
 //  PolishModelPicker.swift
 //  SapoWhisper
 //
-//  Model selector for the AI polish provider: a fixed menu when the endpoint
-//  has a curated catalog, free text otherwise (Groq/custom catalogs rotate).
+//  Model selector for the AI polish provider: free text so any model ID works
+//  (OpenRouter alone lists hundreds — qwen, deepseek, llama, ...), plus a
+//  suggestions menu when the endpoint has a curated catalog.
 //
 
 import SwiftUI
@@ -13,31 +14,35 @@ struct PolishModelPicker: View {
     @Binding var model: String
 
     var body: some View {
-        if endpoint.suggestedModels.isEmpty {
+        HStack(spacing: 6) {
             TextField("ai.provider.model_placeholder".localized, text: $model)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12, design: .monospaced))
-        } else {
-            Picker("ai.provider.model".localized, selection: $model) {
-                ForEach(choices, id: \.self) { choice in
-                    Text(choice).tag(choice)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
 
-    /// Catalog plus the saved value when it is off-catalog, so a previously
-    /// typed model never changes silently.
-    private var choices: [String] {
-        let suggested = endpoint.suggestedModels
-        let current = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !current.isEmpty && !suggested.contains(current) {
-            return [current] + suggested
+            if !endpoint.suggestedModels.isEmpty {
+                Menu {
+                    ForEach(endpoint.suggestedModels, id: \.self) { suggestion in
+                        Button {
+                            model = suggestion
+                        } label: {
+                            if suggestion == model.trimmingCharacters(in: .whitespacesAndNewlines) {
+                                Label(suggestion, systemImage: "checkmark")
+                            } else {
+                                Text(suggestion)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 22)
+                .help("ai.provider.model_suggestions_help".localized)
+            }
         }
-        return suggested
     }
 }
 

@@ -269,7 +269,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         button.layer?.add(animation, forKey: "sapoStatusPress")
     }
 
-    private func openSettingsWindow() {
+    func openSettingsWindow() {
         settingsOpenCount += 1
         SapoLog.settings.info("Settings open requested from menu bar")
         PerformanceDiagnostics.logRuntimeSnapshot(
