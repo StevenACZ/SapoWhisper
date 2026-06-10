@@ -15,6 +15,7 @@ struct PermissionRequirementCard: View {
     let onActivate: (AppPermission) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var grantFlash = 0
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -79,6 +80,7 @@ struct PermissionRequirementCard: View {
                         Label("permissions.card.ready".localized, systemImage: "checkmark.circle.fill")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.green)
+                            .transition(.scale.combined(with: .opacity))
                     } else {
                         Button {
                             onActivate(permission)
@@ -103,6 +105,12 @@ struct PermissionRequirementCard: View {
         }
         .padding(14)
         .background(cardBackground)
+        .permissionGrantCelebration(trigger: grantFlash, cornerRadius: 18)
+        .onChange(of: isGranted) { wasGranted, nowGranted in
+            if !wasGranted && nowGranted {
+                grantFlash += 1
+            }
+        }
     }
 
     private var toneColor: Color {

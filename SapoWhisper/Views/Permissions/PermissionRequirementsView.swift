@@ -9,7 +9,7 @@ import Combine
 import SwiftUI
 
 struct PermissionRequirementsView: View {
-    static let windowSize = CGSize(width: 520, height: 645)
+    static let windowSize = CGSize(width: 520, height: 560)
 
     let onActivate: (AppPermission) -> Void
     let onClose: () -> Void
@@ -54,7 +54,7 @@ struct PermissionRequirementsView: View {
                     }
                 }
 
-                Color.clear.frame(height: 6)
+                Spacer(minLength: 6)
                 footer
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -143,7 +143,9 @@ struct PermissionRequirementsView: View {
 
     private func updateGrantedPermissions(_ nextPermissions: Set<AppPermission>) {
         guard grantedPermissions != nextPermissions else { return }
-        grantedPermissions = nextPermissions
+        withAnimation(.smooth(duration: 0.3)) {
+            grantedPermissions = nextPermissions
+        }
     }
 
     private func validateMicrophoneAfterSettingsReturn() {

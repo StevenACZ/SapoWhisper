@@ -69,7 +69,11 @@ struct AIPolishSettingsCard: View {
                     activeSubtitle: activeSubtitle
                 )
 
+                // With the hero toggle off nothing below is in effect, so the
+                // whole configuration reads (and is) inert.
                 providerSection
+                    .disabled(!aiPolishEnabled)
+                    .opacity(aiPolishEnabled ? 1 : 0.62)
 
                 if aiPolishEnabled && !isProviderUsable {
                     Label("ai.provider.needs_key".localized, systemImage: "key.fill")
@@ -93,9 +97,16 @@ struct AIPolishSettingsCard: View {
                     detail: "ai.polish.desc".localized
                 )
             }
+            .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
         }
         .onAppear {
             apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+            // The curated-catalog picker needs a valid selection to render
+            if endpoint.suggestedModels.isEmpty == false,
+                model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                model = endpoint.defaultModel
+            }
         }
         .onChange(of: apiKey) { _, newValue in
             KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: .aiPolishAPIKey)
@@ -157,24 +168,7 @@ struct AIPolishSettingsCard: View {
             Text("ai.provider.model".localized)
                 .font(.subheadline)
 
-            HStack(spacing: 6) {
-                TextField("ai.provider.model_placeholder".localized, text: $model)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
-
-                if !endpoint.suggestedModels.isEmpty {
-                    Menu {
-                        ForEach(endpoint.suggestedModels, id: \.self) { suggestion in
-                            Button(suggestion) { model = suggestion }
-                        }
-                    } label: {
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 24)
-                }
-            }
+            PolishModelPicker(endpoint: endpoint, model: $model)
         }
     }
 

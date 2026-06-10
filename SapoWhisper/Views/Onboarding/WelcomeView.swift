@@ -296,6 +296,8 @@ private struct WelcomePermissionRow: View {
     let permission: AppPermission
     let isGranted: Bool
 
+    @State private var grantFlash = 0
+
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -344,6 +346,12 @@ private struct WelcomePermissionRow: View {
                     lineWidth: 1
                 )
         )
+        .permissionGrantCelebration(trigger: grantFlash, cornerRadius: 12)
+        .onChange(of: isGranted) { wasGranted, nowGranted in
+            if !wasGranted && nowGranted {
+                grantFlash += 1
+            }
+        }
     }
 }
 
@@ -673,24 +681,7 @@ private struct WelcomeAIPolishStep: View {
                         .font(.system(size: 12, design: .monospaced))
                 }
 
-                HStack(spacing: 6) {
-                    TextField("ai.provider.model_placeholder".localized, text: $model)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
-
-                    if !endpoint.suggestedModels.isEmpty {
-                        Menu {
-                            ForEach(endpoint.suggestedModels, id: \.self) { suggestion in
-                                Button(suggestion) { model = suggestion }
-                            }
-                        } label: {
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .frame(width: 24)
-                    }
-                }
+                PolishModelPicker(endpoint: endpoint, model: $model)
 
                 SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
                     .textFieldStyle(.roundedBorder)
@@ -743,6 +734,12 @@ private struct WelcomeAIPolishStep: View {
         .padding(.top, 18)
         .onAppear {
             apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+            // The curated-catalog picker needs a valid selection to render
+            if endpoint.suggestedModels.isEmpty == false,
+                model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                model = endpoint.defaultModel
+            }
         }
         .onChange(of: apiKey) { _, newValue in
             KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: .aiPolishAPIKey)
