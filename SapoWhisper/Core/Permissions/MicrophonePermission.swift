@@ -52,6 +52,9 @@ nonisolated enum MicrophonePermission {
 
             if granted || isGranted {
                 noteAudioInputGranted()
+                // The launch preflight skipped itself while the permission was
+                // missing; warm the route now that capture is allowed.
+                AudioInputPreflightManager.shared.preflightSoon(reason: "mic-granted")
                 return .granted
             }
         }
@@ -67,6 +70,7 @@ nonisolated enum MicrophonePermission {
                 let granted = await AVAudioApplication.requestRecordPermission()
                 if granted || isGranted {
                     noteAudioInputGranted()
+                    AudioInputPreflightManager.shared.preflightSoon(reason: "mic-granted")
                     return .granted
                 }
             @unknown default:

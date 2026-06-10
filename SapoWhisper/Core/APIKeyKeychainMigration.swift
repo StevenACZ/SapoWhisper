@@ -21,8 +21,10 @@ enum APIKeyKeychainMigration {
             guard let legacyValue = defaults.string(forKey: migration.defaultsKey) else { continue }
 
             let trimmed = legacyValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Never overwrite a key the user already saved through the Keychain path.
-            if !trimmed.isEmpty, (KeychainStore.string(for: migration.keychainKey) ?? "").isEmpty {
+            // Never overwrite a key the user already saved through the Keychain
+            // path. Presence check goes through the hints so this launch-time
+            // migration cannot trigger the keychain consent dialog.
+            if !trimmed.isEmpty, !KeychainStore.hasValue(for: migration.keychainKey) {
                 guard KeychainStore.setString(trimmed, for: migration.keychainKey) else {
                     SapoLog.lifecycle.error(
                         "API key Keychain migration failed key=\(migration.keychainKey.rawValue, privacy: .public)"

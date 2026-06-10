@@ -39,6 +39,15 @@ enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
         return "\(target.flag) \(target.nativeName) (\(target.englishName))"
     }
 
+    /// Compact form for tight UI like the engine-summary chip: flag plus
+    /// native name, no English clarifier.
+    var shortDisplayName: String {
+        guard let target else {
+            return "ai.output_language.same".localized
+        }
+        return "\(target.flag) \(target.nativeName)"
+    }
+
     /// An explicit target language means the polished text may legitimately
     /// be a translation of the transcript, so literal word-reuse rules and
     /// language-bound fidelity anchors must not apply.
@@ -50,6 +59,30 @@ enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
     /// same-as-input.
     var englishName: String? {
         target?.englishName
+    }
+
+    /// ISO 639-1 code used to verify with NLLanguageRecognizer that the
+    /// polished text actually landed in the target language; nil for
+    /// same-as-input. Chinese matches by prefix (zh-Hans/zh-Hant).
+    var nlLanguageCode: String? {
+        switch self {
+        case .sameAsInput: return nil
+        case .english: return "en"
+        case .spanish: return "es"
+        case .hindi: return "hi"
+        case .french: return "fr"
+        case .german: return "de"
+        case .russian: return "ru"
+        case .chinese: return "zh"
+        case .arabic: return "ar"
+        case .portuguese: return "pt"
+        case .turkish: return "tr"
+        case .japanese: return "ja"
+        case .indonesian: return "id"
+        case .italian: return "it"
+        case .korean: return "ko"
+        case .vietnamese: return "vi"
+        }
     }
 
     var promptInstruction: String {

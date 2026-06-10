@@ -18,7 +18,7 @@ final class PermissionService {
     }
 
     func missingPermissions() -> [AppPermission] {
-        AppPermission.allCases.filter { !isGranted($0) }
+        AppPermission.required.filter { !isGranted($0) }
     }
 
     func recordingBlockingPermissions() -> [AppPermission] {

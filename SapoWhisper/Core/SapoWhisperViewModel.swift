@@ -1580,7 +1580,9 @@ class SapoWhisperViewModel: ObservableObject {
         )
         if willAttemptPolish {
             appState = .polishing
-            overlayManager.updateState(.polishing)
+            overlayManager.updateState(
+                .polishing(timeoutSeconds: TranscriptPostProcessor.polishTimeout(forCharacterCount: rawText.count))
+            )
             SapoLog.ai.info(
                 "AI polish started source=\(source, privacy: .public) rawChars=\(rawText.count, privacy: .public)"
             )

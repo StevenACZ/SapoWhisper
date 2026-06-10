@@ -40,4 +40,25 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         }
         XCTAssertNil(TranscriptPolishOutputLanguage.sameAsInput.englishName)
     }
+
+    /// The language verifier needs an ISO code for every explicit target.
+    func testExplicitTargetsExposeNLLanguageCode() {
+        XCTAssertNil(TranscriptPolishOutputLanguage.sameAsInput.nlLanguageCode)
+        for language in TranscriptPolishOutputLanguage.allCases where language != .sameAsInput {
+            XCTAssertNotNil(language.nlLanguageCode, "\(language.rawValue) is missing an NL language code")
+        }
+    }
+}
+
+final class TranscriptPolishTimeoutTests: XCTestCase {
+
+    /// Short dictations keep the snappy 5s budget; long transcripts scale up
+    /// so a translation round-trip fits, capped at 20s.
+    func testPolishTimeoutScalesWithTranscriptLength() {
+        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 0), 5)
+        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 400), 5)
+        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 1400), 10)
+        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 2814), 17)
+        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 100_000), 20)
+    }
 }

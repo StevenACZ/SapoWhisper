@@ -77,6 +77,33 @@ enum KeychainStore {
         return string(for: key) != nil
     }
 
+    /// True while this session's keychain read was denied (the user pressed
+    /// "Deny" on the consent dialog): secrets exist but are unreadable until
+    /// a retry. UI surfaces use this to offer a recovery path.
+    static var isReadDenied: Bool {
+        cache.withLock { state in
+            if case .loaded(_, false) = state { return true }
+            return false
+        }
+    }
+
+    /// Drops the denied cache and reads again, which lets macOS show the
+    /// consent dialog one more time. Returns true when the retry produced a
+    /// reliable read.
+    @discardableResult
+    static func retryDeniedRead() -> Bool {
+        cache.withLock { state in
+            if case .loaded(_, false) = state {
+                state = .unloaded
+            }
+        }
+        _ = loadPayload()
+        return cache.withLock { state in
+            if case .loaded(_, true) = state { return true }
+            return false
+        }
+    }
+
     @discardableResult
     static func setString(_ value: String, for key: Key) -> Bool {
         // A denied read this launch means the cache may be missing keys;

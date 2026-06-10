@@ -136,7 +136,7 @@
 "config.engine_summary_language" = "Idioma";
 "config.engine_summary_ai" = "Mejora IA";
 "config.engine_summary_ai_active" = "Activa";
-"config.engine_summary_ai_translate" = "Traduce a %@";
+"config.engine_summary_ai_translate" = "→ %@";
 "config.whisper_model" = "Modelo de Whisper";
 "config.downloading" = "Descargando";
 "config.space_used" = "Espacio usado: %@";
@@ -288,6 +288,14 @@
 "permissions.accessibility.helper_message" = "La tarjeta inferior te deja soltar la app dentro de la lista de Accesibilidad cuando todavía no aparece.";
 "permissions.accessibility.active_detail" = "SapoWhisper ya puede auto-pegar y completar mejor el flujo global.";
 "permissions.accessibility.pending_detail" = "Recomendado para auto-pegar y para completar el flujo desde cualquier app.";
+"permissions.input_monitoring.title" = "Monitoreo de entrada";
+"permissions.input_monitoring.summary" = "Necesario para detectar el doble toque del atajo en cualquier app.";
+"permissions.input_monitoring.overlay_title" = "Activa Monitoreo de entrada";
+"permissions.input_monitoring.overlay_message" = "Si SapoWhisper ya aparece en la lista, solo habilítalo. Si todavía no está visible, arrástralo desde la tarjeta inferior hacia la lista.";
+"permissions.input_monitoring.helper_title" = "Arrastra SapoWhisper si hace falta";
+"permissions.input_monitoring.helper_message" = "Cuando lo actives, el doble toque se reactivará solo en unos segundos.";
+"permissions.input_monitoring.active_detail" = "SapoWhisper ya puede detectar el doble toque del atajo.";
+"permissions.input_monitoring.pending_detail" = "Necesario para que el atajo de doble toque (p. ej. ⌥ ⌥) funcione.";
 "permissions.overlay.footnote" = "Cuando vuelvas a SapoWhisper, actualizaremos este estado automáticamente.";
 "permissions.overlay.drag_subtitle" = "Arrástrame hacia la lista si hace falta";
 "permissions.banner.title" = "Permisos pendientes";
@@ -310,6 +318,8 @@
 "permissions.window.badge_many" = "%d pendientes";
 "permissions.window.helper_ready" = "Ya puedes volver al menú o grabar con normalidad.";
 "permissions.window.helper_pending" = "Todos los permisos siguen visibles aquí aunque alguno ya esté activo, para que completes el onboarding sin perder contexto.";
+"keychain.read_denied" = "macOS bloqueó la lectura de tu API key guardada en el Llavero.";
+"keychain.retry_access" = "Permitir de nuevo";
 "permissions.status.active" = "Activo";
 "permissions.status.pending" = "Pendiente";
 "permissions.card.ready" = "Listo";

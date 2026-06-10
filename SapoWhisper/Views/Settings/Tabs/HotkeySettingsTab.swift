@@ -242,6 +242,15 @@ struct HotkeySettingsTab: View {
     private func updateTriggerKind(_ triggerKind: HotkeyTriggerKind) {
         hotkeyTriggerKindRaw = triggerKind.rawValue
         HotkeyManager.shared.updateTriggerKind(triggerKind)
+        requestInputMonitoringIfNeeded(for: triggerKind)
+    }
+
+    /// The double-tap trigger listens through a tap that needs Input
+    /// Monitoring. Kick off the guided permission flow right when the user
+    /// picks it, instead of leaving a silently dead hotkey.
+    private func requestInputMonitoringIfNeeded(for triggerKind: HotkeyTriggerKind) {
+        guard triggerKind == .doubleModifier, !AppPermission.inputMonitoring.isGranted() else { return }
+        PermissionService.shared.requestInteractively(.inputMonitoring)
     }
 
     private func updateHotkey(keyCode: Int, modifiers: Int) {
@@ -262,6 +271,7 @@ struct HotkeySettingsTab: View {
         hotkeyTriggerKindRaw = HotkeyTriggerKind.doubleModifier.rawValue
         hotkeyDoubleTapModifier = Int(modifier.carbonValue)
         HotkeyManager.shared.updateDoubleTapModifier(modifier.carbonValue)
+        requestInputMonitoringIfNeeded(for: .doubleModifier)
     }
 }
 

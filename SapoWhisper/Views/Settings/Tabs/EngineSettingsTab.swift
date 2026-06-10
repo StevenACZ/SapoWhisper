@@ -120,7 +120,7 @@ struct EngineSettingsTab: View {
         guard outputLanguage.requiresTranslation else {
             return "config.engine_summary_ai_active".localized
         }
-        return "config.engine_summary_ai_translate".localized(outputLanguage.displayName)
+        return "config.engine_summary_ai_translate".localized(outputLanguage.shortDisplayName)
     }
 
     private var summaryDivider: some View {

@@ -9,7 +9,11 @@ import Combine
 import SwiftUI
 
 struct PermissionRequirementsView: View {
-    static let windowSize = CGSize(width: 520, height: 505)
+    /// A third row (Input Monitoring with the double-tap trigger) needs the
+    /// taller layout; the two-permission flow keeps the original compact one.
+    static var windowSize: CGSize {
+        CGSize(width: 520, height: AppPermission.required.count > 2 ? 600 : 505)
+    }
 
     let onActivate: (AppPermission) -> Void
     let onClose: () -> Void
@@ -43,11 +47,11 @@ struct PermissionRequirementsView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    ForEach(Array(AppPermission.allCases.enumerated()), id: \.element) { index, permission in
+                    ForEach(Array(requiredPermissions.enumerated()), id: \.element) { index, permission in
                         PermissionRequirementCard(
                             permission: permission,
                             index: index + 1,
-                            isLast: index == AppPermission.allCases.count - 1,
+                            isLast: index == requiredPermissions.count - 1,
                             isGranted: grantedPermissions.contains(permission),
                             onActivate: onActivate
                         )
@@ -105,8 +109,12 @@ struct PermissionRequirementsView: View {
         }
     }
 
+    private var requiredPermissions: [AppPermission] {
+        AppPermission.required
+    }
+
     private var missingCount: Int {
-        AppPermission.allCases.filter { !grantedPermissions.contains($0) }.count
+        requiredPermissions.filter { !grantedPermissions.contains($0) }.count
     }
 
     private var footerMessage: String {
@@ -137,7 +145,7 @@ struct PermissionRequirementsView: View {
             return
         }
 
-        let nextPermissions = Set(AppPermission.allCases.filter { PermissionService.shared.isGranted($0) })
+        let nextPermissions = Set(requiredPermissions.filter { PermissionService.shared.isGranted($0) })
         updateGrantedPermissions(nextPermissions)
     }
 

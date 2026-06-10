@@ -101,6 +101,8 @@ struct TranscribingPillView: View {
 }
 
 struct AIPolishingPillView: View {
+    let timeoutSeconds: UInt64
+
     @State private var startedAt = Date()
 
     var body: some View {
@@ -117,7 +119,7 @@ struct AIPolishingPillView: View {
             // case shrinking instead of an open-ended spinner.
             TimelineView(.periodic(from: startedAt, by: 1)) { context in
                 let elapsed = Int(context.date.timeIntervalSince(startedAt))
-                let remaining = max(0, Int(TranscriptPostProcessor.polishTimeoutSeconds) - elapsed)
+                let remaining = max(0, Int(timeoutSeconds) - elapsed)
                 Text("\(remaining)s")
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()

@@ -5,6 +5,7 @@ struct DeepgramSettingsCard: View {
     let isEmbedded: Bool
 
     @State private var deepgramAPIKey = ""
+    @State private var keychainReadDenied = false
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedMode = DeepgramTranscriptionMode.nova3.rawValue
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
@@ -34,6 +35,7 @@ struct DeepgramSettingsCard: View {
         }
         .onAppear {
             deepgramAPIKey = KeychainStore.string(for: .deepgramAPIKey) ?? ""
+            keychainReadDenied = KeychainStore.isReadDenied
             viewModel.setDeepgramMode(currentMode)
         }
     }
@@ -45,6 +47,13 @@ struct DeepgramSettingsCard: View {
             Divider()
 
             apiKeyStatus
+
+            if keychainReadDenied {
+                KeychainAccessRetryNotice {
+                    deepgramAPIKey = KeychainStore.string(for: .deepgramAPIKey) ?? ""
+                    keychainReadDenied = KeychainStore.isReadDenied
+                }
+            }
 
             SecureField("config.deepgram_key_placeholder".localized, text: $deepgramAPIKey)
                 .textFieldStyle(.roundedBorder)

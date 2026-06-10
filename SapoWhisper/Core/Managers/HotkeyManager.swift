@@ -79,7 +79,7 @@ class HotkeyManager: ObservableObject {
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
     private var cancelCallback: (() -> Void)?
-    private var accessibilityRetryTimer: Timer?
+    private var permissionRetryTimer: Timer?
     private static let hotkeySignature = OSType(0x5357_5049)  // "SWPI"
     private static let mainHotkeyID: UInt32 = 1
     private static let cancelHotkeyID: UInt32 = 2
@@ -122,6 +122,12 @@ class HotkeyManager: ObservableObject {
         guard !UIPreviewMode.skipsConsentPrompts else { return }
 
         self.hotkeyCallback = callback
+
+        // One-line state snapshot per registration attempt: enough to read a
+        // user log and know which trigger ran with which permissions.
+        SapoLog.hotkey.info(
+            "Hotkey register trigger=\(self.currentTriggerKind.rawValue, privacy: .public) hotkey=\(self.hotkeyDescription, privacy: .public) inputMonitoring=\(CGPreflightListenEventAccess(), privacy: .public) accessibility=\(AXIsProcessTrusted(), privacy: .public)"
+        )
 
         // Desregistrar hotkey anterior si existe
         unregisterHotkey()
@@ -298,6 +304,18 @@ class HotkeyManager: ObservableObject {
     }
 
     private func registerDoubleModifierHotkey() {
+        // The listen-only tap below needs Input Monitoring, not Accessibility.
+        // Creating it without the permission both fails AND makes macOS throw
+        // its own "Keystroke Receiving" dialog at the user mid-launch, so
+        // preflight first and let the guided permission flow request access.
+        guard CGPreflightListenEventAccess() else {
+            SapoLog.hotkey.warning(
+                "Double modifier registration blocked permission=input-monitoring granted=false accessibility=\(AXIsProcessTrusted(), privacy: .public) action=wait-for-grant"
+            )
+            scheduleInputMonitoringRetry()
+            return
+        }
+
         let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         guard
             let tap = CGEvent.tapCreate(
@@ -326,8 +344,12 @@ class HotkeyManager: ObservableObject {
                 userInfo: Unmanaged.passUnretained(self).toOpaque()
             )
         else {
-            SapoLog.hotkey.error("Failed to register double modifier hotkey")
-            scheduleAccessibilityRetry()
+            // Permission preflight passed but the tap still failed: macOS can
+            // require a relaunch right after the grant. Surface that clearly.
+            SapoLog.hotkey.error(
+                "Double modifier tap creation failed permission=input-monitoring granted=true hint=may-need-relaunch"
+            )
+            scheduleInputMonitoringRetry()
             return
         }
 
@@ -341,20 +363,20 @@ class HotkeyManager: ObservableObject {
         SapoLog.hotkey.info("Double modifier hotkey registered \(self.hotkeyDescription, privacy: .public)")
     }
 
-    /// On a fresh install the event tap is created before the user grants
-    /// Accessibility, so creation fails and the double-tap trigger stays dead
-    /// until something re-registers it (changing the hotkey, relaunching).
-    /// Poll until the process becomes trusted, then re-register on the spot.
-    private func scheduleAccessibilityRetry() {
-        guard accessibilityRetryTimer == nil else { return }
+    /// On a fresh install the double-tap trigger stays dead until the user
+    /// grants Input Monitoring (the listen-only tap's actual requirement —
+    /// Accessibility alone is not enough). Poll until access is granted, then
+    /// re-register on the spot so no relaunch or hotkey change is needed.
+    private func scheduleInputMonitoringRetry() {
+        guard permissionRetryTimer == nil else { return }
 
         let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
             // Scheduled on RunLoop.main, so the timer always fires on main.
             MainActor.assumeIsolated {
-                guard let self, AXIsProcessTrusted() else { return }
-                self.accessibilityRetryTimer?.invalidate()
-                self.accessibilityRetryTimer = nil
-                SapoLog.hotkey.info("Accessibility granted; re-registering double modifier hotkey")
+                guard let self, CGPreflightListenEventAccess() else { return }
+                self.permissionRetryTimer?.invalidate()
+                self.permissionRetryTimer = nil
+                SapoLog.hotkey.info("Input Monitoring granted; re-registering double modifier hotkey")
                 if let callback = self.hotkeyCallback {
                     self.registerHotkey(callback: callback)
                 }
@@ -362,13 +384,13 @@ class HotkeyManager: ObservableObject {
         }
         timer.tolerance = 1
         RunLoop.main.add(timer, forMode: .common)
-        accessibilityRetryTimer = timer
+        permissionRetryTimer = timer
     }
 
     /// Desregistra el hotkey actual
     func unregisterHotkey() {
-        accessibilityRetryTimer?.invalidate()
-        accessibilityRetryTimer = nil
+        permissionRetryTimer?.invalidate()
+        permissionRetryTimer = nil
 
         if let hotkeyRef = hotkeyRef {
             UnregisterEventHotKey(hotkeyRef)

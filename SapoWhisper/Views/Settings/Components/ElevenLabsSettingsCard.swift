@@ -10,6 +10,7 @@ struct ElevenLabsSettingsCard: View {
     let isEmbedded: Bool
 
     @State private var elevenLabsAPIKey = ""
+    @State private var keychainReadDenied = false
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
 
@@ -40,6 +41,7 @@ struct ElevenLabsSettingsCard: View {
         }
         .onAppear {
             elevenLabsAPIKey = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
+            keychainReadDenied = KeychainStore.isReadDenied
             viewModel.setElevenLabsMode(currentMode)
         }
     }
@@ -51,6 +53,13 @@ struct ElevenLabsSettingsCard: View {
             Divider()
 
             apiKeyStatus
+
+            if keychainReadDenied {
+                KeychainAccessRetryNotice {
+                    elevenLabsAPIKey = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
+                    keychainReadDenied = KeychainStore.isReadDenied
+                }
+            }
 
             SecureField("config.elevenlabs_key_placeholder".localized, text: $elevenLabsAPIKey)
                 .textFieldStyle(.roundedBorder)

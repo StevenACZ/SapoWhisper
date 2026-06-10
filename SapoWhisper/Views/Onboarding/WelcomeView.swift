@@ -129,8 +129,10 @@ struct WelcomeView: View {
     }
 
     private var aiPolishConfigured: Bool {
+        // Hint-based: this renders on every welcome step, so it must never be
+        // the reason the keychain consent dialog appears.
         UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
-            && PolishProviderConfiguration.current() != nil
+            && PolishProviderConfiguration.hasUsableConfiguration()
     }
 
     private var navigationBar: some View {
@@ -312,7 +314,7 @@ private struct WelcomePermissionsStep: View {
             )
 
             VStack(spacing: 12) {
-                ForEach(AppPermission.allCases) { permission in
+                ForEach(AppPermission.required) { permission in
                     WelcomePermissionRow(permission: permission, isGranted: granted.contains(permission))
                 }
             }
@@ -333,7 +335,7 @@ private struct WelcomePermissionsStep: View {
     }
 
     private func refreshGranted() {
-        let updated = Set(AppPermission.allCases.filter { $0.isGranted() })
+        let updated = Set(AppPermission.required.filter { $0.isGranted() })
         guard updated != granted else { return }
         withAnimation(.smooth(duration: 0.3)) {
             granted = updated
@@ -794,7 +796,12 @@ private struct WelcomeAIPolishStep: View {
         .padding(.horizontal, 32)
         .padding(.top, 18)
         .onAppear {
-            apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+            // Prefill only when a key actually exists (hint check), so a
+            // fresh user stepping through onboarding never triggers the
+            // keychain consent dialog here.
+            if KeychainStore.hasValue(for: .aiPolishAPIKey) {
+                apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+            }
             // The curated-catalog picker needs a valid selection to render
             if endpoint.suggestedModels.isEmpty == false,
                 model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

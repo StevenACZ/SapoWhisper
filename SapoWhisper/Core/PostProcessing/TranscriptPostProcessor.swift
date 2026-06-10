@@ -4,12 +4,20 @@
 //
 
 import Foundation
+import NaturalLanguage
 import os
 
 final class TranscriptPostProcessor {
-    /// L10: hard cap for one polish round-trip. The overlay countdown renders
-    /// this same value, so keep them in sync by construction.
-    static let polishTimeoutSeconds: UInt64 = 5
+    /// L10: hard cap for the whole polish step (including the one translation
+    /// retry). Short dictations keep the snappy 5s budget; long transcripts
+    /// scale up so a real translation round-trip fits instead of dying in a
+    /// CancellationError. The overlay countdown receives this same value via
+    /// the polishing overlay state, so they stay in sync by construction.
+    static func polishTimeout(forCharacterCount count: Int) -> UInt64 {
+        let base: UInt64 = 5
+        let extra = UInt64(max(0, count - 400) / 200)
+        return min(base + extra, 20)
+    }
 
     private let polisher: OpenAICompatiblePolisher
 
@@ -85,8 +93,14 @@ final class TranscriptPostProcessor {
         )
 
         do {
-            let response = try await withTimeout(seconds: Self.polishTimeoutSeconds) {
-                try await self.polisher.polish(system: messages.system, user: messages.user)
+            let timeoutSeconds = Self.polishTimeout(forCharacterCount: trimmed.count)
+            let response = try await withTimeout(seconds: timeoutSeconds) {
+                try await self.polishVerifyingTranslation(
+                    messages: messages,
+                    rawText: trimmed,
+                    outputLanguage: outputLanguage,
+                    timeout: TimeInterval(timeoutSeconds)
+                )
             }
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: trimmed)
             guard !cleaned.isEmpty else {
@@ -141,6 +155,67 @@ final class TranscriptPostProcessor {
                 startedAt: startedAt
             )
         }
+    }
+
+    /// Runs the polish call and, when an explicit output language is set,
+    /// verifies with NLLanguageRecognizer that the model actually translated.
+    /// Long transcripts make small models ignore the language instruction, so
+    /// one corrective retry runs inside the same timeout budget; if the retry
+    /// itself fails, the first (untranslated but cleaned) attempt ships.
+    private func polishVerifyingTranslation(
+        messages: TranscriptPolishMessages,
+        rawText: String,
+        outputLanguage: TranscriptPolishOutputLanguage,
+        timeout: TimeInterval
+    ) async throws -> PolishResponse {
+        let first = try await polisher.polish(system: messages.system, user: messages.user, timeout: timeout)
+        let firstCleaned = PolishOutputSanitizer.clean(first.text, rawText: rawText)
+
+        guard
+            let targetCode = outputLanguage.nlLanguageCode,
+            let targetName = outputLanguage.englishName,
+            firstCleaned.count >= 20
+        else { return first }
+
+        let detected = Self.dominantLanguageCode(of: firstCleaned)
+        guard let detected, !detected.hasPrefix(targetCode) else {
+            SapoLog.ai.info(
+                "AI polish translation check target=\(targetCode, privacy: .public) detected=\(detected ?? "unknown", privacy: .public) result=ok"
+            )
+            return first
+        }
+
+        SapoLog.ai.warning(
+            "AI polish translation missed target=\(targetCode, privacy: .public) detected=\(detected, privacy: .public) chars=\(firstCleaned.count, privacy: .public) action=retry"
+        )
+
+        let retrySystem =
+            messages.system + """
+
+
+                IMPORTANT: A previous attempt failed because it kept the transcript's original language. The final text MUST be written entirely in \(targetName). Translate everything.
+                """
+
+        do {
+            let second = try await polisher.polish(system: retrySystem, user: messages.user, timeout: timeout)
+            let secondCleaned = PolishOutputSanitizer.clean(second.text, rawText: rawText)
+            let retryDetected = Self.dominantLanguageCode(of: secondCleaned) ?? "unknown"
+            SapoLog.ai.info(
+                "AI polish translation retry target=\(targetCode, privacy: .public) detected=\(retryDetected, privacy: .public) result=\(retryDetected.hasPrefix(targetCode) ? "ok" : "still-missed", privacy: .public)"
+            )
+            return retryDetected.hasPrefix(targetCode) ? second : first
+        } catch {
+            SapoLog.ai.warning(
+                "AI polish translation retry failed; keeping first attempt detail=\(error.localizedDescription, privacy: .public)"
+            )
+            return first
+        }
+    }
+
+    private static func dominantLanguageCode(of text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        return recognizer.dominantLanguage?.rawValue
     }
 
     static func shouldSkipPolish(_ text: String) -> Bool {

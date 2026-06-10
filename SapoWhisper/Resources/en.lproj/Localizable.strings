@@ -136,7 +136,7 @@
 "config.engine_summary_language" = "Language";
 "config.engine_summary_ai" = "AI polish";
 "config.engine_summary_ai_active" = "Active";
-"config.engine_summary_ai_translate" = "Translates to %@";
+"config.engine_summary_ai_translate" = "→ %@";
 "config.whisper_model" = "Whisper Model";
 "config.downloading" = "Downloading";
 "config.space_used" = "Space used: %@";
@@ -288,6 +288,14 @@
 "permissions.accessibility.helper_message" = "The card below lets you drop the app into the Accessibility list when it is not visible yet.";
 "permissions.accessibility.active_detail" = "SapoWhisper can already auto-paste and complete the global flow more reliably.";
 "permissions.accessibility.pending_detail" = "Recommended for auto-paste and for completing the flow from any app.";
+"permissions.input_monitoring.title" = "Input Monitoring";
+"permissions.input_monitoring.summary" = "Required to detect the double-tap shortcut from any app.";
+"permissions.input_monitoring.overlay_title" = "Enable Input Monitoring";
+"permissions.input_monitoring.overlay_message" = "If SapoWhisper already shows in the list, just enable it. If it is not visible yet, drag it from the card below into the list.";
+"permissions.input_monitoring.helper_title" = "Drag SapoWhisper in if needed";
+"permissions.input_monitoring.helper_message" = "Once enabled, the double-tap trigger reactivates by itself within seconds.";
+"permissions.input_monitoring.active_detail" = "SapoWhisper can now detect the double-tap shortcut.";
+"permissions.input_monitoring.pending_detail" = "Required for the double-tap trigger (e.g. ⌥ ⌥) to work.";
 "permissions.overlay.footnote" = "When you return to SapoWhisper, we will refresh this status automatically.";
 "permissions.overlay.drag_subtitle" = "Drag me into the list if needed";
 "permissions.banner.title" = "Permissions pending";
@@ -310,6 +318,8 @@
 "permissions.window.badge_many" = "%d pending";
 "permissions.window.helper_ready" = "You can go back to the menu or start recording normally.";
 "permissions.window.helper_pending" = "All permissions stay visible here even when one is already active, so you can finish onboarding without losing context.";
+"keychain.read_denied" = "macOS blocked reading your API key saved in the Keychain.";
+"keychain.retry_access" = "Allow again";
 "permissions.status.active" = "Active";
 "permissions.status.pending" = "Pending";
 "permissions.card.ready" = "Ready";

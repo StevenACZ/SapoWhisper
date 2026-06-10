@@ -24,6 +24,7 @@ struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
 
     @State private var apiKey = ""
+    @State private var keychainReadDenied = false
     @State private var testState: ProviderTestState = .idle
 
     private var endpoint: PolishEndpoint {
@@ -103,6 +104,7 @@ struct AIPolishSettingsCard: View {
         }
         .onAppear {
             apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+            keychainReadDenied = KeychainStore.isReadDenied
             // The curated-catalog picker needs a valid selection to render
             if endpoint.suggestedModels.isEmpty == false,
                 model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -205,6 +207,13 @@ struct AIPolishSettingsCard: View {
 
             SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
                 .textFieldStyle(.roundedBorder)
+
+            if keychainReadDenied {
+                KeychainAccessRetryNotice {
+                    apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+                    keychainReadDenied = KeychainStore.isReadDenied
+                }
+            }
 
             Text("ai.provider.api_key_hint".localized)
                 .font(.caption2)

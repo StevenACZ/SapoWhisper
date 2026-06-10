@@ -49,10 +49,12 @@ enum EnginePortfolioMigration {
             return
         }
 
+        // Hint-based presence checks: this runs unprompted at launch, so it
+        // must never be the reason the keychain consent dialog appears.
         let migrated = migratedEngine(
             from: stored,
-            hasDeepgramKey: !(KeychainStore.string(for: .deepgramAPIKey) ?? "").isEmpty,
-            hasElevenLabsKey: !(KeychainStore.string(for: .elevenLabsAPIKey) ?? "").isEmpty
+            hasDeepgramKey: KeychainStore.hasValue(for: .deepgramAPIKey),
+            hasElevenLabsKey: KeychainStore.hasValue(for: .elevenLabsAPIKey)
         )
         defaults.set(migrated, forKey: Constants.StorageKeys.transcriptionEngine)
         SapoLog.lifecycle.info(

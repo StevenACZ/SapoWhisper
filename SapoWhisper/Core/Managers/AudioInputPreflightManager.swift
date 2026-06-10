@@ -63,6 +63,17 @@ final class AudioInputPreflightManager {
     private func runPreflight(reason: String, generation: UInt64) {
         guard generation == self.generation else { return }
 
+        // Starting the muted warm-up engine counts as capture for TCC, so on
+        // a fresh install this background task would pop the system
+        // microphone dialog out of nowhere. The guided permission flow owns
+        // the first request; until then the route cache simply stays cold.
+        guard MicrophonePermission.isGranted else {
+            SapoLog.audioRoute.info(
+                "Audio input preflight skipped reason=\(reason, privacy: .public) permission=microphone granted=false"
+            )
+            return
+        }
+
         // A8: defer instead of fighting an active capture for the device; the
         // retry keeps the cache warm for the route in place after recording.
         let captureActive = DispatchQueue.main.sync { isCaptureActive?() ?? false }

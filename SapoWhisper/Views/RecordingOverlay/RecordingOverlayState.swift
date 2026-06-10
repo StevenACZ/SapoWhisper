@@ -13,7 +13,7 @@ enum RecordingOverlayState: Equatable {
     case recording(duration: TimeInterval)
     case paused(duration: TimeInterval)
     case transcribing
-    case polishing
+    case polishing(timeoutSeconds: UInt64)
     case completed(text: String)
     case error(message: String, isRetryable: Bool)
     case deviceDetected(deviceName: String)

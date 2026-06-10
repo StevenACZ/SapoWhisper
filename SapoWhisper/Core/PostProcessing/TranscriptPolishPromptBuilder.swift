@@ -90,10 +90,22 @@ enum TranscriptPolishPromptBuilder {
 
             <replacement_hints>
             \(replacementBlock)
-            </replacement_hints>
+            </replacement_hints>\(translationReminder(for: outputLanguage))
             """
 
         return TranscriptPolishMessages(system: system, user: rawText)
+    }
+
+    /// Long transcripts dilute the mid-prompt language instruction and the
+    /// model tends to stay in the spoken language. A closing reminder at the
+    /// very end of the system block keeps the translation requirement hot.
+    private static func translationReminder(for outputLanguage: TranscriptPolishOutputLanguage) -> String {
+        guard outputLanguage.requiresTranslation, let name = outputLanguage.englishName else { return "" }
+        return """
+
+
+            Final requirement: write the ENTIRE final text in \(name), translating the transcript when it is in any other language. Never return the transcript's original language.
+            """
     }
 
     /// Hints are user data interpolated into the prompt; flatten newlines and
