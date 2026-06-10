@@ -709,27 +709,25 @@ class SapoWhisperViewModel: ObservableObject {
         let mic = selectedMicrophone
         let playSound = playSoundEnabled
         isStartPending = true
+        // El beep de inicio suena antes de abrir el micrófono en todos los
+        // motores: feedback instantáneo del hotkey, y el AutoDucking pospone
+        // la bajada de volumen para que el beep no quede atenuado.
+        if playSound {
+            SoundManager.shared.play(.startRecording)
+        }
         if isElevenLabsRealtimeSelected {
-            if playSound {
-                SoundManager.shared.play(.startRecording)
-            }
-            SapoLog.recording.info("ElevenLabs realtime UI feedback emitted before input startup")
             startElevenLabsRealtimeRecordingSession(
                 sessionID: sessionID,
                 microphone: mic,
                 language: selectedLanguage,
-                playSound: false,
+                playSound: playSound,
                 triggerTime: triggerTime
             )
         } else if isDeepgramFluxLiveSelected {
-            if playSound {
-                SoundManager.shared.play(.startRecording)
-            }
-            SapoLog.flux.info("Flux UI feedback emitted before input startup")
             startFluxRecordingSession(
                 sessionID: sessionID,
                 microphone: mic,
-                playSound: false,
+                playSound: playSound,
                 triggerTime: triggerTime
             )
         } else {
@@ -878,6 +876,8 @@ class SapoWhisperViewModel: ObservableObject {
         defer { captureCoordinator.endActiveCapture() }
 
         if playSoundEnabled {
+            // Restaurar el volumen antes del beep para que no suene ducked
+            AutoDuckingManager.shared.restore()
             SoundManager.shared.play(.stopRecording)
         }
 
@@ -921,6 +921,8 @@ class SapoWhisperViewModel: ObservableObject {
         defer { captureCoordinator.endActiveCapture() }
 
         if playSoundEnabled {
+            // Restaurar el volumen antes del beep para que no suene ducked
+            AutoDuckingManager.shared.restore()
             SoundManager.shared.play(.stopRecording)
         }
 
@@ -961,6 +963,8 @@ class SapoWhisperViewModel: ObservableObject {
         isStopPending = false
 
         if playSoundEnabled {
+            // Restaurar el volumen antes del beep para que no suene ducked
+            AutoDuckingManager.shared.restore()
             SoundManager.shared.play(.stopRecording)
         }
 
@@ -1214,9 +1218,6 @@ class SapoWhisperViewModel: ObservableObject {
                     context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
                     force: true
                 )
-                if playSound {
-                    SoundManager.shared.play(.startRecording)
-                }
             } catch {
                 if error is CancellationError {
                     return
@@ -1277,9 +1278,6 @@ class SapoWhisperViewModel: ObservableObject {
                     context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
                     force: true
                 )
-                if playSound {
-                    SoundManager.shared.play(.startRecording)
-                }
             } catch {
                 if error is CancellationError {
                     return
@@ -1341,9 +1339,6 @@ class SapoWhisperViewModel: ObservableObject {
                     context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
                     force: true
                 )
-                if playSound {
-                    SoundManager.shared.play(.startRecording)
-                }
             } catch {
                 if error is CancellationError {
                     return

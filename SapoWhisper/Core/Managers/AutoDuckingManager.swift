@@ -32,6 +32,9 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     /// Device ID del output al que se le aplicó duck
     private var duckedDeviceID: AudioDeviceID?
 
+    /// Duck programado (espera a que termine el beep de inicio antes de bajar el volumen)
+    private var pendingDuckItem: DispatchWorkItem?
+
     /// Serial queue para operaciones thread-safe
     private let queue = DispatchQueue(label: "com.sapowhisper.autoducking", qos: .userInteractive)
 
@@ -60,7 +63,9 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     func handleStateChange(_ state: AppState) {
         switch state {
         case .recording:
-            duck()
+            // El beep de inicio debe sonar al volumen original: duckear de
+            // inmediato lo atenuaba (su cuerpo audible dura ~150 ms).
+            duck(afterDelay: startSoundGrace())
         case .processing, .polishing:
             // Restaurar volumen al transcribir — el mic ya no está activo,
             // y la transcripción puede tardar 3-30s. Que el usuario siga
@@ -76,24 +81,54 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     }
 
     /// Reduce el volumen del sistema al nivel configurado
-    func duck() {
+    func duck(afterDelay delay: TimeInterval = 0) {
         queue.async { [weak self] in
-            self?._duck()
+            guard let self else { return }
+            self.pendingDuckItem?.cancel()
+            self.pendingDuckItem = nil
+
+            guard delay > 0 else {
+                self._duck()
+                return
+            }
+
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingDuckItem = nil
+                self._duck()
+            }
+            self.pendingDuckItem = item
+            self.queue.asyncAfter(deadline: .now() + delay, execute: item)
         }
     }
 
     /// Restaura el volumen del sistema al nivel original
     func restore() {
         queue.async { [weak self] in
-            self?._restore()
+            guard let self else { return }
+            self.pendingDuckItem?.cancel()
+            self.pendingDuckItem = nil
+            self._restore()
         }
     }
 
     /// Restaura forzosamente sin verificar isEnabled (para app termination)
     func forceRestore() {
         queue.sync { [weak self] in
-            self?._restore()
+            guard let self else { return }
+            self.pendingDuckItem?.cancel()
+            self.pendingDuckItem = nil
+            self._restore()
         }
+    }
+
+    /// Retraso del duck mientras suena el beep de inicio; 0 si está apagado.
+    private func startSoundGrace() -> TimeInterval {
+        let defaults = UserDefaults.standard
+        let soundEnabled =
+            defaults.object(forKey: Constants.StorageKeys.playSound) == nil
+            || defaults.bool(forKey: Constants.StorageKeys.playSound)
+        return soundEnabled ? 0.35 : 0
     }
 
     // MARK: - Core Audio Implementation
