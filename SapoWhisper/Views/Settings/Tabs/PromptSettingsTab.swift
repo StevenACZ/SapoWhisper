@@ -35,6 +35,7 @@ private struct PromptContextSettingsCard: View {
     @State private var draftForcesEnglish = false
     @State private var selectionBounce = 0
     @State private var isEffectivePromptExpanded = false
+    @State private var isPreviewPolishExpanded = false
     @State private var previewSample = "prompts.preview_sample".localized
     @State private var previewState: PolishPreviewState = .idle
     @State private var feedbackMessage: String?
@@ -117,7 +118,7 @@ private struct PromptContextSettingsCard: View {
     // MARK: - Personal context
 
     private var personalContextSection: some View {
-        DisclosureGroup(isExpanded: $isPersonalContextExpanded.animation(.smooth(duration: 0.25))) {
+        DisclosureGroup(isExpanded: $isPersonalContextExpanded) {
             VStack(alignment: .leading, spacing: 8) {
                 paddedTextEditor(text: $personalDetails, minHeight: 120)
 
@@ -144,6 +145,7 @@ private struct PromptContextSettingsCard: View {
                 subtitle: "prompts.personal_context_desc".localized
             )
         }
+        .disclosureGroupStyle(ClickableDisclosureStyle())
     }
 
     // MARK: - Profiles
@@ -280,7 +282,7 @@ private struct PromptContextSettingsCard: View {
     // MARK: - Effective prompt
 
     private var effectivePromptSection: some View {
-        DisclosureGroup(isExpanded: $isEffectivePromptExpanded.animation(.smooth(duration: 0.25))) {
+        DisclosureGroup(isExpanded: $isEffectivePromptExpanded) {
             ScrollView {
                 Text(effectiveSystemPrompt)
                     .font(.system(size: 11, design: .monospaced))
@@ -305,17 +307,26 @@ private struct PromptContextSettingsCard: View {
                 subtitle: "prompts.effective_prompt_desc".localized
             )
         }
+        .disclosureGroupStyle(ClickableDisclosureStyle())
     }
 
     // MARK: - Preview polish
 
     private var previewPolishSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        DisclosureGroup(isExpanded: $isPreviewPolishExpanded) {
+            previewPolishContent
+                .padding(.top, 8)
+        } label: {
             sectionHeader(
                 title: "prompts.preview_polish".localized,
                 subtitle: "prompts.preview_polish_desc".localized
             )
+        }
+        .disclosureGroupStyle(ClickableDisclosureStyle())
+    }
 
+    private var previewPolishContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
             paddedTextEditor(text: $previewSample, minHeight: 54)
 
             HStack(spacing: 8) {
@@ -528,6 +539,38 @@ private struct PromptContextSettingsCard: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.secondary.opacity(0.18))
             )
+    }
+}
+
+/// Disclosure style where the whole header row toggles the group — clicking
+/// the title or the subtitle works, not just the chevron.
+private struct ClickableDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.smooth(duration: 0.25)) {
+                    configuration.isExpanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+
+                    configuration.label
+
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if configuration.isExpanded {
+                configuration.content
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 }
 

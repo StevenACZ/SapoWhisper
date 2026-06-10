@@ -115,7 +115,6 @@
 "settings.current_hotkey" = "Current Hotkey";
 "settings.current_hotkey_desc" = "Press to record/stop from any app";
 "settings.change_hotkey" = "Change Hotkey";
-"settings.presets" = "Presets";
 "settings.permissions" = "Permissions";
 "settings.permissions_title" = "Accessibility Permissions";
 "settings.permissions_desc" = "For the hotkey to work in all apps, SapoWhisper needs Accessibility permissions.";
@@ -247,11 +246,9 @@
 "tab.about" = "About";
 
 /* Hotkey Settings */
-"settings.presets_desc" = "Select a preset hotkey or customize your own";
 "settings.hotkey_activation_mode" = "Activation mode";
 "settings.hotkey_mode_combination" = "Combination";
 "settings.hotkey_mode_double_modifier" = "Double press";
-"settings.hotkey_double_modifier_desc" = "Press the same modifier twice quickly.";
 "settings.hotkey_mode_combination_caption" = "Press the combo once to start dictating, press it again to stop.";
 "settings.hotkey_mode_double_caption" = "Tap the modifier twice quickly — nothing else to hold down.";
 "settings.hotkey_conflict" = "May collide with %@ on some systems.";
@@ -260,9 +257,13 @@
 "settings.hotkey_conflict_character_viewer" = "the Character Viewer";
 "settings.hotkey_double_tap_try" = "Try it now: double-tap the key.";
 "settings.hotkey_double_tap_success" = "Double tap detected!";
+"settings.hotkey_double_pick_hint" = "Click a key to make it your double-press trigger.";
+"settings.hotkey_modifier_option" = "Option";
+"settings.hotkey_modifier_command" = "Command";
+"settings.hotkey_modifier_control" = "Control";
+"settings.hotkey_modifier_shift" = "Shift";
+"settings.permissions_accessibility_active" = "Accessibility active — auto-paste is ready.";
 "config.hotkey_recorder_listening" = "Press your shortcut…";
-"settings.hotkey_presets_combinations" = "Combinations";
-"settings.hotkey_presets_double_tap" = "Double press";
 
 /* Microphone Level Meter */
 
@@ -382,7 +383,6 @@
 "config.add" = "Add";
 "settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by Deepgram and AI polish.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
-"settings.vocabulary.counts" = "%d words · %d corrections";
 "settings.vocabulary.empty" = "No results";
 "settings.vocabulary.export" = "Export";
 "settings.vocabulary.import" = "Import";
@@ -390,6 +390,7 @@
 "settings.vocabulary.import_panel_message" = "Choose a SapoWhisper vocabulary or settings JSON.";
 "settings.vocabulary.export_success" = "Vocabulary exported.";
 "settings.vocabulary.import_success" = "Vocabulary imported.";
+"settings.vocabulary.transfer_help" = "Export or import vocabulary";
 
 /* Prompts & Context */
 "prompts.title" = "Prompts and context";

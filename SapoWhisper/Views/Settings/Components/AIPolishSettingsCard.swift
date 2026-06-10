@@ -79,7 +79,9 @@ struct AIPolishSettingsCard: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 10) {
+                // The three behavior pickers share one row — they are small
+                // menus, stacking them only added scrolling.
+                HStack(alignment: .top, spacing: 12) {
                     modePicker
                     outputLanguagePicker
                     minimumDurationPicker
@@ -136,8 +138,15 @@ struct AIPolishSettingsCard: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            modelRow
-            apiKeyRow
+            // Model and key side by side: the whole provider setup fits in
+            // one glance instead of a long stack.
+            HStack(alignment: .top, spacing: 12) {
+                modelRow
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                apiKeyRow
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             testRow
         }
         .animation(.smooth(duration: 0.25), value: endpoint)
@@ -314,6 +323,7 @@ private struct AIPolishSettingRow<Control: View>: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

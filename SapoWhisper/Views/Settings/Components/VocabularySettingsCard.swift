@@ -6,6 +6,16 @@ import os
 struct VocabularySettingsCard: View {
     @ObservedObject private var vocabularyManager = VocabularyManager.shared
 
+    /// Keywords and corrections live in separate segments so the tab shows
+    /// one focused list at a time instead of one long wall of content.
+    private enum VocabularySection: String, CaseIterable, Identifiable {
+        case keywords
+        case corrections
+
+        var id: String { rawValue }
+    }
+
+    @State private var section: VocabularySection = .keywords
     @State private var newKeyterm = ""
     @State private var newReplaceFrom = ""
     @State private var newReplaceTo = ""
@@ -23,12 +33,32 @@ struct VocabularySettingsCard: View {
 
     var body: some View {
         SettingsCard(icon: "text.book.closed", title: "config.vocabulary".localized) {
-            VStack(alignment: .leading, spacing: 16) {
-                headerActions
+            VStack(alignment: .leading, spacing: 12) {
+                Text("settings.vocabulary.desc".localized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 10) {
+                    sectionPicker
+                    transferMenu
+                }
+
                 searchField
-                keytermsSection
-                Divider()
-                replacementsSection
+
+                Group {
+                    if section == .keywords {
+                        keytermsSection
+                            .transition(
+                                .opacity.combined(with: .offset(x: -14))
+                            )
+                    } else {
+                        replacementsSection
+                            .transition(
+                                .opacity.combined(with: .offset(x: 14))
+                            )
+                    }
+                }
+                .animation(.smooth(duration: 0.28), value: section)
 
                 if let transferMessage {
                     Text(transferMessage)
@@ -64,30 +94,34 @@ struct VocabularySettingsCard: View {
         }
     }
 
-    private var headerActions: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("settings.vocabulary.desc".localized)
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            HStack(spacing: 10) {
-                Button(action: exportVocabulary) {
-                    Label("settings.vocabulary.export".localized, systemImage: "square.and.arrow.down")
-                }
-                .buttonStyle(.bordered)
-
-                Button(action: importVocabulary) {
-                    Label("settings.vocabulary.import".localized, systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Text("settings.vocabulary.counts".localized(vocabularyManager.keyterms.count, vocabularyManager.replacements.count))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+    private var sectionPicker: some View {
+        Picker("config.vocabulary".localized, selection: $section.animation(.smooth(duration: 0.28))) {
+            Text("\("config.keyterms".localized) (\(vocabularyManager.keyterms.count))")
+                .tag(VocabularySection.keywords)
+            Text("\("config.replacements".localized) (\(vocabularyManager.replacements.count))")
+                .tag(VocabularySection.corrections)
         }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+    }
+
+    private var transferMenu: some View {
+        Menu {
+            Button(action: exportVocabulary) {
+                Label("settings.vocabulary.export".localized, systemImage: "square.and.arrow.down")
+            }
+            Button(action: importVocabulary) {
+                Label("settings.vocabulary.import".localized, systemImage: "square.and.arrow.up")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 28)
+        .help("settings.vocabulary.transfer_help".localized)
     }
 
     private var searchField: some View {
@@ -114,7 +148,17 @@ struct VocabularySettingsCard: View {
 
     private var keytermsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: "config.keyterms".localized, count: filteredKeyterms.count)
+            HStack(spacing: 8) {
+                TextField("config.keyterm_placeholder".localized, text: $newKeyterm)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .onSubmit { addKeyterm() }
+
+                Button("config.add".localized) { addKeyterm() }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .disabled(newKeyterm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
 
             if filteredKeyterms.isEmpty {
                 emptyState
@@ -126,18 +170,7 @@ struct VocabularySettingsCard: View {
                         }
                     }
                 }
-            }
-
-            HStack(spacing: 8) {
-                TextField("config.keyterm_placeholder".localized, text: $newKeyterm)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-                    .onSubmit { addKeyterm() }
-
-                Button("config.add".localized) { addKeyterm() }
-                    .buttonStyle(.bordered)
-                    .font(.caption)
-                    .disabled(newKeyterm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .animation(.spring(duration: 0.3), value: filteredKeyterms)
             }
 
             Text("config.keyterms_desc".localized)
@@ -175,16 +208,34 @@ struct VocabularySettingsCard: View {
     }
 
     private var keytermGridColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 6),
-            GridItem(.flexible(), spacing: 6),
-            GridItem(.flexible(), spacing: 6),
-        ]
+        [GridItem(.adaptive(minimum: 150, maximum: 260), spacing: 6)]
     }
 
     private var replacementsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: "config.replacements".localized, count: filteredReplacements.count)
+            HStack(spacing: 8) {
+                TextField("config.replace_from".localized, text: $newReplaceFrom)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .frame(maxWidth: 140)
+
+                Image(systemName: "arrow.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                TextField("config.replace_to".localized, text: $newReplaceTo)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .onSubmit { addReplacement() }
+
+                Button("config.add".localized) { addReplacement() }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .disabled(
+                        newReplaceFrom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || newReplaceTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+            }
 
             if filteredReplacements.isEmpty {
                 emptyState
@@ -199,29 +250,7 @@ struct VocabularySettingsCard: View {
                         }
                     }
                 }
-            }
-
-            HStack(spacing: 8) {
-                TextField("config.replace_from".localized, text: $newReplaceFrom)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-                    .frame(maxWidth: 140)
-
-                Image(systemName: "arrow.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                TextField("config.replace_to".localized, text: $newReplaceTo)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-
-                Button("config.add".localized) { addReplacement() }
-                    .buttonStyle(.bordered)
-                    .font(.caption)
-                    .disabled(
-                        newReplaceFrom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || newReplaceTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
+                .animation(.spring(duration: 0.3), value: filteredReplacements.map(\.key))
             }
 
             Text("config.replacements_desc".localized)
@@ -236,17 +265,6 @@ struct VocabularySettingsCard: View {
             .foregroundColor(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
-    }
-
-    private func sectionHeader(title: String, count: Int) -> some View {
-        HStack {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-            Spacer()
-            Text("\(count)")
-                .font(.caption.monospacedDigit())
-                .foregroundColor(.secondary)
-        }
     }
 
     private func addKeyterm() {

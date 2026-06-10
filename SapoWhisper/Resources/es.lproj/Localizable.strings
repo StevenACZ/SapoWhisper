@@ -115,7 +115,6 @@
 "settings.current_hotkey" = "Atajo actual";
 "settings.current_hotkey_desc" = "Presiona para grabar/detener desde cualquier app";
 "settings.change_hotkey" = "Cambiar Atajo";
-"settings.presets" = "Atajos predefinidos";
 "settings.permissions" = "Permisos";
 "settings.permissions_title" = "Permisos de Accesibilidad";
 "settings.permissions_desc" = "Para que el atajo funcione en todas las aplicaciones, SapoWhisper necesita permisos de Accesibilidad.";
@@ -247,11 +246,9 @@
 "tab.about" = "Info";
 
 /* Hotkey Settings */
-"settings.presets_desc" = "Selecciona un atajo predefinido o personaliza el tuyo";
 "settings.hotkey_activation_mode" = "Modo de activación";
 "settings.hotkey_mode_combination" = "Combinación";
 "settings.hotkey_mode_double_modifier" = "Doble pulsación";
-"settings.hotkey_double_modifier_desc" = "Presiona el mismo modificador dos veces rápido.";
 "settings.hotkey_mode_combination_caption" = "Pulsa la combinación una vez para dictar y otra vez para parar.";
 "settings.hotkey_mode_double_caption" = "Pulsa el modificador dos veces rápido, sin mantener nada más.";
 "settings.hotkey_conflict" = "Puede chocar con %@ en algunos sistemas.";
@@ -260,9 +257,13 @@
 "settings.hotkey_conflict_character_viewer" = "el visor de caracteres";
 "settings.hotkey_double_tap_try" = "Pruébalo ahora: doble pulsación de la tecla.";
 "settings.hotkey_double_tap_success" = "¡Doble pulsación detectada!";
+"settings.hotkey_double_pick_hint" = "Haz clic en una tecla para usarla como tu doble pulsación.";
+"settings.hotkey_modifier_option" = "Opción";
+"settings.hotkey_modifier_command" = "Comando";
+"settings.hotkey_modifier_control" = "Control";
+"settings.hotkey_modifier_shift" = "Mayús";
+"settings.permissions_accessibility_active" = "Accesibilidad activa: el pegado automático está listo.";
 "config.hotkey_recorder_listening" = "Presiona tu atajo…";
-"settings.hotkey_presets_combinations" = "Combinaciones";
-"settings.hotkey_presets_double_tap" = "Doble pulsación";
 
 /* Microphone Level Meter */
 
@@ -382,7 +383,6 @@
 "config.add" = "Agregar";
 "settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes usadas por Deepgram y el pulido con IA.";
 "settings.vocabulary.search" = "Buscar vocabulario o correcciones";
-"settings.vocabulary.counts" = "%d palabras · %d correcciones";
 "settings.vocabulary.empty" = "No hay resultados";
 "settings.vocabulary.export" = "Exportar";
 "settings.vocabulary.import" = "Importar";
@@ -390,6 +390,7 @@
 "settings.vocabulary.import_panel_message" = "Selecciona un JSON de vocabulario o configuración de SapoWhisper.";
 "settings.vocabulary.export_success" = "Vocabulario exportado.";
 "settings.vocabulary.import_success" = "Vocabulario importado.";
+"settings.vocabulary.transfer_help" = "Exportar o importar vocabulario";
 
 /* Prompts & Context */
 "prompts.title" = "Prompts y contexto";

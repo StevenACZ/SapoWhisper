@@ -22,9 +22,7 @@ struct HotkeySettingsTab: View {
     @State private var conflictShake = 0
     @State private var doubleTapFeedbackPhase = 0
     @State private var doubleTapFeedbackResetTask: Task<Void, Never>?
-    private let presetColumns = [
-        GridItem(.adaptive(minimum: 104), spacing: 10, alignment: .leading)
-    ]
+    @Namespace private var doubleTapSelection
 
     private var triggerKind: HotkeyTriggerKind {
         HotkeyTriggerKind(rawValue: hotkeyTriggerKindRaw) ?? .keyCombination
@@ -41,8 +39,7 @@ struct HotkeySettingsTab: View {
         ScrollView {
             VStack(spacing: 16) {
                 hotkeyCard
-                presetsCard
-                permissionsCard
+                AccessibilityPermissionFooter()
             }
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
@@ -162,19 +159,33 @@ struct HotkeySettingsTab: View {
 
     // MARK: - Double tap
 
+    /// All four modifiers as clickable keycaps: the active one plays the
+    /// double-press animation so there is no doubt about which key is live.
     private var doubleTapSection: some View {
-        HStack(alignment: .center, spacing: 16) {
-            DoubleTapKeycapDemo(symbol: currentDoubleTapModifier.symbol)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(HotkeyDoubleTapModifier.allCases) { modifier in
+                    DoubleTapModifierOption(
+                        modifier: modifier,
+                        isSelected: currentDoubleTapModifier == modifier,
+                        namespace: doubleTapSelection
+                    ) {
+                        updateDoubleTapModifier(modifier)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.spring(duration: 0.35), value: hotkeyDoubleTapModifier)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("settings.hotkey_double_modifier_desc".localized)
+            HStack(spacing: 10) {
+                Text("settings.hotkey_double_pick_hint".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
 
+                Spacer(minLength: 0)
+
                 doubleTapLiveFeedback
             }
-
-            Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
     }
@@ -222,103 +233,10 @@ struct HotkeySettingsTab: View {
         }
     }
 
-    // MARK: - Presets Card
-
-    private var presetsCard: some View {
-        SettingsCard(icon: "sparkles", title: "settings.presets".localized) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("settings.presets_desc".localized)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("settings.hotkey_presets_combinations".localized)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-
-                    LazyVGrid(columns: presetColumns, alignment: .leading, spacing: 10) {
-                        HotkeyPresetButton("⌥ Space", isSelected: isHotkeySelected(keyCode: kVK_Space, modifiers: optionKey)) {
-                            updateHotkey(keyCode: kVK_Space, modifiers: optionKey)
-                        }
-
-                        HotkeyPresetButton("⌘ Space", isSelected: isHotkeySelected(keyCode: kVK_Space, modifiers: cmdKey)) {
-                            updateHotkey(keyCode: kVK_Space, modifiers: cmdKey)
-                        }
-
-                        HotkeyPresetButton("⌘⇧ Space", isSelected: isHotkeySelected(keyCode: kVK_Space, modifiers: cmdKey | shiftKey)) {
-                            updateHotkey(keyCode: kVK_Space, modifiers: cmdKey | shiftKey)
-                        }
-
-                        HotkeyPresetButton(
-                            "⌃⌥ Space",
-                            isSelected: isHotkeySelected(keyCode: kVK_Space, modifiers: controlKey | optionKey)
-                        ) {
-                            updateHotkey(keyCode: kVK_Space, modifiers: controlKey | optionKey)
-                        }
-
-                        HotkeyPresetButton(
-                            "⌃⌥⌘ Space",
-                            isSelected: isHotkeySelected(keyCode: kVK_Space, modifiers: controlKey | optionKey | cmdKey)
-                        ) {
-                            updateHotkey(keyCode: kVK_Space, modifiers: controlKey | optionKey | cmdKey)
-                        }
-                    }
-
-                    Divider()
-
-                    Text("settings.hotkey_presets_double_tap".localized)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-
-                    LazyVGrid(columns: presetColumns, alignment: .leading, spacing: 10) {
-                        ForEach(HotkeyDoubleTapModifier.allCases) { modifier in
-                            HotkeyPresetButton(doubleTapLabel(for: modifier), isSelected: isDoubleTapSelected(modifier)) {
-                                updateDoubleTapModifier(modifier)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Permissions Card
-
-    private var permissionsCard: some View {
-        SettingsCard(icon: "hand.raised", title: "settings.permissions".localized) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("settings.permissions_guided_desc".localized)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                PermissionStatusRow(permission: .accessibility)
-
-                Button("permissions.review".localized) {
-                    PermissionRequirementsWindowController.shared.showWindow(force: true)
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-    }
-
     // MARK: - Helpers
-
-    private func isHotkeySelected(keyCode: Int, modifiers: Int) -> Bool {
-        triggerKind == .keyCombination && hotkeyKeyCode == keyCode && hotkeyModifiers == modifiers
-    }
-
-    private func isDoubleTapSelected(_ modifier: HotkeyDoubleTapModifier) -> Bool {
-        triggerKind == .doubleModifier && hotkeyDoubleTapModifier == Int(modifier.carbonValue)
-    }
 
     private var currentDoubleTapModifier: HotkeyDoubleTapModifier {
         HotkeyDoubleTapModifier.option(for: UInt32(hotkeyDoubleTapModifier))
-    }
-
-    private func doubleTapLabel(for modifier: HotkeyDoubleTapModifier) -> String {
-        "\(modifier.symbol)\(modifier.symbol)"
     }
 
     private func updateTriggerKind(_ triggerKind: HotkeyTriggerKind) {
@@ -347,6 +265,71 @@ struct HotkeySettingsTab: View {
     }
 }
 
+// MARK: - Double-tap modifier option
+
+/// One selectable modifier keycap. The selected one keeps pressing itself
+/// twice in a loop — the gesture demo doubles as the "this key is active"
+/// signal; the rest sit dimmed until hovered.
+private struct DoubleTapModifierOption: View {
+    let modifier: HotkeyDoubleTapModifier
+    let isSelected: Bool
+    let namespace: Namespace.ID
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                Group {
+                    if isSelected {
+                        DoubleTapKeycapDemo(symbol: modifier.symbol)
+                    } else {
+                        KeycapView(label: modifier.symbol, width: 56)
+                            .opacity(isHovered ? 0.9 : 0.55)
+                    }
+                }
+                .frame(height: 48)
+
+                Text(displayName)
+                    .font(.caption2.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.sapoGreen : .secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.sapoGreen.opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.sapoGreen.opacity(0.35), lineWidth: 1)
+                        )
+                        .matchedGeometryEffect(id: "double-tap-active", in: namespace)
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered && !isSelected ? 1.04 : 1.0)
+        .animation(.smooth(duration: 0.18), value: isHovered)
+        .onHover { isHovered = $0 }
+    }
+
+    private var displayName: String {
+        switch modifier {
+        case .option: return "settings.hotkey_modifier_option".localized
+        case .command: return "settings.hotkey_modifier_command".localized
+        case .control: return "settings.hotkey_modifier_control".localized
+        case .shift: return "settings.hotkey_modifier_shift".localized
+        }
+    }
+}
+
 // MARK: - Double-tap demo
 
 /// The chosen modifier keycap pressing itself twice in a loop, illustrating
@@ -371,44 +354,72 @@ private struct DoubleTapKeycapDemo: View {
     }
 }
 
-// MARK: - Hotkey Preset Button
+// MARK: - Accessibility footer
 
-struct HotkeyPresetButton: View {
-    let label: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    init(_ label: String, isSelected: Bool, action: @escaping () -> Void) {
-        self.label = label
-        self.isSelected = isSelected
-        self.action = action
-    }
+/// Once accessibility is granted this collapses into a slim confirmation row;
+/// the full guidance card only shows while the permission is missing.
+private struct AccessibilityPermissionFooter: View {
+    @State private var isGranted = PermissionService.shared.isGranted(.accessibility)
 
     var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(.caption, design: .monospaced))
-                .fontWeight(.medium)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(isSelected ? Color.sapoGreen : Color(NSColor.controlBackgroundColor))
-                .foregroundColor(isSelected ? .white : .primary)
-                .cornerRadius(6)
+        Group {
+            if isGranted {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.sapoGreen)
+                    Text("settings.permissions_accessibility_active".localized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Button("permissions.review".localized) {
+                        PermissionRequirementsWindowController.shared.showWindow(force: true)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(Color.sapoGreen)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.03))
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                SettingsCard(icon: "hand.raised", title: "settings.permissions".localized) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("settings.permissions_guided_desc".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        PermissionStatusRow(permission: .accessibility)
+
+                        Button("permissions.review".localized) {
+                            PermissionRequirementsWindowController.shared.showWindow(force: true)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .buttonStyle(.plain)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refresh()
+        }
+    }
+
+    private func refresh() {
+        let granted = PermissionService.shared.isGranted(.accessibility)
+        guard granted != isGranted else { return }
+        withAnimation(.smooth(duration: 0.3)) {
+            isGranted = granted
+        }
     }
 }
 
 #Preview("Hotkey Settings") {
     HotkeySettingsTab()
         .frame(width: 480, height: 500)
-}
-
-#Preview("Hotkey Presets") {
-    HStack(spacing: 10) {
-        HotkeyPresetButton("⌥ Space", isSelected: true) {}
-        HotkeyPresetButton("⌘⇧ Space", isSelected: false) {}
-        HotkeyPresetButton("⌥⌥", isSelected: false) {}
-    }
-    .padding()
 }
