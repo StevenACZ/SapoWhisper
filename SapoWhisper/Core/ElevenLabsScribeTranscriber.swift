@@ -22,10 +22,9 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     private static let maxKeytermLength = ElevenLabsKeytermLimits.batchMaxLength
     private static let maxKeytermWords = ElevenLabsKeytermLimits.batchMaxWords
 
-    /// Check if the ElevenLabs API key is configured.
+    /// Check if the ElevenLabs API key is configured (hint-based: no keychain prompt).
     var isConfigured: Bool {
-        let key = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .elevenLabsAPIKey)
     }
 
     // MARK: - Transcription

@@ -397,8 +397,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     var isConfigured: Bool {
-        let key = KeychainStore.string(for: .elevenLabsAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .elevenLabsAPIKey)
     }
 
     init() {

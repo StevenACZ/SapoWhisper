@@ -44,8 +44,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     var isConfigured: Bool {
-        let key = KeychainStore.string(for: .deepgramAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .deepgramAPIKey)
     }
 
     init() {

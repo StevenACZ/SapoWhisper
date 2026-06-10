@@ -16,10 +16,9 @@ class DeepgramBatchTranscriber: ObservableObject {
     /// Brand name surfaced in user-facing failures and logs.
     private static let engineName = "Deepgram"
 
-    /// Check if Deepgram API key is configured
+    /// Check if Deepgram API key is configured (hint-based: no keychain prompt)
     var isConfigured: Bool {
-        let key = KeychainStore.string(for: .deepgramAPIKey) ?? ""
-        return !key.isEmpty
+        KeychainStore.hasValue(for: .deepgramAPIKey)
     }
 
     // MARK: - Transcription

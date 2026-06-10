@@ -106,6 +106,20 @@ struct PolishProviderConfiguration {
         return PolishProviderConfiguration(endpoint: endpoint, baseURL: baseURL, model: model, apiKey: apiKey)
     }
 
+    /// Like `current() != nil`, but checks key presence through KeychainStore's
+    /// hints so launch and settings surfaces can gate on it without triggering
+    /// a keychain consent prompt.
+    static func hasUsableConfiguration(defaults: UserDefaults = .standard) -> Bool {
+        let endpointValue =
+            defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
+        let endpoint = PolishEndpoint(rawValue: endpointValue) ?? .default
+        let model = defaults.string(forKey: Constants.StorageKeys.aiPolishModel) ?? endpoint.defaultModel
+        let customBaseURL = defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) ?? ""
+        // isUsable only checks key presence, so a placeholder stands in for it.
+        let apiKey = KeychainStore.hasValue(for: .aiPolishAPIKey) ? "stored" : ""
+        return isUsable(endpoint: endpoint, model: model, customBaseURL: customBaseURL, apiKey: apiKey)
+    }
+
     /// Single source of truth for "can this combination make a request",
     /// shared by the request path and the settings UI.
     static func isUsable(endpoint: PolishEndpoint, model: String, customBaseURL: String, apiKey: String) -> Bool {

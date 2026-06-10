@@ -39,7 +39,7 @@ final class OpenAICompatiblePolisher {
     }
 
     var isConfigured: Bool {
-        PolishProviderConfiguration.current() != nil
+        PolishProviderConfiguration.hasUsableConfiguration()
     }
 
     func polish(system: String, user: String, timeout: TimeInterval = 8) async throws -> PolishResponse {

@@ -93,6 +93,9 @@ nonisolated enum Constants {
         static let onboardingComplete = "onboardingComplete"
         /// cdhash of the build that last wrote the keychain item, to re-own it after rebuilds
         static let keychainOwnerCodeHash = "keychainOwnerCodeHash"
+        /// Which keychain keys hold a value (names only, never secrets), so
+        /// launch/settings "is X configured" checks skip the keychain prompt
+        static let keychainStoredKeyHints = "keychainStoredKeyHints"
         static let hotkeyTriggerKind = "hotkeyTriggerKind"
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
