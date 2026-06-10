@@ -21,11 +21,13 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - `StreamingAudioCapture*`: shared streaming capture that writes local WAV history and emits ordered PCM chunks.
 - Engines: WhisperKit (local), Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe v2 batch, ElevenLabs Scribe Realtime v2. Apple Speech, Google Cloud STT, and Gemini Audio were removed; old history rows from them stay readable.
 - History: SQLite via `TranscriptionHistoryManager*`; audio retention via `HistoryAudioStorage`.
+- Vocabulary tab metrics (words per minute, term usage) are computed read-only from recent history rows off the main actor (`VocabularyUsageCalculator`); do not add tracking columns or history schema changes for them.
 - Permissions: `PermissionService` plus guided permission windows and overlays (Microphone + Accessibility only).
 - Secrets: one consolidated Keychain item (`KeychainStore`) plus UserDefaults presence hints. Gate "is X configured" checks on `KeychainStore.hasValue` (never `string(for:)`) so launch/settings paths cannot trigger the macOS consent prompt; writes re-create the item (delete+add) so the running build owns it.
 - Auto-ducking (`AutoDuckingManager`) fades system volume in a smooth ramp starting the instant recording begins (~400 ms down, ~250 ms up); do not reintroduce delayed or single-step volume drops.
 - Welcome flow is first-run only: explicit Close marks it seen, and the final step closes itself when recording starts. Keycaps render the user's actual trigger (combo or double-tap).
-- AI polish: optional OpenAI-compatible provider after any engine (`OpenAICompatiblePolisher`; OpenRouter default, model `openai/gpt-5.4-nano`, key in the macOS Keychain). A fidelity guard pastes the raw transcript when the output drifts. Keep `polishing` visually distinct from recording/transcribing.
+- AI polish: optional OpenAI-compatible provider after any engine (`OpenAICompatiblePolisher`; OpenRouter default, model `openai/gpt-5.4-nano`, key in the macOS Keychain). The model field is free text (any provider model ID) with curated suggestions. A fidelity guard pastes the raw transcript when the output drifts. Keep `polishing` visually distinct from recording/transcribing.
+- The Prompts tab settings UI only edits prompt profiles; the personal-context editor and effective-prompt preview were removed, but a saved personal context still feeds `TranscriptPolishPromptBuilder`.
 - AI polish output language (same-as-input or an explicit target from the 15-language catalog) is authoritative and may translate the transcript; pass `translationExpected` to the fidelity guard so only translation-invariant anchors (numbers, URLs, emails, vocabulary) are enforced. Engines never translate; selecting an explicit target resets the transcription language to auto so the spoken language is detected.
 - Transcription language is recognition context, not translation or output forcing; only the AI polish output language may translate.
 
@@ -80,7 +82,7 @@ make release-check
 - `make format` and `make lint` only inspect changed Swift files by default.
 - `make test` runs the `SapoWhisperTests` unit bundle (pure logic: fidelity guard, failure mapping, engine migration, settings import); `make ci-check` = lint + Debug build + tests.
 - Run `git diff --check` before staging or reporting a docs/code patch done.
-- UI screenshots without consent prompts: launch a Debug build with `SAPO_UI_PREVIEW=1` and optional `SAPO_UI_PREVIEW_SCREEN=history|welcome` + `SAPO_UI_PREVIEW_WELCOME_STEP=<0-4>`. Preview launches and the unit-test host skip keychain reads, hotkey event-tap registration, and startup permission windows (`UIPreviewMode`); normal user launches are unaffected.
+- UI screenshots without consent prompts: launch a Debug build with `SAPO_UI_PREVIEW=1` and optional `SAPO_UI_PREVIEW_SCREEN=history|welcome|settings` + `SAPO_UI_PREVIEW_WELCOME_STEP=<0-4>`. Preview launches and the unit-test host skip keychain reads, hotkey event-tap registration, and startup permission windows (`UIPreviewMode`); normal user launches are unaffected.
 
 ## Packaging
 
