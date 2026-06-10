@@ -16,6 +16,10 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     @Published private(set) var audioLevel: Float = 0
     private(set) var lastCaptureResult: StreamingAudioCaptureResult?
 
+    /// A2: fired on the main thread when the local capture died mid-session
+    /// and could not be recovered; the owner aborts preserving the WAV.
+    var onCaptureInterrupted: ((String) -> Void)?
+
     private let capture = StreamingAudioCapture()
     private var cancellables = Set<AnyCancellable>()
     private var webSocketTask: URLSessionWebSocketTask?
@@ -185,6 +189,12 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func bindCapture() {
+        // A2: a capture that died mid-session (device gone, recovery failed)
+        // bubbles up so the owner can abort preserving the WAV.
+        capture.onCaptureInterrupted = { [weak self] reason in
+            self?.onCaptureInterrupted?(reason)
+        }
+
         capture.$recordingDuration
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in

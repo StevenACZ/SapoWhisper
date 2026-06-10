@@ -40,6 +40,15 @@ class AudioRecorder: ObservableObject {
     private var captureStateLock = os_unfair_lock()
     private let audioSetupQueue = DispatchQueue(label: "com.sapowhisper.audioSetup", qos: .userInitiated)
     private let setupGenerationQueue = DispatchQueue(label: "com.sapowhisper.audioSetup.generation", qos: .userInitiated)
+    /// A1: disk writes drain here so a slow flush never stalls the audio tap thread.
+    private let audioWriteQueue = DispatchQueue(label: "com.sapowhisper.audioRecorder.write", qos: .userInitiated)
+    private lazy var deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
+    private var captureRecoveryAttempts = 0
+
+    /// A2: called on the main thread when an interrupted capture (dead device,
+    /// failed route recovery) cannot be rebuilt; the owner aborts the session
+    /// preserving the WAV recorded so far.
+    var onCaptureInterrupted: ((String) -> Void)?
     private var inputBufferCount = 0
     private var writtenFrameCount: AVAudioFramePosition = 0
     private var firstInputLatencyMs: Double?
@@ -208,6 +217,13 @@ class AudioRecorder: ObservableObject {
                         return
                     }
 
+                    // A2: keep the engine reachable from the setup queue and watch
+                    // the bound device + engine configuration for the whole capture.
+                    self.audioEngine = localEngine
+                    self.captureRecoveryAttempts = 0
+                    let boundDeviceID = deviceUID == "default" ? nil : AudioDeviceManager.shared.getDeviceID(for: deviceUID)
+                    self.beginDeviceSentinel(engine: localEngine, deviceID: boundDeviceID, generation: setupGeneration)
+
                     let setupMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     SapoLog.recording.info("Recorder setup completed in \(setupMs, privacy: .public)ms")
 
@@ -343,12 +359,19 @@ class AudioRecorder: ObservableObject {
         os_unfair_lock_lock(&converterLock)
         defer { os_unfair_lock_unlock(&converterLock) }
 
-        // Lazy converter creation from actual buffer format (avoids stale format cache after device switch)
-        if converter == nil {
+        // Lazy converter creation from actual buffer format (avoids stale format cache after device switch).
+        // A2: rebuilt when the tap format changes mid-capture (route recovery rebinds the input).
+        if converter == nil || converter?.inputFormat != buffer.format {
             let inputFmt = buffer.format
-            SapoLog.recording.info(
-                "Recorder creating converter inHz=\(Int(inputFmt.sampleRate), privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public)"
-            )
+            if converter != nil {
+                SapoLog.recording.info(
+                    "Recorder tap format changed, rebuilding converter inHz=\(Int(inputFmt.sampleRate), privacy: .public)"
+                )
+            } else {
+                SapoLog.recording.info(
+                    "Recorder creating converter inHz=\(Int(inputFmt.sampleRate), privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public)"
+                )
+            }
             converter = AVAudioConverter(from: inputFmt, to: outputFormat)
             if converter == nil {
                 SapoLog.recording.error(
@@ -406,13 +429,18 @@ class AudioRecorder: ObservableObject {
             publishAudioLevel(from: convertedBuffer)
         }
 
-        do {
-            try audioFile.write(from: convertedBuffer)
-            registerWrittenFrames(convertedBuffer.frameLength)
-        } catch {
-            SapoLog.recording.error(
-                "Recorder audio buffer write failed error=\(error.localizedDescription, privacy: .public)"
-            )
+        // A1: the disk write runs on a dedicated serial queue; the converted
+        // buffer is owned by this call, so handing it off is safe. The stop
+        // path drains this queue before closing the file.
+        audioWriteQueue.async { [weak self] in
+            do {
+                try audioFile.write(from: convertedBuffer)
+                self?.registerWrittenFrames(convertedBuffer.frameLength)
+            } catch {
+                SapoLog.recording.error(
+                    "Recorder audio buffer write failed error=\(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     }
 
@@ -547,11 +575,15 @@ class AudioRecorder: ObservableObject {
 
     /// Must run on `audioSetupQueue`.
     private func finalizeCaptureOnQueue() -> URL? {
+        deviceSentinel.end()
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine?.reset()
 
         _ = flushRemainingConvertedAudio()
+        // A1: drain pending async writes before releasing the file so the WAV
+        // is complete when the URL is returned.
+        audioWriteQueue.sync {}
 
         let currentURL = recordingURL
         audioFile = nil
@@ -768,12 +800,14 @@ class AudioRecorder: ObservableObject {
     }
 
     private func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
+        deviceSentinel.end()
         if let engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
             engine.reset()
         }
 
+        audioWriteQueue.sync {}
         audioFile = nil
         audioEngine = nil
         converter = nil
@@ -783,6 +817,99 @@ class AudioRecorder: ObservableObject {
         self.recordingURL = nil
         if deleteTemporaryFile, let cleanupURL {
             deleteRecording(at: cleanupURL)
+        }
+    }
+
+    // MARK: - A2: capture interruption recovery
+
+    private func beginDeviceSentinel(engine: AVAudioEngine, deviceID: AudioDeviceID?, generation: UInt64) {
+        deviceSentinel.begin(engine: engine, deviceID: deviceID) { [weak self] event in
+            self?.handleCaptureInterruption(event: event, generation: generation)
+        }
+    }
+
+    /// Runs on `audioSetupQueue`. Rebuilds the engine after a device death or
+    /// configuration change (rebinding the selected device, or falling back to
+    /// the system default when it is gone). A failed rebuild reports a terminal
+    /// interruption so the owner can abort preserving the WAV.
+    private func handleCaptureInterruption(event: CaptureDeviceSentinel.Event, generation: UInt64) {
+        guard isSetupGenerationCurrent(generation), let oldEngine = audioEngine else { return }
+
+        deviceSentinel.end()
+        captureRecoveryAttempts += 1
+        let attempt = captureRecoveryAttempts
+        SapoLog.recording.warning(
+            "Recorder capture interrupted event=\(event.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)"
+        )
+
+        oldEngine.inputNode.removeTap(onBus: 0)
+        oldEngine.stop()
+        oldEngine.reset()
+        audioEngine = nil
+
+        guard attempt <= 2 else {
+            reportCaptureInterruption(reason: "\(event.rawValue) recovery-exhausted")
+            return
+        }
+
+        do {
+            try rebuildCaptureEngine(afterEvent: event, generation: generation)
+        } catch {
+            SapoLog.recording.error(
+                "Recorder capture recovery failed error=\(error.localizedDescription, privacy: .public)"
+            )
+            reportCaptureInterruption(reason: "\(event.rawValue) rebuild-failed")
+        }
+    }
+
+    private func rebuildCaptureEngine(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) throws {
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+
+        var deviceUID = currentCaptureDeviceUID()
+        var boundDeviceID: AudioDeviceID?
+        var hwFormat: AVAudioFormat?
+
+        if deviceUID != "default" {
+            AudioDeviceManager.shared.refreshDevices()
+            if event != .deviceDied,
+                let format = try? bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
+            {
+                hwFormat = format
+                boundDeviceID = AudioDeviceManager.shared.getDeviceID(for: deviceUID)
+            } else {
+                // The selected device is gone: keep capturing on the system
+                // default instead of recording silence for the rest of the take.
+                deviceUID = "default"
+                setCaptureDeviceUID(deviceUID)
+                SapoLog.recording.warning("Recorder falling back to system default input")
+            }
+        }
+
+        let tapFormat = hwFormat ?? inputNode.outputFormat(forBus: 0)
+        guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
+            throw RecordingError.invalidFormat
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+            self?.processAudioBuffer(buffer)
+        }
+        engine.prepare()
+        try engine.start()
+
+        audioEngine = engine
+        beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
+        let inputDescription = deviceUID == "default" ? "system-default" : deviceUID
+        SapoLog.recording.info(
+            "Recorder capture recovered input=\(inputDescription, privacy: .public) hz=\(Int(tapFormat.sampleRate), privacy: .public)"
+        )
+    }
+
+    private func reportCaptureInterruption(reason: String) {
+        invalidateSetupGeneration()
+        let callback = onCaptureInterrupted
+        DispatchQueue.main.async {
+            callback?(reason)
         }
     }
 }

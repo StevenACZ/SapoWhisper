@@ -39,7 +39,9 @@ class SapoWhisperViewModel: ObservableObject {
 
     // MARK: - AppStorage Properties
 
-    @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "es"
+    /// New installs auto-detect the spoken language; every current engine
+    /// (WhisperKit, Deepgram, ElevenLabs) supports detection natively.
+    @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
     @AppStorage(Constants.StorageKeys.hotkeyKeyCode) var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
@@ -84,7 +86,8 @@ class SapoWhisperViewModel: ObservableObject {
     private var activeRecordingSessionID: UInt64?
     private var activeTranscriptionSessionID: UInt64?
     private var lastStartHotkeyTime: CFAbsoluteTime = 0
-    private var shouldResumeMicMonitorAfterRecording = false
+    /// A5: single owner of mic exclusivity (monitor suspend/resume, overlap assert).
+    private let captureCoordinator = AudioCaptureCoordinator.shared
 
     // No-speech fast path: track the session peak from the overlay level
     // stream. The threshold is deliberately conservative (~−55 dBFS in the
@@ -160,10 +163,26 @@ class SapoWhisperViewModel: ObservableObject {
 
         // A8: the preflight engine must never warm the HAL while a capture
         // owns the input device. Evaluated on the main thread by the manager.
+        // A5: the coordinator covers the begin→end window (wider than the
+        // isRecording flags); the recorder flags stay as a backstop.
         AudioInputPreflightManager.shared.isCaptureActive = { [weak self] in
             MainActor.assumeIsolated {
-                self?.isAnyRecorderActive ?? false
+                AudioCaptureCoordinator.shared.isCaptureActive || (self?.isAnyRecorderActive ?? false)
             }
+        }
+
+        // A2: a capture that dies mid-recording (device unplugged, recovery
+        // failed) aborts cleanly: WAV preserved, failed row, clear error.
+        audioRecorder.onCaptureInterrupted = { [weak self] reason in
+            Task { @MainActor in
+                self?.handleCaptureDeviceFailure(reason: reason)
+            }
+        }
+        deepgramFluxTranscriber.onCaptureInterrupted = { [weak self] reason in
+            self?.handleCaptureDeviceFailure(reason: reason)
+        }
+        elevenLabsRealtimeTranscriber.onCaptureInterrupted = { [weak self] reason in
+            self?.handleCaptureDeviceFailure(reason: reason)
         }
 
         // Cargar modelo automaticamente si el motor es WhisperLocal
@@ -429,10 +448,17 @@ class SapoWhisperViewModel: ObservableObject {
     func loadWhisperKitModel() async {
         do {
             try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: selectedLanguage)
-            appState = .idle
+            // R4: an on-demand reload can finish mid-recording — only leave
+            // the "no model" state, never clobber an active session state.
+            if case .noModel = appState {
+                appState = .idle
+            }
         } catch {
             let errorMsg = error.localizedDescription
             SapoLog.recording.error("WhisperKit load failed error=\(errorMsg, privacy: .public)")
+            // Mid-recording reload failures surface at stop time through the
+            // normal transcription failure path; do not clobber the session.
+            guard activeRecordingSessionID == nil else { return }
             appState = .error(ErrorState(message: "Error cargando modelo: \(errorMsg)"))
 
             // Mostrar el error un momento y volver a noModel para reintentar.
@@ -628,11 +654,23 @@ class SapoWhisperViewModel: ObservableObject {
         // Verificar que el motor actual tiene modelo cargado
         let isReady = isEngineReady(engine)
 
-        guard isReady else {
+        // R4: a model unloaded after idle reloads on demand — recording starts
+        // immediately and the transcription awaits the reload at stop time.
+        let canReloadOnDemand =
+            engine == .whisperLocal
+            && whisperKitTranscriber.downloadedModels.contains(currentWhisperKitModel)
+            && !whisperKitTranscriber.isTranscribing
+
+        guard isReady || canReloadOnDemand else {
             activeRecordingSessionID = nil
             appState = .noModel
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
+        }
+
+        if !isReady {
+            SapoLog.recording.info("WhisperKit reloading on demand after idle unload")
+            Task { await self.loadWhisperKitModel() }
         }
 
         // R7: offline fast-fail before opening the mic — cloud engines would
@@ -713,7 +751,7 @@ class SapoWhisperViewModel: ObservableObject {
         activeRecordingSessionID = nil
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
-        restoreMicMonitorAfterRecordingIfNeeded()
+        captureCoordinator.endActiveCapture()
         AutoDuckingManager.shared.restore()
         checkInitialState()
     }
@@ -834,7 +872,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     private func stopElevenLabsRealtimeRecordingAndTranscribe(perf: DictationPerfTimeline? = nil) {
         isStopPending = false
-        defer { restoreMicMonitorAfterRecordingIfNeeded() }
+        defer { captureCoordinator.endActiveCapture() }
 
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
@@ -941,7 +979,8 @@ class SapoWhisperViewModel: ObservableObject {
                         language: language,
                         duration: captureResult.duration,
                         aiResult: nil,
-                        status: "failed"
+                        status: "failed",
+                        failureCode: failure.diagnosticCode
                     )
                     lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
                     lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
@@ -956,7 +995,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     private func stopFluxRecordingAndTranscribe(perf: DictationPerfTimeline? = nil) {
         isStopPending = false
-        defer { restoreMicMonitorAfterRecordingIfNeeded() }
+        defer { captureCoordinator.endActiveCapture() }
 
         if playSoundEnabled {
             SoundManager.shared.play(.stopRecording)
@@ -1055,7 +1094,8 @@ class SapoWhisperViewModel: ObservableObject {
                         language: "auto",
                         duration: captureResult.duration,
                         aiResult: nil,
-                        status: "failed"
+                        status: "failed",
+                        failureCode: failure.diagnosticCode
                     )
                     lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
                     lastFailedAudioURL = persistedEntry.audioURL ?? captureResult.audioURL
@@ -1085,7 +1125,7 @@ class SapoWhisperViewModel: ObservableObject {
             // All engines: stop recording, get audio file, transcribe.
             // The finalize runs on the audio queue so the MainActor stays free.
             let stoppedURL = await audioRecorder.stopRecordingAsync()
-            restoreMicMonitorAfterRecordingIfNeeded()
+            captureCoordinator.endActiveCapture()
 
             guard let audioURL = stoppedURL else {
                 activeTranscriptionSessionID = nil
@@ -1201,7 +1241,8 @@ class SapoWhisperViewModel: ObservableObject {
                     language: language,
                     duration: duration,
                     aiResult: nil,
-                    status: "failed"
+                    status: "failed",
+                    failureCode: failure.diagnosticCode
                 )
                 lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
                 lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
@@ -1376,14 +1417,14 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            self.captureCoordinator.beginCapture(.batchRecorder)
             var recorderDidStart = false
 
             defer {
                 self.isStartPending = false
                 self.startRecordingTask = nil
-                if didSuspendMonitor && !recorderDidStart {
-                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                if !recorderDidStart {
+                    self.captureCoordinator.endCapture(.batchRecorder)
                 }
             }
 
@@ -1439,14 +1480,14 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            self.captureCoordinator.beginCapture(.fluxStreaming)
             var recorderDidStart = false
 
             defer {
                 self.isStartPending = false
                 self.startRecordingTask = nil
-                if didSuspendMonitor && !recorderDidStart {
-                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                if !recorderDidStart {
+                    self.captureCoordinator.endCapture(.fluxStreaming)
                 }
             }
 
@@ -1503,14 +1544,14 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let didSuspendMonitor = self.suspendMicMonitorForRecordingIfNeeded()
+            self.captureCoordinator.beginCapture(.elevenLabsStreaming)
             var recorderDidStart = false
 
             defer {
                 self.isStartPending = false
                 self.startRecordingTask = nil
-                if didSuspendMonitor && !recorderDidStart {
-                    self.restoreMicMonitorAfterRecordingIfNeeded()
+                if !recorderDidStart {
+                    self.captureCoordinator.endCapture(.elevenLabsStreaming)
                 }
             }
 
@@ -1641,14 +1682,6 @@ class SapoWhisperViewModel: ObservableObject {
         return false
     }
 
-    private func suspendMicMonitorForRecordingIfNeeded() -> Bool {
-        let shouldResume = AudioLevelMonitor.shared.suspendForRecorder()
-        if shouldResume {
-            shouldResumeMicMonitorAfterRecording = true
-        }
-        return shouldResume
-    }
-
     private func isRecoverableInputStartError(_ error: Error) -> Bool {
         guard let recordingError = error as? RecordingError else { return false }
 
@@ -1662,12 +1695,6 @@ class SapoWhisperViewModel: ObservableObject {
             .permissionDenied:
             return false
         }
-    }
-
-    private func restoreMicMonitorAfterRecordingIfNeeded() {
-        guard shouldResumeMicMonitorAfterRecording else { return }
-        shouldResumeMicMonitorAfterRecording = false
-        AudioLevelMonitor.shared.resumeAfterRecorderIfNeeded()
     }
 
     // MARK: - No-speech handling
@@ -1715,6 +1742,11 @@ class SapoWhisperViewModel: ObservableObject {
         }
         switch engine {
         case .whisperLocal:
+            // R4: after an idle unload the reload kicked off at recording
+            // start may still be in flight — await it before transcribing.
+            if !whisperKitTranscriber.isModelLoaded {
+                try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: language)
+            }
             return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
@@ -1825,7 +1857,8 @@ class SapoWhisperViewModel: ObservableObject {
         language: String,
         duration: TimeInterval,
         aiResult: TranscriptAIResult?,
-        status: String
+        status: String,
+        failureCode: String? = nil
     ) -> PersistedHistoryEntry {
         let savedPath = historyManager.saveAudioFile(from: sourceURL)
         let fallbackPath = FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL.path : nil
@@ -1842,7 +1875,8 @@ class SapoWhisperViewModel: ObservableObject {
             aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
             aiModel: aiResult?.model,
             aiMode: aiResult?.mode,
-            aiError: aiResult?.error
+            aiError: aiResult?.error,
+            failureCode: failureCode
         )
 
         // The copy + insert pair is not atomic: when the insert fails, roll
@@ -1887,7 +1921,31 @@ class SapoWhisperViewModel: ObservableObject {
             return
         }
         guard !isStopPending, activeTranscriptionSessionID == nil else { return }
+        guard abortActiveCapturePreservingAudio(reasonLog: "sleep") else { return }
 
+        overlayManager.updateState(.hidden)
+        checkInitialState()
+    }
+
+    /// A2: terminal capture interruption (mic died / route recovery failed).
+    /// Aborts like the sleep path — WAV preserved, failed row for retry — but
+    /// surfaces a clear retryable error instead of hiding the overlay.
+    private func handleCaptureDeviceFailure(reason: String) {
+        SapoLog.recording.error(
+            "Capture device failure reason=\(reason, privacy: .public) \(self.diagnosticContext(), privacy: .public)"
+        )
+        guard !isStopPending, activeTranscriptionSessionID == nil else { return }
+        guard abortActiveCapturePreservingAudio(reasonLog: reason) else { return }
+
+        presentTranscriptionFailure(
+            TranscriptionFailure(kind: .recordingInterrupted, technicalDetail: reason)
+        )
+    }
+
+    /// Shared abort for sleep and device-failure paths: stops whatever capture
+    /// is active, preserves the WAV in a failed history row so retry works,
+    /// and releases the mic. Returns false when nothing was recording.
+    private func abortActiveCapturePreservingAudio(reasonLog: String) -> Bool {
         let engine = currentEngine
         var interrupted: (audioURL: URL, duration: TimeInterval)?
 
@@ -1905,14 +1963,13 @@ class SapoWhisperViewModel: ObservableObject {
                 interrupted = (url, duration)
             }
         } else {
-            return
+            return false
         }
 
         activeRecordingSessionID = nil
-        restoreMicMonitorAfterRecordingIfNeeded()
+        captureCoordinator.endActiveCapture()
         AutoDuckingManager.shared.restore()
         overlayManager.updateAudioLevel(0)
-        overlayManager.updateState(.hidden)
 
         if let interrupted {
             let persistedEntry = persistHistoryEntry(
@@ -1922,17 +1979,20 @@ class SapoWhisperViewModel: ObservableObject {
                 language: selectedLanguage,
                 duration: interrupted.duration,
                 aiResult: nil,
-                status: "failed"
+                status: "failed",
+                failureCode: TranscriptionFailure(
+                    kind: .recordingInterrupted, engine: engine.displayName
+                ).diagnosticCode
             )
             lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
             lastFailedAudioURL = persistedEntry.audioURL ?? interrupted.audioURL
             cleanupSourceAudioIfSafe(sourceURL: interrupted.audioURL, persistedEntry: persistedEntry)
             SapoLog.lifecycle.info(
-                "Recording aborted for sleep durationSec=\(Int(interrupted.duration), privacy: .public)"
+                "Recording aborted reason=\(reasonLog, privacy: .public) durationSec=\(Int(interrupted.duration), privacy: .public)"
             )
         }
 
-        checkInitialState()
+        return true
     }
 
     /// Re-validates the pieces that go stale across sleep cycles: the hotkey

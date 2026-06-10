@@ -28,7 +28,13 @@ extension StreamingAudioCapture {
         os_unfair_lock_lock(&converterLock)
         defer { os_unfair_lock_unlock(&converterLock) }
 
-        if converter == nil {
+        // A2: rebuilt when the tap format changes mid-capture (route recovery rebinds the input).
+        if converter == nil || converter?.inputFormat != buffer.format {
+            if converter != nil {
+                SapoLog.recording.info(
+                    "Streaming tap format changed, rebuilding converter inHz=\(Int(buffer.format.sampleRate), privacy: .public)"
+                )
+            }
             converter = AVAudioConverter(from: buffer.format, to: outputFormat)
         }
         guard let converter else { return }
@@ -75,20 +81,27 @@ extension StreamingAudioCapture {
         applyGainIfNeeded(to: buffer)
         if publishLevel { publishAudioLevel(from: buffer) }
 
-        do {
-            try audioFile.write(from: buffer)
-            registerWrittenFrames(buffer.frameLength)
-            if let data = pcmData(from: buffer) {
-                let chunkCount = registerEmittedChunk()
-                if chunkCount % 100 == 0 {
-                    SapoLog.flux.info("Flux local audio chunks emitted count=\(chunkCount, privacy: .public)")
-                }
-                chunkHandler?(data)
+        // Emit to the streaming engine first: the WAV is the local backup and
+        // a slow (or failing) disk must never delay or drop live chunks.
+        if let data = pcmData(from: buffer) {
+            let chunkCount = registerEmittedChunk()
+            if chunkCount % 100 == 0 {
+                SapoLog.flux.info("Flux local audio chunks emitted count=\(chunkCount, privacy: .public)")
             }
-        } catch {
-            SapoLog.flux.error(
-                "Capture write failed error=\(error.localizedDescription, privacy: .public)"
-            )
+            chunkHandler?(data)
+        }
+
+        // A1: the disk write runs on a dedicated serial queue; the stop path
+        // drains it before closing the file.
+        audioWriteQueue.async { [weak self] in
+            do {
+                try audioFile.write(from: buffer)
+                self?.registerWrittenFrames(buffer.frameLength)
+            } catch {
+                SapoLog.flux.error(
+                    "Capture write failed error=\(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     }
 
