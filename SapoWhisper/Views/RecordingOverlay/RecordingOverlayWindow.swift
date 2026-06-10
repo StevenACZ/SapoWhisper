@@ -33,7 +33,7 @@ enum OverlayPosition: String, CaseIterable, Identifiable {
 
 /// NSPanel personalizado para la ventana de overlay de grabacion
 /// Pill horizontal posicionado en la parte inferior de la pantalla
-class RecordingOverlayWindow: NSPanel {
+class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
 
     init(contentView: NSView, width: CGFloat = 380, height: CGFloat = 48) {
         super.init(
@@ -61,6 +61,14 @@ class RecordingOverlayWindow: NSPanel {
         self.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
 
         // Posicionar segun la preferencia del usuario
+        applyConfiguredPosition()
+
+        // Content-driven resizes (the hosting view tracks the pill's ideal
+        // size) must keep the pill anchored, not pinned to a stale origin.
+        self.delegate = self
+    }
+
+    func windowDidResize(_ notification: Notification) {
         applyConfiguredPosition()
     }
 

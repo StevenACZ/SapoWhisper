@@ -166,18 +166,7 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.layer?.isOpaque = false
 
-        let windowWidth: CGFloat = 380
-        let windowHeight: CGFloat = 48
-
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
-        containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.clear.cgColor
-        containerView.layer?.isOpaque = false
-        containerView.addSubview(hostingView)
-        hostingView.frame = containerView.bounds
-        hostingView.autoresizingMask = [.width, .height]
-
-        overlayWindow = RecordingOverlayWindow(contentView: containerView, width: windowWidth, height: windowHeight)
+        overlayWindow = RecordingOverlayWindow(contentView: hostingView)
         isAnimating = false
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         SapoLog.overlay.info("Overlay window created in \(Int(elapsed), privacy: .public)ms")
@@ -215,6 +204,21 @@ class OverlayWindowManager: ObservableObject {
         if shouldShowOverlay(for: newState) {
             show()
         }
+    }
+
+    /// Resizes the panel to the pill's measured size (reported by the SwiftUI
+    /// root) so long error messages grow the window instead of clipping at a
+    /// fixed frame; the window delegate re-anchors after every resize.
+    func updateWindowSize(to size: CGSize) {
+        guard let window = overlayWindow else { return }
+        let target = NSSize(width: ceil(size.width), height: ceil(size.height))
+        guard target.width > 1, target.height > 1 else { return }
+        guard abs(window.frame.width - target.width) > 0.5 || abs(window.frame.height - target.height) > 0.5
+        else { return }
+        window.setContentSize(target)
+        SapoLog.overlay.info(
+            "Overlay resized to \(Int(target.width), privacy: .public)x\(Int(target.height), privacy: .public)"
+        )
     }
 
     /// Actualiza el nivel de audio (para el ecualizador)

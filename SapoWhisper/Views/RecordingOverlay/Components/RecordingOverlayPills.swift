@@ -190,9 +190,13 @@ struct ErrorPillView: View {
             Text(message)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .lineLimit(2)
+                .lineLimit(3)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
+                // A concrete width (maxWidth cannot wrap under the pill's
+                // ideal-size layout) so long failure messages break into
+                // lines instead of widening the pill past the screen.
+                .frame(width: message.count > 50 ? 340 : nil, alignment: .leading)
 
             Spacer()
 

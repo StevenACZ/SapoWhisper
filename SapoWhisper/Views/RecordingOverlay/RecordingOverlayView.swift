@@ -26,7 +26,15 @@ struct RecordingOverlayView: View {
                     .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
             )
             .fixedSize()
-            .frame(maxWidth: 380, maxHeight: 48)
+            // Transparent margin inside the auto-sized window so the glow
+            // stroke and the micro-bounce overshoot are not clipped.
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: OverlayPillSizeKey.self, value: proxy.size)
+                }
+            )
             .scaleEffect(scale)
             .animation(.spring(response: 0.35, dampingFraction: 0.78), value: stateCategory)
             .onChange(of: stateCategory) { _, _ in
@@ -35,6 +43,13 @@ struct RecordingOverlayView: View {
             .onAppear {
                 withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
                     scale = 1.0
+                }
+            }
+            .onPreferenceChange(OverlayPillSizeKey.self) { [manager] size in
+                // The window tracks the pill's laid-out size, so long error
+                // messages grow it instead of being clipped at a fixed frame.
+                Task { @MainActor in
+                    manager.updateWindowSize(to: size)
                 }
             }
     }
@@ -88,5 +103,14 @@ struct RecordingOverlayView: View {
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)
         }
+    }
+}
+
+/// Reports the pill's laid-out size so the hosting window can match it.
+private nonisolated struct OverlayPillSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
     }
 }
