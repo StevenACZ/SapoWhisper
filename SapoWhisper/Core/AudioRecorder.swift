@@ -74,6 +74,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     // Used on audioSetupQueue only.
     private let deviceSentinel: CaptureDeviceSentinel
     private var captureRecoveryAttempts = 0
+    private var captureHealthProbePending = false
 
     init() {
         deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
@@ -862,17 +863,65 @@ nonisolated class AudioRecorder: @unchecked Sendable {
 
     // MARK: - A2: capture interruption recovery
 
+    private static let captureHealthProbeDelay: TimeInterval = 0.3
+    private static let captureHealthyBufferMaxAge: TimeInterval = 0.5
+
     private func beginDeviceSentinel(engine: AVAudioEngine, deviceID: AudioDeviceID?, generation: UInt64) {
         deviceSentinel.begin(engine: engine, deviceID: deviceID) { [weak self] event in
             self?.handleCaptureInterruption(event: event, generation: generation)
         }
     }
 
-    /// Runs on `audioSetupQueue`. Rebuilds the engine after a device death or
-    /// configuration change (rebinding the selected device, or falling back to
-    /// the system default when it is gone). A failed rebuild reports a terminal
-    /// interruption so the owner can abort preserving the WAV.
+    /// Runs on `audioSetupQueue`. A dead device rebuilds right away; a
+    /// configuration change is probed first because AVAudioEngine posts it for
+    /// benign renegotiations (binding a USB mic fires one right after start)
+    /// while audio keeps flowing — tearing down a healthy engine re-triggers
+    /// the notification until recovery is exhausted.
     private func handleCaptureInterruption(event: CaptureDeviceSentinel.Event, generation: UInt64) {
+        guard isSetupGenerationCurrent(generation), audioEngine != nil else { return }
+
+        switch event {
+        case .deviceDied:
+            recoverCapture(afterEvent: event, generation: generation)
+        case .configurationChanged:
+            scheduleCaptureHealthProbe(afterEvent: event, generation: generation)
+        }
+    }
+
+    /// Coalesces configuration-change bursts into one deferred health check;
+    /// the sentinel stays armed and the engine keeps running while it waits.
+    private func scheduleCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
+        guard !captureHealthProbePending else { return }
+        captureHealthProbePending = true
+        SapoLog.recording.info("Recorder configuration changed, probing health")
+        audioSetupQueue.asyncAfter(deadline: .now() + Self.captureHealthProbeDelay) { [weak self] in
+            self?.runCaptureHealthProbe(afterEvent: event, generation: generation)
+        }
+    }
+
+    /// Runs on `audioSetupQueue`. Leaves a healthy engine (still running,
+    /// buffers still arriving) untouched and rebuilds only a dead stream.
+    private func runCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
+        captureHealthProbePending = false
+        guard isSetupGenerationCurrent(generation), let engine = audioEngine else { return }
+
+        let lastBuffer = lastInputBufferTime
+        let bufferAge = CFAbsoluteTimeGetCurrent() - lastBuffer
+        if engine.isRunning, lastBuffer > 0, bufferAge <= Self.captureHealthyBufferMaxAge {
+            captureRecoveryAttempts = 0
+            SapoLog.recording.info(
+                "Recorder capture healthy after configuration change bufferAgeMs=\(Int(bufferAge * 1000), privacy: .public)"
+            )
+            return
+        }
+        recoverCapture(afterEvent: event, generation: generation)
+    }
+
+    /// Runs on `audioSetupQueue`. Rebuilds the engine after a device death or
+    /// a dead post-change stream (rebinding the selected device, or falling
+    /// back to the system default when it is gone). A failed rebuild reports a
+    /// terminal interruption so the owner can abort preserving the WAV.
+    private func recoverCapture(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
         guard isSetupGenerationCurrent(generation), let oldEngine = audioEngine else { return }
 
         deviceSentinel.end()
@@ -931,6 +980,9 @@ nonisolated class AudioRecorder: @unchecked Sendable {
             throw RecordingError.invalidFormat
         }
 
+        // A health probe after this rebuild must see buffers from the new
+        // engine, not a fresh-looking timestamp left by the dead one.
+        lastInputBufferTime = 0
         inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }

@@ -82,6 +82,7 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
     // Used on audioSetupQueue only.
     let deviceSentinel: CaptureDeviceSentinel
     var captureRecoveryAttempts = 0
+    var captureHealthProbePending = false
     var captureActive = false
 
     init() {

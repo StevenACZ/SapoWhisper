@@ -51,17 +51,65 @@ nonisolated extension StreamingAudioCapture {
 
     // MARK: - A2: capture interruption recovery
 
+    static let captureHealthProbeDelay: TimeInterval = 0.3
+    static let captureHealthyBufferMaxAge: TimeInterval = 0.5
+
     func beginDeviceSentinel(engine: AVAudioEngine, deviceID: AudioDeviceID?) {
         deviceSentinel.begin(engine: engine, deviceID: deviceID) { [weak self] event in
             self?.handleCaptureInterruption(event: event)
         }
     }
 
-    /// Runs on `audioSetupQueue`. Rebuilds the engine after a device death or
-    /// configuration change, falling back to the system default input when the
-    /// selected device is gone. Streaming chunks keep flowing to the same
-    /// handler; a failed rebuild reports a terminal interruption.
+    /// Runs on `audioSetupQueue`. A dead device rebuilds right away; a
+    /// configuration change is probed first because AVAudioEngine posts it for
+    /// benign renegotiations (binding a USB mic fires one right after start)
+    /// while audio keeps flowing — tearing down a healthy engine re-triggers
+    /// the notification until recovery is exhausted.
     func handleCaptureInterruption(event: CaptureDeviceSentinel.Event) {
+        guard isCaptureActiveFlag(), audioEngine != nil else { return }
+
+        switch event {
+        case .deviceDied:
+            recoverCapture(afterEvent: event)
+        case .configurationChanged:
+            scheduleCaptureHealthProbe(afterEvent: event)
+        }
+    }
+
+    /// Coalesces configuration-change bursts into one deferred health check;
+    /// the sentinel stays armed and the engine keeps running while it waits.
+    private func scheduleCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event) {
+        guard !captureHealthProbePending else { return }
+        captureHealthProbePending = true
+        SapoLog.recording.info("Streaming capture configuration changed, probing health")
+        audioSetupQueue.asyncAfter(deadline: .now() + Self.captureHealthProbeDelay) { [weak self] in
+            self?.runCaptureHealthProbe(afterEvent: event)
+        }
+    }
+
+    /// Runs on `audioSetupQueue`. Leaves a healthy engine (still running,
+    /// buffers still arriving) untouched and rebuilds only a dead stream.
+    private func runCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event) {
+        captureHealthProbePending = false
+        guard isCaptureActiveFlag(), let engine = audioEngine else { return }
+
+        let lastBuffer = lastInputBufferTime
+        let bufferAge = CFAbsoluteTimeGetCurrent() - lastBuffer
+        if engine.isRunning, lastBuffer > 0, bufferAge <= Self.captureHealthyBufferMaxAge {
+            captureRecoveryAttempts = 0
+            SapoLog.recording.info(
+                "Streaming capture healthy after configuration change bufferAgeMs=\(Int(bufferAge * 1000), privacy: .public)"
+            )
+            return
+        }
+        recoverCapture(afterEvent: event)
+    }
+
+    /// Runs on `audioSetupQueue`. Rebuilds the engine after a device death or
+    /// a dead post-change stream, falling back to the system default input
+    /// when the selected device is gone. Streaming chunks keep flowing to the
+    /// same handler; a failed rebuild reports a terminal interruption.
+    private func recoverCapture(afterEvent event: CaptureDeviceSentinel.Event) {
         guard isCaptureActiveFlag(), let oldEngine = audioEngine else { return }
 
         deviceSentinel.end()
@@ -120,6 +168,9 @@ nonisolated extension StreamingAudioCapture {
             throw RecordingError.invalidFormat
         }
 
+        // A health probe after this rebuild must see buffers from the new
+        // engine, not a fresh-looking timestamp left by the dead one.
+        lastInputBufferTime = 0
         inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
