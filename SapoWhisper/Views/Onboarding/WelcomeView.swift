@@ -23,7 +23,9 @@ struct WelcomeView: View {
     let onFinish: () -> Void
     let onDismiss: () -> Void
 
-    @State private var step: WelcomeStep = .welcome
+    @State private var step: WelcomeStep =
+        UIPreviewMode.welcomeStep
+        .flatMap(WelcomeStep.init(rawValue:)) ?? .welcome
     @Namespace private var engineSelection
 
     static let windowSize = CGSize(width: 660, height: 600)
@@ -49,6 +51,9 @@ struct WelcomeView: View {
         }
         .frame(width: Self.windowSize.width, height: Self.windowSize.height)
         .background(Color(NSColor.windowBackgroundColor))
+        // The transparent titlebar (fullSizeContentView) otherwise pushes the
+        // whole flow down by the titlebar height, leaving a dead band on top.
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     // MARK: - Header (step indicator)
@@ -660,13 +665,11 @@ private struct WelcomeAIPolishStep: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             WelcomeStepTitle(
                 title: "welcome.ai_title".localized,
                 subtitle: "welcome.ai_subtitle".localized
             )
-
-            Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 12) {
                 Picker("ai.provider.endpoint".localized, selection: $endpointValue) {
@@ -742,7 +745,7 @@ private struct WelcomeAIPolishStep: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 0)
+            Spacer()
         }
         .padding(.horizontal, 32)
         .padding(.top, 18)
