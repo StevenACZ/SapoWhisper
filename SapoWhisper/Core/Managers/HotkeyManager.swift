@@ -79,6 +79,7 @@ class HotkeyManager: ObservableObject {
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
     private var cancelCallback: (() -> Void)?
+    private var accessibilityRetryTimer: Timer?
     private static let hotkeySignature = OSType(0x5357_5049)  // "SWPI"
     private static let mainHotkeyID: UInt32 = 1
     private static let cancelHotkeyID: UInt32 = 2
@@ -326,6 +327,7 @@ class HotkeyManager: ObservableObject {
             )
         else {
             SapoLog.hotkey.error("Failed to register double modifier hotkey")
+            scheduleAccessibilityRetry()
             return
         }
 
@@ -339,8 +341,35 @@ class HotkeyManager: ObservableObject {
         SapoLog.hotkey.info("Double modifier hotkey registered \(self.hotkeyDescription, privacy: .public)")
     }
 
+    /// On a fresh install the event tap is created before the user grants
+    /// Accessibility, so creation fails and the double-tap trigger stays dead
+    /// until something re-registers it (changing the hotkey, relaunching).
+    /// Poll until the process becomes trusted, then re-register on the spot.
+    private func scheduleAccessibilityRetry() {
+        guard accessibilityRetryTimer == nil else { return }
+
+        let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
+            // Scheduled on RunLoop.main, so the timer always fires on main.
+            MainActor.assumeIsolated {
+                guard let self, AXIsProcessTrusted() else { return }
+                self.accessibilityRetryTimer?.invalidate()
+                self.accessibilityRetryTimer = nil
+                SapoLog.hotkey.info("Accessibility granted; re-registering double modifier hotkey")
+                if let callback = self.hotkeyCallback {
+                    self.registerHotkey(callback: callback)
+                }
+            }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        accessibilityRetryTimer = timer
+    }
+
     /// Desregistra el hotkey actual
     func unregisterHotkey() {
+        accessibilityRetryTimer?.invalidate()
+        accessibilityRetryTimer = nil
+
         if let hotkeyRef = hotkeyRef {
             UnregisterEventHotKey(hotkeyRef)
             self.hotkeyRef = nil

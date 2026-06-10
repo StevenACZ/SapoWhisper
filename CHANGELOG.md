@@ -33,6 +33,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- The double-tap trigger now starts working the moment Accessibility is granted on a fresh install: the event tap used to be created before the permission existed and stayed dead until the user changed the hotkey or relaunched. The app now polls until the process is trusted and re-registers automatically.
 - The global hotkey kept dying after visiting Settings: a focused API-key SecureField leaves macOS Secure Keyboard Entry enabled, which silently starves the hotkey event tap. Settings/history/welcome windows now drop the first responder when they close or resign key, releasing secure input immediately.
 - The macOS keychain consent prompt fires at most once per build and only when a key is actually needed: launch and settings "is X configured" checks read non-secret presence hints, saving keys re-creates the item instead of re-prompting on every keystroke, and a denied read can no longer wipe stored keys or make the welcome flow reappear for configured users.
 - The welcome flow is strictly for new users now: closing it explicitly marks it as seen, so it never auto-reopens on later launches.
