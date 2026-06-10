@@ -91,6 +91,8 @@ nonisolated enum Constants {
         static let language = "language"
         static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"
+        /// cdhash of the build that last wrote the keychain item, to re-own it after rebuilds
+        static let keychainOwnerCodeHash = "keychainOwnerCodeHash"
         static let hotkeyTriggerKind = "hotkeyTriggerKind"
         static let hotkeyKeyCode = "hotkeyKeyCode"
         static let hotkeyModifiers = "hotkeyModifiers"
