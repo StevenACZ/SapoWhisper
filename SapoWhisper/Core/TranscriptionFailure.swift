@@ -189,8 +189,8 @@ extension TranscriptionFailure {
 
     /// Normalizes any caught error into a `TranscriptionFailure`.
     ///
-    /// Recognizes failures already of this type, `URLError`, the engine-domain error
-    /// enums, and Apple Speech `NSError`s; everything else becomes `.unknown`.
+    /// Recognizes failures already of this type, `URLError`, and the
+    /// engine-domain error enums; everything else becomes `.unknown`.
     static func from(_ error: Error, engine: String? = nil) -> TranscriptionFailure {
         if let failure = error as? TranscriptionFailure {
             return failure

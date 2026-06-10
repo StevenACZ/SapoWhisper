@@ -29,7 +29,6 @@
 "history.empty" = "Sin historial";
 "history.empty_sub" = "Las transcripciones aparecerán aquí";
 "history.copy" = "Copiar";
-"history.retranscribe" = "Re-transcribir";
 "history.retranscribe_create" = "Crear nueva transcripción";
 "history.retranscribing" = "Re-transcribiendo...";
 "history.retranscribe_sheet_title" = "Re-transcribir audio";
@@ -430,27 +429,10 @@
 "settings.transfer.import_options_title" = "Qué quieres importar";
 "settings.transfer.import_options_desc" = "El archivo puede traer todo, pero solo se aplicarán las categorías seleccionadas.";
 "settings.transfer.import_selected" = "Importar seleccionado";
-"settings.transfer.section_behavior" = "Comportamiento e idioma";
-"settings.transfer.section_behavior_desc" = "Idioma de la app, idioma de transcripción y auto-pegar.";
-"settings.transfer.section_audio" = "Audio";
-"settings.transfer.section_audio_desc" = "Sonidos, volumen, ganancia y auto-ducking.";
-"settings.transfer.section_engine" = "Motor";
-"settings.transfer.section_engine_desc" = "Motor de transcripción, modelo local y modo Deepgram.";
-"settings.transfer.section_hotkey" = "Atajo";
-"settings.transfer.section_hotkey_desc" = "Tecla global para iniciar o detener grabación.";
-"settings.transfer.section_ai" = "Pulido con IA";
-"settings.transfer.section_ai_desc" = "Modo de pulido y lenguaje de salida.";
-"settings.transfer.section_vocabulary" = "Vocabulario";
-"settings.transfer.section_vocabulary_desc" = "Palabras clave y correcciones automáticas.";
-"settings.transfer.section_prompt_context" = "Prompts y contexto";
-"settings.transfer.section_prompt_context_desc" = "Contexto personal y modos de IA editables.";
-"settings.transfer.section_api_keys" = "API keys";
-"settings.transfer.section_api_keys_desc" = "API keys de motores de archivos exportados antiguos; se guardan en el Llavero de macOS.";
 
 "overlay.no_speech" = "No se detecto voz";
 
 /* Errors */
-"error.no_audio" = "No se pudo obtener el audio";
 "error.input_not_ready" = "Microfono no disponible. Reintenta o elige otro.";
 "overlay.retry" = "Reintentar";
 

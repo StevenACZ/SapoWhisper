@@ -14,6 +14,8 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 ## Architecture
 
 - `SapoWhisperViewModel`: recording, transcription, AI polish, history, overlay, retry, and paste orchestration.
+- `TranscriptionPipeline`: shared transcribe→polish→paste→persist control flow for the three stop paths (session-staleness gates, silence rule); the ViewModel implements `TranscriptionPipelineHost` for every side effect.
+- Strict concurrency is `complete` on the app target; audio-stack classes are `nonisolated` with documented queue/lock synchronization. Keep new code warning-free instead of widening `nonisolated(unsafe)`.
 - `AudioRecorder`: batch 16 kHz mono int16 WAV capture.
 - `StreamingAudioCapture*`: shared streaming capture that writes local WAV history and emits ordered PCM chunks.
 - Engines: WhisperKit (local), Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe v2 batch, ElevenLabs Scribe Realtime v2. Apple Speech, Google Cloud STT, and Gemini Audio were removed; old history rows from them stay readable.

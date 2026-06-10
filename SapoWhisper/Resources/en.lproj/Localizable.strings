@@ -29,7 +29,6 @@
 "history.empty" = "No history";
 "history.empty_sub" = "Transcriptions will appear here";
 "history.copy" = "Copy";
-"history.retranscribe" = "Re-transcribe";
 "history.retranscribe_create" = "Create new transcription";
 "history.retranscribing" = "Re-transcribing...";
 "history.retranscribe_sheet_title" = "Re-transcribe audio";
@@ -430,27 +429,10 @@
 "settings.transfer.import_options_title" = "What do you want to import?";
 "settings.transfer.import_options_desc" = "The file can include everything, but only selected categories will be applied.";
 "settings.transfer.import_selected" = "Import selected";
-"settings.transfer.section_behavior" = "Behavior and language";
-"settings.transfer.section_behavior_desc" = "App language, transcription language, and auto-paste.";
-"settings.transfer.section_audio" = "Audio";
-"settings.transfer.section_audio_desc" = "Sounds, volume, gain, and auto-ducking.";
-"settings.transfer.section_engine" = "Engine";
-"settings.transfer.section_engine_desc" = "Transcription engine, local model, and Deepgram mode.";
-"settings.transfer.section_hotkey" = "Hotkey";
-"settings.transfer.section_hotkey_desc" = "Global key used to start or stop recording.";
-"settings.transfer.section_ai" = "AI polish";
-"settings.transfer.section_ai_desc" = "Polish mode and output language.";
-"settings.transfer.section_vocabulary" = "Vocabulary";
-"settings.transfer.section_vocabulary_desc" = "Keywords and automatic corrections.";
-"settings.transfer.section_prompt_context" = "Prompts and context";
-"settings.transfer.section_prompt_context_desc" = "Personal context and editable AI modes.";
-"settings.transfer.section_api_keys" = "API keys";
-"settings.transfer.section_api_keys_desc" = "Engine API keys from older export files; they are saved to the macOS Keychain.";
 
 "overlay.no_speech" = "No speech detected";
 
 /* Errors */
-"error.no_audio" = "Could not capture audio";
 "error.input_not_ready" = "Microphone unavailable. Retry or choose another.";
 "overlay.retry" = "Retry";
 
