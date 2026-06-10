@@ -14,6 +14,8 @@ struct HistorySidebarView: View {
     @Binding var engineFilter: EngineFilter
     let onTogglePin: (HistoryEntry) -> Void
     let onDelete: (HistoryEntry) -> Void
+    /// H3: lets the owner grow the page window when the last row scrolls in.
+    var onRowAppear: ((HistoryEntry) -> Void)?
 
     var body: some View {
         List(selection: $selection) {
@@ -24,6 +26,9 @@ struct HistorySidebarView: View {
                             .tag(entry)
                             .contextMenu {
                                 contextMenuItems(for: entry)
+                            }
+                            .onAppear {
+                                onRowAppear?(entry)
                             }
                     }
                 }

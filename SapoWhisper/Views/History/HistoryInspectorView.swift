@@ -48,7 +48,7 @@ struct HistoryInspectorView: View {
                 MetadataRow(
                     icon: entry.status == "completed" ? "checkmark.circle" : "xmark.circle",
                     label: "history.status".localized,
-                    value: entry.status == "completed" ? "history.status_completed".localized : "history.status_failed".localized,
+                    value: statusText,
                     valueColor: entry.status == "completed" ? Color.sapoGreen : .orange
                 )
                 MetadataRow(
@@ -57,6 +57,14 @@ struct HistoryInspectorView: View {
                     value: aiStatusText,
                     valueColor: aiStatusColor
                 )
+                if let firstPolishText {
+                    MetadataRow(
+                        icon: "clock.arrow.circlepath",
+                        label: "history.ai_first_polish".localized,
+                        value: firstPolishText,
+                        valueColor: .secondary
+                    )
+                }
             }
         }
     }
@@ -120,6 +128,31 @@ struct HistoryInspectorView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             showCopied = false
         }
+    }
+
+    /// H7: failed rows show the semantic failure code next to the status.
+    private var statusText: String {
+        if entry.status == "completed" {
+            return "history.status_completed".localized
+        }
+        var text = "history.status_failed".localized
+        if let failureCode = entry.failureCode, !failureCode.isEmpty {
+            text += " · \(failureCode)"
+        }
+        return text
+    }
+
+    /// H10: first applied polish, shown when a re-polish replaced it.
+    private var firstPolishText: String? {
+        guard let firstStatus = entry.aiFirstStatus, !firstStatus.isEmpty else { return nil }
+        var parts = [TranscriptAIStatus(rawValue: firstStatus)?.displayName ?? firstStatus]
+        if let mode = entry.aiFirstMode, !mode.isEmpty {
+            parts.append(mode)
+        }
+        if let model = entry.aiFirstModel, !model.isEmpty {
+            parts.append(model)
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var aiStatusText: String {

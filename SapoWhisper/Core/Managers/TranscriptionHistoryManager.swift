@@ -18,16 +18,23 @@ class TranscriptionHistoryManager {
     var db: OpaquePointer?
     let audioStorage: HistoryAudioStorage
 
-    private init() {
+    private convenience init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("SapoWhisper")
-        audioStorage = HistoryAudioStorage(appDirectory: appDir)
+        self.init(
+            databasePath: appDir.appendingPathComponent("history.db").path,
+            audioDirectory: appDir
+        )
+    }
 
-        let dbPath = appDir.appendingPathComponent("history.db").path
+    /// Designated initializer; tests pass `:memory:` and a temp audio dir.
+    init(databasePath: String, audioDirectory: URL) {
+        audioStorage = HistoryAudioStorage(appDirectory: audioDirectory)
+
         // FULLMUTEX: history persistence runs off the paste path (background
         // task) while the UI reads from the main thread on this connection.
         let openFlags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
-        if sqlite3_open_v2(dbPath, &db, openFlags, nil) == SQLITE_OK {
+        if sqlite3_open_v2(databasePath, &db, openFlags, nil) == SQLITE_OK {
             configureDatabase()
             createTable()
             migrateSchema()
@@ -91,14 +98,15 @@ class TranscriptionHistoryManager {
         aiStatus: String = TranscriptAIStatus.none.rawValue,
         aiModel: String? = nil,
         aiMode: String? = nil,
-        aiError: String? = nil
+        aiError: String? = nil,
+        failureCode: String? = nil
     ) -> Int64 {
         let sql =
             """
             INSERT INTO transcriptions (
                 timestamp, engine, language, duration_seconds, transcription, raw_transcription,
-                audio_path, status, ai_status, ai_model, ai_mode, ai_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                audio_path, status, ai_status, ai_model, ai_mode, ai_error, failure_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
@@ -133,6 +141,11 @@ class TranscriptionHistoryManager {
             bindText(stmt, 12, aiError)
         } else {
             sqlite3_bind_null(stmt, 12)
+        }
+        if let failureCode {
+            bindText(stmt, 13, failureCode)
+        } else {
+            sqlite3_bind_null(stmt, 13)
         }
 
         guard stepStatement(stmt, operation: "save") else { return -1 }
@@ -177,9 +190,14 @@ class TranscriptionHistoryManager {
         aiMode: String?,
         aiError: String?
     ) {
+        // H10: SET expressions read the row's pre-update values, so the first
+        // applied polish is archived into ai_first_* before being overwritten.
         let sql = """
             UPDATE transcriptions
-            SET transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?, ai_error = ?, status = 'completed'
+            SET ai_first_status = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_status ELSE ai_first_status END,
+                ai_first_model = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_model ELSE ai_first_model END,
+                ai_first_mode = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_mode ELSE ai_first_mode END,
+                transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?, ai_error = ?, status = 'completed'
             WHERE id = ?;
             """
 
@@ -225,6 +243,9 @@ class TranscriptionHistoryManager {
         let sql = """
             UPDATE transcriptions
             SET original_engine = COALESCE(original_engine, engine), engine = ?,
+                ai_first_status = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_status ELSE ai_first_status END,
+                ai_first_model = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_model ELSE ai_first_model END,
+                ai_first_mode = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_mode ELSE ai_first_mode END,
                 transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?,
                 ai_error = ?, status = 'completed'
             WHERE id = ?;

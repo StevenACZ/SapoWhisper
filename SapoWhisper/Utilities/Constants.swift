@@ -100,6 +100,8 @@ enum Constants {
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
         static let whisperKitModel = "whisperKitModel"
+        /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
+        static let whisperKitUnloadAfterMinutes = "whisperKitUnloadAfterMinutes"
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
@@ -124,6 +126,13 @@ enum Constants {
 
         // Audio
         static let audioGain = "audioGain"
+
+        // Overlay
+        static let overlayPosition = "overlayPosition"
+
+        // History retention (H6)
+        static let historyAudioMaxMB = "historyAudioMaxMB"
+        static let historyAutoDeleteDays = "historyAutoDeleteDays"  // 0 = never
 
         // Launch at Login
         static let launchAtLogin = "launchAtLogin"

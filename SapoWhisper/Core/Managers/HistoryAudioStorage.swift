@@ -7,8 +7,17 @@ import Foundation
 import os
 
 final class HistoryAudioStorage {
-    static let maxAudioStorageBytes: Int64 = 500 * 1024 * 1024
-    static let targetAudioStorageBytes: Int64 = 400 * 1024 * 1024
+    static let defaultMaxStorageMB = 500
+    /// H6: user-selectable cap in Settings; enforcement trims to 80% so the
+    /// sweep does not retrigger on every save.
+    static var maxAudioStorageBytes: Int64 {
+        let configuredMB = UserDefaults.standard.integer(forKey: Constants.StorageKeys.historyAudioMaxMB)
+        let megabytes = configuredMB > 0 ? configuredMB : defaultMaxStorageMB
+        return Int64(megabytes) * 1024 * 1024
+    }
+    static var targetAudioStorageBytes: Int64 {
+        maxAudioStorageBytes * 8 / 10
+    }
 
     private let audioDir: URL
 

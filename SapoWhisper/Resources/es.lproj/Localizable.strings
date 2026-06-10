@@ -49,6 +49,14 @@
 "history.download_audio" = "Descargar audio";
 "history.audio_missing_error" = "No se encontró el archivo de audio de esta entrada.";
 "history.action_failed" = "No se pudo completar la acción";
+"history.export" = "Exportar";
+"history.export_as" = "Como %@";
+"history.export_empty" = "No hay entradas para exportar.";
+"history.delete_old" = "Eliminar anteriores a 30 días…";
+"history.delete_old_confirm_message" = "Las entradas con más de 30 días se eliminarán permanentemente junto con su audio. Las entradas fijadas se conservan.";
+"history.clear_all" = "Vaciar todo el historial…";
+"history.clear_all_confirm_message" = "Todas las entradas del historial y sus archivos de audio se eliminarán permanentemente.";
+"history.ai_first_polish" = "Primer pulido";
 "history.current_selection" = "Actual";
 "history.engine_unavailable" = "No disponible";
 "history.pin" = "Fijar";
@@ -126,6 +134,9 @@
 "config.space_used" = "Espacio usado: %@";
 "config.whisper_vocabulary_hint" = "Los hints de vocabulario no son compatibles con el modelo local de Whisper; tus reemplazos se siguen aplicando tras la transcripción.";
 "config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
+"config.unload_after_idle" = "Liberar modelo tras inactividad";
+"config.unload_never" = "Mantener cargado";
+"config.unload_minutes" = "%@ min";
 "config.hotkey_instruction" = "Haz clic y presiona tu combinación de teclas (mínimo 2 teclas)";
 "config.app_language" = "Idioma de la App";
 "config.app_language_desc" = "Idioma de la interfaz de usuario";
@@ -466,6 +477,17 @@
 "settings.ducking_amount" = "Reduccion de volumen";
 "settings.auto_ducking_header" = "Auto-Ducking";
 "settings.auto_ducking_desc" = "Reduce automaticamente el volumen del sistema durante la grabacion";
+"settings.overlay_position" = "Posición del indicador";
+"settings.overlay_position_bottom" = "Abajo";
+"settings.overlay_position_top" = "Arriba";
+"settings.overlay_position_center" = "Centro";
+"settings.history_header" = "Almacenamiento del historial";
+"settings.history_audio_limit" = "Límite de audio";
+"settings.history_audio_usage" = "Uso actual";
+"settings.history_auto_delete" = "Borrar entradas antiguas";
+"settings.history_auto_delete_never" = "Nunca";
+"settings.history_auto_delete_days" = "Tras %@ días";
+"settings.history_retention_desc" = "Al superar el límite de audio se eliminan primero las grabaciones más antiguas (las fijadas al final). El borrado automático se ejecuta al iniciar y conserva las entradas fijadas.";
 
 /* Welcome flow */
 "welcome.window_title" = "Bienvenido a SapoWhisper";

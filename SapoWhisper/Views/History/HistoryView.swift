@@ -39,8 +39,83 @@ struct HistoryView: View {
     @State private var aiPolishingEntryID: Int64?
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
+    @State private var loadedPageCount = 1
+    @State private var hasMorePages = false
+    @State private var showClearAllConfirmation = false
+    @State private var showDeleteOldConfirmation = false
+
+    /// H3: rows fetched per page; scrolling near the end loads another page.
+    private static let pageSize = 200
+    private static let deleteOldThresholdDays = 30
 
     var body: some View {
+        layout
+            .confirmationDialog(
+                "history.delete_confirm".localized,
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("history.delete".localized, role: .destructive) {
+                    if let entry = selectedEntry {
+                        handleDelete(entry)
+                    }
+                }
+            } message: {
+                Text("history.delete_confirm_message".localized)
+            }
+            .confirmationDialog(
+                "history.delete_old".localized,
+                isPresented: $showDeleteOldConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("history.delete".localized, role: .destructive) {
+                    TranscriptionHistoryManager.shared.deleteEntries(olderThanDays: Self.deleteOldThresholdDays)
+                    selectedEntry = nil
+                    loadEntries()
+                }
+            } message: {
+                Text("history.delete_old_confirm_message".localized)
+            }
+            .confirmationDialog(
+                "history.clear_all".localized,
+                isPresented: $showClearAllConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("history.delete".localized, role: .destructive) {
+                    TranscriptionHistoryManager.shared.deleteAll()
+                    selectedEntry = nil
+                    loadEntries()
+                }
+            } message: {
+                Text("history.clear_all_confirm_message".localized)
+            }
+            .sheet(item: $retranscribeEntry) { entry in
+                HistoryRetranscribeSheet(
+                    entry: entry,
+                    currentEngine: viewModel.currentEngine,
+                    selectedEngine: $selectedRetranscribeEngine,
+                    isProcessing: isRetranscribing,
+                    isEngineReady: viewModel.isEngineReady
+                ) {
+                    performRetranscription(for: entry)
+                } onCancel: {
+                    if !isRetranscribing {
+                        retranscribeEntry = nil
+                    }
+                }
+            }
+            .alert("history.action_failed".localized, isPresented: $showErrorAlert) {
+                Button("common.ok".localized, role: .cancel) {}
+            } message: {
+                Text(actionErrorMessage)
+            }
+            .onAppear(perform: { loadEntries() })
+            .onDisappear {
+                searchTask?.cancel()
+            }
+    }
+
+    private var layout: some View {
         HStack(spacing: 0) {
             // MARK: - Sidebar
             if sidebarVisible {
@@ -50,7 +125,8 @@ struct HistoryView: View {
                     searchText: $searchText,
                     engineFilter: $engineFilter,
                     onTogglePin: handleTogglePin,
-                    onDelete: handleDelete
+                    onDelete: handleDelete,
+                    onRowAppear: loadMoreIfNeeded
                 )
                 .frame(width: 240)
                 .background(SidebarMaterial())
@@ -84,16 +160,7 @@ struct HistoryView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: sidebarVisible)
         .frame(minWidth: 800, minHeight: 500)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    sidebarVisible.toggle()
-                } label: {
-                    Image(systemName: "sidebar.leading")
-                }
-            }
-
-        }
+        .toolbar { historyToolbar }
         .onChange(of: selectedEntry) { _, newValue in
             showInspector = newValue != nil
         }
@@ -101,59 +168,85 @@ struct HistoryView: View {
             scheduleLoadEntries()
         }
         .onChange(of: engineFilter) { _, _ in
-            loadEntries()
+            loadEntries(resetPaging: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: TranscriptionHistoryManager.didChangeNotification)) { _ in
             loadEntries()
         }
-        .confirmationDialog(
-            "history.delete_confirm".localized,
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("history.delete".localized, role: .destructive) {
-                if let entry = selectedEntry {
-                    handleDelete(entry)
-                }
-            }
-        } message: {
-            Text("history.delete_confirm_message".localized)
-        }
-        .sheet(item: $retranscribeEntry) { entry in
-            HistoryRetranscribeSheet(
-                entry: entry,
-                currentEngine: viewModel.currentEngine,
-                selectedEngine: $selectedRetranscribeEngine,
-                isProcessing: isRetranscribing,
-                isEngineReady: viewModel.isEngineReady
-            ) {
-                performRetranscription(for: entry)
-            } onCancel: {
-                if !isRetranscribing {
-                    retranscribeEntry = nil
-                }
+    }
+
+    @ToolbarContentBuilder
+    private var historyToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button {
+                sidebarVisible.toggle()
+            } label: {
+                Image(systemName: "sidebar.leading")
             }
         }
-        .alert("history.action_failed".localized, isPresented: $showErrorAlert) {
-            Button("common.ok".localized, role: .cancel) {}
-        } message: {
-            Text(actionErrorMessage)
-        }
-        .onAppear(perform: loadEntries)
-        .onDisappear {
-            searchTask?.cancel()
+
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Section("history.export".localized) {
+                    ForEach(HistoryExportFormat.allCases) { format in
+                        Button("history.export_as".localized(format.displayName)) {
+                            handleExport(format)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    showDeleteOldConfirmation = true
+                } label: {
+                    Label("history.delete_old".localized, systemImage: "calendar.badge.minus")
+                }
+
+                Button(role: .destructive) {
+                    showClearAllConfirmation = true
+                } label: {
+                    Label("history.clear_all".localized, systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuIndicator(.hidden)
         }
     }
 
     // MARK: - Data
 
-    private func loadEntries() {
+    /// Reloads the visible window. Search/filter changes reset to one page;
+    /// refreshes after edits keep however many pages were already loaded.
+    private func loadEntries(resetPaging: Bool = false) {
+        if resetPaging {
+            loadedPageCount = 1
+        }
+        let limit = Self.pageSize * loadedPageCount
         let previousSelectionID = selectedEntry?.id
         entries = TranscriptionHistoryManager.shared.fetchEntries(
             searchText: searchText,
-            engineFilter: engineFilter
+            engineFilter: engineFilter,
+            limit: limit
         )
+        hasMorePages = entries.count == limit
         selectedEntry = entries.first { $0.id == previousSelectionID } ?? entries.first
+    }
+
+    /// H3: grows the window by one page when the last loaded row appears.
+    private func loadMoreIfNeeded(_ entry: HistoryEntry) {
+        guard hasMorePages, entry.id == entries.last?.id else { return }
+        loadedPageCount += 1
+        let previousSelectionID = selectedEntry?.id
+        let limit = Self.pageSize * loadedPageCount
+        entries = TranscriptionHistoryManager.shared.fetchEntries(
+            searchText: searchText,
+            engineFilter: engineFilter,
+            limit: limit
+        )
+        hasMorePages = entries.count == limit
+        selectedEntry = entries.first { $0.id == previousSelectionID }
     }
 
     private func scheduleLoadEntries() {
@@ -162,7 +255,7 @@ struct HistoryView: View {
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                loadEntries()
+                loadEntries(resetPaging: true)
             }
         }
     }
@@ -252,6 +345,35 @@ struct HistoryView: View {
                 try FileManager.default.removeItem(at: destinationURL)
             }
             try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        } catch {
+            presentActionError(error.localizedDescription)
+        }
+    }
+
+    /// H4: exports the currently filtered set (not just the loaded pages).
+    private func handleExport(_ format: HistoryExportFormat) {
+        let allFiltered = TranscriptionHistoryManager.shared.fetchEntries(
+            searchText: searchText,
+            engineFilter: engineFilter,
+            limit: nil
+        )
+        guard !allFiltered.isEmpty else {
+            presentActionError("history.export_empty".localized)
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = HistoryExporter.suggestedFileName(for: format)
+        if let type = UTType(filenameExtension: format.fileExtension) {
+            panel.allowedContentTypes = [type]
+        }
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+
+        do {
+            let rendered = HistoryExporter.render(allFiltered, as: format)
+            try rendered.write(to: destinationURL, atomically: true, encoding: .utf8)
         } catch {
             presentActionError(error.localizedDescription)
         }

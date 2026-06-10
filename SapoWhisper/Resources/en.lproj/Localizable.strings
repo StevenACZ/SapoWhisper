@@ -49,6 +49,14 @@
 "history.download_audio" = "Download audio";
 "history.audio_missing_error" = "The audio file for this entry could not be found.";
 "history.action_failed" = "Action could not be completed";
+"history.export" = "Export";
+"history.export_as" = "As %@";
+"history.export_empty" = "There are no entries to export.";
+"history.delete_old" = "Delete older than 30 days…";
+"history.delete_old_confirm_message" = "Entries older than 30 days will be permanently deleted, along with their audio. Pinned entries are kept.";
+"history.clear_all" = "Clear all history…";
+"history.clear_all_confirm_message" = "All history entries and their audio files will be permanently deleted.";
+"history.ai_first_polish" = "First polish";
 "history.current_selection" = "Current";
 "history.engine_unavailable" = "Unavailable";
 "history.pin" = "Pin";
@@ -126,6 +134,9 @@
 "config.space_used" = "Space used: %@";
 "config.whisper_vocabulary_hint" = "Vocabulary hints are not supported by the local Whisper model; your replacements still apply after transcription.";
 "config.models_download_auto" = "Models are downloaded automatically the first time";
+"config.unload_after_idle" = "Unload model after idle";
+"config.unload_never" = "Keep loaded";
+"config.unload_minutes" = "%@ min";
 "config.hotkey_instruction" = "Click and press your key combination (min 2 keys)";
 "config.app_language" = "App Language";
 "config.app_language_desc" = "User interface language";
@@ -466,6 +477,17 @@
 "settings.ducking_amount" = "Volume reduction";
 "settings.auto_ducking_header" = "Auto-Ducking";
 "settings.auto_ducking_desc" = "Automatically lower system audio volume while recording";
+"settings.overlay_position" = "Indicator position";
+"settings.overlay_position_bottom" = "Bottom";
+"settings.overlay_position_top" = "Top";
+"settings.overlay_position_center" = "Center";
+"settings.history_header" = "History storage";
+"settings.history_audio_limit" = "Audio storage limit";
+"settings.history_audio_usage" = "Current usage";
+"settings.history_auto_delete" = "Auto-delete old entries";
+"settings.history_auto_delete_never" = "Never";
+"settings.history_auto_delete_days" = "After %@ days";
+"settings.history_retention_desc" = "When the audio limit is exceeded, the oldest recordings are removed first (pinned entries last). Auto-delete runs at launch and keeps pinned entries.";
 
 /* Welcome flow */
 "welcome.window_title" = "Welcome to SapoWhisper";

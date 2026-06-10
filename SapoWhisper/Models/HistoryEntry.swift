@@ -20,6 +20,12 @@ struct HistoryEntry: Identifiable, Hashable {
     let aiMode: String?
     let aiError: String?
     var isFavorite: Bool
+    /// H7: semantic `TranscriptionFailure` code (e.g. "ElevenLabs/auth") for failed rows.
+    var failureCode: String? = nil
+    /// H10: first applied polish, preserved when a re-polish overwrites ai_*.
+    var aiFirstStatus: String? = nil
+    var aiFirstModel: String? = nil
+    var aiFirstMode: String? = nil
 
     var wordCount: Int {
         text.split(separator: " ").count
