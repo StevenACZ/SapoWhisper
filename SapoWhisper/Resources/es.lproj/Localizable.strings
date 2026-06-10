@@ -509,6 +509,11 @@
 "welcome.ai_footnote" = "Puedes activarla o ajustarla después en Configuración → Motor. La key se guarda en el Llavero de macOS.";
 "welcome.ready_title" = "¡Todo listo!";
 "welcome.ready_subtitle" = "Presiona %@, di algo y presiónalo otra vez. El texto aparece donde esté tu cursor.";
+"welcome.ready_subtitle_double" = "Toca dos veces %@, di algo y vuelve a tocarlo dos veces. El texto aparece donde esté tu cursor.";
+"welcome.ready_try_title" = "Pruébalo ahora mismo";
+"welcome.ready_try_hint" = "Usa tu atajo: esta ventana se cierra sola en cuanto empiece la grabación.";
+"welcome.ready_perfect" = "¡Perfecto!";
+"welcome.ready_perfect_caption" = "Ya estás grabando: habla y el texto aparecerá en tu cursor.";
 "menu.welcome_tour" = "Tour de bienvenida";
 "menu.setup_pending_title" = "Termina la configuración";
 "menu.setup_pending_subtitle" = "Tu motor de transcripción aún no está listo";

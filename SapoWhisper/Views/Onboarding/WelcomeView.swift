@@ -85,7 +85,10 @@ struct WelcomeView: View {
     private var stepContent: some View {
         switch step {
         case .welcome:
-            WelcomeIntroStep(hotkeyDescription: viewModel.hotkeyManager.hotkeyDescription)
+            WelcomeIntroStep(
+                hotkeyDescription: viewModel.hotkeyManager.hotkeyDescription,
+                trigger: .current(from: viewModel.hotkeyManager)
+            )
         case .permissions:
             WelcomePermissionsStep()
         case .engine:
@@ -93,7 +96,7 @@ struct WelcomeView: View {
         case .aiPolish:
             WelcomeAIPolishStep()
         case .ready:
-            WelcomeReadyStep(hotkeyDescription: viewModel.hotkeyManager.hotkeyDescription)
+            WelcomeReadyStep(viewModel: viewModel, onFinish: onFinish)
         }
     }
 
@@ -176,6 +179,7 @@ struct WelcomeView: View {
 
 private struct WelcomeIntroStep: View {
     let hotkeyDescription: String
+    let trigger: HotkeyKeycapsDemo.Trigger
     @State private var bouncing = false
 
     var body: some View {
@@ -202,7 +206,7 @@ private struct WelcomeIntroStep: View {
                     .frame(maxWidth: 440)
             }
 
-            HotkeyKeycapsDemo()
+            HotkeyKeycapsDemo(trigger: trigger)
                 .padding(.top, 6)
 
             Text("welcome.hotkey_caption".localized(hotkeyDescription))
@@ -215,22 +219,58 @@ private struct WelcomeIntroStep: View {
     }
 }
 
-/// ⌥ + Space rendered as physical keycaps that press themselves in a loop.
+/// The configured trigger rendered as physical keycaps that press themselves
+/// in a loop — a tap-tap rhythm for double-modifier triggers.
 private struct HotkeyKeycapsDemo: View {
+    enum Trigger {
+        case combo([String])
+        case doubleTap(String)
+
+        static func current(from manager: HotkeyManager) -> Trigger {
+            if manager.currentTriggerKind == .doubleModifier {
+                let modifier = HotkeyDoubleTapModifier.option(for: manager.currentDoubleTapModifier)
+                return .doubleTap(modifier.symbol)
+            }
+            return .combo(manager.hotkeyDescription.components(separatedBy: " + "))
+        }
+    }
+
+    let trigger: Trigger
+
     var body: some View {
-        HStack(spacing: 12) {
-            KeycapView(label: "⌥", width: 56)
-            Text("+")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.secondary)
-            KeycapView(label: "Space", width: 120)
+        switch trigger {
+        case .combo(let tokens):
+            HStack(spacing: 12) {
+                ForEach(Array(tokens.enumerated()), id: \.offset) { index, token in
+                    if index > 0 {
+                        Text("+")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    KeycapView(label: token, width: keycapWidth(for: token))
+                }
+            }
+            .phaseAnimator([false, true]) { content, pressed in
+                content
+                    .scaleEffect(pressed ? 0.94 : 1.0)
+            } animation: { pressed in
+                pressed ? .spring(duration: 0.18) : .easeOut(duration: 1.1)
+            }
+        case .doubleTap(let symbol):
+            // Phases 1 and 3 are the two quick presses; the slow return to 0
+            // is the pause before the rhythm repeats.
+            KeycapView(label: symbol, width: 64)
+                .phaseAnimator([0, 1, 2, 3]) { content, phase in
+                    content
+                        .scaleEffect(phase == 1 || phase == 3 ? 0.90 : 1.0)
+                } animation: { phase in
+                    phase == 0 ? .easeOut(duration: 1.2) : .spring(duration: 0.14)
+                }
         }
-        .phaseAnimator([false, true]) { content, pressed in
-            content
-                .scaleEffect(pressed ? 0.94 : 1.0)
-        } animation: { pressed in
-            pressed ? .spring(duration: 0.18) : .easeOut(duration: 1.1)
-        }
+    }
+
+    private func keycapWidth(for token: String) -> CGFloat {
+        token.count <= 1 ? 56 : min(140, 44 + CGFloat(token.count) * 13)
     }
 }
 
@@ -797,16 +837,53 @@ private struct WelcomeAIPolishStep: View {
 
 // MARK: - Step 5: Ready
 
+/// Final step doubles as a live test bench: when the user fires their
+/// configured trigger and recording starts, it celebrates and closes the
+/// flow on its own, handing over to the recording overlay.
 private struct WelcomeReadyStep: View {
-    let hotkeyDescription: String
+    @ObservedObject var viewModel: SapoWhisperViewModel
+    let onFinish: () -> Void
+
     @State private var appeared = false
+    @State private var celebrating = false
 
     var body: some View {
+        ZStack {
+            if celebrating {
+                celebration
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+            } else {
+                summary
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.spring(duration: 0.45), value: celebrating)
+        .onChange(of: viewModel.appState) { _, state in
+            guard state == .recording, !celebrating else { return }
+            celebrating = true
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                onFinish()
+            }
+        }
+    }
+
+    private var subtitle: String {
+        let manager = viewModel.hotkeyManager
+        if manager.currentTriggerKind == .doubleModifier {
+            let modifier = HotkeyDoubleTapModifier.option(for: manager.currentDoubleTapModifier)
+            return "welcome.ready_subtitle_double".localized(modifier.symbol)
+        }
+        return "welcome.ready_subtitle".localized(manager.hotkeyDescription)
+    }
+
+    private var summary: some View {
         VStack(spacing: 18) {
-            Spacer()
+            Spacer(minLength: 0)
 
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 64))
+                .font(.system(size: 56))
                 .foregroundStyle(Color.sapoGreen)
                 .symbolEffect(.bounce, value: appeared)
                 .onAppear { appeared = true }
@@ -814,16 +891,77 @@ private struct WelcomeReadyStep: View {
             Text("welcome.ready_title".localized)
                 .font(.system(size: 26, weight: .bold))
 
-            Text("welcome.ready_subtitle".localized(hotkeyDescription))
+            Text(subtitle)
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
 
-            HotkeyKeycapsDemo()
+            HotkeyKeycapsDemo(trigger: .current(from: viewModel.hotkeyManager))
                 .padding(.top, 4)
 
-            Spacer()
+            tryItCard
+                .padding(.top, 10)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    private var tryItCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.sapoGreen.opacity(0.14))
+                    .frame(width: 46, height: 46)
+                Image(systemName: "waveform")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Color.sapoGreen)
+                    .symbolEffect(.variableColor.iterative.reversing)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("welcome.ready_try_title".localized)
+                    .font(.subheadline.weight(.semibold))
+                Text("welcome.ready_try_hint".localized)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: 440)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.sapoGreen.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.sapoGreen.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private var celebration: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 0)
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 72))
+                .foregroundStyle(Color.sapoGreen)
+                .symbolEffect(.bounce, value: celebrating)
+
+            Text("welcome.ready_perfect".localized)
+                .font(.system(size: 30, weight: .bold))
+
+            Text("welcome.ready_perfect_caption".localized)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 440)
+
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 32)
     }

@@ -509,6 +509,11 @@
 "welcome.ai_footnote" = "You can enable or tune this later in Settings → Engine. The key is stored in your macOS Keychain.";
 "welcome.ready_title" = "You're all set!";
 "welcome.ready_subtitle" = "Press %@, say something, and press it again. The text lands wherever your cursor is.";
+"welcome.ready_subtitle_double" = "Double-tap %@, say something, then double-tap it again. The text lands wherever your cursor is.";
+"welcome.ready_try_title" = "Try it right now";
+"welcome.ready_try_hint" = "Use your shortcut — this window closes by itself as soon as recording starts.";
+"welcome.ready_perfect" = "Perfect!";
+"welcome.ready_perfect_caption" = "You're recording — speak now and the text lands at your cursor.";
 "menu.welcome_tour" = "Welcome tour";
 "menu.setup_pending_title" = "Finish setting up";
 "menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";

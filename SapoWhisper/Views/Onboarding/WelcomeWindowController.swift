@@ -56,10 +56,12 @@ final class WelcomeWindowController: NSWindowController {
     }
 
     private static var hasUsableEngine: Bool {
-        if !(KeychainStore.string(for: .deepgramAPIKey) ?? "").isEmpty {
+        // Hint-based checks: this runs unprompted at launch, so it must never
+        // be the reason the keychain consent dialog appears.
+        if KeychainStore.hasValue(for: .deepgramAPIKey) {
             return true
         }
-        if !(KeychainStore.string(for: .elevenLabsAPIKey) ?? "").isEmpty {
+        if KeychainStore.hasValue(for: .elevenLabsAPIKey) {
             return true
         }
         let viewModel = SapoWhisperAppEnvironment.shared.viewModel
@@ -78,7 +80,7 @@ final class WelcomeWindowController: NSWindowController {
         let content = WelcomeWindowHost(
             viewModel: viewModel,
             onFinish: { [weak self] in self?.markCompletedAndClose() },
-            onDismiss: { [weak self] in self?.closeWindow() }
+            onDismiss: { [weak self] in self?.dismissForGood() }
         )
 
         let hostingController = NSHostingController(rootView: AnyView(content))
@@ -110,6 +112,14 @@ final class WelcomeWindowController: NSWindowController {
     private func markCompletedAndClose() {
         UserDefaults.standard.set(true, forKey: Constants.StorageKeys.onboardingComplete)
         SapoLog.lifecycle.info("Welcome flow completed")
+        closeWindow()
+    }
+
+    /// An explicit Close counts as "seen": the flow must never auto-reappear
+    /// on later launches. The menu bar still offers the tour and setup hints.
+    private func dismissForGood() {
+        UserDefaults.standard.set(true, forKey: Constants.StorageKeys.onboardingComplete)
+        SapoLog.lifecycle.info("Welcome flow dismissed")
         closeWindow()
     }
 
