@@ -6,6 +6,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 
 - macOS menu bar speech-to-text app.
 - Main flow: press `Option + Space`, speak, stop, then paste with clipboard + `Cmd+V`.
+- `Esc` cancels an active dictation (audio discarded, nothing transcribed or pasted); the key is a transient Carbon hotkey registered only while a session is active.
 - Minimum macOS: 14.0.
 - Release target: Apple Silicon only (`arm64`, M1 and newer).
 - Main target: `SapoWhisper` in `SapoWhisper.xcodeproj`.
@@ -55,6 +56,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 
 - Do not remove the WhisperKit/Deepgram/ElevenLabs engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route churn.
+- Windows hosting SecureFields must drop the first responder on close/resign-key (`SecureInputReleasingWindowDelegate`); stuck Secure Keyboard Entry starves the hotkey event tap.
 - Map engine failures to `TranscriptionFailure`; do not reintroduce per-engine error enums.
 - Keep AI polish non-blocking: if the AI provider fails or is not configured, paste/save the raw transcript and record AI metadata.
 - Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.

@@ -330,6 +330,10 @@ class SapoWhisperViewModel: ObservableObject {
                 DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingWhisperKit ?? false)
                 // Auto-Ducking: reducir/restaurar volumen del sistema
                 AutoDuckingManager.shared.handleStateChange(state)
+                // Esc cancela el dictado solo mientras hay sesión activa
+                self?.hotkeyManager.setCancelKeyActive(state == .recording) { [weak self] in
+                    self?.cancelActiveDictation()
+                }
             }
             .store(in: &cancellables)
 
@@ -739,6 +743,30 @@ class SapoWhisperViewModel: ObservableObject {
                 triggerTime: triggerTime
             )
         }
+    }
+
+    /// Cancelación rápida (tecla Esc): descarta el audio de la sesión activa
+    /// sin transcribir ni pegar nada. Cualquier respuesta en vuelo queda
+    /// obsoleta por el gate de sesión.
+    func cancelActiveDictation() {
+        if isStartPending {
+            SapoLog.hotkey.info("Dictation cancelled route=pending-start")
+            cancelPendingRecordingStart()
+            return
+        }
+
+        guard !isStopPending, isAnyRecorderActive else { return }
+
+        SapoLog.hotkey.info("Dictation cancelled route=active \(self.diagnosticContext(), privacy: .public)")
+        audioRecorder.discardRecording()
+        deepgramFluxTranscriber.cancel()
+        elevenLabsRealtimeTranscriber.cancel()
+        activeRecordingSessionID = nil
+        overlayManager.updateAudioLevel(0)
+        overlayManager.updateState(.hidden)
+        captureCoordinator.endActiveCapture()
+        AutoDuckingManager.shared.restore()
+        checkInitialState()
     }
 
     private func cancelPendingRecordingStart() {

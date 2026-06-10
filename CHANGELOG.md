@@ -10,6 +10,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Esc cancels dictation** — while a recording session is active (including paused), pressing Esc discards the audio and hides the overlay instantly: nothing is transcribed or pasted. The key is only captured during an active session and never reaches the frontmost app.
 - **Live try-it finish for the welcome flow** — the final step shows the user's actual configured trigger as animated keycaps (tap-tap rhythm for double-modifier triggers) with a "Try it right now" card; firing the shortcut celebrates with a "Perfect!" animation and closes the flow by itself while dictation continues.
 - **Developer UI preview mode** — launching a Debug build with `SAPO_UI_PREVIEW=1` skips keychain access, hotkey event-tap registration, and startup permission windows, so ad-hoc rebuilds never re-trigger macOS consent prompts while iterating on UI; `SAPO_UI_PREVIEW_SCREEN=history|welcome` (plus `SAPO_UI_PREVIEW_WELCOME_STEP`) opens that window directly for screenshots. The unit-test host gets the same bypass automatically. Normal user launches are unaffected.
 - **Sleep/wake residency** — On system sleep any active dictation stops cleanly: the WAV is preserved and the entry is saved as failed with retry available. On wake the app re-validates the global hotkey, refreshes the audio device caches, and re-runs the input preflight.
@@ -32,6 +33,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- The global hotkey kept dying after visiting Settings: a focused API-key SecureField leaves macOS Secure Keyboard Entry enabled, which silently starves the hotkey event tap. Settings/history/welcome windows now drop the first responder when they close or resign key, releasing secure input immediately.
 - The macOS keychain consent prompt fires at most once per build and only when a key is actually needed: launch and settings "is X configured" checks read non-secret presence hints, saving keys re-creates the item instead of re-prompting on every keystroke, and a denied read can no longer wipe stored keys or make the welcome flow reappear for configured users.
 - The welcome flow is strictly for new users now: closing it explicitly marks it as seen, so it never auto-reopens on later launches.
 - Removed the dead band below the welcome footer button (the titled + fullSizeContentView window is taller than its content rect, so the fixed-height content floated centered).

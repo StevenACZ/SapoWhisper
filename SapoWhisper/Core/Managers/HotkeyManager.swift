@@ -74,9 +74,14 @@ class HotkeyManager: ObservableObject {
 
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
+    private var cancelHotkeyRef: EventHotKeyRef?
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
+    private var cancelCallback: (() -> Void)?
+    private static let hotkeySignature = OSType(0x5357_5049)  // "SWPI"
+    private static let mainHotkeyID: UInt32 = 1
+    private static let cancelHotkeyID: UInt32 = 2
     private var watchdogTimer: Timer?
     private static let watchdogInterval: TimeInterval = 600
     private var hotkeyPressCount: UInt64 = 0
@@ -185,16 +190,33 @@ class HotkeyManager: ObservableObject {
         watchdogTimer = timer
     }
 
-    private func registerKeyCombinationHotkey() {
-        // Configurar el event handler
+    /// One Carbon handler dispatches every hotkey this app registers (main
+    /// trigger and the transient Esc cancel key) by its EventHotKeyID.
+    private func installCarbonHandlerIfNeeded() -> Bool {
+        guard eventHandler == nil else { return true }
+
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
 
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { (_, event, userData) -> OSStatus in
                 guard let userData = userData else { return noErr }
+                var hotkeyID = EventHotKeyID()
+                GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotkeyID
+                )
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                manager.handleHotkeyPressed(source: "key-combination")
+                if hotkeyID.id == HotkeyManager.cancelHotkeyID {
+                    manager.handleCancelKeyPressed()
+                } else {
+                    manager.handleHotkeyPressed(source: "key-combination")
+                }
                 return noErr
             },
             1,
@@ -205,11 +227,15 @@ class HotkeyManager: ObservableObject {
 
         if status != noErr {
             SapoLog.hotkey.error("Failed to install event handler status=\(status, privacy: .public)")
-            return
+            return false
         }
+        return true
+    }
 
-        // Registrar el hotkey
-        let hotkeyID = EventHotKeyID(signature: OSType(0x53575049), id: 1)  // "SWPI"
+    private func registerKeyCombinationHotkey() {
+        guard installCarbonHandlerIfNeeded() else { return }
+
+        let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.mainHotkeyID)
 
         let registerStatus = RegisterEventHotKey(
             currentKeyCode,
@@ -225,6 +251,49 @@ class HotkeyManager: ObservableObject {
         } else {
             SapoLog.hotkey.info("Global hotkey registered \(self.hotkeyDescription, privacy: .public)")
         }
+    }
+
+    // MARK: - Esc cancel key (active only while dictating)
+
+    /// Registers/unregisters Esc as a global hotkey for the duration of a
+    /// dictation session. Registered, the key is consumed system-wide, so it
+    /// cancels the recording without reaching the frontmost app.
+    func setCancelKeyActive(_ active: Bool, callback: (() -> Void)? = nil) {
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
+
+        if let callback {
+            cancelCallback = callback
+        }
+
+        if active {
+            guard cancelHotkeyRef == nil, installCarbonHandlerIfNeeded() else { return }
+            let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.cancelHotkeyID)
+            let status = RegisterEventHotKey(
+                UInt32(kVK_Escape),
+                0,
+                hotkeyID,
+                GetApplicationEventTarget(),
+                0,
+                &cancelHotkeyRef
+            )
+            if status != noErr {
+                SapoLog.hotkey.error("Failed to register Esc cancel key status=\(status, privacy: .public)")
+            }
+        } else {
+            unregisterCancelKey()
+        }
+    }
+
+    private func unregisterCancelKey() {
+        if let cancelHotkeyRef {
+            UnregisterEventHotKey(cancelHotkeyRef)
+            self.cancelHotkeyRef = nil
+        }
+    }
+
+    private func handleCancelKeyPressed() {
+        SapoLog.hotkey.info("Esc cancel key pressed")
+        cancelCallback?()
     }
 
     private func registerDoubleModifierHotkey() {
@@ -276,6 +345,10 @@ class HotkeyManager: ObservableObject {
             UnregisterEventHotKey(hotkeyRef)
             self.hotkeyRef = nil
         }
+
+        // The Esc ref must never outlive the shared Carbon handler: a
+        // registered hotkey without a handler would swallow Esc system-wide.
+        unregisterCancelKey()
 
         if let eventHandler = eventHandler {
             RemoveEventHandler(eventHandler)
