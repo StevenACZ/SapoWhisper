@@ -666,7 +666,9 @@ private struct WelcomeAIPolishStep: View {
                 subtitle: "welcome.ai_subtitle".localized
             )
 
-            VStack(alignment: .leading, spacing: 10) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 12) {
                 Picker("ai.provider.endpoint".localized, selection: $endpointValue) {
                     ForEach(PolishEndpoint.allCases) { endpoint in
                         Text(endpoint.displayName).tag(endpoint.rawValue)
@@ -681,10 +683,22 @@ private struct WelcomeAIPolishStep: View {
                         .font(.system(size: 12, design: .monospaced))
                 }
 
-                PolishModelPicker(endpoint: endpoint, model: $model)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ai.provider.model".localized)
+                            .font(.subheadline)
+                        PolishModelPicker(endpoint: endpoint, model: $model)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ai.provider.api_key".localized)
+                            .font(.subheadline)
+                        SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 HStack(spacing: 8) {
                     Button(action: runTest) {
@@ -728,7 +742,7 @@ private struct WelcomeAIPolishStep: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 32)
         .padding(.top, 18)

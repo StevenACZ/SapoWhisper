@@ -126,6 +126,9 @@ final class WelcomeWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.delegate = self
+        // The flow closes only through its own Close/finish buttons; the
+        // stray traffic light looked broken on the borderless titlebar.
+        window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true
         return window

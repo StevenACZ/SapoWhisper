@@ -9,7 +9,7 @@ import Combine
 import SwiftUI
 
 struct PermissionRequirementsView: View {
-    static let windowSize = CGSize(width: 520, height: 560)
+    static let windowSize = CGSize(width: 520, height: 505)
 
     let onActivate: (AppPermission) -> Void
     let onClose: () -> Void
