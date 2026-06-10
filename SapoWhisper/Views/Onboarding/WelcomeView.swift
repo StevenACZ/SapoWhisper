@@ -49,7 +49,11 @@ struct WelcomeView: View {
 
             navigationBar
         }
-        .frame(width: Self.windowSize.width, height: Self.windowSize.height)
+        // Fixed width, flexible height: the titled + fullSizeContentView
+        // window ends up taller than the content rect it was created with,
+        // and a fixed-height view would float centered with dead bands.
+        .frame(width: Self.windowSize.width)
+        .frame(maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         // The transparent titlebar (fullSizeContentView) otherwise pushes the
         // whole flow down by the titlebar height, leaving a dead band on top.

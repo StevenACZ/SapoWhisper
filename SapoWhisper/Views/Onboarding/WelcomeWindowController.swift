@@ -84,6 +84,10 @@ final class WelcomeWindowController: NSWindowController {
         )
 
         let hostingController = NSHostingController(rootView: AnyView(content))
+        // The window frame is the single source of truth for size; otherwise
+        // AppKit re-applies the SwiftUI fitting size when presenting and the
+        // flexible-height content would collapse.
+        hostingController.sizingOptions = []
         hostingController.view.frame = CGRect(origin: .zero, size: WelcomeView.windowSize)
         window.contentViewController = hostingController
         self.hostingController = hostingController
