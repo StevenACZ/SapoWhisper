@@ -10,7 +10,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🧠 Local and cloud transcription engines.
 - 🗂️ Searchable history with saved audio, replay, download, pinning, and re-transcription.
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
-- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard.
+- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and an optional output language (English/Spanish) that translates faithfully.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
 
 ## 🎧 Transcription Engines
@@ -56,7 +56,8 @@ make ci-check
 
 - `make format`: format changed Swift files with Xcode's bundled `swift-format`.
 - `make lint`: lint changed Swift files without editing them.
-- `make ci-check`: lint + Debug build.
+- `make test`: run the `SapoWhisperTests` unit bundle.
+- `make ci-check`: lint + Debug build + unit tests.
 - `make release-check`: lint + Release build + bundle size audit.
 - `make format-all` / `make lint-all`: full-repo passes for planned formatting work.
 
@@ -87,8 +88,13 @@ Local test DMGs are usually ad-hoc signed with hardened runtime. Do not present 
 
 ## 🧪 Tests
 
-The `SapoWhisper` scheme currently has no configured test action.
-Use `make ci-check` as the main local gate and `make release-check` before packaging.
+Unit tests live in `SapoWhisperTests` and cover pure logic: the AI polish fidelity guard, failure mapping, engine migration, and settings transfer.
+
+```bash
+make test
+```
+
+Use `make ci-check` (lint + build + tests) as the main local gate and `make release-check` before packaging.
 
 ## 🧼 Public Repo Safety
 

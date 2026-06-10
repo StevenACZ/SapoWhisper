@@ -10,6 +10,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Live try-it finish for the welcome flow** — the final step shows the user's actual configured trigger as animated keycaps (tap-tap rhythm for double-modifier triggers) with a "Try it right now" card; firing the shortcut celebrates with a "Perfect!" animation and closes the flow by itself while dictation continues.
 - **Developer UI preview mode** — launching a Debug build with `SAPO_UI_PREVIEW=1` skips keychain access, hotkey event-tap registration, and startup permission windows, so ad-hoc rebuilds never re-trigger macOS consent prompts while iterating on UI; `SAPO_UI_PREVIEW_SCREEN=history|welcome` (plus `SAPO_UI_PREVIEW_WELCOME_STEP`) opens that window directly for screenshots. The unit-test host gets the same bypass automatically. Normal user launches are unaffected.
 - **Sleep/wake residency** — On system sleep any active dictation stops cleanly: the WAV is preserved and the entry is saved as failed with retry available. On wake the app re-validates the global hotkey, refreshes the audio device caches, and re-runs the input preflight.
 - **Hotkey watchdog** — The global hotkey re-enables or re-creates itself if macOS silently kills the event tap, checked on every wake and every 10 minutes.
@@ -19,6 +20,8 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **AI polish output language now translates faithfully** — when the transcript is in another language, the target language (English/Spanish) is authoritative: the prompt requires a faithful full translation, and the fidelity guard checks only translation-invariant anchors (numbers, URLs, emails, vocabulary) instead of rejecting the translated text.
+- **Auto-ducking is a smooth fade** — system volume ramps down over ~400 ms starting the instant recording begins (the start beep rides the top of the ramp) and ramps back over ~250 ms, replacing the delayed single-step drop.
 - **History window redesigned as a two-pane reading layout** — wider sidebar (search with one-tap clear, real empty states for no history / no results) and a single wide reading pane that replaces the cramped third-column inspector: relative-date header with engine and language chips, a visible action bar (Copy, Polish with AI, re-transcribe, download audio, pin, delete), a stats strip (duration · words · language · AI polish · audio), larger transcript typography, and a scrubbable audio player card. Failed entries show their failure code with a prominent re-transcribe button. The window now opens at 1000×640.
 - **Welcome flow polish** — removed the dead band above the progress dots left by the transparent titlebar, and the AI polish step's form now follows its header instead of floating mid-window.
 - **Faster stop→paste** — Auto-paste fires the moment macOS confirms the target app is active (150 ms hard fallback) instead of polling; history persistence (audio copy + database insert) moved off the paste path to a background task; the overlay switches to "transcribing" the instant stop is pressed; the WAV finalize runs on the audio queue without blocking the UI.
@@ -29,6 +32,9 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- The macOS keychain consent prompt fires at most once per build and only when a key is actually needed: launch and settings "is X configured" checks read non-secret presence hints, saving keys re-creates the item instead of re-prompting on every keystroke, and a denied read can no longer wipe stored keys or make the welcome flow reappear for configured users.
+- The welcome flow is strictly for new users now: closing it explicitly marks it as seen, so it never auto-reopens on later launches.
+- Removed the dead band below the welcome footer button (the titled + fullSizeContentView window is taller than its content rect, so the fixed-height content floated centered).
 - History audio playback now uses one shared player: switching entries or closing the detail pane reliably stops playback, and the progress timer only runs while audio plays.
 
 ## [2.3.0] - 2026-06-09
