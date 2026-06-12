@@ -12,46 +12,97 @@ struct RecordingOverlayView: View {
 
     @ObservedObject var manager: OverlayWindowManager
 
-    @State private var scale: CGFloat = 0.9
+    @State private var scale: CGFloat = 1.0
+    @State private var contentOpacity: Double = 1.0
+    @State private var entranceOffset: CGFloat = 0
 
     private var stateCategory: String { manager.state.stateCategory }
 
     var body: some View {
-        contentForState
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-            )
-            .fixedSize()
-            // Transparent margin inside the auto-sized window so the glow
-            // stroke and the micro-bounce overshoot are not clipped.
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: OverlayPillSizeKey.self, value: proxy.size)
-                }
-            )
-            .scaleEffect(scale)
-            .animation(.spring(response: 0.35, dampingFraction: 0.78), value: stateCategory)
-            .onChange(of: stateCategory) { _, _ in
+        // The ZStack hosts the outgoing and incoming pill contents during a
+        // state swap so the capsule morphs once while the texts hand off
+        // sequentially (old fades out fast, new fades in right after) instead
+        // of crushing both inside the resizing capsule.
+        ZStack {
+            contentForState
+                .id(stateCategory)
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
+                        removal: .opacity.animation(.easeOut(duration: 0.1))
+                    )
+                )
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+        )
+        .fixedSize()
+        // Transparent margin inside the auto-sized window so the shadow, the
+        // glow stroke, and the micro-bounce overshoot are never clipped at
+        // the window edge (a clipped shadow reads as a hard rectangle).
+        .padding(.horizontal, 36)
+        .padding(.vertical, 26)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: OverlayPillSizeKey.self, value: proxy.size)
+            }
+        )
+        .scaleEffect(scale)
+        .opacity(contentOpacity)
+        .offset(y: entranceOffset)
+        .onChange(of: stateCategory) { oldValue, newValue in
+            guard newValue != "hidden" else { return }
+            if oldValue == "hidden" {
+                runEntrance()
+            } else {
                 microBounce()
             }
-            .onAppear {
-                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+        }
+        .onChange(of: manager.isDismissing) { _, dismissing in
+            if dismissing {
+                withAnimation(.easeIn(duration: 0.22)) {
+                    scale = 0.95
+                }
+            } else {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     scale = 1.0
                 }
             }
-            .onPreferenceChange(OverlayPillSizeKey.self) { [manager] size in
-                // The window tracks the pill's laid-out size, so long error
-                // messages grow it instead of being clipped at a fixed frame.
-                Task { @MainActor in
-                    manager.updateWindowSize(to: size)
-                }
+        }
+        .onAppear {
+            if stateCategory != "hidden" {
+                runEntrance()
             }
+        }
+        .onPreferenceChange(OverlayPillSizeKey.self) { [manager] size in
+            // The window tracks the pill's laid-out size, so long error
+            // messages grow it instead of being clipped at a fixed frame.
+            Task { @MainActor in
+                manager.updateWindowSize(to: size)
+            }
+        }
+    }
+
+    /// Pop-in played on every appearance (the window is reused, so onAppear
+    /// alone only covers the first one): start slightly small, transparent and
+    /// low, then spring to rest.
+    private func runEntrance() {
+        var snap = Transaction()
+        snap.disablesAnimations = true
+        withTransaction(snap) {
+            scale = 0.92
+            contentOpacity = 0
+            entranceOffset = 6
+        }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.75)) {
+            scale = 1.0
+            contentOpacity = 1.0
+            entranceOffset = 0
+        }
     }
 
     /// Micro-bounce effect when state changes — subtle scale pop for tactile feedback

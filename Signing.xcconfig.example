@@ -1,0 +1,17 @@
+// SapoWhisper local signing template.
+//
+// First-time setup:
+//
+//   cp Signing.xcconfig.example Signing.xcconfig
+//
+// Then set your Apple Developer Team ID below (Xcode -> Settings -> Accounts,
+// or developer.apple.com/account). Signing.xcconfig is git-ignored so the
+// team ID never lands in version control. Requires an "Apple Development"
+// certificate with its private key in the login keychain.
+//
+// Why: a stable signing identity keeps the macOS TCC permission grants
+// (Microphone, Accessibility, Input Monitoring) across reinstalls; the
+// ad-hoc default re-prompts after every rebuild.
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_STYLE = Manual
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
