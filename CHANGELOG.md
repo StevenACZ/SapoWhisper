@@ -6,6 +6,22 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.4.0] - 2026-06-12
+
+### Added
+
+- **Stable local code signing (developer)** — copy `Signing.xcconfig.example` to the git-ignored `Signing.xcconfig` and set your Apple Development team ID: local builds then keep the macOS permission grants (Microphone, Accessibility, Input Monitoring) across reinstalls instead of re-prompting after every rebuild. Fresh clones still build ad-hoc with zero setup, and the release/notarization pipeline is unchanged.
+
+### Changed
+
+- **Fluid recording overlay** — the pill plays its entrance pop on every activation (not just the first one after launch) and appears at its final size instead of stretching from zero; state changes (Recording → Transcribing → AI polish → Copied) hand off sequentially inside a single morphing capsule, so the outgoing content fades out fast and the incoming one fades in right after instead of both being crushed while the capsule resizes.
+- **Voice-reactive level meter** — the recording bars gate room noise to a flat baseline and expand the real speech band: staying silent reads as a flat line, quiet speech moves the bars subtly, and loud speech pins them to the top. The level ripples outward from the center bar with a fast attack and a smooth release instead of scaling all five bars in lockstep.
+- Timer digits roll with a numeric transition, and the live "no voice?" hint animates in instead of snapping the pill wider.
+
+### Fixed
+
+- The recording pill no longer shows a faint hard-edged rectangle around it: the overlay window was clipping the capsule's drop shadow, and could clip the pill content itself while shrinking between states.
+
 ## [2.3.0] - 2026-06-10
 
 ### Added
