@@ -13,6 +13,8 @@ struct OverlayTimer: View {
         Text(formattedDuration)
             .font(.system(size: 14, weight: .medium, design: .monospaced))
             .foregroundColor(.secondary)
+            .contentTransition(.numericText())
+            .animation(.easeOut(duration: 0.2), value: formattedDuration)
     }
 
     private var formattedDuration: String {

@@ -73,8 +73,10 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
     }
 
     /// Anchors the pill horizontally centered at the user-selected position
-    /// (bottom by default, top or center as alternatives).
-    func applyConfiguredPosition() {
+    /// (bottom by default, top or center as alternatives). Content morphs
+    /// re-anchor on every animation frame, so only `verbose` callers (show)
+    /// log the position.
+    func applyConfiguredPosition(verbose: Bool = false) {
         guard let screen = targetScreen() else { return }
 
         let screenFrame = screen.visibleFrame
@@ -93,7 +95,9 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
         }
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
-        SapoLog.overlay.info("Overlay positioned origin=\(Int(x), privacy: .public),\(Int(y), privacy: .public)")
+        if verbose {
+            SapoLog.overlay.info("Overlay positioned origin=\(Int(x), privacy: .public),\(Int(y), privacy: .public)")
+        }
     }
 
     private func targetScreen() -> NSScreen? {
