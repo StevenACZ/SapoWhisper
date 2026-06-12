@@ -88,9 +88,15 @@ make release-check
 
 Owner-approved default: when asked to continue work, build and replace the
 installed app immediately — silently, with no confirmation prompts and no DMG
-(DMGs are release-only). Reinstalling to the same `/Applications` path with
-the same signing identity preserves the macOS TCC grants (Microphone,
-Accessibility), so permissions never need re-granting between builds.
+(DMGs are release-only). TCC grants (Microphone, Accessibility, Input
+Monitoring) survive reinstalls ONLY when the build signs with the stable
+local identity: the git-ignored `Signing.xcconfig` (copy from
+`Signing.xcconfig.example`, included via the committed
+`SigningDefaults.xcconfig`) sets `CODE_SIGN_IDENTITY = Apple Development`
+plus the team ID. Without it the build falls back to ad-hoc signing, whose
+code-signing hash changes every build, and macOS re-prompts all permissions
+after each reinstall. Before installing, confirm the built app shows
+`TeamIdentifier` set (`codesign -dv <app>`), not `Signature=adhoc`.
 
 ```bash
 xcodebuild -project SapoWhisper.xcodeproj -scheme SapoWhisper \

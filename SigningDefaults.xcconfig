@@ -1,0 +1,13 @@
+// SapoWhisper signing defaults — ad-hoc, so a fresh clone builds with zero
+// setup ("Sign to Run Locally", TeamIdentifier not set).
+//
+// Ad-hoc binaries get a new code-signing hash on every build, so macOS TCC
+// ties the Microphone/Accessibility/Input Monitoring grants to that exact
+// build and re-prompts after every reinstall. For local development, create
+// the git-ignored Signing.xcconfig override (see Signing.xcconfig.example):
+// a stable certificate identity keeps the TCC grants across rebuilds.
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+DEVELOPMENT_TEAM =
+
+#include? "Signing.xcconfig"
