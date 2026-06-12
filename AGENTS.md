@@ -84,6 +84,35 @@ make release-check
 - Run `git diff --check` before staging or reporting a docs/code patch done.
 - UI screenshots without consent prompts: launch a Debug build with `SAPO_UI_PREVIEW=1` and optional `SAPO_UI_PREVIEW_SCREEN=history|welcome|settings` + `SAPO_UI_PREVIEW_WELCOME_STEP=<0-4>`. Preview launches and the unit-test host skip keychain reads, hotkey event-tap registration, and startup permission windows (`UIPreviewMode`); normal user launches are unaffected.
 
+## Local Testing Loop
+
+Owner-approved default: when asked to continue work, build and replace the
+installed app immediately — silently, with no confirmation prompts and no DMG
+(DMGs are release-only). Reinstalling to the same `/Applications` path with
+the same signing identity preserves the macOS TCC grants (Microphone,
+Accessibility), so permissions never need re-granting between builds.
+
+```bash
+xcodebuild -project SapoWhisper.xcodeproj -scheme SapoWhisper \
+  -configuration Debug -derivedDataPath build/agent build
+osascript -e 'tell application "SapoWhisper" to quit' 2>/dev/null; sleep 1
+rm -rf /Applications/SapoWhisper.app
+cp -R build/agent/Build/Products/Debug/SapoWhisper.app /Applications/
+open /Applications/SapoWhisper.app
+```
+
+The owner tests by hand; the agent ALWAYS keeps a live log watch running for
+the whole session and reacts in two ways, both expected: start fixing the
+moment an error appears in the stream, or have the evidence already captured
+when the owner reports one.
+
+```bash
+/usr/bin/log stream --style compact --predicate 'subsystem == "oli.SapoWhisper"'
+```
+
+`log` is a zsh builtin — call `/usr/bin/log`. Crash reports land in
+`~/Library/Logs/DiagnosticReports/SapoWhisper-*.ips`.
+
 ## Packaging
 
 - Read `DMG/README.md` before creating a DMG.
