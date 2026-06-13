@@ -119,7 +119,8 @@ final class TranscriptPostProcessor {
                 raw: trimmed,
                 polished: cleaned,
                 vocabularyTerms: keyterms,
-                translationExpected: outputLanguage.requiresTranslation
+                translationExpected: outputLanguage.requiresTranslation,
+                targetIsDenseScript: outputLanguage.usesDenseScript
             )
             guard verdict.isAcceptable else {
                 SapoLog.ai.warning(

@@ -140,6 +140,14 @@ class HotkeyManager: ObservableObject {
         }
 
         startWatchdogIfNeeded()
+
+        // Re-arm Esc if a dictation is active: unregisterHotkey() above dropped
+        // the cancel-key ref together with the shared Carbon handler, and the
+        // appState sink that normally arms it is edge-triggered, so it will not
+        // re-fire while the state stays .recording.
+        if cancelKeyActive {
+            registerCancelKey()
+        }
     }
 
     // MARK: - Watchdog (R2)
@@ -253,14 +261,38 @@ class HotkeyManager: ObservableObject {
             &hotkeyRef
         )
 
-        if registerStatus != noErr {
-            SapoLog.hotkey.error("Failed to register hotkey status=\(registerStatus, privacy: .public)")
+        if registerStatus != noErr || hotkeyRef == nil {
+            // A bad combo (e.g. from an unvalidated settings import) makes
+            // RegisterEventHotKey fail and would leave the user with a dead
+            // hotkey. Fall back to the default (Option+Space) and persist it so
+            // the bad combo does not reload at launch.
+            SapoLog.hotkey.error(
+                "Failed to register hotkey status=\(registerStatus, privacy: .public); falling back to default"
+            )
+            hotkeyRef = nil
+            currentKeyCode = UInt32(kVK_Space)
+            currentModifiers = UInt32(optionKey)
+            UserDefaults.standard.set(Int(currentKeyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
+            UserDefaults.standard.set(Int(currentModifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
+            let retryStatus = RegisterEventHotKey(
+                currentKeyCode, currentModifiers, hotkeyID, GetApplicationEventTarget(), 0, &hotkeyRef)
+            if retryStatus == noErr {
+                SapoLog.hotkey.info(
+                    "Global hotkey registered with default \(self.hotkeyDescription, privacy: .public)")
+            } else {
+                SapoLog.hotkey.error(
+                    "Default hotkey registration also failed status=\(retryStatus, privacy: .public)")
+            }
         } else {
             SapoLog.hotkey.info("Global hotkey registered \(self.hotkeyDescription, privacy: .public)")
         }
     }
 
     // MARK: - Esc cancel key (active only while dictating)
+
+    /// Whether Esc should currently be armed. Persists across a hotkey
+    /// re-registration so the cancel key can be restored mid-session.
+    private var cancelKeyActive = false
 
     /// Registers/unregisters Esc as a global hotkey for the duration of a
     /// dictation session. Registered, the key is consumed system-wide, so it
@@ -272,22 +304,27 @@ class HotkeyManager: ObservableObject {
             cancelCallback = callback
         }
 
+        cancelKeyActive = active
         if active {
-            guard cancelHotkeyRef == nil, installCarbonHandlerIfNeeded() else { return }
-            let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.cancelHotkeyID)
-            let status = RegisterEventHotKey(
-                UInt32(kVK_Escape),
-                0,
-                hotkeyID,
-                GetApplicationEventTarget(),
-                0,
-                &cancelHotkeyRef
-            )
-            if status != noErr {
-                SapoLog.hotkey.error("Failed to register Esc cancel key status=\(status, privacy: .public)")
-            }
+            registerCancelKey()
         } else {
             unregisterCancelKey()
+        }
+    }
+
+    private func registerCancelKey() {
+        guard cancelHotkeyRef == nil, installCarbonHandlerIfNeeded() else { return }
+        let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.cancelHotkeyID)
+        let status = RegisterEventHotKey(
+            UInt32(kVK_Escape),
+            0,
+            hotkeyID,
+            GetApplicationEventTarget(),
+            0,
+            &cancelHotkeyRef
+        )
+        if status != noErr {
+            SapoLog.hotkey.error("Failed to register Esc cancel key status=\(status, privacy: .public)")
         }
     }
 

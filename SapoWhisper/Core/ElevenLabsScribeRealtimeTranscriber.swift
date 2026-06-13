@@ -482,7 +482,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let senderStats = await audioSender.finishAndCommit(timeout: 2.0)
         defer { cleanupWebSocket() }
 
-        if senderStats.failedMessages > 0 {
+        // A failed final-commit send must not discard segments the server
+        // already committed: surface .network only when nothing was captured,
+        // otherwise fall through so waitForFinalTranscript salvages the text.
+        if senderStats.failedMessages > 0 && transcriptAccumulator.transcript.isEmpty {
             throw TranscriptionFailure(
                 kind: .network,
                 engine: Self.engineName,
@@ -538,7 +541,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     func transcribe(audioURL: URL, language: String) async throws -> String {
-        guard let apiKey = UserDefaults.standard.string(forKey: Constants.StorageKeys.elevenLabsAPIKey),
+        guard let apiKey = KeychainStore.string(for: .elevenLabsAPIKey),
             !apiKey.isEmpty
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
@@ -572,7 +575,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
         let stats = await audioSender.finishAndCommit(timeout: 4.0)
 
-        if stats.failedMessages > 0 {
+        // Preserve any already-committed segments on a failed final-commit
+        // send; only fail outright when nothing was captured.
+        if stats.failedMessages > 0 && transcriptAccumulator.transcript.isEmpty {
             throw TranscriptionFailure(
                 kind: .network,
                 engine: Self.engineName,

@@ -25,6 +25,14 @@ enum PolishFidelityGuard {
     /// Polish removes fillers, so shrinking below 1.0 is normal.
     static let minimumLengthRatio = 0.55
     static let maximumLengthRatio = 1.6
+    /// Dense scripts (CJK) compress a faithful translation to ~0.2–0.4 of the
+    /// source character count, so the normal floor would reject them. This much
+    /// lower floor still rejects extreme truncation/hallucination, while the
+    /// unconditional ceiling keeps runaway-length protection.
+    static let denseScriptMinimumLengthRatio = 0.15
+    /// Fraction of letter/ideograph output that must be in a dense script
+    /// before the lower floor applies.
+    private static let denseScriptFractionThreshold = 0.35
     private static let maximumAnchors = 60
 
     /// Phrases that legitimately remove earlier content ("no espera, quise
@@ -44,7 +52,8 @@ enum PolishFidelityGuard {
         raw: String,
         polished: String,
         vocabularyTerms: [String],
-        translationExpected: Bool = false
+        translationExpected: Bool = false,
+        targetIsDenseScript: Bool = false
     ) -> PolishFidelityVerdict {
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let polishedTrimmed = polished.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,7 +70,15 @@ enum PolishFidelityGuard {
         let polishedLowercased = polishedTrimmed.lowercased()
         let missing = anchors.filter { !polishedLowercased.contains($0.lowercased()) }
 
-        let ratioAcceptable = ratio >= minimumLengthRatio && ratio <= maximumLengthRatio
+        // CJK targets compress a faithful translation well below the normal
+        // floor, so lower the floor only when translating into a dense script
+        // AND the output is actually dominantly dense (a half-translated mixed
+        // output keeps the normal floor). The ceiling stays unconditional.
+        let floor =
+            (translationExpected && targetIsDenseScript
+                && denseScriptFraction(of: polishedTrimmed) >= denseScriptFractionThreshold)
+            ? denseScriptMinimumLengthRatio : minimumLengthRatio
+        let ratioAcceptable = ratio >= floor && ratio <= maximumLengthRatio
         return PolishFidelityVerdict(
             isAcceptable: ratioAcceptable && missing.isEmpty,
             lengthRatio: ratio,
@@ -165,6 +182,36 @@ enum PolishFidelityGuard {
         let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.matches(in: text, range: fullRange).compactMap { match in
             Range(match.range, in: text).map { String(text[$0]) }
+        }
+    }
+
+    /// Fraction of letter/ideograph scalars in `text` that belong to a dense
+    /// (CJK) script. Whitespace, punctuation, digits, and symbols are excluded
+    /// so embedded ASCII product names or numbers don't dilute the measure.
+    private static func denseScriptFraction(of text: String) -> Double {
+        var letterCount = 0
+        var denseCount = 0
+        for scalar in text.unicodeScalars {
+            let dense = isDenseScriptScalar(scalar)
+            guard dense || scalar.properties.isAlphabetic else { continue }
+            letterCount += 1
+            if dense { denseCount += 1 }
+        }
+        guard letterCount > 0 else { return 0 }
+        return Double(denseCount) / Double(letterCount)
+    }
+
+    private static func isDenseScriptScalar(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x4E00...0x9FFF,  // CJK Unified Ideographs
+            0x3400...0x4DBF,  // CJK Extension A
+            0xF900...0xFAFF,  // CJK Compatibility Ideographs
+            0x3040...0x309F,  // Hiragana
+            0x30A0...0x30FF,  // Katakana
+            0xAC00...0xD7AF:  // Hangul Syllables
+            return true
+        default:
+            return false
         }
     }
 }
