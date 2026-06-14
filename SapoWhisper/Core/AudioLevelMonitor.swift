@@ -54,9 +54,11 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         didSet { tapGain = gain }
     }
 
-    // nonisolated(unsafe): tap-thread mirrors of UI state (benign races —
-    // a buffer processed during a toggle uses the previous value).
+    // nonisolated(unsafe): tap-thread mirror of UI state. tapGain has a benign
+    // race (a buffer processed during a toggle uses the previous value).
     private nonisolated(unsafe) var tapGain: Float = 1.0
+    // sampleWriteActive is NOT a benign race: it gates writes to sampleFile, so
+    // it is guarded by sampleStateLock together with sampleFile (see below).
     private nonisolated(unsafe) var sampleWriteActive = false
 
     /// Si hubo un error al iniciar el monitoreo
@@ -72,9 +74,14 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     @Published var rawSampleMetadata: SampleMetadata?
     @Published var compressedSampleMetadata: SampleMetadata?
 
-    // nonisolated(unsafe): written on main, read by the tap thread.
+    // sampleFile + sampleWriteActive are touched by the nonisolated tap thread
+    // (processBuffer) and the main actor (start/stop/clear), so both go through
+    // sampleStateLock. The mic-test sample path is low-frequency, so holding the
+    // lock across the file write is fine (it serializes with stop/clear nulling
+    // the file mid-write). sampleTapFormat is set before the tap starts.
     private nonisolated(unsafe) var sampleFile: AVAudioFile?
     private nonisolated(unsafe) var sampleTapFormat: AVAudioFormat?
+    private nonisolated(unsafe) var sampleStateLock = os_unfair_lock()
     private var sampleRecordingTimer: Timer?
     private var sampleStartTime: Date?
 
@@ -330,10 +337,13 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         let rawURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_raw")
 
         do {
-            sampleFile = try AVAudioFile(forWriting: rawURL, settings: tapFormat.settings)
+            let file = try AVAudioFile(forWriting: rawURL, settings: tapFormat.settings)
+            os_unfair_lock_lock(&sampleStateLock)
+            sampleFile = file
+            sampleWriteActive = true
+            os_unfair_lock_unlock(&sampleStateLock)
             rawSampleURL = rawURL
             isRecordingSample = true
-            sampleWriteActive = true
             sampleStartTime = Date()
             sampleRecordingDuration = 0
 
@@ -357,11 +367,13 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     func stopSampleRecording() {
         guard isRecordingSample else { return }
 
+        os_unfair_lock_lock(&sampleStateLock)
         sampleWriteActive = false
+        sampleFile = nil
+        os_unfair_lock_unlock(&sampleStateLock)
         sampleRecordingTimer?.invalidate()
         sampleRecordingTimer = nil
         isRecordingSample = false
-        sampleFile = nil
 
         guard let rawURL = rawSampleURL else { return }
 
@@ -382,8 +394,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     /// Clears recorded sample files
     func clearSampleRecording() {
+        os_unfair_lock_lock(&sampleStateLock)
         sampleWriteActive = false
         sampleFile = nil
+        os_unfair_lock_unlock(&sampleStateLock)
         sampleRecordingTimer?.invalidate()
         sampleRecordingTimer = nil
         isRecordingSample = false
@@ -491,22 +505,32 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         return copy
     }
 
+    /// Writes the tap buffer to the active mic-test sample file under
+    /// `sampleStateLock`, so a concurrent stop/clear on the main actor cannot
+    /// null the file mid-write. Mic-test path only, so holding the lock across the
+    /// write is acceptable; when no sample is recording the lock is uncontended
+    /// and released immediately (correctness over realtime purity for Settings).
+    private nonisolated func writeSampleBuffer(_ buffer: AVAudioPCMBuffer) {
+        os_unfair_lock_lock(&sampleStateLock)
+        defer { os_unfair_lock_unlock(&sampleStateLock) }
+        guard sampleWriteActive, let sampleFile else { return }
+        do {
+            if tapGain != 1.0, let gained = bufferWithGain(buffer) {
+                try sampleFile.write(from: gained)
+            } else {
+                try sampleFile.write(from: buffer)
+            }
+        } catch {
+            SapoLog.audioRoute.error(
+                "Mic sample write failed error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     /// Procesa el buffer de audio y extrae el nivel
     private nonisolated func processBuffer(_ buffer: AVAudioPCMBuffer) {
-        // Write to sample file if recording — apply gain so playback matches real transcription
-        if sampleWriteActive, let sampleFile {
-            do {
-                if tapGain != 1.0, let gained = bufferWithGain(buffer) {
-                    try sampleFile.write(from: gained)
-                } else {
-                    try sampleFile.write(from: buffer)
-                }
-            } catch {
-                SapoLog.audioRoute.error(
-                    "Mic sample write failed error=\(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
+        // Write to the sample file if mic-test recording is active (guarded).
+        writeSampleBuffer(buffer)
 
         guard let channelData = buffer.floatChannelData else { return }
         guard buffer.frameLength > 0 else { return }
