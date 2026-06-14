@@ -65,6 +65,9 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
     var captureStateLock = os_unfair_lock()
     var startRecordingTime: CFAbsoluteTime = 0
     var firstInputBufferLogged = false
+    // captureStateLock-guarded: written by the tap via registerInputBuffer(at:),
+    // read by the health probe / diagnostics, reset via resetLastInputBufferTime().
+    // Never write it bare off the lock (it is read from audioSetupQueue).
     var lastInputBufferTime: CFAbsoluteTime = 0
     var inputBufferCount = 0
     var writtenFrameCount: AVAudioFramePosition = 0
@@ -118,7 +121,7 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
         converter = nil
         converterOutputFormat = nil
         firstInputBufferLogged = false
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
         lastAudioLevelPublishTime = 0
         captureRecoveryAttempts = 0
 
