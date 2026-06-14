@@ -88,7 +88,11 @@
 "history.ai_polish" = "Mejora IA";
 "history.ai_polish_action" = "Mejorar con IA";
 "history.ai_polishing" = "Mejorando...";
+"history.ai_polish_disabled_hint" = "Activa «Mejorar texto con IA» en la pestaña Prompts para usar esta acción.";
 "history.ai_polish_missing_text" = "No hay texto disponible para mejorar con IA.";
+"history.ai_polish_notice_title" = "Mejora con IA no aplicada";
+"history.ai_polish_rejected_notice" = "La mejora se descartó porque se alejó de tu texto original (protección de fidelidad). Se mantiene tu transcripción tal cual.";
+"history.ai_polish_unavailable_notice" = "No se pudo aplicar la mejora con IA. Revisa que el proveedor esté configurado en la pestaña Prompts.";
 
 "common.cancel" = "Cancelar";
 "common.ok" = "OK";

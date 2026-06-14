@@ -15,7 +15,17 @@ class SapoWhisperViewModel: ObservableObject {
 
     struct HistoryRetranscriptionResult {
         let entryId: Int64
+        /// Fatal failure — surfaced in the "action failed" alert.
         let errorMessage: String?
+        /// Non-fatal outcome (polish discarded by the fidelity guard, or no
+        /// usable provider) — surfaced in a neutral notice, never as an error.
+        let noticeMessage: String?
+
+        init(entryId: Int64, errorMessage: String? = nil, noticeMessage: String? = nil) {
+            self.entryId = entryId
+            self.errorMessage = errorMessage
+            self.noticeMessage = noticeMessage
+        }
     }
 
     private struct PersistedHistoryEntry {
@@ -259,8 +269,9 @@ class SapoWhisperViewModel: ObservableObject {
         // Observar estado de transcripcion (WhisperKit)
         whisperKitTranscriber.$isTranscribing
             .sink { [weak self] isTranscribing in
+                guard let self, !self.isReprocessingHistory else { return }
                 if isTranscribing {
-                    self?.appState = .processing
+                    self.appState = .processing
                 }
             }
             .store(in: &cancellables)
@@ -268,8 +279,9 @@ class SapoWhisperViewModel: ObservableObject {
         // Observar estado de transcripcion (ElevenLabs Scribe)
         elevenLabsTranscriber.$isTranscribing
             .sink { [weak self] isTranscribing in
+                guard let self, !self.isReprocessingHistory else { return }
                 if isTranscribing {
-                    self?.appState = .processing
+                    self.appState = .processing
                 }
             }
             .store(in: &cancellables)
@@ -317,7 +329,11 @@ class SapoWhisperViewModel: ObservableObject {
         whisperKitTranscriber.$isModelLoaded
             .sink { [weak self] isLoaded in
                 guard let self = self else { return }
-                if self.currentEngine == .whisperLocal && isLoaded {
+                guard self.currentEngine == .whisperLocal, isLoaded else { return }
+                // An on-demand reload can finish mid-recording — only leave the
+                // "no model" state so it never clobbers .recording/.processing/
+                // .polishing (mirrors the guard in loadWhisperKitModel()).
+                if case .noModel = self.appState {
                     self.appState = .idle
                 }
             }
@@ -569,6 +585,14 @@ class SapoWhisperViewModel: ObservableObject {
             return false
         }
 
+        if isSelectedEngineBusy {
+            // History re-runs keep appState clean, so the busy check above does
+            // not catch them. Block here so a new recording can't collide with
+            // an in-flight transcription on the same engine.
+            SapoLog.hotkey.info("Hotkey ignored while the selected engine is busy")
+            return false
+        }
+
         let now = CFAbsoluteTimeGetCurrent()
         let elapsed = now - lastStartHotkeyTime
         guard elapsed >= Self.startHotkeyDebounce else {
@@ -578,6 +602,23 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         return true
+    }
+
+    /// True while the engine selected for live dictation is mid-flight on any
+    /// path (live or history reprocess). Used by the hotkey start guard so a
+    /// new recording can't collide with an in-progress transcription even when
+    /// appState is kept clean during a history re-run.
+    private var isSelectedEngineBusy: Bool {
+        switch currentEngine {
+        case .whisperLocal:
+            return whisperKitTranscriber.isTranscribing
+        case .deepgram:
+            return deepgramTranscriber.isTranscribing || deepgramFluxTranscriber.isStreaming
+                || deepgramFluxTranscriber.isStopping
+        case .elevenLabsScribe:
+            return elevenLabsTranscriber.isTranscribing || elevenLabsRealtimeTranscriber.isStreaming
+                || elevenLabsRealtimeTranscriber.isStopping
+        }
     }
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
@@ -1126,6 +1167,12 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    /// Depth counter for in-flight history re-runs. While > 0 the global
+    /// dictation sinks and the polishing overlay are suppressed so a history
+    /// retranscribe never drives the live UI or leaves appState stuck busy.
+    private var historyReprocessingDepth = 0
+    private var isReprocessingHistory: Bool { historyReprocessingDepth > 0 }
+
     func retranscribeHistoryEntry(_ entry: HistoryEntry, using engine: TranscriptionEngine) async -> HistoryRetranscriptionResult {
         guard let audioPath = entry.audioPath, FileManager.default.fileExists(atPath: audioPath) else {
             return HistoryRetranscriptionResult(
@@ -1135,6 +1182,9 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         let audioURL = URL(fileURLWithPath: audioPath)
+
+        historyReprocessingDepth += 1
+        defer { historyReprocessingDepth -= 1 }
 
         do {
             let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
@@ -1190,10 +1240,26 @@ class SapoWhisperViewModel: ObservableObject {
             aiError: aiResult.error
         )
 
-        return HistoryRetranscriptionResult(
-            entryId: entry.id,
-            errorMessage: aiResult.status == .failed ? aiResult.error : nil
-        )
+        // The manual history path runs with force:true, so duration/length
+        // skips never apply; only a fidelity rejection or a missing provider
+        // can leave the transcript unchanged. Each gets a neutral notice — the
+        // "action failed" error alert is reserved for real failures.
+        switch aiResult.status {
+        case .failed:
+            return HistoryRetranscriptionResult(entryId: entry.id, errorMessage: aiResult.error)
+        case .rejectedFidelity:
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                noticeMessage: "history.ai_polish_rejected_notice".localized
+            )
+        case .none, .skippedShort, .skippedDuration:
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                noticeMessage: "history.ai_polish_unavailable_notice".localized
+            )
+        case .applied:
+            return HistoryRetranscriptionResult(entryId: entry.id)
+        }
     }
 
     // MARK: - Hotkey
@@ -1579,10 +1645,14 @@ class SapoWhisperViewModel: ObservableObject {
             duration: duration
         )
         if willAttemptPolish {
-            appState = .polishing
-            overlayManager.updateState(
-                .polishing(timeoutSeconds: TranscriptPostProcessor.polishTimeout(forCharacterCount: rawText.count))
-            )
+            // History re-runs reuse this helper but must not drive the live
+            // dictation UI: suppress the busy state + overlay, keep diagnostics.
+            if !isReprocessingHistory {
+                appState = .polishing
+                overlayManager.updateState(
+                    .polishing(timeoutSeconds: TranscriptPostProcessor.polishTimeout(forCharacterCount: rawText.count))
+                )
+            }
             SapoLog.ai.info(
                 "AI polish started source=\(source, privacy: .public) rawChars=\(rawText.count, privacy: .public)"
             )

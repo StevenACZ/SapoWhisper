@@ -65,6 +65,102 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testAcceptsPunctuationFixInsideCapitalizedToken() {
+        // Dictation typo `AGENTS..md` corrected to `AGENTS.md` — the polish did
+        // its job; the guard must not reject it just because the literal anchor
+        // (with the double dot) no longer matches.
+        let raw = "actualiza el archivo AGENTS..md cuando termines la tarea pendiente del proyecto"
+        let polished = "Actualiza el archivo AGENTS.md cuando termines la tarea pendiente del proyecto."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRejectsWhenCapitalizedTokenContentDropped() {
+        // Dropping the `md` content (not just punctuation) must still fail: the
+        // punctuation-insensitive key `agentsmd` no longer survives.
+        let raw = "actualiza el archivo AGENTS..md cuando termines la tarea pendiente del proyecto"
+        let polished = "Actualiza el archivo AGENTS cuando termines la tarea pendiente del proyecto."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testNumberAnchorStaysPunctuationSensitive() {
+        // The punctuation tolerance is for capitalized words only; a number
+        // anchor (`5.5`) must still be rejected when it becomes `55`.
+        let raw = "la versión estable es la 5.5 según el informe técnico del equipo de plataforma"
+        let polished = "La versión estable es la 55 según el informe técnico del equipo de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    // MARK: - Dense-script (CJK) translation floor
+
+    func testAcceptsChineseTranslationBelowNormalFloor() {
+        let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
+        let polished = "我需要你检查销售报告并告诉我下午之前是否一切都准备好了"
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [],
+            translationExpected: true, targetIsDenseScript: true)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        // Proves the fix matters: the ratio is below the normal floor.
+        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+    }
+
+    func testAcceptsJapaneseTranslationBelowNormalFloor() {
+        let raw = "avísale al equipo que la reunión de planificación se mueve para el final de la semana"
+        let polished = "計画会議が今週の終わりに変更されたことをチームに知らせてください"
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [],
+            translationExpected: true, targetIsDenseScript: true)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+    }
+
+    func testAcceptsKoreanTranslationBelowNormalFloor() {
+        let raw = "recuérdale al equipo de soporte que actualice la documentación antes de la próxima reunión"
+        let polished = "다음 회의 전에 문서를 업데이트하라고 지원 팀에 상기시켜 주세요"
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [],
+            translationExpected: true, targetIsDenseScript: true)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+    }
+
+    func testRejectsTruncatedChineseTranslation() {
+        let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
+        let polished = "好的"
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [],
+            translationExpected: true, targetIsDenseScript: true)
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.denseScriptMinimumLengthRatio)
+    }
+
+    func testRejectsRunawayChineseTranslationByCeiling() {
+        let raw = "hola equipo"
+        let polished = String(repeating: "通知", count: 12)
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [],
+            translationExpected: true, targetIsDenseScript: true)
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.lengthRatio, PolishFidelityGuard.maximumLengthRatio)
+    }
+
+    func testMixedScriptOutputKeepsNormalFloor() {
+        // Half-translated output (mostly Spanish, a little Chinese): denseFraction
+        // is below the threshold, so the normal floor stays and a sub-0.55 ratio
+        // is still rejected even though it would clear the dense floor.
+        let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
+        let polished = "revisa el reporte de ventas completo 报告"
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [],
+            translationExpected: true, targetIsDenseScript: true)
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.lengthRatio, PolishFidelityGuard.denseScriptMinimumLengthRatio)
+    }
+
     // MARK: - Output sanitizer
 
     func testSanitizerStripsWrappingCodeFence() {

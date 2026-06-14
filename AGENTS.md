@@ -28,8 +28,10 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Welcome flow is first-run only: explicit Close marks it seen, and the final step closes itself when recording starts. Keycaps render the user's actual trigger (combo or double-tap).
 - AI polish: optional OpenAI-compatible provider after any engine (`OpenAICompatiblePolisher`; OpenRouter default, model `openai/gpt-5.4-nano`, key in the macOS Keychain). The model field is free text (any provider model ID) with curated suggestions. A fidelity guard pastes the raw transcript when the output drifts. Keep `polishing` visually distinct from recording/transcribing.
 - The Prompts tab settings UI only edits prompt profiles; the personal-context editor and effective-prompt preview were removed, but a saved personal context still feeds `TranscriptPolishPromptBuilder`.
-- AI polish output language (same-as-input or an explicit target from the 15-language catalog) is authoritative and may translate the transcript; pass `translationExpected` to the fidelity guard so only translation-invariant anchors (numbers, URLs, emails, vocabulary) are enforced. Engines never translate; selecting an explicit target resets the transcription language to auto so the spoken language is detected.
+- AI polish output language (same-as-input or an explicit target from the 15-language catalog) is authoritative and may translate the transcript; pass `translationExpected` to the fidelity guard so only translation-invariant anchors (numbers, URLs, emails, vocabulary) are enforced. For dense-script (CJK) targets the guard also lowers its length-ratio floor (`targetIsDenseScript`, gated on the output being dominantly dense) so faithful zh/ja/ko translations are not pasted as raw text; the upper ratio bound stays fixed — never replace this with skipping the ratio gate. Engines never translate; selecting an explicit target resets the transcription language to auto so the spoken language is detected.
 - Transcription language is recognition context, not translation or output forcing; only the AI polish output language may translate.
+- Fidelity guard anchors are typed: numbers, URLs, emails, and vocabulary must survive verbatim (their punctuation is semantic — `5.5` ≠ `55`); mid-sentence capitalized words are matched punctuation-insensitively via a ≥3-alphanumeric key, so a polish that fixes a dictation typo (`AGENTS..md` → `AGENTS.md`) is not falsely rejected while dropping the word's content (→ `AGENTS`) still fails. Do not revert capitalized-word anchors to literal `contains`, and do not extend the punctuation tolerance to numeric/URL/email/vocabulary anchors.
+- The history "Polish with AI" button is disabled when `aiPolishEnabled` is off; the manual polish runs with `force`, so duration/length skips never apply, and a fidelity rejection or missing provider surfaces a neutral notice (`history.ai_polish_*_notice`), never the "action failed" error alert.
 
 ## ElevenLabs
 
@@ -37,6 +39,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Realtime mode (`scribe_v2_realtime`) streams PCM 16 kHz mono over WebSocket.
 - Realtime must buffer committed transcript segments only; partial transcripts are telemetry/state, never live-typed.
 - Stop flow sends a final commit, waits briefly for committed text, then pastes once.
+- A late send failure (`failedMessages` / `.network`) must not discard segments the server already committed: only surface `.network` when nothing was captured, otherwise salvage the committed text via `waitForFinalTranscript`.
 - Always keep the local WAV backup for realtime and failed sessions.
 - Realtime failure is manual retry only; do not auto-fallback to batch.
 - Retry uses the currently selected ElevenLabs mode.
@@ -65,6 +68,11 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Keep AI prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
 - Do not use transcription-language selection to translate text or force a final output language.
 - For Deepgram Flux, send `language_hint` only for supported Flux languages; unsupported selections should fall back to auto-detect.
+- Deepgram keyterm prompting uses the `keyterm` (singular) query param for Nova-3, including `language=multi`; do not rename it to `keyterms`.
+- The history retranscribe/re-polish path must not drive the live `appState` or overlay (`historyReprocessingDepth` suppresses the dictation sinks); the hotkey start gate also checks the selected engine is busy (`isSelectedEngineBusy`), so a re-run neither sticks the app busy nor lets a new recording collide with it.
+- The WhisperKit `$isModelLoaded` sink may only leave the `.noModel` state; an on-demand reload finishing mid-session must never reset `.recording`/`.processing`/`.polishing`.
+- Hotkey registration falls back to the default combo when `RegisterEventHotKey` fails (e.g. a bad imported combo); re-arm Esc after any mid-session re-registration.
+- Skip the synthetic `Cmd+V` when `IsSecureEventInputEnabled()` and leave the text on the clipboard; never post keystrokes into Secure Keyboard Entry.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.
 - Do not force-add ignored local docs, agent caches, or packaging assets (`docs/`, `.agents/`, `DMG/`) without explicit approval.
 - Ask before `git add`, `git commit`, `git push`, PR creation, merge, rebase, reset, or destructive git operations.

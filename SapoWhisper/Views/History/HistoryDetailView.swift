@@ -19,6 +19,7 @@ struct HistoryDetailView: View {
 
     @State private var showCopied = false
     @Environment(\.locale) private var locale
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
 
     private var isFailed: Bool { entry.status == "failed" }
 
@@ -117,7 +118,8 @@ struct HistoryDetailView: View {
                 }
                 .buttonStyle(.bordered)
                 .fixedSize()
-                .disabled(isAIPolishing)
+                .disabled(isAIPolishing || !aiPolishEnabled)
+                .help(aiPolishEnabled ? "" : "history.ai_polish_disabled_hint".localized)
             }
 
             Spacer(minLength: 12)

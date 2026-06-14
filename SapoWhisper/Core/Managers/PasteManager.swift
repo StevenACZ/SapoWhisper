@@ -103,6 +103,16 @@ class PasteManager {
     }
 
     private static func performPaste() {
+        // When another app holds Secure Keyboard Entry (password fields, some
+        // terminals), a synthetic Cmd+V is swallowed silently. Skip it and
+        // leave the text on the clipboard so the user can paste manually.
+        if IsSecureEventInputEnabled() {
+            SapoLog.menuBar.warning(
+                "Auto-paste skipped reason=secure-input-active; text left on clipboard"
+            )
+            return
+        }
+
         let source = CGEventSource(stateID: .hidSystemState)
 
         // Crear eventos Cmd+V

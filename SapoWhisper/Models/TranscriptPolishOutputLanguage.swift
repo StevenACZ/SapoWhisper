@@ -55,6 +55,18 @@ enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
         self != .sameAsInput
     }
 
+    /// Dense, space-free scripts (CJK) pack far more meaning per character, so
+    /// a faithful translation into them is much shorter than the source. The
+    /// fidelity guard lowers its length-ratio floor only for these targets.
+    var usesDenseScript: Bool {
+        switch self {
+        case .chinese, .japanese, .korean:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// English language name as written into the AI prompt; nil for
     /// same-as-input.
     var englishName: String? {
