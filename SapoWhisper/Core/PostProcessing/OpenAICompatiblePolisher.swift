@@ -149,10 +149,15 @@ final class OpenAICompatiblePolisher {
     }
 
     private static func parseErrorMessage(from data: Data) -> String {
+        let raw: String
         if let envelope = try? JSONDecoder().decode(ChatCompletionsErrorEnvelope.self, from: data) {
-            return envelope.error.message
+            raw = envelope.error.message
+        } else {
+            raw = String(data: data, encoding: .utf8) ?? "Unknown provider error"
         }
-        return String(data: data, encoding: .utf8).map { String($0.prefix(300)) } ?? "Unknown provider error"
+        // Redact before this string reaches the unified log (.public) and the
+        // Settings test UI: a provider error body can echo a key or bearer token.
+        return TranscriptionFailure.redactedLogSnippet(from: raw)
     }
 }
 

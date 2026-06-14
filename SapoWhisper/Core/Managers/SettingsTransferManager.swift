@@ -144,7 +144,12 @@ struct SettingsTransferManager {
 
     init(
         defaults: UserDefaults = .standard,
-        readEngineKey: @escaping (KeychainStore.Key) -> String? = { KeychainStore.string(for: $0) },
+        readEngineKey: @escaping (KeychainStore.Key) -> String? = {
+            // Presence check only (call sites test isEmpty), so gate on hasValue and
+            // never trigger the macOS Keychain consent prompt on import — mirrors
+            // EnginePortfolioMigration. The non-nil sentinel is intentionally opaque.
+            KeychainStore.hasValue(for: $0) ? "present" : nil
+        },
         writeEngineKey: @escaping (String, KeychainStore.Key) -> Void = {
             KeychainStore.setString($0, for: $1)
         }

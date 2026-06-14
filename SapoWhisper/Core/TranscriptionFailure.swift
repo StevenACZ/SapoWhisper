@@ -163,9 +163,10 @@ extension TranscriptionFailure {
             kind = .timedOut
         case 500...599:
             kind = .serverError
-        case 400, 404, 405, 413, 415, 422:
-            // Non-transient client errors: malformed request, unsupported media,
-            // wrong endpoint. Retrying the same payload would fail identically.
+        case 400..<500:
+            // Any other 4xx is a non-transient client error (bad request,
+            // unsupported media, wrong endpoint, conflict, gone, ...): retrying the
+            // same payload fails identically. 401/402/403/408/429 matched above.
             kind = .clientError
         default:
             kind = .unknown
@@ -173,21 +174,26 @@ extension TranscriptionFailure {
         return TranscriptionFailure(kind: kind, engine: engine, technicalDetail: detail)
     }
 
-    private static func redactedLogSnippet(from bodyText: String) -> String {
+    /// Redacts secrets from an error-body snippet before it is logged or shown.
+    /// Internal (not private) so OpenAI-compatible polish errors reuse the same
+    /// patterns instead of logging a raw provider body.
+    static func redactedLogSnippet(from bodyText: String) -> String {
         let normalized =
             bodyText
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\n", with: " ")
 
-        // Ordered array (not a dictionary): redaction patterns are not
-        // independent — the generic key/authorization pattern must run before
-        // the Bearer/sk-/AIza ones, so the iteration order has to be stable.
+        // Ordered array (not a dictionary): the auth-scheme pattern runs FIRST so
+        // the generic key/authorization pattern below cannot match just the scheme
+        // word ("Bearer"/"Token", whose value stops at the space) and strand the
+        // token in cleartext. The scheme value class includes base64/JWT
+        // punctuation (~ + / =) and covers Deepgram's "Token <key>" scheme.
         let patterns: [(pattern: String, replacement: String)] = [
+            (#"(?i)(Bearer|Token)\s+[A-Za-z0-9._~+/=-]{10,}"#, "$1 [redacted]"),
             (
                 #"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization)\s*[:=]\s*["']?[^"',\s}]{6,}"#,
                 "$1=[redacted]"
             ),
-            (#"(?i)Bearer\s+[A-Za-z0-9._-]{10,}"#, "Bearer [redacted]"),
             (#"(?i)sk-[A-Za-z0-9._-]{10,}"#, "[redacted-key]"),
             (#"AIza[0-9A-Za-z_-]{10,}"#, "[redacted-key]"),
         ]
