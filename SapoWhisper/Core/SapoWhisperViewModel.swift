@@ -1148,7 +1148,7 @@ class SapoWhisperViewModel: ObservableObject {
         let engine = currentEngine
         let language = selectedLanguage
         let duration = lastFailedHistoryId.flatMap { historyId in
-            historyManager.fetchAll().first { $0.id == historyId }?.duration
+            historyManager.duration(for: historyId)
         }
 
         Task {
@@ -1754,17 +1754,17 @@ class SapoWhisperViewModel: ObservableObject {
         status: String,
         failureCode: String? = nil
     ) -> PersistedHistoryEntry {
-        let savedPath = historyManager.saveAudioFile(from: sourceURL)
-        let fallbackPath = FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL.path : nil
-        let audioPath = savedPath ?? fallbackPath
+        // Persist atomically through the manager: it copies the WAV and inserts
+        // the row under `persistenceLock` so a concurrent save's orphan sweep
+        // cannot delete the freshly copied audio before its row references it.
         let text = aiResult?.finalText ?? ""
-        let historyID = historyManager.save(
+        let result = historyManager.persistEntry(
+            audioSource: sourceURL,
             engine: engineName ?? engine.displayName,
             language: language,
             duration: duration,
             text: text,
             rawText: aiResult?.rawText ?? text,
-            audioPath: audioPath,
             status: status,
             aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
             aiModel: aiResult?.model,
@@ -1773,21 +1773,10 @@ class SapoWhisperViewModel: ObservableObject {
             failureCode: failureCode
         )
 
-        // The copy + insert pair is not atomic: when the insert fails, roll
-        // back the copied file and keep the source WAV around for retry.
-        if historyID < 0, let savedPath {
-            historyManager.audioStorage.deleteAudioFile(at: savedPath)
-            return PersistedHistoryEntry(
-                id: historyID,
-                audioURL: fallbackPath.map { URL(fileURLWithPath: $0) },
-                copiedAudioToHistory: false
-            )
-        }
-
         return PersistedHistoryEntry(
-            id: historyID,
-            audioURL: audioPath.map { URL(fileURLWithPath: $0) },
-            copiedAudioToHistory: savedPath != nil
+            id: result.rowID,
+            audioURL: result.audioPath.map { URL(fileURLWithPath: $0) },
+            copiedAudioToHistory: result.copiedToHistory
         )
     }
 

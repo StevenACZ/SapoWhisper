@@ -24,6 +24,15 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
     var db: OpaquePointer?
     let audioStorage: HistoryAudioStorage
 
+    /// Serializes audio+DB mutations (persist / insert / delete / orphan sweep)
+    /// so a concurrent save's orphan sweep cannot delete a just-copied WAV
+    /// before its row references it (silent audio-loss race). Recursive because
+    /// `save -> enforceAudioStorageLimit -> deleteOldestEntriesWithAudio ->
+    /// delete(id:)` re-enters on a single thread. Every path that copies,
+    /// sweeps, or deletes audio must hold it; read-only queries stay on
+    /// FULLMUTEX only.
+    let persistenceLock = NSRecursiveLock()
+
     private convenience init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("SapoWhisper")
@@ -107,6 +116,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         aiError: String? = nil,
         failureCode: String? = nil
     ) -> Int64 {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let sql =
             """
             INSERT INTO transcriptions (
@@ -161,9 +172,58 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         return rowID
     }
 
-    /// Save an audio file to the audio directory. Returns the saved path.
-    func saveAudioFile(from sourceURL: URL) -> String? {
-        audioStorage.saveAudioFile(from: sourceURL)
+    /// Atomically copies the source audio into history storage and inserts its
+    /// row under `persistenceLock`. Holding the lock across copy + insert +
+    /// orphan sweep is what prevents a concurrent save's sweep from deleting the
+    /// freshly copied WAV before its row references it. Callers must persist
+    /// audio through this method, never via a separate copy + `save`.
+    @discardableResult
+    func persistEntry(
+        audioSource: URL?,
+        engine: String,
+        language: String,
+        duration: TimeInterval,
+        text: String,
+        rawText: String? = nil,
+        status: String = "completed",
+        aiStatus: String = TranscriptAIStatus.none.rawValue,
+        aiModel: String? = nil,
+        aiMode: String? = nil,
+        aiError: String? = nil,
+        failureCode: String? = nil
+    ) -> (rowID: Int64, audioPath: String?, copiedToHistory: Bool) {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
+
+        let savedPath = audioSource.flatMap { audioStorage.saveAudioFile(from: $0) }
+        let fallbackPath = audioSource.flatMap {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : nil
+        }
+        let audioPath = savedPath ?? fallbackPath
+
+        let rowID = save(
+            engine: engine,
+            language: language,
+            duration: duration,
+            text: text,
+            rawText: rawText,
+            audioPath: audioPath,
+            status: status,
+            aiStatus: aiStatus,
+            aiModel: aiModel,
+            aiMode: aiMode,
+            aiError: aiError,
+            failureCode: failureCode
+        )
+
+        // The copy + insert pair is not atomic against insert failure: when the
+        // insert fails, roll back the copied file and fall back to the source
+        // WAV so the retry path still has audio.
+        if rowID < 0, let savedPath {
+            audioStorage.deleteAudioFile(at: savedPath)
+            return (rowID, fallbackPath, false)
+        }
+        return (rowID, audioPath, savedPath != nil)
     }
 
     /// Update status of a transcription entry
