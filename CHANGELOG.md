@@ -6,6 +6,24 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.4.1] - 2026-06-13
+
+### Fixed
+
+- **ElevenLabs realtime retry & history replay** — these paths now read the API key from the Keychain instead of UserDefaults (which the launch migration empties), so retrying or re-running a realtime dictation no longer fails as "not configured".
+- **Realtime network drop on stop** — when the final commit fails with a network error, transcript segments the server already committed are salvaged and pasted instead of being discarded.
+- **History reprocessing no longer sticks the app busy** — retranscribing or re-polishing a history entry is isolated from the live app state and overlay, and a selected-engine-busy guard stops a new recording from colliding with an in-flight run.
+- **WhisperKit on-demand reload** — a model finishing load mid-session can no longer reset an active recording, processing, or polishing state.
+- **Faithful CJK translations** — the AI-polish fidelity guard lowers its length-ratio floor for dense-script (Chinese, Japanese, Korean) translation targets, so faithful translations are no longer discarded and pasted as raw text (the upper bound is unchanged).
+- **AI polish fidelity guard no longer false-rejects punctuation fixes** — correcting a dictation typo inside a capitalized token (e.g. `AGENTS..md` → `AGENTS.md`) is accepted, while dropping the token's actual content still fails; numbers, URLs, emails, and vocabulary stay matched literally.
+- **History "Polish with AI"** — the button is disabled when AI polish is turned off (it silently did nothing before), and a discarded polish (fidelity rejection or no configured provider) now shows a clear notice instead of nothing.
+- **Global hotkey resilience** — registration falls back to the default combo when a custom or imported combo fails, and the Esc cancel key is re-armed after any mid-session re-registration.
+- **Secure Keyboard Entry** — the synthetic Cmd+V paste is skipped while Secure Input is active; the text is left on the clipboard instead of posting keystrokes into a secure field.
+
+### Removed
+
+- Unused AudioEqualizerView.
+
 ## [2.4.0] - 2026-06-12
 
 ### Added
