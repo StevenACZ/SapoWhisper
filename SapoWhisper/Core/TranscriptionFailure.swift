@@ -229,6 +229,11 @@ extension TranscriptionFailure {
                     kind: .notConfigured, engine: engine,
                     technicalDetail: "WhisperKitError.\(whisperKitError)",
                     messageOverride: whisperKitError.errorDescription)
+            case .transcriptionInProgress:
+                return TranscriptionFailure(
+                    kind: .unknown, engine: engine,
+                    technicalDetail: "WhisperKitError.transcriptionInProgress",
+                    messageOverride: whisperKitError.errorDescription)
             case .modelLoadFailed, .transcriptionFailed:
                 return TranscriptionFailure(
                     kind: .unknown, engine: engine,

@@ -401,6 +401,15 @@ class WhisperKitTranscriber: ObservableObject {
                 throw WhisperKitError.modelNotLoaded
             }
 
+            // Defense-in-depth: WhisperKit wraps a single model instance and is
+            // not reentrant. The live-dictation hotkey gate already blocks a
+            // colliding start, but a history retranscribe reaches this method on
+            // a different path, so guard here so two inferences can never hit the
+            // same model concurrently (corrupted output / crash).
+            guard !isTranscribing else {
+                throw WhisperKitError.transcriptionInProgress
+            }
+
             isTranscribing = true
             progress = 0
             errorMessage = nil
@@ -753,6 +762,7 @@ enum WhisperKitError: LocalizedError {
     case modelNotLoaded
     case modelLoadFailed(String)
     case transcriptionFailed(String)
+    case transcriptionInProgress
 
     var errorDescription: String? {
         switch self {
@@ -764,6 +774,8 @@ enum WhisperKitError: LocalizedError {
             return "Error cargando modelo: \(message)"
         case .transcriptionFailed(let message):
             return "Error en transcripcion: \(message)"
+        case .transcriptionInProgress:
+            return "Ya hay una transcripcion en curso"
         }
     }
 }
