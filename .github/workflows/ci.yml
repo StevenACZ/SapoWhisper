@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-check:
+    name: Lint · build · test
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tool versions
+        run: |
+          xcodebuild -version
+          xcrun swift-format --version
+
+      # No Signing.xcconfig on the runner, so SigningDefaults.xcconfig falls back
+      # to ad-hoc signing ("-") and the Debug build needs no developer identity.
+      - name: Lint (swift-format, strict)
+        run: make lint-all
+
+      - name: Secrets scan
+        run: make secrets-scan
+
+      - name: Build (Debug, arm64)
+        run: make build
+
+      - name: Unit tests
+        run: make test
