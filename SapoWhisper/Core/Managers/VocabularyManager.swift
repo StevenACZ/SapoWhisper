@@ -58,7 +58,8 @@ class VocabularyManager: ObservableObject {
             "replacements": replacements,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) else { return }
-        try? data.write(to: fileURL)
+        // Atomic write: a crash mid-write must not truncate/corrupt vocabulary.json.
+        try? data.write(to: fileURL, options: .atomic)
     }
 
     // MARK: - Keyterms CRUD
