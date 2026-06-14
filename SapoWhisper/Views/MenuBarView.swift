@@ -218,33 +218,23 @@ struct MenuBarView: View {
     }
 
     private var buttonBackground: some View {
-        Group {
-            if case .recording = viewModel.appState {
-                LinearGradient(
-                    colors: [Color.recording, Color.recording.opacity(0.8)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            } else if case .processing = viewModel.appState {
-                LinearGradient(
-                    colors: [Color.processing, Color.processing.opacity(0.8)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            } else if case .polishing = viewModel.appState {
-                LinearGradient(
-                    colors: [Color.aiPolish, Color.aiPolish.opacity(0.8)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            } else {
-                LinearGradient(
-                    colors: [Color.sapoGreen, Color.sapoGreenDark],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
+        // Exhaustive switch (mirrors buttonColor) so foreground and background
+        // can never diverge: .noModel/.error paint the neutral gray gradient,
+        // not the idle green one.
+        let colors: [Color]
+        switch viewModel.appState {
+        case .recording:
+            colors = [Color.recording, Color.recording.opacity(0.8)]
+        case .processing:
+            colors = [Color.processing, Color.processing.opacity(0.8)]
+        case .polishing:
+            colors = [Color.aiPolish, Color.aiPolish.opacity(0.8)]
+        case .noModel, .error:
+            colors = [Color.disabled, Color.disabled.opacity(0.8)]
+        default:
+            colors = [Color.sapoGreen, Color.sapoGreenDark]
         }
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     // MARK: - Actions Section

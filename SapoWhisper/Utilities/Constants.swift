@@ -12,7 +12,10 @@ nonisolated enum Constants {
     // MARK: - App Info
 
     static let appName = "SapoWhisper"
-    static let appVersion = "2.3.0"
+    /// Single source of truth: read at runtime from the bundle's
+    /// CFBundleShortVersionString (MARKETING_VERSION) so the About tab and
+    /// settings export never drift from the shipped version.
+    static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     static let appDescription = "Speech-to-Text 100% local"
 
     // MARK: - Colores de la Marca
