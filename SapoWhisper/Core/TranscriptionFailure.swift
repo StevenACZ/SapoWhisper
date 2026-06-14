@@ -20,6 +20,9 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case outOfCredits = "out_of_credits"
         case rateLimited = "rate_limited"
         case planRestricted = "plan_restricted"
+        /// Non-transient 4xx (bad request, unsupported media, not found): a
+        /// retry with the same input fails identically, so it must not be one.
+        case clientError = "client_error"
         case serverError = "server_error"
         case network
         case timedOut = "timed_out"
@@ -69,6 +72,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "failure.rate_limited".localized(engineName)
         case .planRestricted:
             return "failure.plan_restricted".localized(engineName)
+        case .clientError:
+            return "failure.client_error".localized(engineName)
         case .serverError:
             return "failure.server_error".localized(engineName)
         case .network:
@@ -93,7 +98,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         switch kind {
         case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .unknown:
             return true
-        case .notConfigured, .auth, .outOfCredits, .planRestricted,
+        case .notConfigured, .auth, .outOfCredits, .planRestricted, .clientError,
             .audioEmpty, .audioCorrupt, .emptyTranscription:
             return false
         }
@@ -158,6 +163,10 @@ extension TranscriptionFailure {
             kind = .timedOut
         case 500...599:
             kind = .serverError
+        case 400, 404, 405, 413, 415, 422:
+            // Non-transient client errors: malformed request, unsupported media,
+            // wrong endpoint. Retrying the same payload would fail identically.
+            kind = .clientError
         default:
             kind = .unknown
         }
@@ -170,16 +179,22 @@ extension TranscriptionFailure {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\n", with: " ")
 
-        let redacted = [
-            #"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization)\s*[:=]\s*["']?[^"',\s}]{6,}"#:
-                "$1=[redacted]",
-            #"(?i)Bearer\s+[A-Za-z0-9._-]{10,}"#: "Bearer [redacted]",
-            #"(?i)sk-[A-Za-z0-9._-]{10,}"#: "[redacted-key]",
-            #"AIza[0-9A-Za-z_-]{10,}"#: "[redacted-key]",
-        ].reduce(normalized) { partial, replacement in
+        // Ordered array (not a dictionary): redaction patterns are not
+        // independent — the generic key/authorization pattern must run before
+        // the Bearer/sk-/AIza ones, so the iteration order has to be stable.
+        let patterns: [(pattern: String, replacement: String)] = [
+            (
+                #"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization)\s*[:=]\s*["']?[^"',\s}]{6,}"#,
+                "$1=[redacted]"
+            ),
+            (#"(?i)Bearer\s+[A-Za-z0-9._-]{10,}"#, "Bearer [redacted]"),
+            (#"(?i)sk-[A-Za-z0-9._-]{10,}"#, "[redacted-key]"),
+            (#"AIza[0-9A-Za-z_-]{10,}"#, "[redacted-key]"),
+        ]
+        let redacted = patterns.reduce(normalized) { partial, entry in
             partial.replacingOccurrences(
-                of: replacement.key,
-                with: replacement.value,
+                of: entry.pattern,
+                with: entry.replacement,
                 options: .regularExpression
             )
         }
@@ -252,6 +267,13 @@ extension TranscriptionFailure {
             return TranscriptionFailure(
                 kind: .audioCorrupt, engine: engine,
                 technicalDetail: "RecordingError.fileCreationFailed")
+        case .permissionDenied:
+            // Not retryable: the user must grant mic access in System Settings,
+            // so a Retry button would just fail again. Keep the specific message.
+            return TranscriptionFailure(
+                kind: .notConfigured, engine: engine,
+                technicalDetail: "RecordingError.permissionDenied",
+                messageOverride: error.errorDescription)
         default:
             return TranscriptionFailure(
                 kind: .unknown, engine: engine,

@@ -35,7 +35,14 @@ enum PolishFidelityGuard {
         let kind: Kind
 
         func survives(inLiteral literal: String, withoutPunctuation stripped: String) -> Bool {
-            if literal.contains(value.lowercased()) { return true }
+            let needle = value.lowercased()
+            // Numeric anchors match whole numeric tokens, never substrings: "5"
+            // must not survive inside "15", "5.5", "5,000" or "5:30". Numeric
+            // punctuation is semantic (5.5 != 55), so a changed number fails.
+            if kind == .literal, PolishFidelityGuard.isNumericLiteral(value) {
+                return PolishFidelityGuard.numericTokens(in: literal).contains(needle)
+            }
+            if literal.contains(needle) { return true }
             guard kind == .capitalizedWord else { return false }
             let key = PolishFidelityGuard.strippingPunctuation(value).lowercased()
             guard key.count >= 3 else { return false }
@@ -215,6 +222,20 @@ enum PolishFidelityGuard {
     static func strippingPunctuation(_ text: String) -> String {
         let scalars = text.unicodeScalars.filter { !CharacterSet.punctuationCharacters.contains($0) }
         return String(String.UnicodeScalarView(scalars))
+    }
+
+    /// True when `value` reads as a number (digits plus the `.,:` separators the
+    /// anchor regex allows), so its survival must respect digit boundaries.
+    static func isNumericLiteral(_ value: String) -> Bool {
+        guard let first = value.first, first.isASCII, first.isNumber else { return false }
+        return value.allSatisfy { $0.isASCII && ($0.isNumber || $0 == "." || $0 == "," || $0 == ":") }
+    }
+
+    /// The whole numeric tokens in `text` (same grammar as the anchor extractor),
+    /// lowercased. A numeric anchor survives only as an exact token, so "5" does
+    /// not match inside "15", "5.5", "5,000" or "5:30".
+    static func numericTokens(in text: String) -> Set<String> {
+        Set(matches(of: #"[0-9]+(?:[.,:][0-9]+)*"#, in: text).map { $0.lowercased() })
     }
 
     /// Fraction of letter/ideograph scalars in `text` that belong to a dense

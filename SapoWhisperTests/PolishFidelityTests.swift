@@ -85,6 +85,28 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testRejectsWhenNumberIsAbsorbedIntoLargerNumber() {
+        // The raw "5" must not count as surviving inside the polished "15": a
+        // plain substring match would wrongly accept a silently changed number.
+        let raw = "confirmé que la reunión es a las 5 con el equipo de diseño del proyecto nuevo"
+        let polished = "Confirmé que la reunión es a las 15 con el equipo de diseño del proyecto nuevo."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testRejectsWhenNumberGainsSeparator() {
+        // "5" must not survive inside a different numeric token separated by
+        // . , : — "5.5"/"5,000"/"5:30" are different numbers (semantic punctuation).
+        for changed in ["5.5", "5,000", "5:30"] {
+            let raw = "el total acordado con el proveedor de plataforma es 5 unidades por contrato"
+            let polished = "El total acordado con el proveedor de plataforma es \(changed) unidades por contrato."
+            let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+            XCTAssertFalse(verdict.isAcceptable, "should reject 5 -> \(changed)")
+            XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        }
+    }
+
     func testNumberAnchorStaysPunctuationSensitive() {
         // The punctuation tolerance is for capitalized words only; a number
         // anchor (`5.5`) must still be rejected when it becomes `55`.

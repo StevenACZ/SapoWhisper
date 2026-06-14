@@ -74,13 +74,19 @@ nonisolated enum TemporaryAudioStorage {
         }
 
         if let legacyFiles = try? fileManager.contentsOfDirectory(
-            at: fileManager.temporaryDirectory, includingPropertiesForKeys: nil
+            at: fileManager.temporaryDirectory, includingPropertiesForKeys: [.contentModificationDateKey]
         ) {
             for file in legacyFiles {
                 let name = file.lastPathComponent
                 guard name.hasSuffix(".wav"), legacyPrefixes.contains(where: name.hasPrefix) else {
                     continue
                 }
+                // Same staleAge gate as the private dir: a crash mid-write on the
+                // old temp path must not have its still-recoverable WAV deleted.
+                let modified =
+                    (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                guard now.timeIntervalSince(modified) > staleAge else { continue }
                 try? fileManager.removeItem(at: file)
                 removed += 1
             }

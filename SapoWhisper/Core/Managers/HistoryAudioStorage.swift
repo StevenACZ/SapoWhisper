@@ -27,7 +27,10 @@ nonisolated final class HistoryAudioStorage: Sendable {
     }
 
     func saveAudioFile(from sourceURL: URL) -> String? {
-        let filename = "audio_\(Date().timeIntervalSince1970).wav"
+        // UUID, not a float timestamp: two saves in the same sub-second window
+        // (a retry plus an orphan sweep, a test) would otherwise collide, the
+        // second copyItem would fail, and the audio would be lost silently.
+        let filename = "audio_\(UUID().uuidString).wav"
         let destURL = audioDir.appendingPathComponent(filename)
 
         do {

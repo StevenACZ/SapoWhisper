@@ -492,6 +492,7 @@
 "failure.out_of_credits" = "%@: te quedaste sin créditos. Revisá tu plan o saldo.";
 "failure.rate_limited" = "%@: límite de uso alcanzado. Esperá unos segundos y reintentá.";
 "failure.plan_restricted" = "%@: tu plan no permite esta función.";
+"failure.client_error" = "%@: la solicitud fue rechazada. Revisá el audio o la configuración.";
 "failure.server_error" = "%@: el servicio falló temporalmente. Reintentá.";
 "failure.network" = "Sin conexión a internet. Revisá tu red y reintentá.";
 "failure.timed_out" = "La transcripción tardó demasiado. Reintentá.";
