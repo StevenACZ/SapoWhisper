@@ -22,6 +22,27 @@ struct PolishFidelityVerdict {
 /// this is what eliminates the catastrophic "said something else" case for
 /// every provider.
 enum PolishFidelityGuard {
+    /// One raw token that must survive a literal polish. `.literal` anchors
+    /// (numbers, URLs, emails, vocabulary) must appear verbatim — their
+    /// punctuation is semantic (`5.5` != `55`). `.capitalizedWord` anchors
+    /// (proper nouns / identifiers) also survive when only punctuation the
+    /// polish legitimately fixes differs, so a dictation typo like `AGENTS..md`
+    /// being corrected to `AGENTS.md` is not a false rejection — while dropping
+    /// the `md` content (→ `AGENTS`) still fails.
+    struct Anchor {
+        enum Kind { case literal, capitalizedWord }
+        let value: String
+        let kind: Kind
+
+        func survives(inLiteral literal: String, withoutPunctuation stripped: String) -> Bool {
+            if literal.contains(value.lowercased()) { return true }
+            guard kind == .capitalizedWord else { return false }
+            let key = PolishFidelityGuard.strippingPunctuation(value).lowercased()
+            guard key.count >= 3 else { return false }
+            return stripped.contains(key)
+        }
+    }
+
     /// Polish removes fillers, so shrinking below 1.0 is normal.
     static let minimumLengthRatio = 0.55
     static let maximumLengthRatio = 1.6
@@ -68,7 +89,10 @@ enum PolishFidelityGuard {
             translationExpected: translationExpected
         )
         let polishedLowercased = polishedTrimmed.lowercased()
-        let missing = anchors.filter { !polishedLowercased.contains($0.lowercased()) }
+        let polishedWithoutPunctuation = strippingPunctuation(polishedTrimmed).lowercased()
+        let missing = anchors.filter {
+            !$0.survives(inLiteral: polishedLowercased, withoutPunctuation: polishedWithoutPunctuation)
+        }
 
         // CJK targets compress a faithful translation well below the normal
         // floor, so lower the floor only when translating into a dense script
@@ -95,16 +119,16 @@ enum PolishFidelityGuard {
         from raw: String,
         vocabularyTerms: [String],
         translationExpected: Bool = false
-    ) -> [String] {
-        var anchors: [String] = []
+    ) -> [Anchor] {
+        var anchors: [Anchor] = []
         var seen = Set<String>()
 
-        func add(_ anchor: String) {
+        func add(_ anchor: String, kind: Anchor.Kind) {
             let trimmed = anchor.trimmingCharacters(in: .whitespacesAndNewlines)
             let key = trimmed.lowercased()
             guard !trimmed.isEmpty, !seen.contains(key), anchors.count < maximumAnchors else { return }
             seen.insert(key)
-            anchors.append(trimmed)
+            anchors.append(Anchor(value: trimmed, kind: kind))
         }
 
         let exemptSegments = selfCorrectionExemptSegments(in: raw)
@@ -120,13 +144,13 @@ enum PolishFidelityGuard {
             #"\bwww\.[^\s]+"#,
         ] {
             for match in matches(of: pattern, in: raw) where !isExempt(match) {
-                add(match)
+                add(match, kind: .literal)
             }
         }
 
         if !translationExpected {
             for word in midSentenceCapitalizedWords(in: raw) where !isExempt(word) {
-                add(word)
+                add(word, kind: .capitalizedWord)
             }
         }
 
@@ -134,7 +158,7 @@ enum PolishFidelityGuard {
         for term in vocabularyTerms {
             let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.count >= 3, rawLowercased.contains(trimmed.lowercased()) else { continue }
-            add(trimmed)
+            add(trimmed, kind: .literal)
         }
 
         return anchors
@@ -183,6 +207,14 @@ enum PolishFidelityGuard {
         return regex.matches(in: text, range: fullRange).compactMap { match in
             Range(match.range, in: text).map { String(text[$0]) }
         }
+    }
+
+    /// Removes Unicode punctuation while preserving whitespace, letters, and
+    /// digits, so a capitalized-word anchor can be compared tolerantly to the
+    /// punctuation a polish legitimately fixes (`AGENTS..md` vs `AGENTS.md`).
+    static func strippingPunctuation(_ text: String) -> String {
+        let scalars = text.unicodeScalars.filter { !CharacterSet.punctuationCharacters.contains($0) }
+        return String(String.UnicodeScalarView(scalars))
     }
 
     /// Fraction of letter/ideograph scalars in `text` that belong to a dense

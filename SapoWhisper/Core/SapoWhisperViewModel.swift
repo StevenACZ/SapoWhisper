@@ -15,7 +15,17 @@ class SapoWhisperViewModel: ObservableObject {
 
     struct HistoryRetranscriptionResult {
         let entryId: Int64
+        /// Fatal failure — surfaced in the "action failed" alert.
         let errorMessage: String?
+        /// Non-fatal outcome (polish discarded by the fidelity guard, or no
+        /// usable provider) — surfaced in a neutral notice, never as an error.
+        let noticeMessage: String?
+
+        init(entryId: Int64, errorMessage: String? = nil, noticeMessage: String? = nil) {
+            self.entryId = entryId
+            self.errorMessage = errorMessage
+            self.noticeMessage = noticeMessage
+        }
     }
 
     private struct PersistedHistoryEntry {
@@ -1230,10 +1240,26 @@ class SapoWhisperViewModel: ObservableObject {
             aiError: aiResult.error
         )
 
-        return HistoryRetranscriptionResult(
-            entryId: entry.id,
-            errorMessage: aiResult.status == .failed ? aiResult.error : nil
-        )
+        // The manual history path runs with force:true, so duration/length
+        // skips never apply; only a fidelity rejection or a missing provider
+        // can leave the transcript unchanged. Each gets a neutral notice — the
+        // "action failed" error alert is reserved for real failures.
+        switch aiResult.status {
+        case .failed:
+            return HistoryRetranscriptionResult(entryId: entry.id, errorMessage: aiResult.error)
+        case .rejectedFidelity:
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                noticeMessage: "history.ai_polish_rejected_notice".localized
+            )
+        case .none, .skippedShort, .skippedDuration:
+            return HistoryRetranscriptionResult(
+                entryId: entry.id,
+                noticeMessage: "history.ai_polish_unavailable_notice".localized
+            )
+        case .applied:
+            return HistoryRetranscriptionResult(entryId: entry.id)
+        }
     }
 
     // MARK: - Hotkey

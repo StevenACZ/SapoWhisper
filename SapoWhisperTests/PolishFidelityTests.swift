@@ -65,6 +65,36 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testAcceptsPunctuationFixInsideCapitalizedToken() {
+        // Dictation typo `AGENTS..md` corrected to `AGENTS.md` — the polish did
+        // its job; the guard must not reject it just because the literal anchor
+        // (with the double dot) no longer matches.
+        let raw = "actualiza el archivo AGENTS..md cuando termines la tarea pendiente del proyecto"
+        let polished = "Actualiza el archivo AGENTS.md cuando termines la tarea pendiente del proyecto."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRejectsWhenCapitalizedTokenContentDropped() {
+        // Dropping the `md` content (not just punctuation) must still fail: the
+        // punctuation-insensitive key `agentsmd` no longer survives.
+        let raw = "actualiza el archivo AGENTS..md cuando termines la tarea pendiente del proyecto"
+        let polished = "Actualiza el archivo AGENTS cuando termines la tarea pendiente del proyecto."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testNumberAnchorStaysPunctuationSensitive() {
+        // The punctuation tolerance is for capitalized words only; a number
+        // anchor (`5.5`) must still be rejected when it becomes `55`.
+        let raw = "la versión estable es la 5.5 según el informe técnico del equipo de plataforma"
+        let polished = "La versión estable es la 55 según el informe técnico del equipo de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
     // MARK: - Dense-script (CJK) translation floor
 
     func testAcceptsChineseTranslationBelowNormalFloor() {

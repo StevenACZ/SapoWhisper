@@ -40,6 +40,8 @@ struct HistoryView: View {
     @State private var aiPolishingEntryID: Int64?
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
+    @State private var showNoticeAlert = false
+    @State private var actionNoticeMessage = ""
     @State private var loadedPageCount = 1
     @State private var hasMorePages = false
     @State private var showClearAllConfirmation = false
@@ -109,6 +111,11 @@ struct HistoryView: View {
                 Button("common.ok".localized, role: .cancel) {}
             } message: {
                 Text(actionErrorMessage)
+            }
+            .alert("history.ai_polish_notice_title".localized, isPresented: $showNoticeAlert) {
+                Button("common.ok".localized, role: .cancel) {}
+            } message: {
+                Text(actionNoticeMessage)
             }
             .onAppear(perform: { loadEntries() })
             .onDisappear {
@@ -311,6 +318,8 @@ struct HistoryView: View {
 
                 if let errorMessage = result.errorMessage {
                     presentActionError(errorMessage)
+                } else if let noticeMessage = result.noticeMessage {
+                    presentActionNotice(noticeMessage)
                 }
             }
         }
@@ -389,6 +398,11 @@ struct HistoryView: View {
     private func presentActionError(_ message: String) {
         actionErrorMessage = message
         showErrorAlert = true
+    }
+
+    private func presentActionNotice(_ message: String) {
+        actionNoticeMessage = message
+        showNoticeAlert = true
     }
 }
 

@@ -88,7 +88,11 @@
 "history.ai_polish" = "AI polish";
 "history.ai_polish_action" = "Polish with AI";
 "history.ai_polishing" = "Polishing...";
+"history.ai_polish_disabled_hint" = "Enable “Improve text with AI” in the Prompts tab to use this action.";
 "history.ai_polish_missing_text" = "No text is available to polish with AI.";
+"history.ai_polish_notice_title" = "AI polish not applied";
+"history.ai_polish_rejected_notice" = "The polish was discarded because it drifted from your original words (fidelity protection). Your transcript was kept as-is.";
+"history.ai_polish_unavailable_notice" = "Couldn't apply AI polish. Check that the provider is configured in the Prompts tab.";
 
 "common.cancel" = "Cancel";
 "common.ok" = "OK";
