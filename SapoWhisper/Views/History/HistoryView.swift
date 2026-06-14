@@ -239,16 +239,19 @@ struct HistoryView: View {
     /// H3: grows the window by one page when the last loaded row appears.
     private func loadMoreIfNeeded(_ entry: HistoryEntry) {
         guard hasMorePages, entry.id == entries.last?.id else { return }
-        loadedPageCount += 1
-        let previousSelectionID = selectedEntry?.id
-        let limit = Self.pageSize * loadedPageCount
-        entries = TranscriptionHistoryManager.shared.fetchEntries(
+        // Incremental paging: fetch only the next page by offset and append it,
+        // instead of re-fetching every page loaded so far (which made a long
+        // scroll O(pages^2) in rows read). fetchEntries already supports offset
+        // on both the FTS and LIKE paths. Appending leaves the selection intact.
+        let nextPage = TranscriptionHistoryManager.shared.fetchEntries(
             searchText: searchText,
             engineFilter: engineFilter,
-            limit: limit
+            limit: Self.pageSize,
+            offset: entries.count
         )
-        hasMorePages = entries.count == limit
-        selectedEntry = entries.first { $0.id == previousSelectionID }
+        loadedPageCount += 1
+        entries.append(contentsOf: nextPage)
+        hasMorePages = nextPage.count == Self.pageSize
     }
 
     private func scheduleLoadEntries() {

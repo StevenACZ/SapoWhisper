@@ -94,7 +94,10 @@ nonisolated extension TranscriptionHistoryManager {
             sql += " WHERE " + conditions.joined(separator: " AND ")
         }
 
-        sql += " ORDER BY timestamp DESC"
+        // Tie-break by id so rows sharing a timestamp (two dictations in the same
+        // second) keep a stable order across separate LIMIT/OFFSET page queries —
+        // otherwise incremental paging could duplicate or skip a row.
+        sql += " ORDER BY timestamp DESC, id DESC"
 
         if let limit {
             sql += " LIMIT ? OFFSET ?"
