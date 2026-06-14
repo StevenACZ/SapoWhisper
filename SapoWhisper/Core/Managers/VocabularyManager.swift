@@ -27,12 +27,18 @@ class VocabularyManager: ObservableObject {
 
     private let fileURL: URL
 
-    private init() {
+    /// Designated init. Tests inject a temp file URL so they never touch the
+    /// user's vocabulary.json; production uses the app-support path below.
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+        load()
+    }
+
+    private convenience init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("SapoWhisper")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
-        fileURL = appDir.appendingPathComponent("vocabulary.json")
-        load()
+        self.init(fileURL: appDir.appendingPathComponent("vocabulary.json"))
     }
 
     // MARK: - Persistence

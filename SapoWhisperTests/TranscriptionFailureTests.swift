@@ -61,4 +61,63 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(network.isNoSpeech)
         XCTAssertTrue(network.isRetryable)
     }
+
+    // MARK: - 4xx client errors (not retryable)
+
+    func testHTTP4xxMapsToNonRetryableClientError() {
+        for status in [400, 404, 405, 413, 415, 422] {
+            let failure = TranscriptionFailure.fromHTTP(engine: "ElevenLabs", statusCode: status, body: Data())
+            XCTAssertEqual(failure.kind, .clientError, "status \(status)")
+            XCTAssertFalse(failure.isRetryable, "status \(status) must not be retryable")
+        }
+    }
+
+    // MARK: - from(_:) error mapping
+
+    func testFromURLErrorTimedOut() {
+        let failure = TranscriptionFailure.from(URLError(.timedOut), engine: "Deepgram")
+        XCTAssertEqual(failure.kind, .timedOut)
+        XCTAssertTrue(failure.isRetryable)
+    }
+
+    func testFromURLErrorOfflineMapsToNetwork() {
+        let failure = TranscriptionFailure.from(URLError(.notConnectedToInternet), engine: "Deepgram")
+        XCTAssertEqual(failure.kind, .network)
+        XCTAssertTrue(failure.isRetryable)
+    }
+
+    func testFromRecordingDeviceSwitchMapsToInterrupted() {
+        let failure = TranscriptionFailure.from(RecordingError.noInputAfterDeviceSwitch, engine: "WhisperKit")
+        XCTAssertEqual(failure.kind, .recordingInterrupted)
+    }
+
+    func testFromRecordingFileFailureMapsToCorrupt() {
+        let failure = TranscriptionFailure.from(RecordingError.fileCreationFailed, engine: "WhisperKit")
+        XCTAssertEqual(failure.kind, .audioCorrupt)
+    }
+
+    func testFromRecordingPermissionDeniedIsNotRetryable() {
+        let failure = TranscriptionFailure.from(RecordingError.permissionDenied, engine: "WhisperKit")
+        XCTAssertEqual(failure.kind, .notConfigured)
+        XCTAssertFalse(failure.isRetryable)
+    }
+
+    func testFromWhisperKitModelNotLoadedMapsToNotConfigured() {
+        let failure = TranscriptionFailure.from(WhisperKitError.modelNotLoaded, engine: "WhisperKit")
+        XCTAssertEqual(failure.kind, .notConfigured)
+        XCTAssertFalse(failure.isRetryable)
+    }
+
+    func testFromWhisperKitTranscriptionFailedMapsToUnknown() {
+        let failure = TranscriptionFailure.from(WhisperKitError.transcriptionFailed("boom"), engine: "WhisperKit")
+        XCTAssertEqual(failure.kind, .unknown)
+    }
+
+    func testFromAlreadyClassifiedFailurePassesThrough() {
+        let original = TranscriptionFailure(kind: .auth, engine: "ElevenLabs")
+        let failure = TranscriptionFailure.from(original, engine: "Deepgram")
+        XCTAssertEqual(failure.kind, .auth)
+        // The already-classified failure wins, keeping its original engine.
+        XCTAssertEqual(failure.engine, "ElevenLabs")
+    }
 }
