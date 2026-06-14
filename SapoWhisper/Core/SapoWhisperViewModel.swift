@@ -82,6 +82,10 @@ class SapoWhisperViewModel: ObservableObject {
     // Retry support
     @Published var lastFailedAudioURL: URL?
     private var lastFailedHistoryId: Int64?
+    // Reentrancy guard for retryTranscription: a second Retry (double click /
+    // repeated hotkey) before the in-flight retry resolves would transcribe and
+    // paste the same audio twice. Set before the Task, cleared in its defer.
+    private var isRetryInFlight = false
 
     private static let stopTailPadding: TimeInterval = 0.12
     private static let firstInputBufferTimeout: TimeInterval = 0.8
@@ -725,6 +729,9 @@ class SapoWhisperViewModel: ObservableObject {
         // otherwise burn their full network timeout after the dictation.
         if engine.requiresInternet && NetworkReachability.shared.isOffline {
             activeRecordingSessionID = nil
+            // No session/audio here, so a Retry must start fresh, not retranscribe
+            // a stale prior failure ([6]).
+            clearFailedRetryState()
             SapoLog.recording.warning("Recording blocked offline engine=\(engine.rawValue, privacy: .public)")
             presentTranscriptionFailure(
                 TranscriptionFailure(
@@ -1067,6 +1074,9 @@ class SapoWhisperViewModel: ObservableObject {
                 )
                 audioRecorder.deleteRecording(at: audioURL)
                 activeTranscriptionSessionID = nil
+                // The audio was just deleted, so the (retryable) .recordingInterrupted
+                // must not let Retry retranscribe a STALE prior session's audio ([6]).
+                clearFailedRetryState()
                 presentTranscriptionFailure(TranscriptionFailure(kind: .recordingInterrupted))
                 return
             }
@@ -1114,12 +1124,23 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
+    /// Drops any pending failed-retry state. Called when a session ends without
+    /// persisting a retryable failure (empty / interrupted / offline fast-fail),
+    /// so a later Retry cannot retranscribe and paste a STALE prior session's
+    /// audio (the interrupted/offline paths leave no valid audio to retry).
+    private func clearFailedRetryState() {
+        lastFailedAudioURL = nil
+        lastFailedHistoryId = nil
+    }
+
     func retryTranscription() {
         guard let audioURL = lastFailedAudioURL else {
             guard canStartRecordingFromHotkey() else { return }
             startRecording()
             return
         }
+        guard !isRetryInFlight else { return }
+        isRetryInFlight = true
 
         appState = .processing
         overlayManager.updateState(.transcribing)
@@ -1131,6 +1152,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         Task {
+            defer { isRetryInFlight = false }
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
                 let aiResult = await postProcessTranscript(
