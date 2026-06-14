@@ -40,7 +40,7 @@ enum PolishFidelityGuard {
             // must not survive inside "15", "5.5", "5,000" or "5:30". Numeric
             // punctuation is semantic (5.5 != 55), so a changed number fails.
             if kind == .literal, PolishFidelityGuard.isNumericLiteral(value) {
-                return PolishFidelityGuard.numericTokens(in: literal).contains(needle)
+                return PolishFidelityGuard.orderedNumericTokens(in: literal).contains(needle)
             }
             if literal.contains(needle) { return true }
             guard kind == .capitalizedWord else { return false }
@@ -62,6 +62,11 @@ enum PolishFidelityGuard {
     /// before the lower floor applies.
     private static let denseScriptFractionThreshold = 0.35
     private static let maximumAnchors = 60
+
+    private static let numericPattern = #"[0-9]+(?:[.,:][0-9]+)*"#
+    private static let emailPattern = #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#
+    private static let urlPattern = #"https?://[^\s]+"#
+    private static let wwwPattern = #"\bwww\.[^\s]+"#
 
     /// Phrases that legitimately remove earlier content ("no espera, quise
     /// decir..."). Anchors spoken shortly before one are exempt because
@@ -90,16 +95,22 @@ enum PolishFidelityGuard {
         }
 
         let ratio = Double(polishedTrimmed.count) / Double(rawTrimmed.count)
-        let anchors = extractAnchors(
+        let extracted = extractAnchors(
             from: rawTrimmed,
             vocabularyTerms: vocabularyTerms,
             translationExpected: translationExpected
         )
+        let anchors = extracted.anchors
         let polishedLowercased = polishedTrimmed.lowercased()
         let polishedWithoutPunctuation = strippingPunctuation(polishedTrimmed).lowercased()
         let missing = anchors.filter {
             !$0.survives(inLiteral: polishedLowercased, withoutPunctuation: polishedWithoutPunctuation)
         }
+        // Numbers must survive as an ordered, duplicate-aware subsequence (see
+        // ExtractedAnchors): this catches a swap (5<->6) or a changed duplicate
+        // (5+5 -> 5+15) that the per-anchor membership check above cannot.
+        let numericMissing = missingNumericTokenCount(
+            rawSequence: extracted.numericSequence, in: polishedTrimmed)
 
         // CJK targets compress a faithful translation well below the normal
         // floor, so lower the floor only when translating into a dense script
@@ -110,23 +121,34 @@ enum PolishFidelityGuard {
                 && denseScriptFraction(of: polishedTrimmed) >= denseScriptFractionThreshold)
             ? denseScriptMinimumLengthRatio : minimumLengthRatio
         let ratioAcceptable = ratio >= floor && ratio <= maximumLengthRatio
+        let missingCount = missing.count + numericMissing
         return PolishFidelityVerdict(
-            isAcceptable: ratioAcceptable && missing.isEmpty,
+            isAcceptable: ratioAcceptable && missingCount == 0,
             lengthRatio: ratio,
-            missingAnchors: missing.count,
-            totalAnchors: anchors.count
+            missingAnchors: missingCount,
+            totalAnchors: anchors.count + extracted.numericSequence.count
         )
     }
 
-    /// Tokens that must survive a literal polish: numbers, URLs, emails,
-    /// mid-sentence capitalized words, and vocabulary terms present in raw.
-    /// Capitalized words are skipped when a translation is expected — they
-    /// are regular words in the source language and legitimately change.
+    /// Anchors split into the deduplicated literal/capitalized/vocabulary set and
+    /// the ordered numeric sequence. Numbers are kept ordered and duplicate-
+    /// preserving (not deduplicated anchors) so a swap (5<->6) or a duplicate-
+    /// count change (5+5 -> 5+15) is caught — a Set would silently lose both.
+    struct ExtractedAnchors {
+        let anchors: [Anchor]
+        let numericSequence: [String]
+    }
+
+    /// Tokens that must survive a literal polish: numbers (as an ordered
+    /// sequence), URLs, emails, mid-sentence capitalized words, and vocabulary
+    /// terms present in raw. Capitalized words are skipped when a translation is
+    /// expected — they are regular words in the source language and legitimately
+    /// change.
     static func extractAnchors(
         from raw: String,
         vocabularyTerms: [String],
         translationExpected: Bool = false
-    ) -> [Anchor] {
+    ) -> ExtractedAnchors {
         var anchors: [Anchor] = []
         var seen = Set<String>()
 
@@ -144,12 +166,17 @@ enum PolishFidelityGuard {
             return exemptSegments.contains { $0.contains(lowered) }
         }
 
-        for pattern in [
-            #"[0-9]+(?:[.,:][0-9]+)*"#,
-            #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#,
-            #"https?://[^\s]+"#,
-            #"\bwww\.[^\s]+"#,
-        ] {
+        // Numbers: an ordered, duplicate-preserving sequence (NOT deduplicated
+        // anchors). orderedNumericTokens already drops digits embedded in URLs/
+        // emails, which keep their own literal anchor below. Capped for bounded
+        // work (an independent perf bound from the anchor cap).
+        var numericSequence: [String] = []
+        for token in orderedNumericTokens(in: raw) where !isExempt(token) {
+            numericSequence.append(token)
+            if numericSequence.count >= maximumAnchors { break }
+        }
+
+        for pattern in [emailPattern, urlPattern, wwwPattern] {
             for match in matches(of: pattern, in: raw) where !isExempt(match) {
                 add(match, kind: .literal)
             }
@@ -168,7 +195,7 @@ enum PolishFidelityGuard {
             add(trimmed, kind: .literal)
         }
 
-        return anchors
+        return ExtractedAnchors(anchors: anchors, numericSequence: numericSequence)
     }
 
     private static func midSentenceCapitalizedWords(in raw: String) -> [String] {
@@ -231,11 +258,42 @@ enum PolishFidelityGuard {
         return value.allSatisfy { $0.isASCII && ($0.isNumber || $0 == "." || $0 == "," || $0 == ":") }
     }
 
-    /// The whole numeric tokens in `text` (same grammar as the anchor extractor),
-    /// lowercased. A numeric anchor survives only as an exact token, so "5" does
-    /// not match inside "15", "5.5", "5,000" or "5:30".
-    static func numericTokens(in text: String) -> Set<String> {
-        Set(matches(of: #"[0-9]+(?:[.,:][0-9]+)*"#, in: text).map { $0.lowercased() })
+    /// The whole numeric tokens in `text`, in document order WITH duplicates,
+    /// lowercased. Digits embedded in URLs/emails are blanked first so a
+    /// preserved-but-moved link does not feed the ordered numeric check (the link
+    /// keeps its own literal anchor). A numeric token matches only as an exact
+    /// token, so "5" does not match inside "15", "5.5", "5,000" or "5:30".
+    static func orderedNumericTokens(in text: String) -> [String] {
+        let withoutLinks =
+            text
+            .replacingOccurrences(of: emailPattern, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: urlPattern, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: wwwPattern, with: " ", options: .regularExpression)
+        return matches(of: numericPattern, in: withoutLinks).map { $0.lowercased() }
+    }
+
+    /// Count of raw numeric tokens that do not survive as an ordered, duplicate-
+    /// aware subsequence of the polished numeric tokens. Greedy first-match is
+    /// optimal for subsequence containment (taking the earliest match never
+    /// forecloses a later one), so it neither over- nor under-counts.
+    static func missingNumericTokenCount(rawSequence: [String], in polished: String) -> Int {
+        guard !rawSequence.isEmpty else { return 0 }
+        let polishedTokens = orderedNumericTokens(in: polished)
+        var index = 0
+        var missing = 0
+        for token in rawSequence {
+            var matched = false
+            while index < polishedTokens.count {
+                let current = polishedTokens[index]
+                index += 1
+                if current == token {
+                    matched = true
+                    break
+                }
+            }
+            if !matched { missing += 1 }
+        }
+        return missing
     }
 
     /// Fraction of letter/ideograph scalars in `text` that belong to a dense
