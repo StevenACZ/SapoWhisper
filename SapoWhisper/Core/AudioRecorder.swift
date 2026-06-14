@@ -422,25 +422,23 @@ nonisolated class AudioRecorder: @unchecked Sendable {
             AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         )
         var didPublishLevel = false
-        // The input block runs synchronously inside convert(); the lock only
-        // satisfies the Sendable contract of the SDK callback.
-        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
+        // This converter's input block is a pull-style data provider invoked
+        // synchronously inside convert() on this thread (not a stored/escaping
+        // callback), so a plain captured flag suffices — no need to heap-allocate
+        // a lock per buffer. AVFAudio is imported @preconcurrency, so the closure
+        // is not forced @Sendable.
+        var inputConsumed = false
 
         while true {
             guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCapacity) else { return }
 
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
-                    if consumed { return true }
-                    consumed = true
-                    return false
-                }
-                if alreadyConsumed {
+                if inputConsumed {
                     outStatus.pointee = .noDataNow
                     return nil
                 }
-
+                inputConsumed = true
                 outStatus.pointee = .haveData
                 return buffer
             }
