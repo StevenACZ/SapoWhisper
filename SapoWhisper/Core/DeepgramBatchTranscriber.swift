@@ -215,3 +215,10 @@ class DeepgramBatchTranscriber: ObservableObject {
         TranscriptionLanguageCatalog.deepgramLanguageCode(for: appLanguage)
     }
 }
+
+// MARK: - TranscriptionEngineSession
+
+extension DeepgramBatchTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isConfigured }
+    var isBusy: Bool { isTranscribing }
+}

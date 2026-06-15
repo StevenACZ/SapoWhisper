@@ -509,3 +509,10 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 }
+
+// MARK: - TranscriptionEngineSession
+
+extension DeepgramFluxLiveTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isConfigured }
+    var isBusy: Bool { isStreaming || isStopping }
+}

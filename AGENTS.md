@@ -36,8 +36,8 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 ## Deferred structural refactor (owner-gated, do not big-bang)
 
 The ViewModel (~2000 lines) concentrates orchestration deliberately. The next reduction is planned but must be done slice-by-slice WITH the owner validating each step — it sits on the critical record→transcribe→paste path (staleness gates, retry, history reprocess) and has no direct tests:
-1. First add characterization tests around the `TranscriptionPipelineHost`/VM seams (start/stop/retry/history/staleness, per engine).
-2. Introduce a `TranscriptionEngineSession` protocol for read-only engine state (readiness/busy) to retire the duplicated `switch currentEngine` (6+ sites).
+1. First add characterization tests around the `TranscriptionPipelineHost`/VM seams (start/stop/retry/history/staleness, per engine). (Partial: the read-only engine-state surface — readiness/busy/`canRecord` — is pinned by `TranscriptionEngineSessionTests`; the stop/retry/history seams still lack direct tests.)
+2. DONE — the `TranscriptionEngineSession` protocol (readiness/busy) now backs read-only engine state. The three duplicated `switch currentEngine` sites (`isEngineReady`, `isSelectedEngineBusy`, `canRecord`) derive from one `engineSessions(for:)` mapping; each transcriber declares its own `isReady`/`isBusy`. The dispatch `switch` in `transcribeAudio` and the Combine binding filters stay out of scope (not read-only state).
 3. Extract stop-path / history / AI-polish coordinators behind protocols, one at a time.
 4. Last: factor the two streaming transcribers' shared WebSocket scaffolding into small task-lifecycle helpers only, preserving each provider's distinct committed-segment salvage / batch-fallback semantics.
 

@@ -779,3 +779,10 @@ enum WhisperKitError: LocalizedError {
         }
     }
 }
+
+// MARK: - TranscriptionEngineSession
+
+extension WhisperKitTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isModelLoaded }
+    var isBusy: Bool { isTranscribing }
+}

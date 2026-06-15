@@ -1015,6 +1015,13 @@ nonisolated extension ElevenLabsRealtimeAudioSenderStats {
     )
 }
 
+// MARK: - TranscriptionEngineSession
+
+extension ElevenLabsScribeRealtimeTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isConfigured }
+    var isBusy: Bool { isStreaming || isStopping }
+}
+
 extension Data {
     fileprivate func littleEndianUInt32(at offset: Int) -> UInt32 {
         guard offset + 4 <= count else { return 0 }

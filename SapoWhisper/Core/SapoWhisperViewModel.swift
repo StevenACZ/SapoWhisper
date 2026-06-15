@@ -151,15 +151,28 @@ class SapoWhisperViewModel: ObservableObject {
         whisperKitTranscriber.isModelLoaded
     }
 
-    func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
+    /// The concrete transcriber(s) backing one logical engine. Single source
+    /// of truth for "which sessions make up this engine"; readiness/busy are
+    /// derived from it uniformly, replacing the per-query `switch currentEngine`.
+    func engineSessions(for engine: TranscriptionEngine) -> EngineSessions {
         switch engine {
         case .whisperLocal:
-            return whisperKitTranscriber.isModelLoaded
+            return EngineSessions(readiness: whisperKitTranscriber, busy: [whisperKitTranscriber])
         case .deepgram:
-            return deepgramTranscriber.isConfigured
+            return EngineSessions(
+                readiness: deepgramTranscriber,
+                busy: [deepgramTranscriber, deepgramFluxTranscriber]
+            )
         case .elevenLabsScribe:
-            return elevenLabsTranscriber.isConfigured
+            return EngineSessions(
+                readiness: elevenLabsTranscriber,
+                busy: [elevenLabsTranscriber, elevenLabsRealtimeTranscriber]
+            )
         }
+    }
+
+    func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
+        engineSessions(for: engine).isReady
     }
 
     // MARK: - Private Properties
@@ -613,16 +626,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// new recording can't collide with an in-progress transcription even when
     /// appState is kept clean during a history re-run.
     private var isSelectedEngineBusy: Bool {
-        switch currentEngine {
-        case .whisperLocal:
-            return whisperKitTranscriber.isTranscribing
-        case .deepgram:
-            return deepgramTranscriber.isTranscribing || deepgramFluxTranscriber.isStreaming
-                || deepgramFluxTranscriber.isStopping
-        case .elevenLabsScribe:
-            return elevenLabsTranscriber.isTranscribing || elevenLabsRealtimeTranscriber.isStreaming
-                || elevenLabsRealtimeTranscriber.isStopping
-        }
+        engineSessions(for: currentEngine).isBusy
     }
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
@@ -1904,20 +1908,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Si el boton de grabar esta habilitado
     var canRecord: Bool {
-        guard activeTranscriptionSessionID == nil, !appState.isBusyProcessing else {
-            return false
-        }
-
-        switch currentEngine {
-        case .whisperLocal:
-            return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
-        case .deepgram:
-            return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing && !deepgramFluxTranscriber.isStreaming
-                && !deepgramFluxTranscriber.isStopping
-        case .elevenLabsScribe:
-            return elevenLabsTranscriber.isConfigured && !elevenLabsTranscriber.isTranscribing
-                && !elevenLabsRealtimeTranscriber.isStreaming && !elevenLabsRealtimeTranscriber.isStopping
-        }
+        engineSessions(for: currentEngine).canRecord(
+            hasActiveTranscriptionSession: activeTranscriptionSessionID != nil,
+            appIsBusyProcessing: appState.isBusyProcessing
+        )
     }
 
     /// Formatea la duración de grabación
