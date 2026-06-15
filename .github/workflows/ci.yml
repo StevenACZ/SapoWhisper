@@ -12,14 +12,18 @@ concurrency:
 jobs:
   ci-check:
     name: Lint · build · test
-    runs-on: macos-15
+    # macOS 26 ships Xcode 26 (Swift 6.2+), required by the project's
+    # SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor / SWIFT_APPROACHABLE_CONCURRENCY
+    # settings. Older images (Xcode 16.4 / Swift 6.1) ignore them and the
+    # main-actor model collapses into nonisolated-context build errors.
+    runs-on: macos-26
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
-      # The runner lacks both tools: gitleaks for the secret scan, and a
-      # swift-format new enough to decode the .swift-format config (Xcode 16.4
-      # ships 6.1, the config targets 6.3+). Install matching ones via Homebrew.
+      # gitleaks is not on the image. swift-format is pinned via Homebrew so the
+      # lint uses the same release that authored .swift-format, independent of
+      # whichever Xcode 26.x point release the runner currently ships.
       - name: Install tools (swift-format, gitleaks)
         run: brew install swift-format gitleaks
 
