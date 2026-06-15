@@ -17,11 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The .swift-format config is authored against the swift-format that ships
-      # with current Xcode (6.3+); the runner's bundled swift-format (Xcode 16.4
-      # → 6.1) can't decode it, so install a matching one and lint with that.
-      - name: Install swift-format
-        run: brew install swift-format
+      # The runner lacks both tools: gitleaks for the secret scan, and a
+      # swift-format new enough to decode the .swift-format config (Xcode 16.4
+      # ships 6.1, the config targets 6.3+). Install matching ones via Homebrew.
+      - name: Install tools (swift-format, gitleaks)
+        run: brew install swift-format gitleaks
 
       - name: Tool versions
         run: |
