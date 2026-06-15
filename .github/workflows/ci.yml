@@ -17,15 +17,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The .swift-format config is authored against the swift-format that ships
+      # with current Xcode (6.3+); the runner's bundled swift-format (Xcode 16.4
+      # → 6.1) can't decode it, so install a matching one and lint with that.
+      - name: Install swift-format
+        run: brew install swift-format
+
       - name: Tool versions
         run: |
           xcodebuild -version
-          xcrun swift-format --version
+          "$(brew --prefix)/bin/swift-format" --version
 
       # No Signing.xcconfig on the runner, so SigningDefaults.xcconfig falls back
       # to ad-hoc signing ("-") and the Debug build needs no developer identity.
       - name: Lint (swift-format, strict)
-        run: make lint-all
+        run: make lint-all SWIFT_FORMAT="$(brew --prefix)/bin/swift-format"
 
       - name: Secrets scan
         run: make secrets-scan
