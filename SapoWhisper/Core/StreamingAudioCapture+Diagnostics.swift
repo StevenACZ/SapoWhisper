@@ -38,7 +38,7 @@ nonisolated extension StreamingAudioCapture {
         smoothedAudioLevel = 0
         startRecordingTime = 0
         firstInputBufferLogged = false
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
     }
 
     func resetCaptureDiagnostics(deviceUID: String) {
@@ -55,6 +55,11 @@ nonisolated extension StreamingAudioCapture {
     func registerInputBuffer(at timestamp: CFAbsoluteTime) -> (count: Int, gapMs: Double?) {
         os_unfair_lock_lock(&captureStateLock)
         let previousInputTime = lastInputBufferTime
+        // Publish the timestamp under the lock (read before this point for the
+        // gap). The tap thread used to write it bare in processAudioBuffer; the
+        // health probe / diagnostics read it off another queue, so the write must
+        // go through captureStateLock — same fix as AudioRecorder.
+        lastInputBufferTime = timestamp
         inputBufferCount += 1
         let count = inputBufferCount
         let gapMs = previousInputTime > 0 ? (timestamp - previousInputTime) * 1000 : nil
@@ -66,6 +71,18 @@ nonisolated extension StreamingAudioCapture {
         }
         os_unfair_lock_unlock(&captureStateLock)
         return (count, gapMs)
+    }
+
+    func currentLastInputBufferTime() -> CFAbsoluteTime {
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
+        return lastInputBufferTime
+    }
+
+    func resetLastInputBufferTime() {
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
+        lastInputBufferTime = 0
     }
 
     func registerWrittenFrames(_ frameCount: AVAudioFrameCount) {
@@ -123,9 +140,10 @@ nonisolated extension StreamingAudioCapture {
         let firstLatency = firstInputLatencyMs
         let maxGap = maxInputGapMs
         let deviceUID = captureDeviceUID
+        let lastBuffer = lastInputBufferTime
         os_unfair_lock_unlock(&captureStateLock)
 
-        let lastBufferAgeMs = lastInputBufferTime > 0 ? (referenceTime - lastInputBufferTime) * 1000 : nil
+        let lastBufferAgeMs = lastBuffer > 0 ? (referenceTime - lastBuffer) * 1000 : nil
         let fileSizeBytes: Int
         if let fileURL,
             let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue

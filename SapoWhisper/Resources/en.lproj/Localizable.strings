@@ -492,6 +492,7 @@
 "failure.out_of_credits" = "%@: you've run out of credits. Check your plan or balance.";
 "failure.rate_limited" = "%@: rate limit reached. Wait a few seconds and retry.";
 "failure.plan_restricted" = "%@: your plan doesn't allow this feature.";
+"failure.client_error" = "%@: the request was rejected. Check the audio or your settings.";
 "failure.server_error" = "%@: the service failed temporarily. Please retry.";
 "failure.network" = "No internet connection. Check your network and retry.";
 "failure.timed_out" = "Transcription took too long. Please retry.";

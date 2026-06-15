@@ -82,6 +82,10 @@ class SapoWhisperViewModel: ObservableObject {
     // Retry support
     @Published var lastFailedAudioURL: URL?
     private var lastFailedHistoryId: Int64?
+    // Reentrancy guard for retryTranscription: a second Retry (double click /
+    // repeated hotkey) before the in-flight retry resolves would transcribe and
+    // paste the same audio twice. Set before the Task, cleared in its defer.
+    private var isRetryInFlight = false
 
     private static let stopTailPadding: TimeInterval = 0.12
     private static let firstInputBufferTimeout: TimeInterval = 0.8
@@ -147,15 +151,28 @@ class SapoWhisperViewModel: ObservableObject {
         whisperKitTranscriber.isModelLoaded
     }
 
-    func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
+    /// The concrete transcriber(s) backing one logical engine. Single source
+    /// of truth for "which sessions make up this engine"; readiness/busy are
+    /// derived from it uniformly, replacing the per-query `switch currentEngine`.
+    func engineSessions(for engine: TranscriptionEngine) -> EngineSessions {
         switch engine {
         case .whisperLocal:
-            return whisperKitTranscriber.isModelLoaded
+            return EngineSessions(readiness: whisperKitTranscriber, busy: [whisperKitTranscriber])
         case .deepgram:
-            return deepgramTranscriber.isConfigured
+            return EngineSessions(
+                readiness: deepgramTranscriber,
+                busy: [deepgramTranscriber, deepgramFluxTranscriber]
+            )
         case .elevenLabsScribe:
-            return elevenLabsTranscriber.isConfigured
+            return EngineSessions(
+                readiness: elevenLabsTranscriber,
+                busy: [elevenLabsTranscriber, elevenLabsRealtimeTranscriber]
+            )
         }
+    }
+
+    func isEngineReady(_ engine: TranscriptionEngine) -> Bool {
+        engineSessions(for: engine).isReady
     }
 
     // MARK: - Private Properties
@@ -609,16 +626,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// new recording can't collide with an in-progress transcription even when
     /// appState is kept clean during a history re-run.
     private var isSelectedEngineBusy: Bool {
-        switch currentEngine {
-        case .whisperLocal:
-            return whisperKitTranscriber.isTranscribing
-        case .deepgram:
-            return deepgramTranscriber.isTranscribing || deepgramFluxTranscriber.isStreaming
-                || deepgramFluxTranscriber.isStopping
-        case .elevenLabsScribe:
-            return elevenLabsTranscriber.isTranscribing || elevenLabsRealtimeTranscriber.isStreaming
-                || elevenLabsRealtimeTranscriber.isStopping
-        }
+        engineSessions(for: currentEngine).isBusy
     }
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
@@ -725,6 +733,9 @@ class SapoWhisperViewModel: ObservableObject {
         // otherwise burn their full network timeout after the dictation.
         if engine.requiresInternet && NetworkReachability.shared.isOffline {
             activeRecordingSessionID = nil
+            // No session/audio here, so a Retry must start fresh, not retranscribe
+            // a stale prior failure ([6]).
+            clearFailedRetryState()
             SapoLog.recording.warning("Recording blocked offline engine=\(engine.rawValue, privacy: .public)")
             presentTranscriptionFailure(
                 TranscriptionFailure(
@@ -1067,6 +1078,9 @@ class SapoWhisperViewModel: ObservableObject {
                 )
                 audioRecorder.deleteRecording(at: audioURL)
                 activeTranscriptionSessionID = nil
+                // The audio was just deleted, so the (retryable) .recordingInterrupted
+                // must not let Retry retranscribe a STALE prior session's audio ([6]).
+                clearFailedRetryState()
                 presentTranscriptionFailure(TranscriptionFailure(kind: .recordingInterrupted))
                 return
             }
@@ -1114,12 +1128,23 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
+    /// Drops any pending failed-retry state. Called when a session ends without
+    /// persisting a retryable failure (empty / interrupted / offline fast-fail),
+    /// so a later Retry cannot retranscribe and paste a STALE prior session's
+    /// audio (the interrupted/offline paths leave no valid audio to retry).
+    private func clearFailedRetryState() {
+        lastFailedAudioURL = nil
+        lastFailedHistoryId = nil
+    }
+
     func retryTranscription() {
         guard let audioURL = lastFailedAudioURL else {
             guard canStartRecordingFromHotkey() else { return }
             startRecording()
             return
         }
+        guard !isRetryInFlight else { return }
+        isRetryInFlight = true
 
         appState = .processing
         overlayManager.updateState(.transcribing)
@@ -1127,10 +1152,11 @@ class SapoWhisperViewModel: ObservableObject {
         let engine = currentEngine
         let language = selectedLanguage
         let duration = lastFailedHistoryId.flatMap { historyId in
-            historyManager.fetchAll().first { $0.id == historyId }?.duration
+            historyManager.duration(for: historyId)
         }
 
         Task {
+            defer { isRetryInFlight = false }
             do {
                 let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
                 let aiResult = await postProcessTranscript(
@@ -1732,17 +1758,17 @@ class SapoWhisperViewModel: ObservableObject {
         status: String,
         failureCode: String? = nil
     ) -> PersistedHistoryEntry {
-        let savedPath = historyManager.saveAudioFile(from: sourceURL)
-        let fallbackPath = FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL.path : nil
-        let audioPath = savedPath ?? fallbackPath
+        // Persist atomically through the manager: it copies the WAV and inserts
+        // the row under `persistenceLock` so a concurrent save's orphan sweep
+        // cannot delete the freshly copied audio before its row references it.
         let text = aiResult?.finalText ?? ""
-        let historyID = historyManager.save(
+        let result = historyManager.persistEntry(
+            audioSource: sourceURL,
             engine: engineName ?? engine.displayName,
             language: language,
             duration: duration,
             text: text,
             rawText: aiResult?.rawText ?? text,
-            audioPath: audioPath,
             status: status,
             aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
             aiModel: aiResult?.model,
@@ -1751,21 +1777,10 @@ class SapoWhisperViewModel: ObservableObject {
             failureCode: failureCode
         )
 
-        // The copy + insert pair is not atomic: when the insert fails, roll
-        // back the copied file and keep the source WAV around for retry.
-        if historyID < 0, let savedPath {
-            historyManager.audioStorage.deleteAudioFile(at: savedPath)
-            return PersistedHistoryEntry(
-                id: historyID,
-                audioURL: fallbackPath.map { URL(fileURLWithPath: $0) },
-                copiedAudioToHistory: false
-            )
-        }
-
         return PersistedHistoryEntry(
-            id: historyID,
-            audioURL: audioPath.map { URL(fileURLWithPath: $0) },
-            copiedAudioToHistory: savedPath != nil
+            id: result.rowID,
+            audioURL: result.audioPath.map { URL(fileURLWithPath: $0) },
+            copiedAudioToHistory: result.copiedToHistory
         )
     }
 
@@ -1893,20 +1908,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Si el boton de grabar esta habilitado
     var canRecord: Bool {
-        guard activeTranscriptionSessionID == nil, !appState.isBusyProcessing else {
-            return false
-        }
-
-        switch currentEngine {
-        case .whisperLocal:
-            return whisperKitTranscriber.isModelLoaded && !whisperKitTranscriber.isTranscribing
-        case .deepgram:
-            return deepgramTranscriber.isConfigured && !deepgramTranscriber.isTranscribing && !deepgramFluxTranscriber.isStreaming
-                && !deepgramFluxTranscriber.isStopping
-        case .elevenLabsScribe:
-            return elevenLabsTranscriber.isConfigured && !elevenLabsTranscriber.isTranscribing
-                && !elevenLabsRealtimeTranscriber.isStreaming && !elevenLabsRealtimeTranscriber.isStopping
-        }
+        engineSessions(for: currentEngine).canRecord(
+            hasActiveTranscriptionSession: activeTranscriptionSessionID != nil,
+            appIsBusyProcessing: appState.isBusyProcessing
+        )
     }
 
     /// Formatea la duración de grabación

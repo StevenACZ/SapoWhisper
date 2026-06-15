@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-check:
+    name: Lint · build · test
+    # macOS 26 ships Xcode 26 (Swift 6.2+), required by the project's
+    # SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor / SWIFT_APPROACHABLE_CONCURRENCY
+    # settings. Older images (Xcode 16.4 / Swift 6.1) ignore them and the
+    # main-actor model collapses into nonisolated-context build errors.
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      # gitleaks is not on the image. swift-format is pinned via Homebrew so the
+      # lint uses the same release that authored .swift-format, independent of
+      # whichever Xcode 26.x point release the runner currently ships.
+      - name: Install tools (swift-format, gitleaks)
+        run: brew install swift-format gitleaks
+
+      - name: Tool versions
+        run: |
+          xcodebuild -version
+          "$(brew --prefix)/bin/swift-format" --version
+
+      # No Signing.xcconfig on the runner, so SigningDefaults.xcconfig falls back
+      # to ad-hoc signing ("-") and the Debug build needs no developer identity.
+      - name: Lint (swift-format, strict)
+        run: make lint-all SWIFT_FORMAT="$(brew --prefix)/bin/swift-format"
+
+      - name: Secrets scan
+        run: make secrets-scan
+
+      - name: Build (Debug, arm64)
+        run: make build
+
+      - name: Unit tests
+        run: make test

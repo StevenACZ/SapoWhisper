@@ -84,6 +84,42 @@ final class HistoryScaleTests: XCTestCase {
         XCTAssertTrue(manager.fetchEntries(searchText: "original").isEmpty)
     }
 
+    // MARK: - Incremental paging
+
+    func testIncrementalPagingReturnsEachRowExactlyOnce() {
+        var savedIds: [Int64] = []
+        for index in 0..<25 {
+            savedIds.append(
+                manager.save(engine: "Deepgram", language: "es", duration: 1, text: "fila \(index)")
+            )
+        }
+
+        var pagedIds: [Int64] = []
+        let pageSize = 10
+        var offset = 0
+        while true {
+            let page = manager.fetchEntries(limit: pageSize, offset: offset)
+            if page.isEmpty { break }
+            pagedIds.append(contentsOf: page.map { $0.id })
+            offset += page.count
+            if page.count < pageSize { break }
+        }
+
+        // Every saved row appears exactly once across pages — no duplicate, no skip.
+        XCTAssertEqual(pagedIds.count, savedIds.count)
+        XCTAssertEqual(Set(pagedIds), Set(savedIds))
+    }
+
+    func testPagingOrderIsStableNewestFirst() {
+        let first = manager.save(engine: "Deepgram", language: "es", duration: 1, text: "a")
+        let second = manager.save(engine: "Deepgram", language: "es", duration: 1, text: "b")
+        let third = manager.save(engine: "Deepgram", language: "es", duration: 1, text: "c")
+
+        // Newest first; rows sharing a timestamp fall back to id DESC, so the
+        // order stays stable across paged queries.
+        XCTAssertEqual(manager.fetchEntries(limit: nil).map { $0.id }, [third, second, first])
+    }
+
     func testSearchAtFiveThousandRows() {
         for index in 0..<5000 {
             manager.save(

@@ -6,6 +6,26 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.4.2] - 2026-06-14
+
+### Fixed
+
+- **Silent audio loss in history** — audio persistence is now serialized, so a concurrent storage-cleanup sweep can no longer delete a freshly recorded WAV before its history row references it.
+- **Retry pasted stale or duplicated text** — retrying a dictation no longer reuses the previous recording's audio or pastes the result twice.
+- **Deepgram Flux dropped the last words on stop** — the final end-of-turn that arrives right after the stream closes is preserved, so the tail of a Flux dictation is no longer lost.
+- **WhisperKit concurrent inference** — the shared local model is guarded against overlapping transcriptions that could corrupt output or crash.
+- **AI polish number fidelity** — numbers must now survive as an ordered, duplicate-aware sequence; a swapped, dropped, or altered number makes the guard paste the raw transcript instead.
+- **Version display & visuals** — the menu surfaces the actually-shipped version, and disabled-state controls render correctly.
+
+### Changed
+
+- **Faster history at scale** — the history list pages incrementally with a stable sort order, so large histories load and scroll smoothly without duplicating or skipping rows.
+- **Internal reliability hardening** — closed two audio-stack data races under Swift strict concurrency `complete`, confined the streaming-capture engine lifecycle to its setup queue, made vocabulary writes atomic, and dropped a per-buffer lock allocation in the recorder hot path. Engine readiness/busy state moved behind a small read-only `TranscriptionEngineSession` abstraction that retires duplicated branching, with new characterization tests. Added a GitHub Actions CI gate (lint, secret scan, build, tests).
+
+### Security
+
+- **Hardened diagnostics** — strengthened secret redaction in unified logs and corrected non-retryable 4xx error classification so client errors are not offered a pointless retry.
+
 ## [2.4.1] - 2026-06-13
 
 ### Fixed

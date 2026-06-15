@@ -93,7 +93,7 @@ nonisolated extension StreamingAudioCapture {
         captureHealthProbePending = false
         guard isCaptureActiveFlag(), let engine = audioEngine else { return }
 
-        let lastBuffer = lastInputBufferTime
+        let lastBuffer = currentLastInputBufferTime()
         let bufferAge = CFAbsoluteTimeGetCurrent() - lastBuffer
         if engine.isRunning, lastBuffer > 0, bufferAge <= Self.captureHealthyBufferMaxAge {
             captureRecoveryAttempts = 0
@@ -170,7 +170,7 @@ nonisolated extension StreamingAudioCapture {
 
         // A health probe after this rebuild must see buffers from the new
         // engine, not a fresh-looking timestamp left by the dead one.
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
         inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }

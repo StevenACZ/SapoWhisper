@@ -65,6 +65,9 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
     var captureStateLock = os_unfair_lock()
     var startRecordingTime: CFAbsoluteTime = 0
     var firstInputBufferLogged = false
+    // captureStateLock-guarded: written by the tap via registerInputBuffer(at:),
+    // read by the health probe / diagnostics, reset via resetLastInputBufferTime().
+    // Never write it bare off the lock (it is read from audioSetupQueue).
     var lastInputBufferTime: CFAbsoluteTime = 0
     var inputBufferCount = 0
     var writtenFrameCount: AVAudioFramePosition = 0
@@ -118,11 +121,14 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
         converter = nil
         converterOutputFormat = nil
         firstInputBufferLogged = false
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
         lastAudioLevelPublishTime = 0
         captureRecoveryAttempts = 0
 
-        let result: (engine: AVAudioEngine, url: URL) = try await withCheckedThrowingContinuation { continuation in
+        // A4: engine/file/url are assigned ONCE inside audioSetupQueue below; the
+        // continuation returns Void so the caller never re-writes those reference
+        // vars off-queue (that off-queue write raced recoverCapture on the queue).
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             audioSetupQueue.async { [weak self] in
                 guard let self else {
                     continuation.resume(throwing: RecordingError.engineCreationFailed)
@@ -176,7 +182,7 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
                         ? nil : AudioDeviceManager.shared.getDeviceID(for: deviceUID)
                     self.beginDeviceSentinel(engine: localEngine, deviceID: boundDeviceID)
 
-                    continuation.resume(returning: (localEngine, recordingURL))
+                    continuation.resume(returning: ())
                 } catch {
                     self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingURL, deleteTemporaryFile: true)
                     continuation.resume(throwing: error)
@@ -184,8 +190,6 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
             }
         }
 
-        audioEngine = result.engine
-        recordingURL = result.url
         isRecording = true
         isPaused = false
         accumulatedDuration = 0
@@ -246,7 +250,9 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
 
     func pauseRecording() {
         guard isRecording, !isPaused else { return }
-        audioEngine?.pause()
+        // A4: engine lifecycle stays on audioSetupQueue (like start/stop) so a
+        // pause never races a concurrent recoverCapture running on that queue.
+        audioSetupQueue.sync { audioEngine?.pause() }
         isPaused = true
         timer?.invalidate()
         timer = nil
@@ -260,7 +266,8 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
 
     func resumeRecording() throws {
         guard isRecording, isPaused else { return }
-        try audioEngine?.start()
+        // A4: engine lifecycle stays on audioSetupQueue (see pauseRecording).
+        try audioSetupQueue.sync { try audioEngine?.start() }
         MicrophonePermission.noteAudioInputGranted()
         isPaused = false
         startTime = Date()

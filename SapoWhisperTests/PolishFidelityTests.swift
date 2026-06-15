@@ -85,6 +85,28 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testRejectsWhenNumberIsAbsorbedIntoLargerNumber() {
+        // The raw "5" must not count as surviving inside the polished "15": a
+        // plain substring match would wrongly accept a silently changed number.
+        let raw = "confirmé que la reunión es a las 5 con el equipo de diseño del proyecto nuevo"
+        let polished = "Confirmé que la reunión es a las 15 con el equipo de diseño del proyecto nuevo."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testRejectsWhenNumberGainsSeparator() {
+        // "5" must not survive inside a different numeric token separated by
+        // . , : — "5.5"/"5,000"/"5:30" are different numbers (semantic punctuation).
+        for changed in ["5.5", "5,000", "5:30"] {
+            let raw = "el total acordado con el proveedor de plataforma es 5 unidades por contrato"
+            let polished = "El total acordado con el proveedor de plataforma es \(changed) unidades por contrato."
+            let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+            XCTAssertFalse(verdict.isAcceptable, "should reject 5 -> \(changed)")
+            XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        }
+    }
+
     func testNumberAnchorStaysPunctuationSensitive() {
         // The punctuation tolerance is for capitalized words only; a number
         // anchor (`5.5`) must still be rejected when it becomes `55`.
@@ -92,6 +114,64 @@ final class PolishFidelityTests: XCTestCase {
         let polished = "La versión estable es la 55 según el informe técnico del equipo de plataforma."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
         XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testRejectsWhenNumbersAreSwapped() {
+        // Both numbers still appear, but assigned to the wrong nouns. A Set-based
+        // check would accept this; the ordered subsequence catches the swap.
+        let raw = "mueve 5 tickets al sprint 6 antes de la reunión del equipo de plataforma"
+        let polished = "Mueve 6 tickets al sprint 5 antes de la reunión del equipo de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testRejectsWhenDuplicateNumberCountChanges() {
+        // The raw says "5" twice; the polish silently turns the second into "15".
+        // Deduplicating anchors would lose the count — the multiset-aware check
+        // requires both 5s to survive.
+        let raw = "cobra 5 ahora y 5 mañana al cliente nuevo del proyecto de plataforma"
+        let polished = "Cobra 5 ahora y 15 mañana al cliente nuevo del proyecto de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testAcceptsRepeatedNumbersWhenPreserved() {
+        // No false positive: the same two 5s survive verbatim.
+        let raw = "cobra 5 ahora y 5 mañana al cliente nuevo del proyecto de plataforma"
+        let polished = "Cobra 5 ahora y 5 mañana al cliente nuevo del proyecto de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testAcceptsMovedURLWithInternalDigits() {
+        // The URL's internal digit ("v2") must not join the numeric sequence: the
+        // link is preserved but moved, and the only real number ("5") survives.
+        let raw = "revisa https://acme.com/v2 y luego llama al 5 para coordinar la entrega"
+        let polished = "Llama al 5 para coordinar la entrega y luego revisa https://acme.com/v2."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRejectsWhenURLAnchorChanges() {
+        // The link itself is a literal anchor and must survive verbatim.
+        let raw = "abre https://acme.com/alpha para revisar el informe del proyecto de plataforma"
+        let polished = "Abre https://acme.com/beta para revisar el informe del proyecto de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testTranslationStillRequiresBothDuplicateNumbers() {
+        // Numbers are translation-invariant: a translated polish that drops one of
+        // the two 5s must be rejected even though words legitimately change.
+        let raw = "avísale a ventas que enviamos 5 cajas el lunes y 5 cajas el martes a la bodega"
+        let polished = "Tell sales we shipped 5 boxes on Monday and some boxes on Tuesday to the warehouse."
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: raw, polished: polished, vocabularyTerms: [], translationExpected: true)
+        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 

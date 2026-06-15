@@ -16,11 +16,11 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 
 - `SapoWhisperViewModel`: recording, transcription, AI polish, history, overlay, retry, and paste orchestration.
 - `TranscriptionPipeline`: shared transcribe→polish→paste→persist control flow for the three stop paths (session-staleness gates, silence rule); the ViewModel implements `TranscriptionPipelineHost` for every side effect.
-- Strict concurrency is `complete` on the app target; audio-stack classes are `nonisolated` with documented queue/lock synchronization. Keep new code warning-free instead of widening `nonisolated(unsafe)`.
+- Strict concurrency is `complete` on both the app and test targets; audio-stack classes are `nonisolated` with documented queue/lock synchronization (e.g. `AudioLevelMonitor.sampleFile`/`sampleWriteActive` under `sampleStateLock`, `AudioRecorder.lastInputBufferTime` and `StreamingAudioCapture.lastInputBufferTime` under `captureStateLock` — each written inside `registerInputBuffer`, read via `currentLastInputBufferTime()`, reset via `resetLastInputBufferTime()`; never write them bare off the tap thread). Keep new code warning-free instead of widening `nonisolated(unsafe)`.
 - `AudioRecorder`: batch 16 kHz mono int16 WAV capture.
 - `StreamingAudioCapture*`: shared streaming capture that writes local WAV history and emits ordered PCM chunks.
 - Engines: WhisperKit (local), Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe v2 batch, ElevenLabs Scribe Realtime v2. Apple Speech, Google Cloud STT, and Gemini Audio were removed; old history rows from them stay readable.
-- History: SQLite via `TranscriptionHistoryManager*`; audio retention via `HistoryAudioStorage`.
+- History: SQLite via `TranscriptionHistoryManager*`; audio retention via `HistoryAudioStorage`. The list pages incrementally by `offset` (append, never re-fetch every loaded page) and the query tie-breaks `ORDER BY timestamp DESC, id DESC` so paging cannot duplicate/skip rows; saved audio files use UUID names. Audio persistence (copy WAV → insert row → orphan/size sweep) is serialized through `TranscriptionHistoryManager.persistenceLock` (recursive) so a concurrent sweep cannot delete a freshly copied WAV before its row references it; persist via the atomic `persistEntry`, never a separate `saveAudioFile`+`save`, and keep `deleteOrphanedAudioFiles` matching by file name (not full path).
 - Vocabulary tab metrics (words per minute, term usage) are computed read-only from recent history rows off the main actor (`VocabularyUsageCalculator`); do not add tracking columns or history schema changes for them.
 - Permissions: `PermissionService` plus guided permission windows and overlays (Microphone + Accessibility only).
 - Secrets: one consolidated Keychain item (`KeychainStore`) plus UserDefaults presence hints. Gate "is X configured" checks on `KeychainStore.hasValue` (never `string(for:)`) so launch/settings paths cannot trigger the macOS consent prompt; writes re-create the item (delete+add) so the running build owns it.
@@ -30,8 +30,16 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - The Prompts tab settings UI only edits prompt profiles; the personal-context editor and effective-prompt preview were removed, but a saved personal context still feeds `TranscriptPolishPromptBuilder`.
 - AI polish output language (same-as-input or an explicit target from the 15-language catalog) is authoritative and may translate the transcript; pass `translationExpected` to the fidelity guard so only translation-invariant anchors (numbers, URLs, emails, vocabulary) are enforced. For dense-script (CJK) targets the guard also lowers its length-ratio floor (`targetIsDenseScript`, gated on the output being dominantly dense) so faithful zh/ja/ko translations are not pasted as raw text; the upper ratio bound stays fixed — never replace this with skipping the ratio gate. Engines never translate; selecting an explicit target resets the transcription language to auto so the spoken language is detected.
 - Transcription language is recognition context, not translation or output forcing; only the AI polish output language may translate.
-- Fidelity guard anchors are typed: numbers, URLs, emails, and vocabulary must survive verbatim (their punctuation is semantic — `5.5` ≠ `55`); mid-sentence capitalized words are matched punctuation-insensitively via a ≥3-alphanumeric key, so a polish that fixes a dictation typo (`AGENTS..md` → `AGENTS.md`) is not falsely rejected while dropping the word's content (→ `AGENTS`) still fails. Do not revert capitalized-word anchors to literal `contains`, and do not extend the punctuation tolerance to numeric/URL/email/vocabulary anchors.
+- Fidelity guard anchors are typed: numbers, URLs, emails, and vocabulary must survive verbatim (their punctuation is semantic — `5.5` ≠ `55`); numeric anchors match a whole numeric token, never a substring, so `5` is not satisfied by `15`/`5.5`/`5,000`/`5:30`, and the raw's numbers must survive as an ordered, duplicate-aware subsequence (a swap `5↔6` or a changed duplicate `5+5`→`5+15` fails), with digits embedded in URLs/emails excluded from the numeric sweep (the link keeps its own literal anchor); mid-sentence capitalized words are matched punctuation-insensitively via a ≥3-alphanumeric key, so a polish that fixes a dictation typo (`AGENTS..md` → `AGENTS.md`) is not falsely rejected while dropping the word's content (→ `AGENTS`) still fails. Do not revert capitalized-word anchors to literal `contains`, and do not extend the punctuation tolerance to numeric/URL/email/vocabulary anchors.
 - The history "Polish with AI" button is disabled when `aiPolishEnabled` is off; the manual polish runs with `force`, so duration/length skips never apply, and a fidelity rejection or missing provider surfaces a neutral notice (`history.ai_polish_*_notice`), never the "action failed" error alert.
+
+## Deferred structural refactor (owner-gated, do not big-bang)
+
+The ViewModel (~2000 lines) concentrates orchestration deliberately. The next reduction is planned but must be done slice-by-slice WITH the owner validating each step — it sits on the critical record→transcribe→paste path (staleness gates, retry, history reprocess) and has no direct tests:
+1. First add characterization tests around the `TranscriptionPipelineHost`/VM seams (start/stop/retry/history/staleness, per engine). (Partial: the read-only engine-state surface — readiness/busy/`canRecord` — is pinned by `TranscriptionEngineSessionTests`; the stop/retry/history seams still lack direct tests.)
+2. DONE — the `TranscriptionEngineSession` protocol (readiness/busy) now backs read-only engine state. The three duplicated `switch currentEngine` sites (`isEngineReady`, `isSelectedEngineBusy`, `canRecord`) derive from one `engineSessions(for:)` mapping; each transcriber declares its own `isReady`/`isBusy`. The dispatch `switch` in `transcribeAudio` and the Combine binding filters stay out of scope (not read-only state).
+3. Extract stop-path / history / AI-polish coordinators behind protocols, one at a time.
+4. Last: factor the two streaming transcribers' shared WebSocket scaffolding into small task-lifecycle helpers only, preserving each provider's distinct committed-segment salvage / batch-fallback semantics.
 
 ## ElevenLabs
 
@@ -62,7 +70,7 @@ Compact operating notes for coding agents. Keep this file public-safe, short, an
 - Do not remove the WhisperKit/Deepgram/ElevenLabs engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route churn.
 - Windows hosting SecureFields must drop the first responder on close/resign-key (`SecureInputReleasingWindowDelegate`); stuck Secure Keyboard Entry starves the hotkey event tap.
-- Map engine failures to `TranscriptionFailure`; do not reintroduce per-engine error enums.
+- Map engine failures to `TranscriptionFailure`; do not reintroduce per-engine error enums. Non-transient 4xx (400/404/405/413/415/422) map to the non-retryable `.clientError`; recording permission denial maps to `.notConfigured` — never offer Retry for an error a retry cannot fix.
 - Keep AI polish non-blocking: if the AI provider fails or is not configured, paste/save the raw transcript and record AI metadata.
 - Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
 - Keep AI prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
@@ -88,7 +96,7 @@ make release-check
 ```
 
 - `make format` and `make lint` only inspect changed Swift files by default.
-- `make test` runs the `SapoWhisperTests` unit bundle (pure logic: fidelity guard, failure mapping, engine migration, settings import); `make ci-check` = lint + Debug build + tests.
+- `make test` runs the `SapoWhisperTests` unit bundle (pure logic: fidelity guard incl. numeric-token anchors, failure mapping incl. `from()`, VocabularyManager replacements/keyterms, engine migration, settings import); `make ci-check` = lint + Debug build + tests, and `.github/workflows/ci.yml` runs it on every push to `main` and PR (ad-hoc signed — no developer identity needed).
 - Run `git diff --check` before staging or reporting a docs/code patch done.
 - UI screenshots without consent prompts: launch a Debug build with `SAPO_UI_PREVIEW=1` and optional `SAPO_UI_PREVIEW_SCREEN=history|welcome|settings` + `SAPO_UI_PREVIEW_WELCOME_STEP=<0-4>`. Preview launches and the unit-test host skip keychain reads, hotkey event-tap registration, and startup permission windows (`UIPreviewMode`); normal user launches are unaffected.
 

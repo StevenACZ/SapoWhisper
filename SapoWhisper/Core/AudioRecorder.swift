@@ -65,6 +65,8 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     private let tapBufferSize: AVAudioFrameCount = 1024
     private var startRecordingTime: CFAbsoluteTime = 0
     private var firstInputBufferLogged = false
+    // captureStateLock-guarded: written by the tap via registerInputBuffer,
+    // read by diagnostics/health-probe, reset via resetLastInputBufferTime().
     private var lastInputBufferTime: CFAbsoluteTime = 0
     private var captureStateLock = os_unfair_lock()
     private let audioSetupQueue = DispatchQueue(label: "com.sapowhisper.audioSetup", qos: .userInitiated)
@@ -152,7 +154,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         resetCaptureDiagnostics()
         setCaptureDeviceUID(deviceUID)
         firstInputBufferLogged = false
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
         lastAudioLevelPublishTime = 0
         activeGain = Float(savedGain > 0 ? savedGain : 1.0)
 
@@ -379,7 +381,6 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let audioFile = audioFile, let outputFormat = converterOutputFormat else { return }
         let inputBufferTime = CFAbsoluteTimeGetCurrent()
-        lastInputBufferTime = inputBufferTime
         registerInputBuffer(at: inputBufferTime)
         if !firstInputBufferLogged {
             firstInputBufferLogged = true
@@ -421,25 +422,23 @@ nonisolated class AudioRecorder: @unchecked Sendable {
             AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         )
         var didPublishLevel = false
-        // The input block runs synchronously inside convert(); the lock only
-        // satisfies the Sendable contract of the SDK callback.
-        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
+        // This converter's input block is a pull-style data provider invoked
+        // synchronously inside convert() on this thread (not a stored/escaping
+        // callback), so a plain captured flag suffices — no need to heap-allocate
+        // a lock per buffer. AVFAudio is imported @preconcurrency, so the closure
+        // is not forced @Sendable.
+        var inputConsumed = false
 
         while true {
             guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCapacity) else { return }
 
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
-                    if consumed { return true }
-                    consumed = true
-                    return false
-                }
-                if alreadyConsumed {
+                if inputConsumed {
                     outStatus.pointee = .noDataNow
                     return nil
                 }
-
+                inputConsumed = true
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -661,7 +660,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         lastAudioLevelPublishTime = 0
         startRecordingTime = 0
         firstInputBufferLogged = false
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
     }
 
     func discardRecording() {
@@ -759,6 +758,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         os_unfair_lock_lock(&captureStateLock)
         defer { os_unfair_lock_unlock(&captureStateLock) }
 
+        lastInputBufferTime = timestamp
         inputBufferCount += 1
         if firstInputLatencyMs == nil {
             firstInputLatencyMs = (timestamp - startRecordingTime) * 1000
@@ -791,15 +791,28 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         return uid
     }
 
+    private func currentLastInputBufferTime() -> CFAbsoluteTime {
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
+        return lastInputBufferTime
+    }
+
+    private func resetLastInputBufferTime() {
+        os_unfair_lock_lock(&captureStateLock)
+        defer { os_unfair_lock_unlock(&captureStateLock) }
+        lastInputBufferTime = 0
+    }
+
     private func makeCaptureDiagnostics(fileURL: URL?, referenceTime: CFAbsoluteTime) -> RecordingCaptureDiagnostics {
         os_unfair_lock_lock(&captureStateLock)
         let bufferCount = inputBufferCount
         let frameCount = writtenFrameCount
         let firstLatency = firstInputLatencyMs
         let deviceUID = captureDeviceUID
+        let lastBuffer = lastInputBufferTime
         os_unfair_lock_unlock(&captureStateLock)
 
-        let lastBufferAgeMs = lastInputBufferTime > 0 ? (referenceTime - lastInputBufferTime) * 1000 : nil
+        let lastBufferAgeMs = lastBuffer > 0 ? (referenceTime - lastBuffer) * 1000 : nil
         let fileSizeBytes: Int
         if let fileURL,
             let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue
@@ -905,7 +918,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         captureHealthProbePending = false
         guard isSetupGenerationCurrent(generation), let engine = audioEngine else { return }
 
-        let lastBuffer = lastInputBufferTime
+        let lastBuffer = currentLastInputBufferTime()
         let bufferAge = CFAbsoluteTimeGetCurrent() - lastBuffer
         if engine.isRunning, lastBuffer > 0, bufferAge <= Self.captureHealthyBufferMaxAge {
             captureRecoveryAttempts = 0
@@ -982,7 +995,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
 
         // A health probe after this rebuild must see buffers from the new
         // engine, not a fresh-looking timestamp left by the dead one.
-        lastInputBufferTime = 0
+        resetLastInputBufferTime()
         inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }

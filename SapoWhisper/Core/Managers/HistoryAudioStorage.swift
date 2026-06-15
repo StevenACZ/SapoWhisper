@@ -27,7 +27,10 @@ nonisolated final class HistoryAudioStorage: Sendable {
     }
 
     func saveAudioFile(from sourceURL: URL) -> String? {
-        let filename = "audio_\(Date().timeIntervalSince1970).wav"
+        // UUID, not a float timestamp: two saves in the same sub-second window
+        // (a retry plus an orphan sweep, a test) would otherwise collide, the
+        // second copyItem would fail, and the audio would be lost silently.
+        let filename = "audio_\(UUID().uuidString).wav"
         let destURL = audioDir.appendingPathComponent(filename)
 
         do {
@@ -54,7 +57,13 @@ nonisolated final class HistoryAudioStorage: Sendable {
     }
 
     func deleteOrphanedAudioFiles(referencedPaths: Set<String>) {
-        for file in audioFiles() where !referencedPaths.contains(file.url.path) {
+        // Match by unique file name rather than full path. Saved WAVs use UUID
+        // names, so the name identifies the row's audio unambiguously, while the
+        // stored audio_path and the enumerated file URL can disagree on path
+        // normalization (e.g. a symlinked parent like /var vs /private/var) and
+        // make a referenced file look orphaned. Unknown files are still swept.
+        let referencedNames = Set(referencedPaths.map { ($0 as NSString).lastPathComponent })
+        for file in audioFiles() where !referencedNames.contains(file.url.lastPathComponent) {
             deleteAudioFile(at: file.url.path)
         }
     }

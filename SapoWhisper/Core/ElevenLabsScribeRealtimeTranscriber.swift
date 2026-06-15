@@ -956,7 +956,14 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         stopTimeoutTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        stopContinuation = nil
+        // Resume (not just drop) a pending stop continuation: abandoning a
+        // CheckedContinuation leaks it, warns under strict concurrency, and
+        // suspends the awaiting stop() forever. finishStopIfNeeded() nils before
+        // resuming and both run on the MainActor, so this does not double-resume.
+        if let continuation = stopContinuation {
+            stopContinuation = nil
+            continuation.resume(throwing: CancellationError())
+        }
         resetPublishedState()
     }
 
@@ -1006,6 +1013,13 @@ nonisolated extension ElevenLabsRealtimeAudioSenderStats {
         maxSendWaitMs: 0,
         timedOutSends: 0
     )
+}
+
+// MARK: - TranscriptionEngineSession
+
+extension ElevenLabsScribeRealtimeTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isConfigured }
+    var isBusy: Bool { isStreaming || isStopping }
 }
 
 extension Data {

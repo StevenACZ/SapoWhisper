@@ -182,6 +182,13 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     }
 }
 
+// MARK: - TranscriptionEngineSession
+
+extension ElevenLabsScribeTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isConfigured }
+    var isBusy: Bool { isTranscribing }
+}
+
 // MARK: - Data Helper
 
 extension Data {

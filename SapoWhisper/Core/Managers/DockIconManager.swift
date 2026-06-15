@@ -5,15 +5,12 @@
 //
 
 import AppKit
-import Combine
 
 /// Administrador centralizado de los iconos del Dock
 /// Se encarga de cambiar dinámicamente el icono de la app según su estado
 @MainActor
-final class DockIconManager: ObservableObject {
+final class DockIconManager {
     static let shared = DockIconManager()
-
-    private var cancellables = Set<AnyCancellable>()
 
     // Cache de imágenes
     // NOTA: Los nombres deben coincidir con los "Image Set" en Assets.xcassets

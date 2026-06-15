@@ -25,7 +25,8 @@ nonisolated extension StreamingAudioCapture {
                 "Flux input progress buffers=\(bufferStats.count, privacy: .public) frames=\(self.writtenFrameCount, privacy: .public)"
             )
         }
-        lastInputBufferTime = inputTime
+        // lastInputBufferTime is now published under captureStateLock inside
+        // registerInputBuffer(at:) above — do not write it bare here.
         logFirstInputBufferIfNeeded(buffer: buffer, inputTime: inputTime)
 
         os_unfair_lock_lock(&converterLock)

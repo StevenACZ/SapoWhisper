@@ -26,6 +26,16 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private var receiveTask: Task<Void, Never>?
     private var stopTimeoutTask: Task<Void, Never>?
     private var stopContinuation: CheckedContinuation<String, Error>?
+    /// A4 (stop race): armed the instant the CloseStream send begins — before
+    /// the await, because the server can process CloseStream and emit the final
+    /// EndOfTurn while this actor is still suspended inside `task.send`. With it
+    /// armed, that post-close flush is recognized even if it lands before
+    /// `waitForFinalTranscript` installs its continuation, instead of being
+    /// dropped into the 4s timeout. Mirrors the ElevenLabs `committedCount >
+    /// before` guard: armed only after `finishAndWait`/CloseStream begins, so an
+    /// earlier in-speech EndOfTurn cannot short-circuit the wait.
+    private var closeStreamRequested = false
+    private var receivedFinalTurnAfterClose = false
     private var transcriptAccumulator = DeepgramFluxTranscriptAccumulator()
     private var lastStreamingError: Error?
     private let audioSender = DeepgramFluxAudioSender()
@@ -221,6 +231,11 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     private func sendCloseStream() async throws {
         guard let task = webSocketTask else { return }
+        // Arm BEFORE the await: the server can process CloseStream and emit the
+        // final EndOfTurn while this actor is still suspended in `task.send`, so
+        // marking after the send would miss that flush. A send failure falls
+        // through to the batch fallback in stop(), so arming early is safe.
+        closeStreamRequested = true
         try await task.send(.string(#"{"type":"CloseStream"}"#))
     }
 
@@ -264,6 +279,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             // event=EndOfTurn — resume immediately instead of riding the
             // stop timeout or waiting for the socket to close.
             if isStopping, (json["event"] as? String) == "EndOfTurn" {
+                if closeStreamRequested { receivedFinalTurnAfterClose = true }
                 finishStopIfNeeded(error: nil)
             }
         case "FatalError":
@@ -294,6 +310,14 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private func waitForFinalTranscript(timeout: TimeInterval) async throws -> String {
         if let lastStreamingError, transcriptAccumulator.transcript.isEmpty {
             throw lastStreamingError
+        }
+
+        // A4: the post-close EndOfTurn may have already landed before we got
+        // here (it was dropped by finishStopIfNeeded because no continuation
+        // was installed yet). Return the accumulated transcript instead of
+        // riding the full timeout.
+        if receivedFinalTurnAfterClose {
+            return transcriptAccumulator.transcript
         }
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -355,6 +379,8 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         lastStreamingError = nil
         lastCaptureResult = nil
         isStopping = false
+        closeStreamRequested = false
+        receivedFinalTurnAfterClose = false
         sessionStartedAt = 0
         stopStartedAt = 0
         currentLanguage = "auto"
@@ -467,7 +493,14 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         stopTimeoutTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        stopContinuation = nil
+        // Resume (not just drop) a pending stop continuation: abandoning a
+        // CheckedContinuation leaks it, warns under strict concurrency, and
+        // suspends the awaiting stop() forever. finishStopIfNeeded() nils before
+        // resuming and both run on the MainActor, so this does not double-resume.
+        if let continuation = stopContinuation {
+            stopContinuation = nil
+            continuation.resume(throwing: CancellationError())
+        }
         resetPublishedState()
     }
 
@@ -475,4 +508,11 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         let nsError = error as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
+}
+
+// MARK: - TranscriptionEngineSession
+
+extension DeepgramFluxLiveTranscriber: TranscriptionEngineSession {
+    var isReady: Bool { isConfigured }
+    var isBusy: Bool { isStreaming || isStopping }
 }

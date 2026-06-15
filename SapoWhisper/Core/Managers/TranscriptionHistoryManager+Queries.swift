@@ -12,6 +12,18 @@ nonisolated extension TranscriptionHistoryManager {
         fetchEntries(limit: nil)
     }
 
+    /// Targeted single-row duration lookup for the retry path, so it does not
+    /// materialize the whole table via `fetchAll()` just to read one value.
+    func duration(for id: Int64) -> TimeInterval? {
+        let sql = "SELECT duration_seconds FROM transcriptions WHERE id = ?;"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        sqlite3_bind_int64(stmt, 1, id)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return sqlite3_column_double(stmt, 0)
+    }
+
     func fetchEntries(
         searchText: String = "",
         engineFilter: EngineFilter = .all,
@@ -94,7 +106,10 @@ nonisolated extension TranscriptionHistoryManager {
             sql += " WHERE " + conditions.joined(separator: " AND ")
         }
 
-        sql += " ORDER BY timestamp DESC"
+        // Tie-break by id so rows sharing a timestamp (two dictations in the same
+        // second) keep a stable order across separate LIMIT/OFFSET page queries —
+        // otherwise incremental paging could duplicate or skip a row.
+        sql += " ORDER BY timestamp DESC, id DESC"
 
         if let limit {
             sql += " LIMIT ? OFFSET ?"

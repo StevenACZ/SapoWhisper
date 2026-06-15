@@ -11,6 +11,8 @@ nonisolated extension TranscriptionHistoryManager {
     /// rows. Returns the number of deleted rows.
     @discardableResult
     func deleteEntries(olderThanDays days: Int) -> Int {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
         let iso = Self.isoFormatter.string(from: cutoff)
 
@@ -32,6 +34,8 @@ nonisolated extension TranscriptionHistoryManager {
     /// H5: clear the whole history (audio included). Returns the row count.
     @discardableResult
     func deleteAll() -> Int {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let paths = referencedAudioPaths()
 
         let deleteSql = "DELETE FROM transcriptions;"
@@ -50,6 +54,8 @@ nonisolated extension TranscriptionHistoryManager {
     }
 
     func enforceAudioStorageLimit() {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         audioStorage.deleteOrphanedAudioFiles(referencedPaths: referencedAudioPaths())
         guard audioStorage.directorySize() > HistoryAudioStorage.maxAudioStorageBytes else { return }
 
@@ -83,6 +89,8 @@ nonisolated extension TranscriptionHistoryManager {
 
     /// Delete a transcription entry and its audio file.
     func delete(id: Int64) {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let audioPath = audioPath(for: id)
         let deleteSql = "DELETE FROM transcriptions WHERE id = ?;"
         var deleteStmt: OpaquePointer?
