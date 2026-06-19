@@ -122,6 +122,9 @@ temp/
 *.m4a
 *.flac
 !SapoWhisper/Resources/Sounds/*.wav
+!TestAssets/
+!TestAssets/LocalAITranscription/
+!TestAssets/LocalAITranscription/*.wav
 
 # Local AI/editor context
 .agent/
