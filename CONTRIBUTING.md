@@ -20,7 +20,7 @@ make test
 ```
 
 - Keep changes focused and small.
-- Do not commit credentials, recordings, DMGs, logs, crash reports, local docs, or signing files.
+- Do not commit credentials, recordings, DMGs, logs, crash reports, local docs, or signing files. The only committed audio exception is the synthetic public fixture set in `TestAssets/LocalAITranscription/`.
 - Keep Release output Apple Silicon only unless Intel support is explicitly re-approved.
 - Use `make release-check` before release-size or packaging changes.
 - `make ci-check` (lint + Debug build + unit tests) is the PR gate.

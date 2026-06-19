@@ -8,11 +8,11 @@ Do not commit:
 - Google ADC or service account JSON files
 - Refresh tokens
 - `.env*` files
-- Local recordings
+- Local recordings, except the synthetic public fixtures under `TestAssets/LocalAITranscription/`
 - Logs, crash reports, DMGs, archives, or notarization/signing files
 - Personal Apple Developer Team IDs or local Xcode user data
 
-The app stores user-provided cloud credentials in the macOS Keychain (one consolidated item); only non-secret presence hints (key names) are mirrored to UserDefaults. Credentials should never appear in source control.
+The app stores user-provided cloud credentials and optional local-server bearer tokens in the macOS Keychain (one consolidated item); only non-secret presence hints (key names) are mirrored to UserDefaults. Credentials should never appear in source control.
 
 ## Reporting
 

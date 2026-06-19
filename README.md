@@ -18,12 +18,31 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 | Engine | Mode | Best for |
 |---|---|---|
 | WhisperKit | Local | Private offline transcription. |
+| Local AI Server (NVIDIA) | Batch LAN | Offloading transcription to a local NVIDIA GPU server with an OpenAI-style STT endpoint. |
 | Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
 | Deepgram Flux Live | Realtime | Low-latency streaming with WAV backup. |
 | ElevenLabs Scribe v2 | Batch | Accurate Scribe transcription. |
 | ElevenLabs Scribe Realtime v2 | Realtime | Low-latency Scribe with committed-text buffering. |
 
-Cloud credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+Cloud and optional local-server credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+
+### Local AI Server Fixtures
+
+`TestAssets/LocalAITranscription/` contains public synthetic WAV fixtures for local STT testing:
+
+- `sample-1m.wav`
+- `sample-2m.wav`
+- `sample-3m.wav`
+- `sample-6m.wav`
+
+Use `scripts/local_stt_benchmark.sh` with any OpenAI-compatible local STT server:
+
+```bash
+BASE_URL=http://YOUR_SERVER_IP:8000 \
+MODEL_ID=rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo \
+AUDIO_PATH=TestAssets/LocalAITranscription/sample-1m.wav \
+scripts/local_stt_benchmark.sh
+```
 
 ## 🧰 Requirements
 
