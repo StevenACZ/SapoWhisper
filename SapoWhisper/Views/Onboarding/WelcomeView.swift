@@ -431,6 +431,14 @@ private struct WelcomeEngineStep: View {
                         select(.whisperLocal)
                     }
 
+                    WelcomeLocalAIServerCard(
+                        viewModel: viewModel,
+                        isSelected: selectedCard == .localAIServer,
+                        selectionNamespace: selectionNamespace
+                    ) {
+                        select(.localAIServer)
+                    }
+
                     WelcomeCloudEngineCard(
                         viewModel: viewModel,
                         engine: .deepgram,
@@ -466,6 +474,9 @@ private struct WelcomeEngineStep: View {
     private func select(_ engine: TranscriptionEngine) {
         withAnimation(.smooth(duration: 0.3)) {
             selectedCard = engine
+        }
+        if viewModel.isEngineReady(engine) {
+            viewModel.setEngine(engine)
         }
     }
 }
@@ -598,6 +609,99 @@ private struct WelcomeWhisperCard: View {
     private func startDownload(_ model: WhisperKitModel) {
         viewModel.selectedWhisperModel = model.rawValue
         viewModel.setEngine(.whisperLocal)
+    }
+}
+
+private struct WelcomeLocalAIServerCard: View {
+    @ObservedObject var viewModel: SapoWhisperViewModel
+    let isSelected: Bool
+    let selectionNamespace: Namespace.ID
+    let onSelect: () -> Void
+
+    @AppStorage(Constants.StorageKeys.localAIServerBaseURL) private var baseURL = ""
+    @AppStorage(Constants.StorageKeys.localAIServerModel) private var model = LocalAIServerConfiguration.defaultModel
+    @State private var apiKey = ""
+    @State private var shakeTrigger = 0
+
+    private var isReady: Bool {
+        viewModel.isEngineReady(.localAIServer)
+    }
+
+    private var canSave: Bool {
+        LocalAIServerConfiguration.normalizedBaseURL(from: baseURL) != nil
+            && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: onSelect) {
+                WelcomeEngineCardHeader(
+                    engine: .localAIServer,
+                    tagline: "welcome.local_ai_tagline".localized,
+                    isReady: isReady
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isSelected {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("config.local_ai_base_url_placeholder".localized, text: $baseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+
+                    HStack(spacing: 8) {
+                        TextField("config.local_ai_model_placeholder".localized, text: $model)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+
+                        Menu("config.local_ai_model_suggestions".localized) {
+                            ForEach(LocalAIServerConfiguration.suggestedModels, id: \.self) { suggestedModel in
+                                Button(suggestedModel) {
+                                    model = suggestedModel
+                                }
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                    }
+
+                    SecureField("config.local_ai_api_key_placeholder".localized, text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12, design: .monospaced))
+
+                    HStack(spacing: 8) {
+                        Button("welcome.local_ai_use_server".localized, action: save)
+                            .buttonStyle(.bordered)
+                            .disabled(!canSave)
+
+                        Text("welcome.local_ai_key_optional".localized)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+                    }
+                }
+                .modifier(ShakeEffect(trigger: shakeTrigger))
+                .transition(.opacity)
+            }
+        }
+        .modifier(WelcomeEngineCardChrome(isSelected: isSelected, selectionNamespace: selectionNamespace))
+        .onAppear {
+            if KeychainStore.hasValue(for: .localAIServerAPIKey) {
+                apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
+            }
+        }
+    }
+
+    private func save() {
+        guard canSave else {
+            withAnimation(.spring(duration: 0.4)) {
+                shakeTrigger += 1
+            }
+            return
+        }
+        KeychainStore.setString(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: .localAIServerAPIKey)
+        viewModel.setEngine(.localAIServer)
     }
 }
 

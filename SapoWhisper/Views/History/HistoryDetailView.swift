@@ -324,6 +324,7 @@ struct HistoryDetailView: View {
 
     private var engineColor: Color {
         switch entry.engine.lowercased() {
+        case let e where e.contains("local ai"): return .indigo
         case let e where e.contains("elevenlabs"): return .teal
         case let e where e.contains("deepgram"): return .blue
         case let e where e.contains("gemini"): return .cyan

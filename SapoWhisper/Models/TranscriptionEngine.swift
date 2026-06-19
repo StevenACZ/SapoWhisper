@@ -9,6 +9,7 @@ import Foundation
 /// Motor de transcripción disponible
 nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
     case whisperLocal = "whisper"
+    case localAIServer = "local_ai_server"
     case deepgram = "deepgram"
     case elevenLabsScribe = "elevenlabs_scribe"
 
@@ -18,6 +19,8 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
         switch self {
         case .whisperLocal:
             return "Whisper (Local)"
+        case .localAIServer:
+            return "Local AI Server (NVIDIA)"
         case .deepgram:
             return "Deepgram"
         case .elevenLabsScribe:
@@ -30,6 +33,8 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
         switch self {
         case .whisperLocal:
             return "engine.whisper.description".localized
+        case .localAIServer:
+            return "engine.local_ai_server.description".localized
         case .deepgram:
             return "engine.deepgram.description".localized
         case .elevenLabsScribe:
@@ -41,6 +46,8 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
         switch self {
         case .whisperLocal:
             return "desktopcomputer"
+        case .localAIServer:
+            return "server.rack"
         case .deepgram:
             return "waveform.badge.mic"
         case .elevenLabsScribe:
@@ -50,7 +57,7 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
 
     var requiresInternet: Bool {
         switch self {
-        case .whisperLocal:
+        case .whisperLocal, .localAIServer:
             return false
         case .deepgram, .elevenLabsScribe:
             return true

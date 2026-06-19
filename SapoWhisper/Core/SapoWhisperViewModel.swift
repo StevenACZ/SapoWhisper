@@ -50,7 +50,7 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - AppStorage Properties
 
     /// New installs auto-detect the spoken language; every current engine
-    /// (WhisperKit, Deepgram, ElevenLabs) supports detection natively.
+    /// (WhisperKit, Local AI Server, Deepgram, ElevenLabs) supports detection natively.
     @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
@@ -65,6 +65,8 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
+    @AppStorage(Constants.StorageKeys.localAIServerModel) var selectedLocalAIServerModel: String =
+        LocalAIServerConfiguration.defaultModel
 
     // MARK: - Managers
 
@@ -76,6 +78,7 @@ class SapoWhisperViewModel: ObservableObject {
     let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
     let elevenLabsTranscriber = ElevenLabsScribeTranscriber()
     let elevenLabsRealtimeTranscriber = ElevenLabsScribeRealtimeTranscriber()
+    let localAIServerTranscriber = LocalAIServerTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
     private let transcriptPostProcessor = TranscriptPostProcessor()
 
@@ -158,6 +161,8 @@ class SapoWhisperViewModel: ObservableObject {
         switch engine {
         case .whisperLocal:
             return EngineSessions(readiness: whisperKitTranscriber, busy: [whisperKitTranscriber])
+        case .localAIServer:
+            return EngineSessions(readiness: localAIServerTranscriber, busy: [localAIServerTranscriber])
         case .deepgram:
             return EngineSessions(
                 readiness: deepgramTranscriber,
@@ -1642,6 +1647,8 @@ class SapoWhisperViewModel: ObservableObject {
             return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .localAIServer:
+            return try await localAIServerTranscriber.transcribe(audioURL: audioURL, language: language)
         case .elevenLabsScribe:
             switch currentElevenLabsMode {
             case .scribeV2Batch:
@@ -1656,6 +1663,8 @@ class SapoWhisperViewModel: ObservableObject {
         switch engine {
         case .elevenLabsScribe:
             return currentElevenLabsMode.historyName
+        case .localAIServer:
+            return "Local AI Server · \(LocalAIServerConfiguration.storedModel)"
         default:
             return engine.displayName
         }

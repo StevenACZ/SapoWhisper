@@ -139,5 +139,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertFalse(EngineFilter.other.matches("Deepgram Nova-3"))
         XCTAssertTrue(EngineFilter.elevenLabs.matches("ElevenLabs Scribe Realtime v2"))
         XCTAssertTrue(EngineFilter.whisper.matches("Whisper (Local)"))
+        XCTAssertTrue(EngineFilter.localAI.matches("Local AI Server · Systran/faster-whisper-small"))
+        XCTAssertFalse(EngineFilter.other.matches("Local AI Server · Systran/faster-whisper-small"))
     }
 }

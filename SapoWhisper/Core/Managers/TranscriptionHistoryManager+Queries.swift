@@ -237,14 +237,16 @@ nonisolated extension TranscriptionHistoryManager {
             return nil
         case .whisper:
             return ("engine LIKE ? COLLATE NOCASE", ["%whisper%"])
+        case .localAI:
+            return ("engine LIKE ? COLLATE NOCASE", ["%local ai%"])
         case .deepgram:
             return ("engine LIKE ? COLLATE NOCASE", ["%deepgram%"])
         case .elevenLabs:
             return ("engine LIKE ? COLLATE NOCASE", ["%elevenlabs%"])
         case .other:
             return (
-                "engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE",
-                ["%whisper%", "%deepgram%", "%elevenlabs%"]
+                "engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE AND engine NOT LIKE ? COLLATE NOCASE",
+                ["%whisper%", "%local ai%", "%deepgram%", "%elevenlabs%"]
             )
         }
     }

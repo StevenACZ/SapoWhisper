@@ -30,6 +30,20 @@ final class PolishProviderTests: XCTestCase {
                 endpoint: .custom, model: "llama3.2", customBaseURL: "not a url", apiKey: ""))
     }
 
+    func testHostedPolishPausesOfflineButCustomDoesNot() throws {
+        let suiteName = "test.sapowhisper.polish-offline.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(true, forKey: Constants.StorageKeys.aiPolishEnabled)
+        defaults.set(PolishEndpoint.openRouter.rawValue, forKey: Constants.StorageKeys.aiPolishEndpoint)
+        XCTAssertTrue(PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults, isOffline: true))
+
+        defaults.set(PolishEndpoint.custom.rawValue, forKey: Constants.StorageKeys.aiPolishEndpoint)
+        XCTAssertFalse(PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults, isOffline: true))
+        XCTAssertFalse(PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults, isOffline: false))
+    }
+
     func testPromptBuilderSanitizesHintsAndWrapsContext() {
         let profile = PromptProfile(
             id: "automatic",

@@ -110,6 +110,8 @@ nonisolated enum Constants {
         static let whisperKitModel = "whisperKitModel"
         /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
         static let whisperKitUnloadAfterMinutes = "whisperKitUnloadAfterMinutes"
+        static let localAIServerBaseURL = "localAIServerBaseURL"
+        static let localAIServerModel = "localAIServerModel"
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"

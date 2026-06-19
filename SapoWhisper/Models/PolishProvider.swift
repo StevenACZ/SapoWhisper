@@ -81,6 +81,11 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
     var requiresAPIKey: Bool {
         self != .custom
     }
+
+    /// Hosted presets need internet; custom endpoints may be LAN-only.
+    var requiresInternet: Bool {
+        self != .custom
+    }
 }
 
 /// Resolved polish provider settings (endpoint + model + key), read from
@@ -93,6 +98,8 @@ struct PolishProviderConfiguration {
 
     /// Identifier persisted in history metadata, e.g. `openrouter/openai/gpt-5.4-nano`.
     var modelIdentifier: String { "\(endpoint.rawValue)/\(model)" }
+
+    var requiresInternet: Bool { endpoint.requiresInternet }
 
     static func current(defaults: UserDefaults = .standard) -> PolishProviderConfiguration? {
         let endpointValue =
@@ -112,6 +119,21 @@ struct PolishProviderConfiguration {
         }
 
         return PolishProviderConfiguration(endpoint: endpoint, baseURL: baseURL, model: model, apiKey: apiKey)
+    }
+
+    static func currentEndpoint(defaults: UserDefaults = .standard) -> PolishEndpoint {
+        let endpointValue =
+            defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
+        return PolishEndpoint(rawValue: endpointValue) ?? .default
+    }
+
+    static func hostedEndpointIsPausedOffline(
+        defaults: UserDefaults = .standard,
+        isOffline: Bool = NetworkReachability.shared.isOffline
+    ) -> Bool {
+        defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
+            && isOffline
+            && currentEndpoint(defaults: defaults).requiresInternet
     }
 
     /// Like `current() != nil`, but checks key presence through KeychainStore's

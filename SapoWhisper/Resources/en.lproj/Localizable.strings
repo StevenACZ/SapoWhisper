@@ -81,6 +81,7 @@
 "history.filter_all" = "All";
 "history.filter_deepgram" = "Deepgram";
 "history.filter_whisper" = "Whisper";
+"history.filter_local_ai" = "Local AI";
 "history.filter_elevenlabs" = "ElevenLabs";
 "history.filter_other" = "Other engines";
 "history.final_text" = "Final text";
@@ -157,6 +158,7 @@
 "info.privacy_title" = "Privacy";
 "info.privacy.whisper" = "Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.";
 "info.privacy.deepgram" = "Nova-3 or Flux Live cloud transcription. Requires an API key.";
+"info.privacy.local_ai" = "Audio is sent only to the LAN server you configure. Optional API key support is available for protected servers.";
 "info.privacy.elevenlabs" = "Scribe v2 (batch or realtime) cloud transcription. Requires an API key.";
 "info.privacy.ai_polish" = "Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
 "about.version_copy_help" = "Click to copy the version";
@@ -175,7 +177,7 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Download a model first";
 "status.recording_generic" = "Recording...";
-"config.subtitle_info" = "Speech-to-Text with WhisperKit, Deepgram, ElevenLabs, and AI Polish";
+"config.subtitle_info" = "Speech-to-Text with WhisperKit, Local AI Server, Deepgram, ElevenLabs, and AI Polish";
 "app.description" = "Speech-to-Text local and cloud";
 "config.coming_soon" = "Coming Soon";
 "config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
@@ -183,6 +185,7 @@
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
+"engine.local_ai_server.description" = "Local NVIDIA server over LAN. Your Mac records; the GPU server transcribes.";
 
 /* AI Polish */
 "ai.polish.title" = "AI Polish";
@@ -380,6 +383,24 @@
 "config.deepgram_key_missing" = "API key not configured";
 "config.deepgram_key_configured" = "API key configured";
 
+/* Local AI Server Engine */
+"config.local_ai_base_url" = "Base URL";
+"config.local_ai_base_url_placeholder" = "http://your-server.local:8000";
+"config.local_ai_model" = "Model ID";
+"config.local_ai_model_placeholder" = "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo";
+"config.local_ai_model_suggestions" = "Suggestions";
+"config.local_ai_api_key" = "API key (optional)";
+"config.local_ai_api_key_placeholder" = "Optional bearer token";
+"config.local_ai_api_key_desc" = "Leave empty for a trusted LAN server. If your server requires auth, SapoWhisper sends it as Bearer.";
+"config.local_ai_missing" = "Base URL or model missing";
+"config.local_ai_configured" = "Server configuration saved";
+"config.local_ai_test" = "Test connection";
+"config.local_ai_test_success" = "Connected. Model is listed.";
+"config.local_ai_test_model_unlisted" = "Connected. Model was not listed; the server may download it on first use.";
+"local_ai_server.error_invalid_url" = "Enter a valid http:// or https:// server URL and model.";
+"local_ai_server.error_invalid_response" = "Unexpected server response: %@";
+"local_ai_server.error_http" = "Server returned HTTP %@: %@";
+
 /* ElevenLabs Engine */
 "engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Highest accuracy, requires internet and an API key.";
 "config.elevenlabs_mode" = "Transcription mode";
@@ -540,10 +561,13 @@
 "welcome.engine_subtitle" = "Pick how your voice becomes text. You can switch anytime in Settings.";
 "welcome.engine_required" = "Set up one engine to continue";
 "welcome.whisper_tagline" = "Free · Private · Offline";
+"welcome.local_ai_tagline" = "LAN · NVIDIA GPU · OpenAI-style STT";
 "welcome.deepgram_tagline" = "Fastest · nova-3 / Flux live";
 "welcome.elevenlabs_tagline" = "Scribe v2 · batch / realtime";
 "welcome.whisper_pick_model" = "Pick a model to download:";
 "welcome.whisper_downloading" = "Downloading model…";
+"welcome.local_ai_use_server" = "Use server";
+"welcome.local_ai_key_optional" = "API key is optional";
 "welcome.key_placeholder" = "Paste your API key";
 "welcome.key_validate" = "Validate";
 "welcome.key_invalid" = "That key was rejected. Check it and try again.";
@@ -562,3 +586,4 @@
 "menu.setup_pending_title" = "Finish setting up";
 "menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";
 "menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";
+"menu.offline_polish_hint" = "AI polish paused offline; local transcription still works.";

@@ -45,6 +45,11 @@ final class TranscriptPostProcessor {
             return makeResult(rawText: rawText, finalText: trimmed, status: .none, startedAt: startedAt)
         }
 
+        guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults) else {
+            SapoLog.ai.info("AI polish skipped reason=offline-hosted-provider")
+            return makeResult(rawText: rawText, finalText: trimmed, status: .none, startedAt: startedAt)
+        }
+
         guard let configuration = PolishProviderConfiguration.current() else {
             // Enabled but no usable provider: dictation must never block on
             // polish, so the raw transcript ships untouched.
@@ -257,6 +262,7 @@ final class TranscriptPostProcessor {
         guard !trimmed.isEmpty else { return false }
 
         let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
+        guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline() else { return false }
         guard enabled, polisher.isConfigured else { return false }
 
         return force || (!Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(trimmed))

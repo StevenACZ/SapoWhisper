@@ -36,6 +36,8 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var whisperKitModel: String
     var deepgramTranscriptionMode: String
     var elevenLabsTranscriptionMode: String?
+    var localAIServerBaseURL: String?
+    var localAIServerModel: String?
     var hotkeyTriggerKind: String?
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
@@ -277,6 +279,9 @@ struct SettingsTransferManager {
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
             elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
                 ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
+            localAIServerBaseURL: defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL),
+            localAIServerModel: defaults.string(forKey: Constants.StorageKeys.localAIServerModel)
+                ?? LocalAIServerConfiguration.defaultModel,
             hotkeyTriggerKind: defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
                 ?? Constants.Hotkey.defaultTriggerKind,
             hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
@@ -329,6 +334,13 @@ struct SettingsTransferManager {
             defaults.set(
                 preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
                 forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
+            )
+            if let baseURL = preferences.localAIServerBaseURL {
+                defaults.set(baseURL, forKey: Constants.StorageKeys.localAIServerBaseURL)
+            }
+            defaults.set(
+                preferences.localAIServerModel ?? LocalAIServerConfiguration.defaultModel,
+                forKey: Constants.StorageKeys.localAIServerModel
             )
         }
 

@@ -159,6 +159,11 @@ final class TranscriptionEngineSessionTests: XCTestCase {
             "Deepgram must keep its Flux live session in the busy set"
         )
 
+        let localAI = viewModel.engineSessions(for: .localAIServer)
+        XCTAssertTrue(localAI.readiness === viewModel.localAIServerTranscriber)
+        XCTAssertEqual(localAI.busy.count, 1)
+        XCTAssertTrue(localAI.busy.contains { $0 === viewModel.localAIServerTranscriber })
+
         let eleven = viewModel.engineSessions(for: .elevenLabsScribe)
         XCTAssertTrue(eleven.readiness === viewModel.elevenLabsTranscriber)
         XCTAssertTrue(eleven.busy.contains { $0 === viewModel.elevenLabsTranscriber })

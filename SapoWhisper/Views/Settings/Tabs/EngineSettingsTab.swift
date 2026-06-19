@@ -11,6 +11,8 @@ struct EngineSettingsTab: View {
         DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
+    @AppStorage(Constants.StorageKeys.localAIServerModel) private var selectedLocalAIServerModel =
+        LocalAIServerConfiguration.defaultModel
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
@@ -71,6 +73,8 @@ struct EngineSettingsTab: View {
         switch engine {
         case .whisperLocal:
             WhisperKitSettingsCard(viewModel: viewModel, isEmbedded: true)
+        case .localAIServer:
+            LocalAIServerSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .deepgram:
             DeepgramSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .elevenLabsScribe:
@@ -161,6 +165,13 @@ struct EngineSettingsTab: View {
         case .whisperLocal:
             let model = WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
             return ("memorychip", "config.engine_summary_model".localized, model.displayName)
+        case .localAIServer:
+            let model = selectedLocalAIServerModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (
+                "server.rack",
+                "config.engine_summary_model".localized,
+                model.isEmpty ? LocalAIServerConfiguration.defaultModel : model
+            )
         case .deepgram:
             let mode = DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3
             return (mode.icon, "config.engine_summary_mode".localized, mode.displayName)
