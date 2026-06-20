@@ -98,8 +98,8 @@ final class AudioInputPreflightManager {
             ? deviceManager.getSystemDefaultInputDevice()
             : deviceManager.getDeviceID(for: selectedUID)
 
-        _ = deviceID.flatMap { queryInputFormat(deviceID: $0) }
-        warmAVAudioInputNode(deviceID: deviceID, selectedUID: selectedUID)
+        let hardwareFormat = deviceID.flatMap { queryInputFormat(deviceID: $0) }
+        warmAVAudioInputNode(deviceID: deviceID, selectedUID: selectedUID, hardwareFormat: hardwareFormat)
 
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         SapoLog.audioRoute.info(
@@ -107,7 +107,7 @@ final class AudioInputPreflightManager {
         )
     }
 
-    private func warmAVAudioInputNode(deviceID: AudioDeviceID?, selectedUID: String) {
+    private func warmAVAudioInputNode(deviceID: AudioDeviceID?, selectedUID: String, hardwareFormat: AVAudioFormat?) {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
 
@@ -126,12 +126,13 @@ final class AudioInputPreflightManager {
             )
         }
 
-        _ = inputNode.outputFormat(forBus: 0)
+        let tapFormat = hardwareFormat ?? inputNode.outputFormat(forBus: 0)
+        guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else { return }
 
         // L4: prepare()+reset() never touched the HAL, so the first recording
         // still paid full route setup. A brief muted start()/stop() forces the
         // I/O unit to open the device; the tap discards every buffer.
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { _, _ in }
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { _, _ in }
         inputNode.volume = 0
         engine.prepare()
         do {
