@@ -21,7 +21,8 @@ enum TranscriptPolishPromptBuilder {
         personalContext: String,
         outputLanguage: TranscriptPolishOutputLanguage,
         keyterms: [String],
-        replacements: [String: String]
+        replacements: [String: String],
+        memoryContext: AIPolishMemoryContext? = nil
     ) -> TranscriptPolishMessages {
         let keytermBlock =
             keyterms.isEmpty
@@ -48,6 +49,14 @@ enum TranscriptPolishPromptBuilder {
             </user_profile>
             Use the profile only to disambiguate wording, tools, and likely technical terms. Never add profile details the transcript does not ask for.
             """
+        let memoryContextSection =
+            memoryContext.map { context in
+                """
+
+
+                \(context.promptBlock)
+                """
+            } ?? ""
 
         let system = """
             You polish speech-to-text output. Return ONLY the polished text — no preamble, no explanations, no surrounding quotes, no code fences. Your output is pasted verbatim wherever the user is typing.
@@ -90,7 +99,7 @@ enum TranscriptPolishPromptBuilder {
 
             <replacement_hints>
             \(replacementBlock)
-            </replacement_hints>\(translationReminder(for: outputLanguage))
+            </replacement_hints>\(memoryContextSection)\(translationReminder(for: outputLanguage))
             """
 
         return TranscriptPolishMessages(system: system, user: rawText)

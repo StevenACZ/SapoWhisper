@@ -211,23 +211,27 @@
 "ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while staying literal — your words, your order. A fidelity guard pastes the raw transcript whenever the AI drifts.";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
+"ai.provider.endpoint_local_server" = "Local Server";
 "ai.provider.endpoint_custom" = "Custom";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
 "ai.provider.model" = "Model";
 "ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
 "ai.provider.api_key" = "API key";
+"ai.provider.api_key_optional" = "API key (optional)";
 "ai.provider.api_key_placeholder" = "Paste your API key";
 "ai.provider.api_key_hint" = "Stored securely in your macOS Keychain.";
+"ai.provider.api_key_optional_hint" = "Optional for local servers; stored securely when provided.";
 "ai.provider.test" = "Test connection";
 "ai.provider.test_success" = "Works · %@";
-"ai.provider.needs_key" = "Add an API key and model to run AI polish. Get a key at openrouter.ai.";
+"ai.provider.needs_key" = "Add provider details to run AI polish.";
+"ai.provider.needs_configuration" = "Add provider details to run AI polish.";
 "ai.provider.summary_edit" = "Edit";
 "ai.provider.summary_done" = "Done";
-"ai.provider.summary_key_help" = "API key saved in the macOS Keychain.";
+"ai.provider.summary_key_help" = "AI polish provider is ready.";
 "ai.provider.model_suggestions_help" = "Suggested models";
 "ai.provider.model_custom_hint" = "Accepts any model ID from openrouter.ai/models (e.g. qwen/qwen3-32b).";
 "ai.polish.fidelity_max" = "Fidelity at max";
-"ai.provider.error_not_configured" = "AI polish is not configured (missing API key or model).";
+"ai.provider.error_not_configured" = "AI polish is not configured (missing provider details).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
 "ai.provider.error_http" = "AI provider error (%@): %@";
 "ai.google_change_json" = "Change JSON";
@@ -439,7 +443,7 @@
 "config.replace_to" = "Replace with";
 "config.replacements_desc" = "Automatically correct words in the transcription output";
 "config.add" = "Add";
-"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by Deepgram and AI polish.";
+"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by transcription engines and AI polish.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
 "settings.vocabulary.empty" = "No results";
 "settings.vocabulary.export" = "Export";
@@ -449,6 +453,12 @@
 "settings.vocabulary.export_success" = "Vocabulary exported.";
 "settings.vocabulary.import_success" = "Vocabulary imported.";
 "settings.vocabulary.transfer_help" = "Export or import vocabulary";
+"vocab.learning.title" = "Learned suggestions";
+"vocab.learning.desc" = "AI polish saves likely speech-to-text corrections here. Accept one to add it to automatic corrections, edit it first, or ignore it.";
+"vocab.learning.accept" = "Accept correction";
+"vocab.learning.edit" = "Edit before saving";
+"vocab.learning.ignore" = "Ignore suggestion";
+"vocab.learning.occurrences" = "Seen %@ times";
 
 /* Vocabulary metrics & empty states */
 "vocab.metrics.pace" = "Pace";
@@ -586,7 +596,7 @@
 "welcome.key_invalid" = "That key was rejected. Check it and try again.";
 "welcome.key_server_error" = "The service answered with an error (%@). Try again.";
 "welcome.ai_title" = "AI polish (optional)";
-"welcome.ai_subtitle" = "Have an OpenRouter, OpenAI, or Groq API key? Turn on AI polish: it removes fillers and fixes punctuation without changing your words. If not, just skip — dictation works fully without it.";
+"welcome.ai_subtitle" = "Use a Local Server or your own OpenAI-compatible provider for AI polish. It removes fillers and fixes punctuation without changing your words. If not, just skip — dictation works fully without it.";
 "welcome.ai_footnote" = "You can enable or tune this later in Settings → Engine. The key is stored in your macOS Keychain.";
 "welcome.ready_title" = "You're all set!";
 "welcome.ready_subtitle" = "Press %@, say something, and press it again. The text lands wherever your cursor is.";

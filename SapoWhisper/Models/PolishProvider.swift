@@ -9,6 +9,7 @@ import Foundation
 /// speaks the same `chat/completions` protocol; only the base URL changes.
 enum PolishEndpoint: String, CaseIterable, Identifiable {
     case openRouter = "openrouter"
+    case localServer = "local_server"
     case openAI = "openai"
     case groq
     case custom
@@ -21,6 +22,8 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         switch self {
         case .openRouter:
             return "OpenRouter"
+        case .localServer:
+            return "ai.provider.endpoint_local_server".localized
         case .openAI:
             return "OpenAI"
         case .groq:
@@ -35,6 +38,8 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         switch self {
         case .openRouter:
             return "https://openrouter.ai/api/v1"
+        case .localServer:
+            return "http://localhost:8081/v1"
         case .openAI:
             return "https://api.openai.com/v1"
         case .groq:
@@ -48,6 +53,8 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         switch self {
         case .openRouter:
             return "openai/gpt-5.4-nano"
+        case .localServer:
+            return "qwen3.6-35b-a3b"
         case .openAI:
             return "gpt-5.4-nano"
         case .groq, .custom:
@@ -71,6 +78,8 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
             ]
         case .openAI:
             return ["gpt-5.4-nano", "gpt-5.4-mini"]
+        case .localServer:
+            return ["qwen3.6-35b-a3b", "qwen36"]
         case .groq, .custom:
             return []
         }
@@ -79,12 +88,12 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
     /// Local OpenAI-compatible servers (Ollama, LM Studio) accept requests
     /// without an API key; hosted presets require one.
     var requiresAPIKey: Bool {
-        self != .custom
+        self != .custom && self != .localServer
     }
 
     /// Hosted presets need internet; custom endpoints may be LAN-only.
     var requiresInternet: Bool {
-        self != .custom
+        self != .custom && self != .localServer
     }
 }
 

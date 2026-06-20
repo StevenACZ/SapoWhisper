@@ -30,6 +30,16 @@ final class PolishProviderTests: XCTestCase {
                 endpoint: .custom, model: "llama3.2", customBaseURL: "not a url", apiKey: ""))
     }
 
+    func testLocalServerPresetUsesLANDefaultsWithoutKey() {
+        XCTAssertEqual(PolishEndpoint.localServer.presetBaseURL, "http://localhost:8081/v1")
+        XCTAssertEqual(PolishEndpoint.localServer.defaultModel, "qwen3.6-35b-a3b")
+        XCTAssertFalse(PolishEndpoint.localServer.requiresAPIKey)
+        XCTAssertFalse(PolishEndpoint.localServer.requiresInternet)
+        XCTAssertTrue(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .localServer, model: PolishEndpoint.localServer.defaultModel, customBaseURL: "", apiKey: ""))
+    }
+
     func testHostedPolishPausesOfflineButCustomDoesNot() throws {
         let suiteName = "test.sapowhisper.polish-offline.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -42,6 +52,9 @@ final class PolishProviderTests: XCTestCase {
         defaults.set(PolishEndpoint.custom.rawValue, forKey: Constants.StorageKeys.aiPolishEndpoint)
         XCTAssertFalse(PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults, isOffline: true))
         XCTAssertFalse(PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults, isOffline: false))
+
+        defaults.set(PolishEndpoint.localServer.rawValue, forKey: Constants.StorageKeys.aiPolishEndpoint)
+        XCTAssertFalse(PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults, isOffline: true))
     }
 
     func testPromptBuilderSanitizesHintsAndWrapsContext() {

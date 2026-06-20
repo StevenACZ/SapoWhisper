@@ -84,7 +84,10 @@ final class TranscriptPrePolishCorrectionTests: XCTestCase {
         vocabularyManager.addKeyterm("SapoWhisper")
         vocabularyManager.addKeyterm("CLAUDE.md")
 
-        let processor = TranscriptPostProcessor(vocabularyManager: vocabularyManager)
+        let memoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pre-polish-memory-\(UUID().uuidString).json")
+        let memoryManager = AIPolishMemoryManager(fileURL: memoryURL)
+        let processor = TranscriptPostProcessor(vocabularyManager: vocabularyManager, memoryManager: memoryManager)
         let result = await processor.process(rawText: "open sap o whisper and claude dot md")
 
         XCTAssertEqual(result.status, .none)

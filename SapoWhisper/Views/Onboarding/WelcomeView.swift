@@ -845,7 +845,7 @@ private struct WelcomeAIPolishStep: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ai.provider.api_key".localized)
+                        Text(endpoint.requiresAPIKey ? "ai.provider.api_key".localized : "ai.provider.api_key_optional".localized)
                             .font(.subheadline)
                         SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
                             .textFieldStyle(.roundedBorder)

@@ -67,7 +67,7 @@ struct AIPolishProviderSection: View {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
-                    .help("ai.provider.needs_key".localized)
+                    .help("ai.provider.needs_configuration".localized)
             }
 
             Spacer(minLength: 8)
@@ -156,7 +156,7 @@ struct AIPolishProviderSection: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("ai.provider.api_key_hint".localized)
+                Text(endpoint.requiresAPIKey ? "ai.provider.api_key_hint".localized : "ai.provider.api_key_optional_hint".localized)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .font(.caption2)
@@ -178,7 +178,7 @@ struct AIPolishProviderSection: View {
 
     private var apiKeyRow: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("ai.provider.api_key".localized)
+            Text(endpoint.requiresAPIKey ? "ai.provider.api_key".localized : "ai.provider.api_key_optional".localized)
                 .font(.subheadline)
 
             SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)

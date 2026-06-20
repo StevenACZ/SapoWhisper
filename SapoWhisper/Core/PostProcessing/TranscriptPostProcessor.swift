@@ -21,13 +21,16 @@ final class TranscriptPostProcessor {
 
     private let polisher: OpenAICompatiblePolisher
     private let vocabularyManager: VocabularyManager
+    private let memoryManager: AIPolishMemoryManager
 
     init(
         polisher: OpenAICompatiblePolisher = OpenAICompatiblePolisher(),
-        vocabularyManager: VocabularyManager = .shared
+        vocabularyManager: VocabularyManager = .shared,
+        memoryManager: AIPolishMemoryManager = .shared
     ) {
         self.polisher = polisher
         self.vocabularyManager = vocabularyManager
+        self.memoryManager = memoryManager
     }
 
     func process(
@@ -48,23 +51,52 @@ final class TranscriptPostProcessor {
             .applyingRecognitionCorrections(to: trimmed)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let transcript = recognitionCorrectedText.isEmpty ? trimmed : recognitionCorrectedText
+        let keyterms = vocabularyManager.keyterms
+        let replacements = vocabularyManager.replacements
+
+        func finish(
+            finalText: String,
+            status: TranscriptAIStatus,
+            model: String? = nil,
+            mode: String? = nil,
+            error: String? = nil
+        ) -> TranscriptAIResult {
+            let result = makeResult(
+                rawText: transcript,
+                finalText: finalText,
+                status: status,
+                model: model,
+                mode: mode,
+                error: error,
+                startedAt: startedAt
+            )
+            memoryManager.record(
+                observedRawText: trimmed,
+                correctedText: transcript,
+                finalText: result.finalText,
+                status: result.status,
+                keyterms: keyterms,
+                replacements: replacements
+            )
+            return result
+        }
 
         let defaults = UserDefaults.standard
         let enabled = defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
         guard enabled else {
-            return makeResult(rawText: transcript, finalText: transcript, status: .none, startedAt: startedAt)
+            return finish(finalText: transcript, status: .none)
         }
 
         guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults) else {
             SapoLog.ai.info("AI polish skipped reason=offline-hosted-provider")
-            return makeResult(rawText: transcript, finalText: transcript, status: .none, startedAt: startedAt)
+            return finish(finalText: transcript, status: .none)
         }
 
         guard let configuration = PolishProviderConfiguration.current() else {
             // Enabled but no usable provider: dictation must never block on
             // polish, so the raw transcript ships untouched.
             SapoLog.ai.info("AI polish skipped reason=not-configured")
-            return makeResult(rawText: transcript, finalText: transcript, status: .none, startedAt: startedAt)
+            return finish(finalText: transcript, status: .none)
         }
 
         let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
@@ -72,39 +104,39 @@ final class TranscriptPostProcessor {
         let outputLanguageValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
-        var outputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
-        if promptProfile.forcesEnglish {
-            outputLanguage = .english
-        }
+        let selectedOutputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
+        let outputLanguage = promptProfile.forcesEnglish ? TranscriptPolishOutputLanguage.english : selectedOutputLanguage
 
         guard force || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
-            return makeResult(
-                rawText: transcript,
+            return finish(
                 finalText: transcript,
                 status: .skippedDuration,
-                mode: promptProfile.id,
-                startedAt: startedAt
+                mode: promptProfile.id
             )
         }
 
         guard force || !Self.shouldSkipPolish(transcript) else {
-            return makeResult(
-                rawText: transcript,
+            return finish(
                 finalText: transcript,
                 status: .skippedShort,
-                mode: promptProfile.id,
-                startedAt: startedAt
+                mode: promptProfile.id
             )
         }
 
-        let keyterms = vocabularyManager.keyterms
+        let memoryContext = memoryManager.contextPacket(
+            rawText: trimmed,
+            correctedText: transcript,
+            keyterms: keyterms,
+            replacements: replacements
+        )
         let messages = TranscriptPolishPromptBuilder.makeMessages(
             rawText: transcript,
             promptProfile: promptProfile,
             personalContext: PromptContextManager.shared.personalContext.details,
             outputLanguage: outputLanguage,
             keyterms: keyterms,
-            replacements: vocabularyManager.replacements
+            replacements: replacements,
+            memoryContext: memoryContext
         )
 
         do {
@@ -119,14 +151,12 @@ final class TranscriptPostProcessor {
             }
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: transcript)
             guard !cleaned.isEmpty else {
-                return makeResult(
-                    rawText: transcript,
+                return finish(
                     finalText: transcript,
                     status: .failed,
                     model: response.modelIdentifier,
                     mode: promptProfile.id,
-                    error: "empty polished text",
-                    startedAt: startedAt
+                    error: "empty polished text"
                 )
             }
 
@@ -141,34 +171,28 @@ final class TranscriptPostProcessor {
                 SapoLog.ai.warning(
                     "AI polish rejected by fidelity guard \(verdict.diagnosticSummary, privacy: .public)"
                 )
-                return makeResult(
-                    rawText: transcript,
+                return finish(
                     finalText: transcript,
                     status: .rejectedFidelity,
                     model: response.modelIdentifier,
                     mode: promptProfile.id,
-                    error: verdict.diagnosticSummary,
-                    startedAt: startedAt
+                    error: verdict.diagnosticSummary
                 )
             }
 
-            return makeResult(
-                rawText: transcript,
+            return finish(
                 finalText: cleaned,
                 status: .applied,
                 model: response.modelIdentifier,
-                mode: promptProfile.id,
-                startedAt: startedAt
+                mode: promptProfile.id
             )
         } catch {
-            return makeResult(
-                rawText: transcript,
+            return finish(
                 finalText: transcript,
                 status: .failed,
                 model: configuration.modelIdentifier,
                 mode: promptProfile.id,
-                error: error.localizedDescription,
-                startedAt: startedAt
+                error: error.localizedDescription
             )
         }
     }

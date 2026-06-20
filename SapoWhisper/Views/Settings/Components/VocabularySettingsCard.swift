@@ -5,6 +5,7 @@ import os
 
 struct VocabularySettingsCard: View {
     @ObservedObject private var vocabularyManager = VocabularyManager.shared
+    @ObservedObject private var polishMemory = AIPolishMemoryManager.shared
     @StateObject private var metricsModel = VocabularyMetricsModel()
 
     /// Keywords and corrections live in separate segments so the tab shows
@@ -368,6 +369,10 @@ struct VocabularySettingsCard: View {
                     )
             }
 
+            if normalizedSearchText.isEmpty, !polishMemory.pendingSuggestions.isEmpty {
+                learnedCorrectionsSection
+            }
+
             if filteredReplacements.isEmpty {
                 correctionsEmptyState
             } else {
@@ -390,6 +395,30 @@ struct VocabularySettingsCard: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private var learnedCorrectionsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("vocab.learning.title".localized)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            LazyVStack(spacing: 6) {
+                ForEach(polishMemory.pendingSuggestions) { suggestion in
+                    LearnedCorrectionSuggestionRow(
+                        suggestion: suggestion,
+                        onAccept: { acceptSuggestion(suggestion) },
+                        onEdit: { editSuggestion(suggestion) },
+                        onReject: { polishMemory.rejectSuggestion(id: suggestion.id) }
+                    )
+                }
+            }
+
+            Text("vocab.learning.desc".localized)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder
@@ -427,6 +456,18 @@ struct VocabularySettingsCard: View {
         vocabularyManager.addReplacement(from: newReplaceFrom, to: newReplaceTo)
         newReplaceFrom = ""
         newReplaceTo = ""
+    }
+
+    private func acceptSuggestion(_ suggestion: AIPolishCorrectionSuggestion) {
+        guard let accepted = polishMemory.acceptSuggestion(id: suggestion.id) else { return }
+        vocabularyManager.addReplacement(from: accepted.from, to: accepted.to)
+        recomputeFilters()
+    }
+
+    private func editSuggestion(_ suggestion: AIPolishCorrectionSuggestion) {
+        newReplaceFrom = suggestion.from
+        newReplaceTo = suggestion.to
+        isReplaceFromFieldFocused = true
     }
 
     private func exportVocabulary() {
@@ -478,5 +519,60 @@ struct VocabularySettingsCard: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
         return formatter.string(from: Date())
+    }
+}
+
+private struct LearnedCorrectionSuggestionRow: View {
+    let suggestion: AIPolishCorrectionSuggestion
+    let onAccept: () -> Void
+    let onEdit: () -> Void
+    let onReject: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VocabularyMonospacedText(text: suggestion.from, foregroundColor: .secondary)
+
+            Image(systemName: "arrow.right")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            VocabularyMonospacedText(text: suggestion.to)
+
+            if suggestion.occurrences > 1 {
+                Text("×\(suggestion.occurrences)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .help("vocab.learning.occurrences".localized(String(suggestion.occurrences)))
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: onAccept) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Color.sapoGreen)
+            }
+            .buttonStyle(.plain)
+            .help("vocab.learning.accept".localized)
+
+            Button(action: onEdit) {
+                Image(systemName: "pencil.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("vocab.learning.edit".localized)
+
+            Button(action: onReject) {
+                Image(systemName: "xmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("vocab.learning.ignore".localized)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
     }
 }

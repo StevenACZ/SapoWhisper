@@ -11,11 +11,14 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - **Local AI Server (NVIDIA)** — added a LAN batch transcription engine for OpenAI-style STT endpoints, with Base URL/model settings, optional Keychain bearer token support, history filters, onboarding, import/export coverage, public benchmark fixtures, and a reproducible local STT benchmark script.
+- **Local AI polish learning** — AI polish can now use a Local Server preset, feed compact local memory into the prompt, track daily/weekly technical terms, and save likely speech-to-text correction suggestions for user review before they become automatic corrections.
+- **Private history polish replay** — added a terminal-only replay script that can run saved history text or WAVs through the local STT + AI polish stack and report aggregate acceptance/suggestion metrics without printing private transcripts by default.
 - **Audio upload quality profiles** — added a Microphone setting for batch recordings: Ultra fast, Medium (default), High, and Ultra original.
 
 ### Changed
 
 - **AI polish offline behavior** — hosted polish providers pause while the Mac is offline, so local transcription can still paste raw text without disabling the user's saved AI polish preference. Custom polish endpoints are left to their own reachability.
+- **AI polish provider setup** — local OpenAI-compatible polish servers no longer require an API key, and provider copy no longer assumes OpenRouter is the only setup path.
 - **Batch audio fidelity** — batch recordings now use the selected upload profile, Deepgram preserves Ultra original WAVs, and ElevenLabs realtime replay converts saved WAVs back to 16 kHz Int16 before streaming.
 
 ### Fixed

@@ -211,23 +211,27 @@
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad manteniéndose literal: tus palabras, tu orden. Una guardia de fidelidad pega el texto original si la IA se desvía.";
 "ai.provider.section" = "Proveedor";
 "ai.provider.endpoint" = "Endpoint";
+"ai.provider.endpoint_local_server" = "Servidor local";
 "ai.provider.endpoint_custom" = "Personalizado";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
 "ai.provider.model" = "Modelo";
 "ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
 "ai.provider.api_key" = "API key";
+"ai.provider.api_key_optional" = "API key (opcional)";
 "ai.provider.api_key_placeholder" = "Pega tu API key";
 "ai.provider.api_key_hint" = "Se guarda de forma segura en el Llavero de macOS.";
+"ai.provider.api_key_optional_hint" = "Opcional para servidores locales; se guarda de forma segura si la agregas.";
 "ai.provider.test" = "Probar conexión";
 "ai.provider.test_success" = "Funciona · %@";
-"ai.provider.needs_key" = "Agrega una API key y un modelo para usar la mejora por IA. Consigue una key en openrouter.ai.";
+"ai.provider.needs_key" = "Agrega los datos del proveedor para usar la mejora por IA.";
+"ai.provider.needs_configuration" = "Agrega los datos del proveedor para usar la mejora por IA.";
 "ai.provider.summary_edit" = "Editar";
 "ai.provider.summary_done" = "Hecho";
-"ai.provider.summary_key_help" = "API key guardada en el Llavero de macOS.";
+"ai.provider.summary_key_help" = "Proveedor de mejora por IA listo.";
 "ai.provider.model_suggestions_help" = "Modelos sugeridos";
 "ai.provider.model_custom_hint" = "Acepta cualquier ID de modelo de openrouter.ai/models (ej. qwen/qwen3-32b).";
 "ai.polish.fidelity_max" = "Fidelidad al máximo";
-"ai.provider.error_not_configured" = "La mejora por IA no está configurada (falta API key o modelo).";
+"ai.provider.error_not_configured" = "La mejora por IA no está configurada (faltan datos del proveedor).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
 "ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
 "ai.google_change_json" = "Cambiar JSON";
@@ -439,7 +443,7 @@
 "config.replace_to" = "Corregir a";
 "config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
 "config.add" = "Agregar";
-"settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes usadas por Deepgram y el pulido con IA.";
+"settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes usadas por los motores de transcripción y la mejora por IA.";
 "settings.vocabulary.search" = "Buscar vocabulario o correcciones";
 "settings.vocabulary.empty" = "No hay resultados";
 "settings.vocabulary.export" = "Exportar";
@@ -449,6 +453,12 @@
 "settings.vocabulary.export_success" = "Vocabulario exportado.";
 "settings.vocabulary.import_success" = "Vocabulario importado.";
 "settings.vocabulary.transfer_help" = "Exportar o importar vocabulario";
+"vocab.learning.title" = "Sugerencias aprendidas";
+"vocab.learning.desc" = "La mejora por IA guarda aquí correcciones probables de voz a texto. Acepta una para agregarla a correcciones automáticas, edítala primero o ignórala.";
+"vocab.learning.accept" = "Aceptar corrección";
+"vocab.learning.edit" = "Editar antes de guardar";
+"vocab.learning.ignore" = "Ignorar sugerencia";
+"vocab.learning.occurrences" = "Vista %@ veces";
 
 /* Vocabulary metrics & empty states */
 "vocab.metrics.pace" = "Ritmo";
@@ -586,7 +596,7 @@
 "welcome.key_invalid" = "La key fue rechazada. Revísala e intenta de nuevo.";
 "welcome.key_server_error" = "El servicio respondió con un error (%@). Intenta de nuevo.";
 "welcome.ai_title" = "Mejora por IA (opcional)";
-"welcome.ai_subtitle" = "¿Tienes una API key de OpenRouter, OpenAI o Groq? Activa la mejora por IA: quita muletillas y corrige puntuación sin cambiar tus palabras. Si no, omite este paso — el dictado funciona completo sin ella.";
+"welcome.ai_subtitle" = "Usa un servidor local o tu propio proveedor compatible con OpenAI para la mejora por IA. Quita muletillas y corrige puntuación sin cambiar tus palabras. Si no, omite este paso — el dictado funciona completo sin ella.";
 "welcome.ai_footnote" = "Puedes activarla o ajustarla después en Configuración → Motor. La key se guarda en el Llavero de macOS.";
 "welcome.ready_title" = "¡Todo listo!";
 "welcome.ready_subtitle" = "Presiona %@, di algo y presiónalo otra vez. El texto aparece donde esté tu cursor.";
