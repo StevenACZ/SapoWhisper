@@ -3,6 +3,7 @@
 //  SapoWhisper
 //
 
+@preconcurrency import AVFAudio
 import AVFoundation
 import Combine
 import Foundation
@@ -384,10 +385,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var stopStartedAt: CFAbsoluteTime = 0
     private var requestedLanguage = "auto"
 
-    private static let engineName = "ElevenLabs"
+    nonisolated private static let engineName = "ElevenLabs"
     private static let maxRealtimeKeyterms = ElevenLabsKeytermLimits.realtimeMaxCount
     private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
-    private static let sampleRate = 16000
+    nonisolated private static let sampleRate = 16000
 
     private enum StartRecovery {
         static let maxAttempts = 3
@@ -972,33 +973,97 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 
-    private static func extractPCM16MonoData(from wavURL: URL) throws -> Data {
-        let data = try Data(contentsOf: wavURL)
-        guard data.count >= 44 else {
-            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "WAV too small")
+    nonisolated static func extractPCM16MonoData(from wavURL: URL) throws -> Data {
+        let inputFile = try AVAudioFile(forReading: wavURL)
+        let inputFormat = inputFile.processingFormat
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "invalid WAV format")
         }
-        guard String(data: data[0..<4], encoding: .ascii) == "RIFF",
-            String(data: data[8..<12], encoding: .ascii) == "WAVE"
+
+        let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: Double(Self.sampleRate),
+            channels: 1,
+            interleaved: false
+        )!
+        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+            throw TranscriptionFailure(
+                kind: .audioCorrupt,
+                engine: Self.engineName,
+                technicalDetail: "could not create pcm_16000 converter"
+            )
+        }
+
+        let inputFrames = AVAudioFrameCount(inputFile.length)
+        guard inputFrames > 0,
+            let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: inputFrames)
         else {
-            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "not a RIFF/WAVE file")
+            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "empty WAV input")
+        }
+        do {
+            try inputFile.read(into: inputBuffer)
+        } catch {
+            throw TranscriptionFailure.from(error, engine: Self.engineName)
         }
 
-        var offset = 12
-        while offset + 8 <= data.count {
-            let chunkID = String(data: data[offset..<offset + 4], encoding: .ascii) ?? ""
-            let chunkSize = Int(data.littleEndianUInt32(at: offset + 4))
-            let chunkStart = offset + 8
-            let chunkEnd = chunkStart + chunkSize
-            guard chunkEnd <= data.count else { break }
+        let estimatedFrames = Int(ceil(Double(inputFrames) * outputFormat.sampleRate / inputFormat.sampleRate))
+        let outputCapacity = AVAudioFrameCount(max(1024, estimatedFrames + 512))
+        var pcmData = Data()
+        pcmData.reserveCapacity(max(0, estimatedFrames) * MemoryLayout<Int16>.size)
 
-            if chunkID == "data" {
-                return data.subdata(in: chunkStart..<chunkEnd)
+        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
+
+        while true {
+            guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
+                throw TranscriptionFailure(
+                    kind: .audioCorrupt,
+                    engine: Self.engineName,
+                    technicalDetail: "could not allocate pcm_16000 buffer"
+                )
             }
 
-            offset = chunkEnd + (chunkSize % 2)
-        }
+            var convertError: NSError?
+            let status = converter.convert(to: outputBuffer, error: &convertError) { _, outStatus in
+                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
+                    if consumed { return true }
+                    consumed = true
+                    return false
+                }
+                if alreadyConsumed {
+                    outStatus.pointee = .endOfStream
+                    return nil
+                }
 
-        throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "missing WAV data chunk")
+                outStatus.pointee = .haveData
+                return inputBuffer
+            }
+
+            appendPCM16(from: outputBuffer, to: &pcmData)
+
+            switch status {
+            case .haveData, .inputRanDry:
+                continue
+            case .endOfStream:
+                guard !pcmData.isEmpty else {
+                    throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "empty pcm_16000 output")
+                }
+                return pcmData
+            case .error:
+                throw TranscriptionFailure(
+                    kind: .audioCorrupt,
+                    engine: Self.engineName,
+                    technicalDetail: convertError?.localizedDescription ?? "pcm_16000 conversion failed"
+                )
+            @unknown default:
+                throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName)
+            }
+        }
+    }
+
+    private nonisolated static func appendPCM16(from buffer: AVAudioPCMBuffer, to data: inout Data) {
+        guard buffer.frameLength > 0, let channelData = buffer.int16ChannelData else { return }
+        let byteCount = Int(buffer.frameLength) * MemoryLayout<Int16>.size
+        data.append(contentsOf: UnsafeRawBufferPointer(start: channelData[0], count: byteCount))
     }
 }
 
@@ -1020,13 +1085,4 @@ nonisolated extension ElevenLabsRealtimeAudioSenderStats {
 extension ElevenLabsScribeRealtimeTranscriber: TranscriptionEngineSession {
     var isReady: Bool { isConfigured }
     var isBusy: Bool { isStreaming || isStopping }
-}
-
-extension Data {
-    fileprivate func littleEndianUInt32(at offset: Int) -> UInt32 {
-        guard offset + 4 <= count else { return 0 }
-        return self[offset..<offset + 4].enumerated().reduce(UInt32(0)) { value, pair in
-            value | (UInt32(pair.element) << UInt32(pair.offset * 8))
-        }
-    }
 }

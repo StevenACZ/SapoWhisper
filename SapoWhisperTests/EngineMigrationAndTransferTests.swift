@@ -130,6 +130,67 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey))
     }
 
+    func testOldExportWithoutAudioUploadQualityImportsMediumDefault() throws {
+        let legacyExport = """
+            {
+              "schemaVersion": 1,
+              "appVersion": "2.2.0",
+              "exportedAt": "2026-01-15T10:00:00Z",
+              "preferences": {
+                "appLanguage": "es",
+                "transcriptionLanguage": "es",
+                "autoPaste": true,
+                "playSound": true,
+                "soundVolume": 1,
+                "autoDuckingEnabled": false,
+                "autoDuckingAmount": 0.8,
+                "transcriptionEngine": "whisper",
+                "whisperKitModel": "openai_whisper-small",
+                "deepgramTranscriptionMode": "nova3",
+                "hotkeyKeyCode": 49,
+                "hotkeyModifiers": 2048,
+                "audioGain": 1,
+                "aiPolishEnabled": false,
+                "aiPolishMode": "automatic",
+                "aiPolishOutputLanguage": "same_as_input"
+              }
+            }
+            """
+
+        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in }
+        )
+        let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
+        try manager.importDocument(document, sections: [.audio])
+
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.audioUploadQuality),
+            AudioUploadQuality.medium.rawValue
+        )
+    }
+
+    func testSettingsExportIncludesAudioUploadQuality() throws {
+        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(AudioUploadQuality.high.rawValue, forKey: Constants.StorageKeys.audioUploadQuality)
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in }
+        )
+        let document = try manager.decodedDocument(from: try manager.encodedSettings())
+
+        XCTAssertEqual(document.preferences?.audioUploadQuality, AudioUploadQuality.high.rawValue)
+    }
+
     // MARK: - History filter buckets
 
     func testEngineFilterBucketsRemovedEnginesUnderOther() {

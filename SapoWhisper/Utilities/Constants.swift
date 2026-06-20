@@ -136,6 +136,7 @@ nonisolated enum Constants {
 
         // Audio
         static let audioGain = "audioGain"
+        static let audioUploadQuality = "audioUploadQuality"
 
         // Overlay
         static let overlayPosition = "overlayPosition"

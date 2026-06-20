@@ -40,7 +40,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         await MainActor.run { isTranscribing = true }
         defer { Task { @MainActor in isTranscribing = false } }
 
-        // The recorder already produces int16 16 kHz mono WAV, so no conversion is needed.
+        // Batch Scribe accepts the WAV produced by the selected upload-quality profile.
         let audioData = try Data(contentsOf: audioURL)
 
         guard let url = URL(string: "https://api.elevenlabs.io/v1/speech-to-text") else {

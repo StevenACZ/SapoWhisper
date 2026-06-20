@@ -94,6 +94,8 @@ struct AudioLevelMeterView: View {
 
     @State private var isEnabled = false
     @AppStorage(Constants.StorageKeys.audioGain) private var gain: Double = 1.0
+    @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
+        AudioUploadQuality.defaultValue.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -155,6 +157,9 @@ struct AudioLevelMeterView: View {
             if isEnabled {
                 monitor.restartMonitoring(deviceUID: newUID)
             }
+        }
+        .onChange(of: audioUploadQuality) { _, _ in
+            _ = monitor.rebuildSentSample()
         }
         .onDisappear {
             monitor.stopMonitoring()
@@ -248,13 +253,13 @@ struct AudioLevelMeterView: View {
                         metadata: rawMeta
                     )
 
-                    if let compURL = monitor.compressedSampleURL,
-                        let compMeta = monitor.compressedSampleMetadata
+                    if let sentURL = monitor.sentSampleURL,
+                        let sentMeta = monitor.sentSampleMetadata
                     {
                         AudioSamplePlayerView(
-                            url: compURL,
-                            label: "settings.sample_compressed".localized,
-                            metadata: compMeta
+                            url: sentURL,
+                            label: "settings.sample_sent_quality".localized(currentAudioUploadQuality.displayName),
+                            metadata: sentMeta
                         )
                     }
                 }
@@ -266,6 +271,10 @@ struct AudioLevelMeterView: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private var currentAudioUploadQuality: AudioUploadQuality {
+        AudioUploadQuality(rawValue: audioUploadQuality) ?? .defaultValue
     }
 }
 

@@ -97,12 +97,6 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     /// UID del dispositivo de audio seleccionado
     var selectedDeviceUID: String = "default"
 
-    /// Standard recording format shared by local and cloud engines.
-    /// Int16 cuts file size in half vs float32 and removes an extra conversion for cloud uploads.
-    private var recordingFormat: AVAudioFormat {
-        AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
-    }
-
     func prepareInputDeviceForRecording() -> TimeInterval {
         configureInputDevice()
     }
@@ -145,7 +139,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         // Snapshot configuration on the calling thread before dispatching to background
         let deviceUID = selectedDeviceUID
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
-        let outputFormat = recordingFormat
+        let uploadQuality = AudioUploadQuality.stored()
         let setupGeneration = beginSetupGeneration()
 
         // Reset per-recording state before background work begins
@@ -207,6 +201,11 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                         continuation.resume(throwing: RecordingError.invalidFormat)
                         return
                     }
+
+                    let outputFormat = uploadQuality.audioFormat(matching: tapFormat)
+                    SapoLog.recording.info(
+                        "Recorder upload quality=\(uploadQuality.rawValue, privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public) format=\(String(describing: outputFormat.commonFormat), privacy: .public)"
+                    )
 
                     // Crear archivo temporal para guardar el audio
                     let recordingURL = TemporaryAudioStorage.makeWAVURL(prefix: "recording")

@@ -10,6 +10,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🧠 Local and cloud transcription engines.
 - 🗂️ Searchable history with saved audio, replay, download, pinning, and re-transcription.
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
+- 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
 - 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and an optional output language (English/Spanish) that translates faithfully.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
 
@@ -25,6 +26,8 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 | ElevenLabs Scribe Realtime v2 | Realtime | Low-latency Scribe with committed-text buffering. |
 
 Cloud and optional local-server credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+
+Batch engines use the selected microphone upload-quality profile: Ultra fast (16 kHz Int16), Medium by default (24 kHz Int16), High (native rate up to 48 kHz Int16), or Ultra original (native Float32). Realtime engines keep their required 16 kHz Int16 streaming format.
 
 ### Local AI Server Fixtures
 
@@ -107,7 +110,7 @@ Local test DMGs are usually ad-hoc signed with hardened runtime. Do not present 
 
 ## 🧪 Tests
 
-Unit tests live in `SapoWhisperTests` and cover pure logic: the AI polish fidelity guard, failure mapping, engine migration, and settings transfer.
+Unit tests live in `SapoWhisperTests` and cover pure logic: the AI polish fidelity guard, failure mapping, engine migration, audio upload quality, realtime replay conversion, and settings transfer.
 
 ```bash
 make test

@@ -352,7 +352,17 @@
 "settings.record_sample" = "Record sample";
 "settings.stop_sample" = "Stop";
 "settings.sample_original" = "Original";
-"settings.sample_compressed" = "As sent to engine";
+"settings.sample_sent_quality" = "As sent (%@)";
+"settings.audio_upload_quality" = "Audio upload quality";
+"settings.audio_upload_quality_desc" = "Higher quality uploads larger WAV files.";
+"audio_upload_quality.ultra_fast" = "Ultra fast";
+"audio_upload_quality.medium" = "Medium";
+"audio_upload_quality.high" = "High";
+"audio_upload_quality.ultra_original" = "Ultra original";
+"audio_upload_quality.ultra_fast_detail" = "16 kHz Int16 mono · ~32 KB/s";
+"audio_upload_quality.medium_detail" = "24 kHz Int16 mono · ~48 KB/s";
+"audio_upload_quality.high_detail" = "Native rate up to 48 kHz · Int16 mono";
+"audio_upload_quality.ultra_original_detail" = "Native rate · Float32 mono";
 
 /* Recording Overlay */
 "overlay.recording" = "Recording...";

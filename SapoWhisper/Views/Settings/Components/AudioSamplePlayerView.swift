@@ -34,7 +34,9 @@ struct AudioSamplePlayerView: View {
                 Text(label)
                     .font(.caption2)
                     .fontWeight(.medium)
-                    .frame(width: 90, alignment: .leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: 150, alignment: .leading)
 
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
