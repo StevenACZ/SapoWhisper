@@ -53,13 +53,39 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
 final class TranscriptPolishTimeoutTests: XCTestCase {
 
     /// Short dictations keep the snappy 5s budget; long transcripts scale up
-    /// so a translation round-trip fits, capped at 20s.
-    func testPolishTimeoutScalesWithTranscriptLength() {
+    /// so a hosted-provider round-trip fits, capped at 20s.
+    func testHostedPolishTimeoutScalesWithTranscriptLength() {
         XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 0), 5)
         XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 400), 5)
         XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 1400), 10)
         XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 2814), 17)
         XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 100_000), 20)
+    }
+
+    func testLocalPolishTimeoutUsesLargerBudget() {
+        let localConfiguration = PolishProviderConfiguration(
+            endpoint: .custom,
+            baseURL: URL(string: "http://local-ai.local:8081/v1")!,
+            model: "qwen3.6-35b-a3b",
+            apiKey: ""
+        )
+
+        XCTAssertEqual(
+            TranscriptPostProcessor.polishTimeout(
+                forCharacterCount: 400,
+                duration: 36,
+                configuration: localConfiguration
+            ),
+            23
+        )
+        XCTAssertEqual(
+            TranscriptPostProcessor.polishTimeout(
+                forCharacterCount: 100_000,
+                duration: 600,
+                configuration: localConfiguration
+            ),
+            120
+        )
     }
 }
 

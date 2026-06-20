@@ -17,10 +17,10 @@ struct PolishFidelityVerdict {
     }
 }
 
-/// Hard post-response bound on how far polished text may drift from the raw
-/// transcript. On violation the caller pastes the raw transcript instead —
-/// this is what eliminates the catastrophic "said something else" case for
-/// every provider.
+/// Minimal post-response bound on how far polished text may drift from the raw
+/// transcript. This is intentionally deterministic and narrow: it protects
+/// tokens that should not silently change, while leaving regular wording,
+/// cleanup, and translation decisions to the AI prompt.
 enum PolishFidelityGuard {
     /// One raw token that must survive a literal polish. `.literal` anchors
     /// (numbers, URLs, emails, vocabulary) must appear verbatim — their
@@ -75,6 +75,9 @@ enum PolishFidelityGuard {
         "no espera", "espera no", "quise decir", "quiero decir", "mejor dicho", "perdón", "perdon",
         "digo", "me equivoqué", "me equivoque", "no wait", "wait no", "i mean", "i meant",
         "scratch that", "correction", "sorry",
+    ]
+    private static let capitalizedWordStopAnchors: Set<String> = [
+        "bueno", "dale", "listo", "obviamente", "perfecto",
     ]
 
     /// `translationExpected` relaxes the language-bound anchors: a requested
@@ -140,10 +143,10 @@ enum PolishFidelityGuard {
     }
 
     /// Tokens that must survive a literal polish: numbers (as an ordered
-    /// sequence), URLs, emails, mid-sentence capitalized words, and vocabulary
-    /// terms present in raw. Capitalized words are skipped when a translation is
-    /// expected — they are regular words in the source language and legitimately
-    /// change.
+    /// sequence), URLs, emails, identifier-like capitalized tokens, and
+    /// vocabulary terms present in raw. Identifier-like words are skipped when a
+    /// translation is expected — only translation-invariant anchors should
+    /// survive across languages.
     static func extractAnchors(
         from raw: String,
         vocabularyTerms: [String],
@@ -211,10 +214,27 @@ enum PolishFidelityGuard {
 
                 let cleaned = token.trimmingCharacters(in: .punctuationCharacters)
                 guard cleaned.count >= 3, let first = cleaned.first, first.isUppercase, first.isLetter else { continue }
+                guard !capitalizedWordStopAnchors.contains(cleaned.lowercased()) else { continue }
+                guard isProtectedCapitalizedToken(cleaned) else { continue }
                 results.append(cleaned)
             }
         }
         return results
+    }
+
+    private static func isProtectedCapitalizedToken(_ word: String) -> Bool {
+        let scalars = word.unicodeScalars
+        let hasPunctuation = scalars.contains { CharacterSet.punctuationCharacters.contains($0) }
+        let hasDigit = word.contains { $0.isNumber }
+        if hasPunctuation || hasDigit { return true }
+
+        let letters = word.filter { $0.isLetter }
+        guard !letters.isEmpty else { return false }
+
+        let uppercaseCount = letters.filter { $0.isUppercase }.count
+        let lowercaseCount = letters.filter { $0.isLowercase }.count
+        if letters.count >= 3 && uppercaseCount == letters.count { return true }
+        return uppercaseCount >= 2 && lowercaseCount > 0
     }
 
     /// Lowercased raw substrings spanning the ~40 characters before each

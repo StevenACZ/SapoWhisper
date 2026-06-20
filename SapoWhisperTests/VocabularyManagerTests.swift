@@ -189,6 +189,24 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(manager.applyingRecognitionCorrections(to: output), output)
     }
 
+    func testRecognitionCorrectionsHandleAgentsLegendsConfusion() {
+        let manager = makeManager()
+        manager.addKeyterm("AGENTS.md")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "actualizaste legends.md y Claude Code.md"),
+            "actualizaste AGENTS.md y Claude Code.md"
+        )
+
+        let managerWithBothTerms = makeManager()
+        managerWithBothTerms.addKeyterm("AGENTS.md")
+        managerWithBothTerms.addKeyterm("legends.md")
+        XCTAssertEqual(
+            managerWithBothTerms.applyingRecognitionCorrections(to: "actualizaste legends.md"),
+            "actualizaste legends.md"
+        )
+    }
+
     func testRecognitionCorrectionsHandleRealSpanishTechnicalVariants() {
         let manager = makeManager()
         manager.addKeyterm("git")
@@ -233,6 +251,22 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(
             managerWithoutGit.applyingRecognitionCorrections(to: "haz un deep comment y un deep push"),
             "haz un deep comment y un deep push"
+        )
+    }
+
+    func testRecognitionCorrectionsHandleKitGitCommandConfusionsWhenGitIsKnown() {
+        let manager = makeManager()
+        manager.addKeyterm("git")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "hacer KitCom y KitPush"),
+            "hacer git commit y git push"
+        )
+
+        let managerWithoutGit = makeManager()
+        XCTAssertEqual(
+            managerWithoutGit.applyingRecognitionCorrections(to: "hacer KitCom y KitPush"),
+            "hacer KitCom y KitPush"
         )
     }
 

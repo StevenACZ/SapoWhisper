@@ -1681,8 +1681,15 @@ class SapoWhisperViewModel: ObservableObject {
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
             if !isReprocessingHistory {
                 appState = .polishing
+                let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
                 overlayManager.updateState(
-                    .polishing(timeoutSeconds: TranscriptPostProcessor.polishTimeout(forCharacterCount: rawText.count))
+                    .polishing(
+                        timeoutSeconds: TranscriptPostProcessor.polishTimeout(
+                            forCharacterCount: rawText.count,
+                            duration: duration,
+                            usesLocalBudget: usesLocalPolishBudget
+                        )
+                    )
                 )
             }
             SapoLog.ai.info(

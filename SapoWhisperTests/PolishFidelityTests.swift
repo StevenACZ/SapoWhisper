@@ -85,6 +85,28 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testAllowsRemovingCapitalizedConversationalFillers() {
+        let raw = "verifica eso y ya con eso para terminar Obviamente la base de datos personal no la subas"
+        let polished = "Verifica eso y ya con eso para terminar; la base de datos personal no la subas."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testAllowsChangingGenericCapitalizedWords() {
+        let raw = "habla con Marketing para que revisen la presentación antes de la reunión"
+        let polished = "Habla con el equipo de marketing para que revisen la presentación antes de la reunión."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRejectsWhenAcronymAnchorDisappears() {
+        let raw = "documenta la API REST antes de cerrar el ticket del proyecto"
+        let polished = "Documenta la interfaz antes de cerrar el ticket del proyecto."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
     func testRejectsWhenNumberIsAbsorbedIntoLargerNumber() {
         // The raw "5" must not count as surviving inside the polished "15": a
         // plain substring match would wrongly accept a silently changed number.

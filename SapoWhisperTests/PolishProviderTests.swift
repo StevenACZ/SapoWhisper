@@ -30,6 +30,24 @@ final class PolishProviderTests: XCTestCase {
                 endpoint: .custom, model: "llama3.2", customBaseURL: "not a url", apiKey: ""))
     }
 
+    func testLANCustomEndpointUsesLocalTimeoutBudget() {
+        let lanConfiguration = PolishProviderConfiguration(
+            endpoint: .custom,
+            baseURL: URL(string: "http://local-ai.local:8081/v1")!,
+            model: "qwen3.6-35b-a3b",
+            apiKey: ""
+        )
+        let hostedConfiguration = PolishProviderConfiguration(
+            endpoint: .openRouter,
+            baseURL: URL(string: "https://openrouter.ai/api/v1")!,
+            model: "openai/gpt-5.4-nano",
+            apiKey: "sk-or-123"
+        )
+
+        XCTAssertTrue(lanConfiguration.usesLocalTimeoutBudget)
+        XCTAssertFalse(hostedConfiguration.usesLocalTimeoutBudget)
+    }
+
     func testLocalServerPresetUsesLANDefaultsWithoutKey() {
         XCTAssertEqual(PolishEndpoint.localServer.presetBaseURL, "http://localhost:8081/v1")
         XCTAssertEqual(PolishEndpoint.localServer.defaultModel, "qwen3.6-35b-a3b")

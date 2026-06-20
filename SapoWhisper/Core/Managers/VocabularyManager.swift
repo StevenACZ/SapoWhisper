@@ -234,12 +234,19 @@ class VocabularyManager: ObservableObject {
     /// Applies saved replacements and high-confidence vocabulary spelling corrections.
     func applyingRecognitionCorrections(to transcript: String) -> String {
         let replacedTranscript = applyingReplacements(to: transcript)
+        let candidates = recognitionCandidates(includeReplacementValues: true)
+        let canonicalKeys = Set(candidates.map(Self.normalizedRecognitionKey))
         let correctionPairs =
-            recognitionCandidates(includeReplacementValues: true)
+            candidates
             .flatMap { keyterm in
                 Self.correctionVariants(for: keyterm).map { variant in
                     (variant: variant, canonical: keyterm)
                 }
+            }
+            .filter { pair in
+                let variantKey = Self.normalizedRecognitionKey(pair.variant)
+                let canonicalKey = Self.normalizedRecognitionKey(pair.canonical)
+                return variantKey == canonicalKey || !canonicalKeys.contains(variantKey)
             }
             .sorted { $0.variant.count > $1.variant.count }
 
@@ -276,6 +283,14 @@ class VocabularyManager: ObservableObject {
         }
         if availableTerms.contains("git"), availableTerms.contains("push") {
             current = Self.replacingWholeTermVariants(["deep push", "dip push"], with: "git push", in: current)
+        }
+        if availableTerms.contains("git") {
+            current = Self.replacingWholeTermVariants(
+                ["KitCom", "KitComit", "KitCommit", "Kit Commit"],
+                with: "git commit",
+                in: current
+            )
+            current = Self.replacingWholeTermVariants(["KitPush", "Kit Push"], with: "git push", in: current)
         }
         return current
     }
@@ -486,6 +501,10 @@ class VocabularyManager: ObservableObject {
                 contentsOf: [
                     "agens md",
                     "agents knotsmd",
+                    "legends md",
+                    "legends dot md",
+                    "legends punto md",
+                    "legends.md",
                     "nats md",
                     "agients md",
                     "ages md",
@@ -528,7 +547,11 @@ class VocabularyManager: ObservableObject {
             forms.append(contentsOf: ["comet", "comit", "commet", "HacerunComet"])
         }
         if lowercasedKeyterm == "git commit" {
-            forms.append(contentsOf: ["deep comment", "deep comet", "dip comment", "hago Kimi", "Kit commit"])
+            forms.append(
+                contentsOf: [
+                    "deep comment", "deep comet", "dip comment", "hago Kimi", "Kit commit", "KitCom",
+                    "KitComit", "KitCommit",
+                ])
         }
         if lowercasedKeyterm == "kimi v2" {
             forms.append(
@@ -570,7 +593,7 @@ class VocabularyManager: ObservableObject {
             )
         }
         if lowercasedKeyterm == "git push" {
-            forms.append(contentsOf: ["deep push", "dip push", "hit pug", "kit push"])
+            forms.append(contentsOf: ["deep push", "dip push", "hit pug", "kit push", "KitPush"])
         }
         if lowercasedKeyterm == "testflight" {
             forms.append("TestFly")
@@ -669,6 +692,10 @@ class VocabularyManager: ObservableObject {
 
     private static func alphanumericTokens(in term: String) -> [String] {
         term.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+
+    private static func normalizedRecognitionKey(_ term: String) -> String {
+        alphanumericTokens(in: term).joined(separator: " ").lowercased()
     }
 
     private static func tokenPattern(for token: String) -> String {

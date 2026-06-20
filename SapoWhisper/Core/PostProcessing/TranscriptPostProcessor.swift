@@ -9,11 +9,38 @@ import os
 
 final class TranscriptPostProcessor {
     /// L10: hard cap for the whole polish step (including the one translation
-    /// retry). Short dictations keep the snappy 5s budget; long transcripts
-    /// scale up so a real translation round-trip fits instead of dying in a
-    /// CancellationError. The overlay countdown receives this same value via
-    /// the polishing overlay state, so they stay in sync by construction.
+    /// retry). Hosted providers keep the snappy 5s-20s budget; local/LAN
+    /// models get a larger budget because first-token latency and small-model
+    /// reasoning can be much slower. The overlay countdown receives this same
+    /// value via the polishing overlay state, so they stay in sync by
+    /// construction.
     static func polishTimeout(forCharacterCount count: Int) -> UInt64 {
+        polishTimeout(forCharacterCount: count, duration: nil, usesLocalBudget: false)
+    }
+
+    static func polishTimeout(
+        forCharacterCount count: Int,
+        duration: TimeInterval?,
+        configuration: PolishProviderConfiguration?
+    ) -> UInt64 {
+        polishTimeout(
+            forCharacterCount: count,
+            duration: duration,
+            usesLocalBudget: configuration?.usesLocalTimeoutBudget == true
+        )
+    }
+
+    static func polishTimeout(
+        forCharacterCount count: Int,
+        duration: TimeInterval?,
+        usesLocalBudget: Bool
+    ) -> UInt64 {
+        if usesLocalBudget {
+            let characterExtra = UInt64(max(0, count - 300) / 120)
+            let durationExtra = UInt64(max(0, Int((duration ?? 0) - 10)) / 8)
+            return min(20 + characterExtra + durationExtra, 120)
+        }
+
         let base: UInt64 = 5
         let extra = UInt64(max(0, count - 400) / 200)
         return min(base + extra, 20)
@@ -139,8 +166,13 @@ final class TranscriptPostProcessor {
             memoryContext: memoryContext
         )
 
+        let timeoutSeconds = Self.polishTimeout(
+            forCharacterCount: transcript.count,
+            duration: duration,
+            configuration: configuration
+        )
+
         do {
-            let timeoutSeconds = Self.polishTimeout(forCharacterCount: transcript.count)
             let response = try await withTimeout(seconds: timeoutSeconds) {
                 try await self.polishVerifyingTranslation(
                     messages: messages,
@@ -185,6 +217,14 @@ final class TranscriptPostProcessor {
                 status: .applied,
                 model: response.modelIdentifier,
                 mode: promptProfile.id
+            )
+        } catch is CancellationError {
+            return finish(
+                finalText: transcript,
+                status: .failed,
+                model: configuration.modelIdentifier,
+                mode: promptProfile.id,
+                error: "AI polish timed out after \(timeoutSeconds)s"
             )
         } catch {
             return finish(

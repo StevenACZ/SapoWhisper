@@ -453,7 +453,9 @@
 "settings.vocabulary.export_success" = "Vocabulary exported.";
 "settings.vocabulary.import_success" = "Vocabulary imported.";
 "settings.vocabulary.transfer_help" = "Export or import vocabulary";
-"vocab.learning.title" = "Learned suggestions";
+"vocab.learning.title" = "AI suggestions";
+"vocab.learning.badge" = "AI";
+"vocab.learning.badge_help" = "Recommended by AI polish; it is not saved as an automatic correction until you accept it.";
 "vocab.learning.desc" = "AI polish saves likely speech-to-text corrections here. Accept one to add it to automatic corrections, edit it first, or ignore it.";
 "vocab.learning.accept" = "Accept correction";
 "vocab.learning.edit" = "Edit before saving";

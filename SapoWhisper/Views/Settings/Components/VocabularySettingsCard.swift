@@ -399,9 +399,24 @@ struct VocabularySettingsCard: View {
 
     private var learnedCorrectionsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("vocab.learning.title".localized)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Label("vocab.learning.title".localized, systemImage: "sparkles")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.sapoGreen)
+
+                Spacer(minLength: 0)
+
+                Text("vocab.learning.badge".localized)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.sapoGreen)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.sapoGreen.opacity(0.12))
+                    )
+                    .help("vocab.learning.badge_help".localized)
+            }
 
             LazyVStack(spacing: 6) {
                 ForEach(polishMemory.pendingSuggestions) { suggestion in
@@ -572,7 +587,11 @@ private struct LearnedCorrectionSuggestionRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(0.045))
+                .fill(Color.sapoGreen.opacity(0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.sapoGreen.opacity(0.22), lineWidth: 1)
         )
     }
 }

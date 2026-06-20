@@ -159,4 +159,50 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertFalse(context.topDailyTerms.contains("git de"))
         XCTAssertFalse(context.topDailyTerms.contains("git para"))
     }
+
+    func testFailedPolishDoesNotLearnInferredTerms() {
+        let manager = makeManager()
+        let now = Date(timeIntervalSince1970: 1_771_430_400)
+
+        manager.record(
+            observedRawText: "actualizaste legends.md y Claude Code.md",
+            correctedText: "actualizaste legends.md y Claude Code.md",
+            finalText: "Actualizaste legends.md y Claude Code.md.",
+            status: .failed,
+            keyterms: ["AGENTS.md", "Claude Code"],
+            replacements: [:],
+            now: now
+        )
+
+        let context = manager.contextPacket(
+            rawText: "actualizaste legends.md",
+            correctedText: "actualizaste legends.md",
+            keyterms: ["AGENTS.md", "Claude Code"],
+            replacements: [:],
+            now: now
+        )
+
+        XCTAssertFalse(context.topDailyTerms.contains("legends.md"))
+        XCTAssertTrue(context.topDailyTerms.contains("Claude Code"))
+    }
+
+    func testAgentsConfusionCanCreateReviewableSuggestionWhenCorrected() {
+        let manager = makeManager()
+        let now = Date(timeIntervalSince1970: 1_771_430_400)
+
+        manager.record(
+            observedRawText: "actualizaste legends.md",
+            correctedText: "actualizaste AGENTS.md",
+            finalText: "Actualizaste `AGENTS.md`.",
+            status: .applied,
+            keyterms: ["AGENTS.md"],
+            replacements: [:],
+            now: now
+        )
+
+        XCTAssertTrue(
+            manager.snapshot().suggestions.contains { suggestion in
+                suggestion.from == "legends.md" && suggestion.to == "AGENTS.md"
+            })
+    }
 }

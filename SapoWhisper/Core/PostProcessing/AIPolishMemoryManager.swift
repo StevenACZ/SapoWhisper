@@ -127,13 +127,14 @@ final class AIPolishMemoryManager: ObservableObject {
             in: [rawText, correctedText, keyterms.joined(separator: " "), replacements.values.joined(separator: " ")]
                 .joined(separator: " ")
         )
+        let suppressedTermKeys = Self.suppressedMemoryTermKeys(keyterms: keyterms, replacements: replacements)
         let today = dayKey(for: now)
         let week = weekKey(for: now)
 
         return AIPolishMemoryContext(
             detectedMode: detectedMode,
-            topDailyTerms: topTerms(for: today, keyPath: \.dayCounts, limit: 12),
-            topWeeklyTerms: topTerms(for: week, keyPath: \.weekCounts, limit: 16),
+            topDailyTerms: topTerms(for: today, keyPath: \.dayCounts, excluding: suppressedTermKeys, limit: 12),
+            topWeeklyTerms: topTerms(for: week, keyPath: \.weekCounts, excluding: suppressedTermKeys, limit: 16),
             acceptedCorrections: suggestions(status: .accepted, limit: 12),
             pendingCorrections: suggestions(status: .pending, limit: 8)
         )
@@ -160,7 +161,13 @@ final class AIPolishMemoryManager: ObservableObject {
         store.totalTranscripts += 1
         store.modeCounts[Self.detectedMode(in: [raw, corrected, final].joined(separator: " ")).rawValue, default: 0] += 1
 
-        recordTerms(in: final.isEmpty ? corrected : final, keyterms: keyterms, replacements: replacements, now: now)
+        recordTerms(
+            in: final.isEmpty ? corrected : final,
+            keyterms: keyterms,
+            replacements: replacements,
+            learnInferredTerms: status == .applied,
+            now: now
+        )
         recordCorrectionSuggestions(
             observedRawText: raw,
             correctedText: corrected,
@@ -220,11 +227,16 @@ final class AIPolishMemoryManager: ObservableObject {
         in text: String,
         keyterms: [String],
         replacements: [String: String],
+        learnInferredTerms: Bool,
         now: Date
     ) {
         let knownTerms = Self.uniqueTerms(keyterms + Array(replacements.values))
         let knownMatches = knownTerms.filter { Self.containsTerm($0, in: text) }
-        let inferredTerms = Self.inferredTerms(from: text)
+        let suppressedTermKeys = Self.suppressedMemoryTermKeys(keyterms: keyterms, replacements: replacements)
+        let inferredTerms =
+            learnInferredTerms
+            ? Self.inferredTerms(from: text).filter { !suppressedTermKeys.contains(Self.normalizedKey($0)) }
+            : []
         let terms = Self.uniqueTerms(knownMatches + inferredTerms).prefix(40)
         let today = dayKey(for: now)
         let week = weekKey(for: now)
@@ -257,6 +269,7 @@ final class AIPolishMemoryManager: ObservableObject {
         let candidateTerms = Self.uniqueTerms(keyterms + Array(replacements.values) + Self.defaultCorrectionTargets)
         let lowerFinal = Self.normalizedText(effectiveFinal)
         let lowerCorrected = Self.normalizedText(correctedText)
+        var seenSuggestionIDs = Set<String>()
 
         for candidate in Self.knownCorrectionCandidates {
             guard Self.containsTerm(candidate.from, in: observedRawText) else { continue }
@@ -272,6 +285,10 @@ final class AIPolishMemoryManager: ObservableObject {
                 continue
             }
             guard status == .applied || correctedText != observedRawText else { continue }
+
+            let suggestionID = Self.suggestionID(from: candidate.from, to: target)
+            guard !seenSuggestionIDs.contains(suggestionID) else { continue }
+            seenSuggestionIDs.insert(suggestionID)
 
             upsertSuggestion(from: candidate.from, to: target, confidence: candidate.confidence, now: now)
         }
@@ -298,7 +315,7 @@ final class AIPolishMemoryManager: ObservableObject {
             return
         }
 
-        suggestion.from = from
+        suggestion.from = preferCorrectionSource(current: suggestion.from, candidate: from)
         suggestion.to = to
         suggestion.occurrences += 1
         suggestion.confidence = max(suggestion.confidence, confidence)
@@ -329,10 +346,12 @@ final class AIPolishMemoryManager: ObservableObject {
     private func topTerms(
         for key: String,
         keyPath: KeyPath<TermUsageRecord, [String: Int]>,
+        excluding suppressedTermKeys: Set<String> = [],
         limit: Int
     ) -> [String] {
         store.termStats.values
             .compactMap { record -> (String, Int)? in
+                guard !suppressedTermKeys.contains(Self.normalizedKey(record.term)) else { return nil }
                 guard let count = record[keyPath: keyPath][key], count > 0 else { return nil }
                 return (record.term, count)
             }
@@ -390,6 +409,12 @@ final class AIPolishMemoryManager: ObservableObject {
         if current == current.lowercased(), candidate != candidate.lowercased() {
             return candidate
         }
+        return current
+    }
+
+    private func preferCorrectionSource(current: String, candidate: String) -> String {
+        if current.contains(".") { return current }
+        if candidate.contains(".") { return candidate }
         return current
     }
 
@@ -556,6 +581,20 @@ final class AIPolishMemoryManager: ObservableObject {
         "\(normalizedKey(from))->\(normalizedKey(to))"
     }
 
+    private static func suppressedMemoryTermKeys(
+        keyterms: [String],
+        replacements: [String: String]
+    ) -> Set<String> {
+        let canonicalKeys = Set(Self.uniqueTerms(keyterms + Array(replacements.values)).map(normalizedKey))
+        var suppressed = Set<String>()
+        if canonicalKeys.contains("agents md") {
+            ["legends.md", "legends md", "legends dot md", "legends punto md"].forEach {
+                suppressed.insert(normalizedKey($0))
+            }
+        }
+        return suppressed
+    }
+
     private static let defaultCorrectionTargets = [
         "AI polish",
         "AGENTS.md",
@@ -574,6 +613,10 @@ final class AIPolishMemoryManager: ObservableObject {
         CorrectionCandidate(from: "deep comment", targets: ["git commit"], confidence: 0.96),
         CorrectionCandidate(from: "deep comet", targets: ["git commit"], confidence: 0.94),
         CorrectionCandidate(from: "dip comment", targets: ["git commit"], confidence: 0.92),
+        CorrectionCandidate(from: "legends.md", targets: ["AGENTS.md"], confidence: 0.9),
+        CorrectionCandidate(from: "legends md", targets: ["AGENTS.md"], confidence: 0.9),
+        CorrectionCandidate(from: "legends dot md", targets: ["AGENTS.md"], confidence: 0.88),
+        CorrectionCandidate(from: "legends punto md", targets: ["AGENTS.md"], confidence: 0.88),
         CorrectionCandidate(from: "cloud md", targets: ["CLAUDE.md", "Claude.md"], confidence: 0.94),
         CorrectionCandidate(from: "cloud dot md", targets: ["CLAUDE.md", "Claude.md"], confidence: 0.92),
         CorrectionCandidate(from: "claude dot md", targets: ["CLAUDE.md", "Claude.md"], confidence: 0.92),

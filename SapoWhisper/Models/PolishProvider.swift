@@ -110,6 +110,10 @@ struct PolishProviderConfiguration {
 
     var requiresInternet: Bool { endpoint.requiresInternet }
 
+    var usesLocalTimeoutBudget: Bool {
+        endpoint == .localServer || Self.isLocalNetworkHost(baseURL.host)
+    }
+
     static func current(defaults: UserDefaults = .standard) -> PolishProviderConfiguration? {
         let endpointValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
@@ -134,6 +138,16 @@ struct PolishProviderConfiguration {
         let endpointValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
         return PolishEndpoint(rawValue: endpointValue) ?? .default
+    }
+
+    static func configuredEndpointUsesLocalTimeoutBudget(defaults: UserDefaults = .standard) -> Bool {
+        let endpoint = currentEndpoint(defaults: defaults)
+        guard endpoint != .localServer else { return true }
+
+        let customBaseURL = (defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let baseURL = URL(string: endpoint.presetBaseURL ?? customBaseURL) else { return false }
+        return isLocalNetworkHost(baseURL.host)
     }
 
     static func hostedEndpointIsPausedOffline(
@@ -174,5 +188,21 @@ struct PolishProviderConfiguration {
             return false
         }
         return scheme == "https" || scheme == "http"
+    }
+
+    private static func isLocalNetworkHost(_ host: String?) -> Bool {
+        guard let host = host?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !host.isEmpty else {
+            return false
+        }
+        if host == "localhost" || host == "::1" || host.hasSuffix(".local") {
+            return true
+        }
+
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4 else { return false }
+        if parts[0] == 10 || parts[0] == 127 || parts[0] == 169 && parts[1] == 254 { return true }
+        if parts[0] == 192 && parts[1] == 168 { return true }
+        if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
+        return false
     }
 }
