@@ -120,13 +120,9 @@ def polish_text(
     text: str,
     keyterms: list[str],
     replacements: dict[str, str],
-    memory: dict[str, collections.Counter],
     timeout: float,
 ) -> str:
     base = base_url.rstrip("/")
-    top_terms = ", ".join(term for term, _ in memory["terms"].most_common(14)) or "none"
-    suggestions = "; ".join(f'"{src}" -> "{dst}"' for (src, dst), _ in memory["suggestions"].most_common(10))
-    suggestions = suggestions or "none"
     replacement_lines = "; ".join(f'"{src}" -> "{dst}"' for src, dst in sorted(replacements.items())) or "none"
     keyterm_lines = ", ".join(keyterms[:80]) or "none"
 
@@ -140,9 +136,8 @@ Core rules:
 - Do not invent facts, answers, or conclusions.
 
 <local_learning_memory>
-Top terms: {top_terms}
-Candidate corrections: {suggestions}
-For candidate corrections, the right side is canonical. Replace the left side only when the same domain is clear.
+Accepted corrections are provided only through replacement hints below.
+Never create or recommend vocabulary/keyterms. Never inject a term when the transcript does not clearly point to it.
 </local_learning_memory>
 
 <vocabulary_hints>
@@ -265,116 +260,12 @@ def normalize(text: str) -> str:
     return re.sub(r"[\s._,-]+", " ", text.casefold()).strip()
 
 
-def record_memory(memory: dict[str, collections.Counter], raw: str, corrected: str, polished: str) -> None:
-    for term in extract_terms(polished):
-        memory["terms"][term] += 1
+def record_correction_suggestions(memory: collections.Counter, raw: str, corrected: str, polished: str) -> None:
     for source, target in KNOWN_CORRECTIONS:
         if contains_folded(raw, source) and contains_folded(polished, target):
-            memory["suggestions"][(source, target)] += 1
+            memory[(source, target)] += 1
         elif contains_folded(corrected, target) and contains_folded(polished, target):
-            memory["suggestions"][(source, target)] += 0
-
-
-def extract_terms(text: str) -> list[str]:
-    patterns = [
-        r"\b[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+\b",
-        r"(?<![A-Za-z0-9])\.[A-Za-z0-9_-]+\b",
-        r"\b[A-Z]{2,}(?:\s+[A-Z]{2,})?\b",
-        r"\b(?:git|npm|pnpm|swift|xcodebuild|make|curl|docker|kubectl|ssh)\s+[A-Za-z0-9_./:-]+",
-    ]
-    raw_terms = []
-    for pattern in patterns:
-        raw_terms.extend(re.findall(pattern, text))
-    richer_keys = {
-        token.casefold()
-        for term in raw_terms
-        if any(symbol in term for symbol in ".-/")
-        for token in re.findall(r"[A-Za-z0-9]+", term)
-    }
-    allowed_acronyms = {
-        "api",
-        "api rest",
-        "ci",
-        "cli",
-        "http",
-        "https",
-        "json",
-        "llm",
-        "pr",
-        "rest api",
-        "sql",
-        "stt",
-        "tts",
-        "url",
-        "uuid",
-        "vps",
-    }
-    standalone_extension_noise = {
-        ".css",
-        ".csv",
-        ".html",
-        ".js",
-        ".json",
-        ".jsx",
-        ".md",
-        ".mp3",
-        ".mp4",
-        ".py",
-        ".sql",
-        ".swift",
-        ".ts",
-        ".tsx",
-        ".txt",
-        ".wav",
-        ".yaml",
-        ".yml",
-    }
-    command_follower_noise = {
-        "a",
-        "al",
-        "con",
-        "de",
-        "del",
-        "el",
-        "en",
-        "es",
-        "la",
-        "las",
-        "lo",
-        "los",
-        "para",
-        "por",
-        "que",
-        "sin",
-        "un",
-        "una",
-        "y",
-    }
-    seen = set()
-    terms = []
-    for match in raw_terms:
-        key = normalize(match)
-        if not key or key in {"ai", "ia", "ok"}:
-            continue
-        if match.casefold() in standalone_extension_noise:
-            continue
-        parts = key.split(maxsplit=1)
-        if (
-            len(parts) == 2
-            and parts[0] in {"git", "npm", "pnpm", "swift", "xcodebuild", "make", "curl", "docker", "kubectl", "ssh"}
-            and parts[1] in command_follower_noise
-        ):
-            continue
-        if re.fullmatch(r"\d+(?:[.:-]\d+)+", match):
-            continue
-        if match.isupper() and len(match) > 3 and key in richer_keys:
-            continue
-        if match.isupper() and not any(symbol in match for symbol in ".-/") and key not in allowed_acronyms:
-            continue
-        if key not in seen:
-            seen.add(key)
-            terms.append(match)
-    return terms[:24]
+            memory[(source, target)] += 0
 
 
 def relative_audio_path(value: str | None) -> pathlib.Path | None:
@@ -390,7 +281,7 @@ def main() -> int:
     args = parse_args()
     keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
     rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains)
-    memory = {"terms": collections.Counter(), "suggestions": collections.Counter()}
+    correction_suggestions = collections.Counter()
     metrics = collections.Counter()
     latencies: list[float] = []
     samples = []
@@ -418,7 +309,6 @@ def main() -> int:
                 corrected,
                 keyterms,
                 replacements,
-                memory,
                 args.timeout,
             )
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, json.JSONDecodeError) as error:
@@ -431,7 +321,7 @@ def main() -> int:
         accepted, reasons = evaluate_guard(corrected, polished, keyterms)
         if accepted:
             metrics["accepted"] += 1
-            record_memory(memory, raw, corrected, polished)
+            record_correction_suggestions(correction_suggestions, raw, corrected, polished)
         else:
             metrics["guard_rejected"] += 1
             for reason in reasons:
@@ -458,10 +348,9 @@ def main() -> int:
         "rows_requested": args.limit,
         "metrics": dict(metrics),
         "avg_polish_seconds": round(sum(latencies) / len(latencies), 3) if latencies else None,
-        "top_terms": memory["terms"].most_common(15),
         "suggestions": [
             {"from": source, "to": target, "count": count}
-            for (source, target), count in memory["suggestions"].most_common(20)
+            for (source, target), count in correction_suggestions.most_common(20)
             if count > 0
         ],
     }
@@ -480,9 +369,8 @@ def main() -> int:
             print(f"Audio retranscribed: {metrics['audio_retranscribed']}")
             print(f"Audio missing/failed: {metrics['audio_missing_or_failed']}")
         print(f"Average polish seconds: {result['avg_polish_seconds']}")
-        print("Top learned terms:", ", ".join(term for term, _ in result["top_terms"]) or "none")
         print(
-            "Suggestions:",
+            "Correction suggestions:",
             "; ".join(f"{item['from']} -> {item['to']} x{item['count']}" for item in result["suggestions"]) or "none",
         )
     return 0 if metrics["provider_errors"] == 0 else 1

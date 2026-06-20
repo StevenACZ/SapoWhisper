@@ -435,7 +435,7 @@
 "config.vocabulary" = "Vocabulary";
 "config.keyterms" = "Keywords";
 "config.keyterm_placeholder" = "e.g. Claude Code";
-"config.keyterms_desc" = "Words that supported cloud engines will prioritize when transcribing";
+"config.keyterms_desc" = "User-added or imported words; AI never adds suggestions here.";
 "config.keyterm_limit_batch" = "%@ saved term(s) exceed the ElevenLabs batch limits (50 characters, 5 words) and will be skipped on that engine.";
 "config.keyterm_limit_realtime" = "%@ saved term(s) exceed the ElevenLabs realtime limit (20 characters) and will be skipped on that mode.";
 "config.replacements" = "Auto-corrections";
@@ -443,7 +443,7 @@
 "config.replace_to" = "Replace with";
 "config.replacements_desc" = "Automatically correct words in the transcription output";
 "config.add" = "Add";
-"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by transcription engines and AI polish.";
+"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections. Keywords are manual; AI only suggests automatic corrections.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
 "settings.vocabulary.empty" = "No results";
 "settings.vocabulary.export" = "Export";

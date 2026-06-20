@@ -435,7 +435,7 @@
 "config.vocabulary" = "Vocabulario";
 "config.keyterms" = "Palabras clave";
 "config.keyterm_placeholder" = "Ej: Claude Code";
-"config.keyterms_desc" = "Palabras que los motores cloud compatibles priorizaran al transcribir";
+"config.keyterms_desc" = "Palabras agregadas manualmente o importadas; la IA no agrega sugerencias aqui.";
 "config.keyterm_limit_batch" = "%@ término(s) guardado(s) superan los límites de ElevenLabs batch (50 caracteres, 5 palabras) y se omitirán en ese motor.";
 "config.keyterm_limit_realtime" = "%@ término(s) guardado(s) superan el límite de ElevenLabs realtime (20 caracteres) y se omitirán en ese modo.";
 "config.replacements" = "Correcciones automaticas";
@@ -443,7 +443,7 @@
 "config.replace_to" = "Corregir a";
 "config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
 "config.add" = "Agregar";
-"settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes usadas por los motores de transcripción y la mejora por IA.";
+"settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes. Las palabras clave son manuales; la IA solo sugiere correcciones automaticas.";
 "settings.vocabulary.search" = "Buscar vocabulario o correcciones";
 "settings.vocabulary.empty" = "No hay resultados";
 "settings.vocabulary.export" = "Exportar";

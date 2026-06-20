@@ -45,10 +45,7 @@ struct AIPolishCorrectionSuggestion: Codable, Equatable, Identifiable {
 
 struct AIPolishMemoryContext: Equatable {
     let detectedMode: AIPolishDetectedMode
-    let topDailyTerms: [String]
-    let topWeeklyTerms: [String]
     let acceptedCorrections: [AIPolishCorrectionSuggestion]
-    let pendingCorrections: [AIPolishCorrectionSuggestion]
 
     var promptBlock: String {
         var lines: [String] = [
@@ -56,21 +53,14 @@ struct AIPolishMemoryContext: Equatable {
             "Detected writing mode: \(detectedMode.promptName)",
         ]
 
-        lines.append("Top terms today: \(topDailyTerms.isEmpty ? "none" : topDailyTerms.joined(separator: ", "))")
-        lines.append("Top terms this week: \(topWeeklyTerms.isEmpty ? "none" : topWeeklyTerms.joined(separator: ", "))")
-
         let accepted = acceptedCorrections.map { "\"\(sanitize($0.from))\" -> \"\(sanitize($0.to))\"" }
         lines.append("Accepted corrections: \(accepted.isEmpty ? "none" : accepted.joined(separator: "; "))")
 
-        let pending = pendingCorrections.map { "\"\(sanitize($0.from))\" -> \"\(sanitize($0.to))\"" }
-        lines.append("Candidate corrections: \(pending.isEmpty ? "none" : pending.joined(separator: "; "))")
-
         lines.append(
-            "For accepted and candidate corrections, the right side is the canonical wording. If the transcript contains the left side in the same domain, replace that phrase with the right side."
+            "For accepted corrections, the right side is the canonical wording. If the transcript contains the left side in the same domain, replace that phrase with the right side."
         )
         lines.append(
-            "Use this local memory only as recognition context. "
-                + "Never inject a term when the transcript does not clearly point to it."
+            "Use this local memory only as correction context. Never create or recommend vocabulary/keyterms. Never inject a term when the transcript does not clearly point to it."
         )
         lines.append(
             "Mode guidance: technical keeps commands/files/APIs exact; work uses readable message punctuation; finance preserves amounts, dates, tickers, and entities; natural keeps a conversational tone."
@@ -97,11 +87,9 @@ final class AIPolishMemoryManager: ObservableObject {
     private let fileURL: URL
     private let lock = NSRecursiveLock()
     private var store: Store
-    private var calendar: Calendar
 
-    init(fileURL: URL, calendar: Calendar = .current) {
+    init(fileURL: URL, calendar _: Calendar = .current) {
         self.fileURL = fileURL
-        self.calendar = calendar
         self.store = Self.loadStore(from: fileURL)
         self.pendingSuggestions = Self.visiblePendingSuggestions(from: store)
     }
@@ -127,16 +115,10 @@ final class AIPolishMemoryManager: ObservableObject {
             in: [rawText, correctedText, keyterms.joined(separator: " "), replacements.values.joined(separator: " ")]
                 .joined(separator: " ")
         )
-        let suppressedTermKeys = Self.suppressedMemoryTermKeys(keyterms: keyterms, replacements: replacements)
-        let today = dayKey(for: now)
-        let week = weekKey(for: now)
 
         return AIPolishMemoryContext(
             detectedMode: detectedMode,
-            topDailyTerms: topTerms(for: today, keyPath: \.dayCounts, excluding: suppressedTermKeys, limit: 12),
-            topWeeklyTerms: topTerms(for: week, keyPath: \.weekCounts, excluding: suppressedTermKeys, limit: 16),
-            acceptedCorrections: suggestions(status: .accepted, limit: 12),
-            pendingCorrections: suggestions(status: .pending, limit: 8)
+            acceptedCorrections: suggestions(status: .accepted, limit: 12)
         )
     }
 
@@ -161,13 +143,6 @@ final class AIPolishMemoryManager: ObservableObject {
         store.totalTranscripts += 1
         store.modeCounts[Self.detectedMode(in: [raw, corrected, final].joined(separator: " ")).rawValue, default: 0] += 1
 
-        recordTerms(
-            in: final.isEmpty ? corrected : final,
-            keyterms: keyterms,
-            replacements: replacements,
-            learnInferredTerms: status == .applied,
-            now: now
-        )
         recordCorrectionSuggestions(
             observedRawText: raw,
             correctedText: corrected,
@@ -202,11 +177,11 @@ final class AIPolishMemoryManager: ObservableObject {
         return removed
     }
 
-    func snapshot() -> (terms: [TermUsageRecord], suggestions: [AIPolishCorrectionSuggestion]) {
+    func snapshot() -> (terms: [String], suggestions: [AIPolishCorrectionSuggestion]) {
         lock.lock()
         defer { lock.unlock() }
         return (
-            terms: store.termStats.values.sorted { $0.totalCount > $1.totalCount },
+            terms: [],
             suggestions: store.correctionSuggestions.values.sorted { $0.lastSeen > $1.lastSeen }
         )
     }
@@ -221,38 +196,6 @@ final class AIPolishMemoryManager: ObservableObject {
         save()
         publishPendingSuggestions()
         return suggestion
-    }
-
-    private func recordTerms(
-        in text: String,
-        keyterms: [String],
-        replacements: [String: String],
-        learnInferredTerms: Bool,
-        now: Date
-    ) {
-        let knownTerms = Self.uniqueTerms(keyterms + Array(replacements.values))
-        let knownMatches = knownTerms.filter { Self.containsTerm($0, in: text) }
-        let suppressedTermKeys = Self.suppressedMemoryTermKeys(keyterms: keyterms, replacements: replacements)
-        let inferredTerms =
-            learnInferredTerms
-            ? Self.inferredTerms(from: text).filter { !suppressedTermKeys.contains(Self.normalizedKey($0)) }
-            : []
-        let terms = Self.uniqueTerms(knownMatches + inferredTerms).prefix(40)
-        let today = dayKey(for: now)
-        let week = weekKey(for: now)
-
-        for term in terms {
-            let normalized = Self.normalizedKey(term)
-            guard !normalized.isEmpty else { continue }
-
-            var record = store.termStats[normalized] ?? TermUsageRecord(term: term)
-            record.term = preferDisplayTerm(current: record.term, candidate: term)
-            record.totalCount += 1
-            record.dayCounts[today, default: 0] += 1
-            record.weekCounts[week, default: 0] += 1
-            record.lastSeen = now
-            store.termStats[normalized] = record
-        }
     }
 
     private func recordCorrectionSuggestions(
@@ -323,46 +266,13 @@ final class AIPolishMemoryManager: ObservableObject {
         store.correctionSuggestions[id] = suggestion
     }
 
-    private func prune(now: Date) {
-        let cutoff = calendar.date(byAdding: .day, value: -60, to: now) ?? now
-
-        store.termStats = store.termStats.filter { _, record in
-            record.lastSeen >= cutoff
-        }
-        for (key, var record) in store.termStats {
-            record.dayCounts = record.dayCounts.filter { $0.key >= dayKey(for: cutoff) }
-            record.weekCounts = record.weekCounts.filter { $0.key >= weekKey(for: cutoff) }
-            store.termStats[key] = record
-        }
-
+    private func prune(now _: Date) {
         if store.correctionSuggestions.count > 250 {
             let keep = store.correctionSuggestions.values
                 .sorted { $0.lastSeen > $1.lastSeen }
                 .prefix(250)
             store.correctionSuggestions = Dictionary(uniqueKeysWithValues: keep.map { ($0.id, $0) })
         }
-    }
-
-    private func topTerms(
-        for key: String,
-        keyPath: KeyPath<TermUsageRecord, [String: Int]>,
-        excluding suppressedTermKeys: Set<String> = [],
-        limit: Int
-    ) -> [String] {
-        store.termStats.values
-            .compactMap { record -> (String, Int)? in
-                guard !suppressedTermKeys.contains(Self.normalizedKey(record.term)) else { return nil }
-                guard let count = record[keyPath: keyPath][key], count > 0 else { return nil }
-                return (record.term, count)
-            }
-            .sorted {
-                if $0.1 == $1.1 {
-                    return $0.0.localizedStandardCompare($1.0) == .orderedAscending
-                }
-                return $0.1 > $1.1
-            }
-            .prefix(limit)
-            .map(\.0)
     }
 
     private func suggestions(status: AIPolishSuggestionStatus, limit: Int) -> [AIPolishCorrectionSuggestion] {
@@ -393,23 +303,6 @@ final class AIPolishMemoryManager: ObservableObject {
         guard let data = try? JSONEncoder.prettyMemoryEncoder.encode(store) else { return }
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: fileURL, options: .atomic)
-    }
-
-    private func dayKey(for date: Date) -> String {
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
-    }
-
-    private func weekKey(for date: Date) -> String {
-        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        return String(format: "%04d-W%02d", components.yearForWeekOfYear ?? 0, components.weekOfYear ?? 0)
-    }
-
-    private func preferDisplayTerm(current: String, candidate: String) -> String {
-        if current == current.lowercased(), candidate != candidate.lowercased() {
-            return candidate
-        }
-        return current
     }
 
     private func preferCorrectionSource(current: String, candidate: String) -> String {
@@ -477,72 +370,6 @@ final class AIPolishMemoryManager: ObservableObject {
         needles.contains { text.contains($0) }
     }
 
-    private static func inferredTerms(from text: String) -> [String] {
-        let patterns = [
-            #"\b[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+\b"#,
-            #"(?<![A-Za-z0-9])\.[A-Za-z0-9_-]+\b"#,
-            #"\b[A-Z]{2,}(?:\s+[A-Z]{2,})?\b"#,
-            #"\b(?:git|npm|pnpm|swift|xcodebuild|make|curl|docker|kubectl|ssh|scp|rsync)\s+[A-Za-z0-9_./:-]+(?:\s+[A-Za-z0-9_./:=@-]+)?"#,
-        ]
-
-        let rawTerms = patterns.flatMap { pattern in
-            matches(pattern: pattern, in: text)
-        }
-        let richerTermKeys = Set(
-            rawTerms
-                .filter { $0.contains(".") || $0.contains("-") || $0.contains("/") }
-                .flatMap { alphanumericTokens(in: $0).map { $0.lowercased() } }
-        )
-        let stopTerms: Set<String> = ["ai", "ia", "ok"]
-        let standaloneExtensionNoise: Set<String> = [
-            ".css", ".csv", ".html", ".js", ".json", ".jsx", ".md", ".mp3", ".mp4", ".py", ".sql",
-            ".swift", ".ts", ".tsx", ".txt", ".wav", ".yaml", ".yml",
-        ]
-        let allowedAcronyms: Set<String> = [
-            "api", "api rest", "ci", "cli", "http", "https", "json", "llm", "pr", "rest api", "sql", "stt",
-            "tts", "url", "uuid", "vps",
-        ]
-        let commandFollowerNoise: Set<String> = [
-            "a", "al", "con", "de", "del", "el", "en", "es", "la", "las", "lo", "los", "para", "por", "que",
-            "sin", "un", "una", "y",
-        ]
-
-        return rawTerms.filter { term in
-            let normalized = normalizedKey(term)
-            guard !stopTerms.contains(normalized) else { return false }
-            guard !standaloneExtensionNoise.contains(term.lowercased()) else { return false }
-            if let firstSpace = normalized.firstIndex(of: " ") {
-                let command = String(normalized[..<firstSpace])
-                let follower = String(normalized[normalized.index(after: firstSpace)...])
-                if ["git", "npm", "pnpm", "swift", "xcodebuild", "make", "curl", "docker", "kubectl", "ssh", "scp", "rsync"]
-                    .contains(command),
-                    commandFollowerNoise.contains(follower)
-                {
-                    return false
-                }
-            }
-            guard !(term == term.uppercased() && term.count > 3 && richerTermKeys.contains(normalized)) else {
-                return false
-            }
-            guard
-                !(term == term.uppercased() && !term.contains(where: { ".-/".contains($0) })
-                    && !allowedAcronyms.contains(normalized))
-            else {
-                return false
-            }
-            return true
-        }
-    }
-
-    private static func matches(pattern: String, in text: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return regex.matches(in: text, range: range).compactMap { match in
-            guard let valueRange = Range(match.range, in: text) else { return nil }
-            return String(text[valueRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-    }
-
     private static func uniqueTerms(_ terms: [String]) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
@@ -573,26 +400,8 @@ final class AIPolishMemoryManager: ObservableObject {
         normalizedText(text).lowercased()
     }
 
-    private static func alphanumericTokens(in text: String) -> [String] {
-        text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
-
     private static func suggestionID(from: String, to: String) -> String {
         "\(normalizedKey(from))->\(normalizedKey(to))"
-    }
-
-    private static func suppressedMemoryTermKeys(
-        keyterms: [String],
-        replacements: [String: String]
-    ) -> Set<String> {
-        let canonicalKeys = Set(Self.uniqueTerms(keyterms + Array(replacements.values)).map(normalizedKey))
-        var suppressed = Set<String>()
-        if canonicalKeys.contains("agents md") {
-            ["legends.md", "legends md", "legends dot md", "legends punto md"].forEach {
-                suppressed.insert(normalizedKey($0))
-            }
-        }
-        return suppressed
     }
 
     private static let defaultCorrectionTargets = [
@@ -630,28 +439,11 @@ final class AIPolishMemoryManager: ObservableObject {
         CorrectionCandidate(from: "pool request", targets: ["pull request"], confidence: 0.9),
     ]
 
-    struct TermUsageRecord: Codable, Equatable {
-        var term: String
-        var totalCount: Int
-        var dayCounts: [String: Int]
-        var weekCounts: [String: Int]
-        var lastSeen: Date
-
-        init(term: String) {
-            self.term = term
-            self.totalCount = 0
-            self.dayCounts = [:]
-            self.weekCounts = [:]
-            self.lastSeen = Date(timeIntervalSince1970: 0)
-        }
-    }
-
     private struct Store: Codable {
-        var version = 1
+        var version = 2
         var totalTranscripts = 0
         var lastUpdated: Date?
         var modeCounts: [String: Int] = [:]
-        var termStats: [String: TermUsageRecord] = [:]
         var correctionSuggestions: [String: AIPolishCorrectionSuggestion] = [:]
     }
 

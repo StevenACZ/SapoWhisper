@@ -17,7 +17,7 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         return AIPolishMemoryManager(fileURL: url, calendar: calendar)
     }
 
-    func testRecordsTechnicalTermsAndCorrectionSuggestions() {
+    func testRecordsCorrectionSuggestionsWithoutLearningKeyterms() {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)  // 2026-02-20 UTC
 
@@ -38,11 +38,13 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             replacements: [:],
             now: now
         )
-        let suggestions = manager.snapshot().suggestions
+        let snapshot = manager.snapshot()
+        let suggestions = snapshot.suggestions
 
         XCTAssertEqual(context.detectedMode, .technical)
-        XCTAssertTrue(context.topDailyTerms.contains("git commit"))
-        XCTAssertTrue(context.topWeeklyTerms.contains("CLAUDE.md"))
+        XCTAssertTrue(snapshot.terms.isEmpty)
+        XCTAssertFalse(context.promptBlock.contains("Top terms"))
+        XCTAssertFalse(context.promptBlock.contains("Candidate corrections"))
         XCTAssertTrue(suggestions.contains { $0.from == "deep commit" && $0.to == "git commit" })
         XCTAssertTrue(suggestions.contains { $0.from == "cloud md" && $0.to == "CLAUDE.md" })
         XCTAssertTrue(suggestions.contains { $0.from == "ali test" && $0.to == "REST API" })
@@ -78,12 +80,12 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         )
 
         XCTAssertTrue(context.acceptedCorrections.contains { $0.from == "deep comment" })
-        XCTAssertFalse(context.pendingCorrections.contains { $0.from == "cloud code" })
         XCTAssertTrue(context.promptBlock.contains("\"deep comment\" -> \"git commit\""))
         XCTAssertFalse(context.promptBlock.contains("\"cloud code\" -> \"Claude Code\""))
+        XCTAssertFalse(context.promptBlock.contains("Candidate corrections"))
     }
 
-    func testPromptBuilderIncludesCompactLocalMemoryContext() {
+    func testPromptBuilderIncludesAcceptedCorrectionsOnlyInLocalMemoryContext() throws {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
         for index in 0..<30 {
@@ -97,6 +99,10 @@ final class AIPolishMemoryManagerTests: XCTestCase {
                 now: now
             )
         }
+        let suggestion = try XCTUnwrap(
+            manager.snapshot().suggestions.first { $0.from == "deep commit" && $0.to == "git commit" }
+        )
+        manager.acceptSuggestion(id: suggestion.id)
 
         let context = manager.contextPacket(
             rawText: "revisa cloud md",
@@ -125,12 +131,16 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertLessThan(context.promptBlock.count, 1_800)
         XCTAssertTrue(messages.system.contains("<local_learning_memory>"))
         XCTAssertTrue(messages.system.contains("Detected writing mode: technical"))
-        XCTAssertTrue(messages.system.contains("Candidate corrections"))
+        XCTAssertTrue(messages.system.contains("Accepted corrections"))
+        XCTAssertTrue(messages.system.contains("\"deep commit\" -> \"git commit\""))
+        XCTAssertFalse(messages.system.contains("Candidate corrections"))
+        XCTAssertFalse(messages.system.contains("Top terms"))
+        XCTAssertFalse(messages.system.contains("\"cloud md\" -> \"CLAUDE.md\""))
         XCTAssertTrue(messages.system.contains("right side is the canonical wording"))
         XCTAssertEqual(messages.user, "revisa cloud md")
     }
 
-    func testTermRankingIgnoresShortAIAndFileStemNoise() {
+    func testDoesNotLearnOrPromptKeytermSuggestions() {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
 
@@ -144,6 +154,7 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             now: now
         )
 
+        let snapshot = manager.snapshot()
         let context = manager.contextPacket(
             rawText: "la IA debe revisar agents md",
             correctedText: "la IA debe revisar AGENTS.md",
@@ -152,15 +163,13 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             now: now
         )
 
-        XCTAssertTrue(context.topDailyTerms.contains("AGENTS.md"))
-        XCTAssertFalse(context.topDailyTerms.contains("IA"))
-        XCTAssertFalse(context.topDailyTerms.contains("AGENTS"))
-        XCTAssertFalse(context.topDailyTerms.contains(".md"))
-        XCTAssertFalse(context.topDailyTerms.contains("git de"))
-        XCTAssertFalse(context.topDailyTerms.contains("git para"))
+        XCTAssertTrue(snapshot.terms.isEmpty)
+        XCTAssertFalse(context.promptBlock.contains("Top terms"))
+        XCTAssertFalse(context.promptBlock.contains("AGENTS.md"))
+        XCTAssertFalse(context.promptBlock.contains(".md"))
     }
 
-    func testFailedPolishDoesNotLearnInferredTerms() {
+    func testFailedPolishDoesNotLearnKeytermsOrCorrections() {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
 
@@ -174,16 +183,17 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             now: now
         )
 
-        let context = manager.contextPacket(
+        _ = manager.contextPacket(
             rawText: "actualizaste legends.md",
             correctedText: "actualizaste legends.md",
             keyterms: ["AGENTS.md", "Claude Code"],
             replacements: [:],
             now: now
         )
+        let snapshot = manager.snapshot()
 
-        XCTAssertFalse(context.topDailyTerms.contains("legends.md"))
-        XCTAssertTrue(context.topDailyTerms.contains("Claude Code"))
+        XCTAssertTrue(snapshot.terms.isEmpty)
+        XCTAssertFalse(snapshot.suggestions.contains { $0.from == "legends.md" })
     }
 
     func testAgentsConfusionCanCreateReviewableSuggestionWhenCorrected() {
