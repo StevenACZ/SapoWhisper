@@ -55,6 +55,8 @@ Signing.xcconfig
 Packages/
 Package.resolved
 !SapoWhisper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+__pycache__/
+*.pyc
 
 # CocoaPods, if used later
 Pods/
@@ -124,6 +126,7 @@ temp/
 !TestAssets/
 !TestAssets/LocalAITranscription/
 !TestAssets/LocalAITranscription/*.wav
+!TestAssets/LocalAITranscription/**/*.wav
 
 # Local AI/editor context
 .agent/

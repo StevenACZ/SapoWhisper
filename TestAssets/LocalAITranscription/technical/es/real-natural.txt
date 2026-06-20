@@ -1,0 +1,13 @@
+Bueno, eh, voy a hacer una prueba real de SapoWhisper en español, con voz natural, pausas normales y algunas muletillas. La idea es revisar si el Local AI Server, o sea el Local AI Server (NVIDIA), entiende bien el vocabulario técnico antes de pasar por AI polish.
+
+Primero, este, voy a nombrar archivos y comandos que uso todos los días: .env, .md, .gitignore, README.md, CHANGELOG, AGENTS.md y CLAUDE.md. Después abro GitHub, reviso la branch, hago git commit, hago git push, preparo un pull request, miro el PR, reviso el merge y espero que el CI check pase sin errores.
+
+Ahora voy con herramientas de agentes y modelos. Uso Codex, Claude Code, Hermes y Kimi V2 para revisar un prompt, depurar la CLI y comparar resultados. A veces digo commit, push o merge sueltos, y necesito que el texto final mantenga esas palabras sin traducirlas ni cambiarlas.
+
+En la parte de motores de transcripción, eh, quiero comparar WhisperKit, Deepgram batch con Nova-3, ElevenLabs batch con Scribe v2, y también el Local AI Server. Si Deepgram o ElevenLabs escuchan una palabra rara, igual quiero que la corrección conserve la forma canonical guardada.
+
+Para desarrollo de apps uso Xcode, Swift, SwiftUI, macOS, App Store Connect y TestFlight. También menciono Android Studio, Flutter y Vue 3 cuando hablo de interfaces, builds y pruebas rápidas.
+
+Para infraestructura, este, normalmente digo Hetzner, VPS, Docker, Nginx, PostgreSQL, Redis, Cloudflare y WireGuard. En casa también puedo hablar de Jellyfin y qBittorrent, pero quiero que esos nombres salgan escritos exactos, no como si fueran palabras comunes.
+
+Finalmente, para datos y APIs, necesito que SQLite, Keychain, UserDefaults, WebSocket, REST API, JSON y UUID se mantengan bien escritos. O sea, si grabo este audio con muletillas y pausas, el benchmark debería mostrar si el motor reconoce el español real sin romper los términos técnicos.

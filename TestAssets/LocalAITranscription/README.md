@@ -12,14 +12,13 @@ Public benchmark fixtures for SapoWhisper's `Local AI Server (NVIDIA)` engine.
 - `technical/vocabulary.json`: public keyterms used for technical vocabulary scoring.
 - `technical/en/short.txt` / `technical/en/short.wav`: short English technical dictation fixture.
 - `technical/en/medium.txt` / `technical/en/medium.wav`: medium English technical dictation fixture.
-- `technical/es/short.txt` / `technical/es/short.wav`: short Spanish technical dictation fixture.
-- `technical/es/medium.txt` / `technical/es/medium.wav`: medium Spanish technical dictation fixture.
+- `technical/es/real-natural.txt` / `technical/es/real-natural.wav`: primary Spanish technical dictation fixture, recorded with natural speech and controlled filler words.
 
 All WAV files are `16 kHz`, mono, `pcm_s16le`, matching SapoWhisper's normal recording format.
 
 ## Benchmark
 
-Run the public benchmark script without storing results in the repo:
+Run the public benchmark script without storing results in the repo. The scripts read ignored local credentials and endpoints from `.env` when present:
 
 ```bash
 BASE_URL=http://YOUR_SERVER_IP:8000 \
@@ -62,6 +61,10 @@ scripts/cloud_stt_benchmark.sh
 `scripts/cloud_stt_benchmark.sh` reads ignored local credentials from `.env` (`DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`) and supports `ENGINE=deepgram` for Nova-3 batch or `ENGINE=elevenlabs` for Scribe v2 batch.
 
 Use the longer clips to compare throughput and queue behavior. For fair model comparisons, run one cold request first, then measure several warm requests.
+
+## Natural Spanish Fixture
+
+`technical/es/real-natural.wav` is the primary Spanish regression fixture. It is intentionally natural: it includes pauses, repeated words, and filler words, while `technical/es/real-natural.txt` keeps the expected canonical spelling for technical terms.
 
 Speaches requires the model to be installed first. If the benchmark returns a 404 saying the model is not installed, download it once:
 
