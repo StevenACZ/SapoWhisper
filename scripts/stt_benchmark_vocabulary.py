@@ -38,11 +38,11 @@ EXACT_CONFUSIONS = {
     "local ai server (nvidia)": ["Local AI Server NVIDIA", "Local AI Server, NVIDIA", "local ya server NVIDIA", "localia server NVIDIA"],
     "ai polish": ["a AI", "a AI polish", "ahí a Polish"],
     "commit": ["comet", "comit", "commet", "HacerunComet"],
-    "git commit": ["hago Kimi", "Kit commit"],
+    "git commit": ["deep comment", "deep comet", "dip comment", "hago Kimi", "Kit commit"],
     "kimi v2": ["KimiV2", "Kimi P2", "Kimi P 2", "KimiVersión2", "Kimi version 2", "Kimi version dos", "Kimi versión dos", "Kimi V two", "Kimi V dos"],
     "qbittorrent": ["KubiTorret", "Kubi Torrent", "QubiTorrent", "Qubitorrel", "Cubitorrel", "qBittorrent", "qbittorrent"],
     "vue 3": ["Vue three"],
-    "git push": ["hit pug", "kit push"],
+    "git push": ["deep push", "dip push", "hit pug", "kit push"],
     "testflight": ["TestFly"],
     "sqlite": ["SQ Lite", "UseSqlite"],
     "userdefaults": ["UserDefault", "User Default", "User Defaults"],
@@ -175,7 +175,15 @@ def apply_recognition_corrections(transcript, keyterms, replacements):
     current = transcript
     for original, replacement in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
         current = re.sub(replacement_pattern(original), replacement, current, flags=re.IGNORECASE)
-    pairs = [(variant, canonical) for canonical in keyterms + [value for _, value in sorted(replacements.items())] for variant in recognition_variants(canonical)]
+    candidates = keyterms + [value for _, value in sorted(replacements.items())]
+    available_terms = {term.strip().casefold() for term in candidates if term.strip()}
+    if "git" in available_terms and "commit" in available_terms:
+        for variant in ["deep comment", "deep comet", "dip comment"]:
+            current = re.sub(whole_term_pattern(variant), "git commit", current, flags=re.IGNORECASE)
+    if "git" in available_terms and "push" in available_terms:
+        for variant in ["deep push", "dip push"]:
+            current = re.sub(whole_term_pattern(variant), "git push", current, flags=re.IGNORECASE)
+    pairs = [(variant, canonical) for canonical in candidates for variant in recognition_variants(canonical)]
     for variant, canonical in sorted(pairs, key=lambda pair: len(pair[0]), reverse=True):
         current = re.sub(whole_term_pattern(variant), canonical, current, flags=re.IGNORECASE)
     return current

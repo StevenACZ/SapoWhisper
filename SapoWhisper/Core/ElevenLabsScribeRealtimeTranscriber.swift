@@ -83,9 +83,11 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.sapowhisper.elevenlabsRealtimeAudioSender", qos: .userInitiated)
     private let statsLock = NSLock()
     private let stateLock = NSLock()
+    private let pendingAudioLock = NSLock()
 
     private var task: URLSessionWebSocketTask?
     private var isActive = false
+    private var generation = 0
     private var hasUsedFirstSendBudget = false
     private var pendingAudio = Data()
     private var enqueuedChunks = 0
@@ -102,16 +104,21 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         stateLock.lock()
         self.task = task
         isActive = true
+        generation &+= 1
         stateLock.unlock()
         SapoLog.recording.info("ElevenLabs realtime audio sender started")
     }
 
     func enqueue(_ data: Data) {
         guard !data.isEmpty else { return }
+        guard let activeGeneration = currentGenerationIfActive() else {
+            registerFailedMessage()
+            return
+        }
         registerEnqueuedChunk(byteCount: data.count)
 
         queue.async { [weak self] in
-            self?.appendAndFlushIfNeeded(data)
+            self?.appendAndFlushIfNeeded(data, generation: activeGeneration)
         }
     }
 
@@ -137,9 +144,13 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
                     _ = resumeOnce(returning: .empty)
                     return
                 }
+                guard let activeGeneration = self.currentGenerationIfActive() else {
+                    _ = resumeOnce(returning: self.snapshot())
+                    return
+                }
 
-                self.flushFinalCommit()
-                self.setActive(false)
+                self.flushFinalCommit(generation: activeGeneration)
+                self.deactivate(generation: activeGeneration)
                 let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
                 let stats = self.snapshot()
                 if resumeOnce(returning: stats) {
@@ -189,34 +200,50 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         )
     }
 
-    private func appendAndFlushIfNeeded(_ data: Data) {
-        guard currentTaskIfActive() != nil else {
+    private func appendAndFlushIfNeeded(_ data: Data, generation: Int) {
+        guard currentTaskIfActive(generation: generation) != nil else {
             registerFailedMessage()
             return
         }
 
+        var chunks: [Data] = []
+        var bufferedBytes = 0
+        pendingAudioLock.lock()
         pendingAudio.append(data)
-        registerBufferedBytes(pendingAudio.count)
+        bufferedBytes = pendingAudio.count
 
         while pendingAudio.count >= Constants.targetChunkBytes {
             let chunk = pendingAudio.prefix(Constants.targetChunkBytes)
             pendingAudio.removeFirst(Constants.targetChunkBytes)
-            sendAudioChunk(Data(chunk), commit: false)
+            chunks.append(Data(chunk))
+        }
+        pendingAudioLock.unlock()
+
+        registerBufferedBytes(bufferedBytes)
+        for chunk in chunks {
+            sendAudioChunk(chunk, commit: false, generation: generation)
         }
     }
 
-    private func flushFinalCommit() {
+    private func flushFinalCommit(generation: Int) {
+        guard currentTaskIfActive(generation: generation) != nil else {
+            registerFailedMessage()
+            return
+        }
+
+        pendingAudioLock.lock()
         var finalAudio = pendingAudio
         pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
 
         // A short silence tail gives the realtime service a clean boundary to finalize.
         finalAudio.append(Data(repeating: 0, count: Constants.finalSilenceBytes))
-        sendAudioChunk(finalAudio, commit: true)
+        sendAudioChunk(finalAudio, commit: true, generation: generation)
     }
 
-    private func sendAudioChunk(_ data: Data, commit: Bool) {
+    private func sendAudioChunk(_ data: Data, commit: Bool, generation: Int) {
         guard !data.isEmpty else { return }
-        guard let task = currentTaskIfActive() else {
+        guard let task = currentTaskIfActive(generation: generation) else {
             registerFailedMessage()
             return
         }
@@ -291,8 +318,11 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     }
 
     private func reset() {
-        statsLock.lock()
+        pendingAudioLock.lock()
         pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
+
+        statsLock.lock()
         hasUsedFirstSendBudget = false
         enqueuedChunks = 0
         sentMessages = 0
@@ -336,24 +366,34 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         statsLock.unlock()
     }
 
-    private func currentTaskIfActive() -> URLSessionWebSocketTask? {
+    private func currentGenerationIfActive() -> Int? {
         stateLock.lock()
         defer { stateLock.unlock() }
         guard isActive else { return nil }
+        return generation
+    }
+
+    private func currentTaskIfActive(generation expectedGeneration: Int) -> URLSessionWebSocketTask? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard isActive, generation == expectedGeneration else { return nil }
         return task
     }
 
-    private func setActive(_ active: Bool) {
+    private func deactivate(generation expectedGeneration: Int) {
         stateLock.lock()
-        isActive = active
+        if generation == expectedGeneration {
+            isActive = false
+        }
         stateLock.unlock()
     }
 
     private func abortPendingSends() {
-        setActive(false)
         stateLock.lock()
         let task = self.task
         self.task = nil
+        isActive = false
+        generation &+= 1
         stateLock.unlock()
         task?.cancel(with: .goingAway, reason: nil)
     }

@@ -191,8 +191,10 @@ final class VocabularyManagerTests: XCTestCase {
 
     func testRecognitionCorrectionsHandleRealSpanishTechnicalVariants() {
         let manager = makeManager()
+        manager.addKeyterm("git")
         manager.addKeyterm("commit")
         manager.addKeyterm("git commit")
+        manager.addKeyterm("git push")
         manager.addKeyterm("Hetzner")
         manager.addKeyterm("Jellyfin")
         manager.addKeyterm("Kimi V2")
@@ -209,7 +211,29 @@ final class VocabularyManagerTests: XCTestCase {
         )
         XCTAssertEqual(manager.applyingRecognitionCorrections(to: "uso Kimi p 2"), "uso Kimi V2")
         XCTAssertEqual(manager.applyingRecognitionCorrections(to: "hago Kimi"), "git commit")
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "haz un deep comment y un deep push"), "haz un git commit y un git push")
         XCTAssertEqual(manager.applyingRecognitionCorrections(to: "abre Vue"), "abre Vue")
+    }
+
+    func testRecognitionCorrectionsHandleGitPhrasesFromSeparateTerms() {
+        let manager = makeManager()
+        manager.addKeyterm("git")
+        manager.addKeyterm("commit")
+        manager.addKeyterm("push")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "haz un deep comment y un deep push"
+        )
+
+        XCTAssertEqual(output, "haz un git commit y un git push")
+
+        let managerWithoutGit = makeManager()
+        managerWithoutGit.addKeyterm("commit")
+        managerWithoutGit.addKeyterm("push")
+        XCTAssertEqual(
+            managerWithoutGit.applyingRecognitionCorrections(to: "haz un deep comment y un deep push"),
+            "haz un deep comment y un deep push"
+        )
     }
 
     func testRecognitionCorrectionsHandleNaturalSpanishFixtureVariants() {

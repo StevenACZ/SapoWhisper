@@ -243,7 +243,8 @@ class VocabularyManager: ObservableObject {
             }
             .sorted { $0.variant.count > $1.variant.count }
 
-        return correctionPairs.reduce(replacedTranscript) { current, pair in
+        let phraseCorrectedTranscript = applyingMultiTermCorrections(to: replacedTranscript)
+        return correctionPairs.reduce(phraseCorrectedTranscript) { current, pair in
             let pattern = Self.wholeTermPattern(for: pair.variant)
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
                 return current
@@ -258,6 +259,25 @@ class VocabularyManager: ObservableObject {
                 withTemplate: replacementTemplate
             )
         }
+    }
+
+    private func applyingMultiTermCorrections(to transcript: String) -> String {
+        let availableTerms = Set(
+            recognitionCandidates(includeReplacementValues: true)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        )
+        var current = transcript
+        if availableTerms.contains("git"), availableTerms.contains("commit") {
+            current = Self.replacingWholeTermVariants(
+                ["deep comment", "deep comet", "dip comment"],
+                with: "git commit",
+                in: current
+            )
+        }
+        if availableTerms.contains("git"), availableTerms.contains("push") {
+            current = Self.replacingWholeTermVariants(["deep push", "dip push"], with: "git push", in: current)
+        }
+        return current
     }
 
     private func recognitionCandidates(includeReplacementValues: Bool) -> [String] {
@@ -301,6 +321,25 @@ class VocabularyManager: ObservableObject {
 
     private static func correctionVariants(for keyterm: String) -> [String] {
         recognitionVariants(for: keyterm)
+    }
+
+    private static func replacingWholeTermVariants(_ variants: [String], with canonical: String, in transcript: String)
+        -> String
+    {
+        variants.reduce(transcript) { current, variant in
+            let pattern = wholeTermPattern(for: variant)
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return current
+            }
+            let range = NSRange(current.startIndex..<current.endIndex, in: current)
+            let replacementTemplate = NSRegularExpression.escapedTemplate(for: canonical)
+            return regex.stringByReplacingMatches(
+                in: current,
+                options: [],
+                range: range,
+                withTemplate: replacementTemplate
+            )
+        }
     }
 
     private static func spokenForm(for keyterm: String) -> String {
@@ -489,7 +528,7 @@ class VocabularyManager: ObservableObject {
             forms.append(contentsOf: ["comet", "comit", "commet", "HacerunComet"])
         }
         if lowercasedKeyterm == "git commit" {
-            forms.append(contentsOf: ["hago Kimi", "Kit commit"])
+            forms.append(contentsOf: ["deep comment", "deep comet", "dip comment", "hago Kimi", "Kit commit"])
         }
         if lowercasedKeyterm == "kimi v2" {
             forms.append(
@@ -531,7 +570,7 @@ class VocabularyManager: ObservableObject {
             )
         }
         if lowercasedKeyterm == "git push" {
-            forms.append(contentsOf: ["hit pug", "kit push"])
+            forms.append(contentsOf: ["deep push", "dip push", "hit pug", "kit push"])
         }
         if lowercasedKeyterm == "testflight" {
             forms.append("TestFly")
