@@ -62,3 +62,33 @@ final class TranscriptPolishTimeoutTests: XCTestCase {
         XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 100_000), 20)
     }
 }
+
+final class TranscriptPrePolishCorrectionTests: XCTestCase {
+
+    func testProcessAppliesVocabularyCorrectionsWhenAIPolishIsDisabled() async {
+        let key = Constants.StorageKeys.aiPolishEnabled
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: key)
+        defaults.set(false, forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        let vocabularyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pre-polish-vocab-\(UUID().uuidString).json")
+        let vocabularyManager = VocabularyManager(fileURL: vocabularyURL)
+        vocabularyManager.addKeyterm("SapoWhisper")
+        vocabularyManager.addKeyterm("CLAUDE.md")
+
+        let processor = TranscriptPostProcessor(vocabularyManager: vocabularyManager)
+        let result = await processor.process(rawText: "open sap o whisper and claude dot md")
+
+        XCTAssertEqual(result.status, .none)
+        XCTAssertEqual(result.rawText, "open SapoWhisper and CLAUDE.md")
+        XCTAssertEqual(result.finalText, "open SapoWhisper and CLAUDE.md")
+    }
+}

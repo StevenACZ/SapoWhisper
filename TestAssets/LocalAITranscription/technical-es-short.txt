@@ -1,0 +1,7 @@
+SapoWhisper.
+
+Revisa AGENTS.md.
+
+CI check, git commit, git push.
+
+App Store Connect, Hetzner, Jellyfin, Codex, Claude Code, Docker, Nginx, Cloudflare.

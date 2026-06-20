@@ -1,0 +1,9 @@
+Start a public SapoWhisper test with Local AI Server and AI polish off.
+
+Open AGENTS.md and CLAUDE.md in GitHub, then run git commit, git push, and a pull request after the CI check passes.
+
+For release notes, mention App Store Connect, TestFlight, Xcode, SwiftUI, WhisperKit, Deepgram batch, ElevenLabs batch, Nova-3, and Scribe v2.
+
+For operations, note Hetzner, Jellyfin, Docker, Nginx, PostgreSQL, Redis, Cloudflare, and WireGuard.
+
+For app storage, note SQLite, Keychain, UserDefaults, WebSocket, REST API, JSON, UUID, Codex, and Claude Code.

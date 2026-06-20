@@ -222,7 +222,6 @@ class VocabularyManager: ObservableObject {
                     (variant: variant, canonical: keyterm)
                 }
             }
-            .filter { $0.variant.compare($0.canonical, options: [.caseInsensitive]) != .orderedSame }
             .sorted { $0.variant.count > $1.variant.count }
 
         return correctionPairs.reduce(replacedTranscript) { current, pair in
@@ -260,11 +259,15 @@ class VocabularyManager: ObservableObject {
     }
 
     private static func recognitionVariants(for keyterm: String) -> [String] {
-        uniqueVariants([
-            keyterm,
-            spokenForm(for: keyterm),
-            spokenSymbolForm(for: keyterm),
-        ])
+        let spokenVariants =
+            [
+                keyterm,
+                spokenForm(for: keyterm),
+                spokenSymbolForm(for: keyterm),
+                spokenPeriodSymbolForm(for: keyterm),
+            ] + speechConfusionForms(for: keyterm)
+
+        return uniqueVariants(spokenVariants + spokenVariants.map(condensedSymbolForm))
     }
 
     private static func correctionVariants(for keyterm: String) -> [String] {
@@ -324,6 +327,136 @@ class VocabularyManager: ObservableObject {
             .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
     }
 
+    private static func spokenPeriodSymbolForm(for keyterm: String) -> String {
+        keyterm
+            .replacingOccurrences(of: ".", with: " period ")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+    }
+
+    private static func condensedSymbolForm(for keyterm: String) -> String {
+        keyterm.replacingOccurrences(of: #"[-_.\s]+"#, with: "", options: .regularExpression)
+    }
+
+    private static func speechConfusionForms(for keyterm: String) -> [String] {
+        var forms: [String] = []
+
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "Claude",
+            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Slough", "Clog"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "Deepgram",
+            with: ["Deep gram", "Depgram", "Deppgram"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "ElevenLabs",
+            with: ["Eleven Labs", "11labs"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "Local AI Server",
+            with: ["localize server"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "SapoWhisper",
+            with: [
+                "Sapo Whisper",
+                "Sapo Visper",
+                "SAP OVISPER",
+                "Sapa Whisper",
+                "SAPA Whisper",
+                "SAP Awhisper",
+                "Zap o Whisper",
+                "Zapo Whisper",
+                "Sapowisper",
+            ],
+            to: &forms
+        )
+        if keyterm.lowercased() == "claude.md" {
+            forms.append(contentsOf: ["claud mendy", "claude mendy", "cod md"])
+        }
+        if keyterm.lowercased() == "agents.md" {
+            forms.append(contentsOf: ["agens md", "agents knotsmd", "nats md", "agients md"])
+        }
+        if keyterm.lowercased() == "app store connect" {
+            forms.append(contentsOf: ["AppStore Connect", "AppStore, Connect", "Store Connect"])
+        }
+        if keyterm.lowercased() == "nova-3" {
+            forms.append("Nova three")
+        }
+        if keyterm.lowercased() == "scribe v2" {
+            forms.append("Scribe v two")
+        }
+        let lowercasedKeyterm = keyterm.lowercased()
+        if lowercasedKeyterm == "git" || lowercasedKeyterm.hasPrefix("git ") {
+            appendReplacementVariants(
+                for: keyterm,
+                replacing: "git",
+                with: ["hit"],
+                to: &forms
+            )
+        }
+        if lowercasedKeyterm == "push" || lowercasedKeyterm.contains(" push") {
+            appendReplacementVariants(
+                for: keyterm,
+                replacing: "push",
+                with: ["pug"],
+                to: &forms
+            )
+        }
+        if lowercasedKeyterm == "git push" {
+            forms.append("hit pug")
+        }
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "Hetzner",
+            with: ["Etzner", "Etsner"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "Jellyfin",
+            with: ["Jellifin", "Gelifin"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "PostgreSQL",
+            with: ["PostgresUL"],
+            to: &forms
+        )
+        appendReplacementVariants(
+            for: keyterm,
+            replacing: "Cloudflare",
+            with: ["ClavFlare"],
+            to: &forms
+        )
+
+        return forms
+    }
+
+    private static func appendReplacementVariants(
+        for keyterm: String,
+        replacing needle: String,
+        with replacements: [String],
+        to forms: inout [String]
+    ) {
+        guard keyterm.range(of: needle, options: [.caseInsensitive]) != nil else { return }
+        for replacement in replacements {
+            forms.append(keyterm.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive]))
+        }
+    }
+
     private static func sanitizedRecognitionHint(_ term: String) -> String {
         String(
             term.unicodeScalars.map { scalar -> Character in
@@ -342,8 +475,31 @@ class VocabularyManager: ObservableObject {
     }
 
     private static func wholeTermPattern(for term: String) -> String {
-        let escaped = NSRegularExpression.escapedPattern(for: term)
-        return "(?<![A-Za-z0-9])\(escaped)(?![A-Za-z0-9])"
+        let tokens = alphanumericTokens(in: term)
+        guard !tokens.isEmpty else {
+            return "(?!)"
+        }
+
+        let body = tokens.map(tokenPattern).joined(separator: flexibleSeparatorPattern)
+        let prefixGuard = term.lowercased() == "store connect" ? "(?<!APP )" : ""
+        return "(?<![A-Za-z0-9])\(prefixGuard)\(body)(?![A-Za-z0-9])"
+    }
+
+    private static var flexibleSeparatorPattern: String {
+        #"(?:[\s._,;:\-]+|\s*(?:dot|period|dash|hyphen|underscore)\s*)+"#
+    }
+
+    private static func alphanumericTokens(in term: String) -> [String] {
+        term.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+
+    private static func tokenPattern(for token: String) -> String {
+        guard token.count <= 4, token.allSatisfy(\.isLetter) else {
+            return NSRegularExpression.escapedPattern(for: token)
+        }
+
+        let characters = token.map { NSRegularExpression.escapedPattern(for: String($0)) }
+        return characters.joined(separator: #"[\s._-]*"#) + #"\.?"#
     }
 
     private static func uniqueVariants(_ variants: [String]) -> [String] {

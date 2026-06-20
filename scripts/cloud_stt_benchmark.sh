@@ -1,56 +1,244 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${BASE_URL:?Set BASE_URL, for example http://YOUR_SERVER_IP:8000}"
-: "${MODEL_ID:?Set MODEL_ID, for example rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo}"
-: "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/sample-1m.wav}"
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+: "${ENGINE:?Set ENGINE to deepgram or elevenlabs}"
+: "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/technical-en-short.wav}"
 
 if [[ ! -f "$AUDIO_PATH" ]]; then
   echo "Audio file not found: $AUDIO_PATH" >&2
   exit 2
 fi
 
-base="${BASE_URL%/}"
-if [[ "$base" == */v1 ]]; then
-  endpoint="$base/audio/transcriptions"
-else
-  endpoint="$base/v1/audio/transcriptions"
-fi
-
+engine="$(printf '%s' "$ENGINE" | tr '[:upper:]' '[:lower:]')"
 response_file="$(mktemp)"
+curl_config="$(mktemp)"
 curl_error="$(mktemp)"
-curl_config=""
+trap 'rm -f "$response_file" "$curl_config" "$curl_error"' EXIT
+chmod 600 "$curl_config"
 
-cleanup() {
-  rm -f "$response_file" "$curl_error"
-  if [[ -n "$curl_config" ]]; then
-    rm -f "$curl_config"
-  fi
+make_deepgram_endpoint() {
+  python3 - "${VOCABULARY_PATH:-}" "${LANGUAGE:-auto}" <<'PY'
+import json
+import pathlib
+import sys
+import urllib.parse
+
+vocabulary_path = pathlib.Path(sys.argv[1]) if sys.argv[1] else None
+language = sys.argv[2]
+deepgram_language = "multi" if language == "auto" else language
+query = [
+    ("model", "nova-3"),
+    ("language", deepgram_language),
+    ("smart_format", "true"),
+]
+
+if vocabulary_path:
+    data = json.loads(vocabulary_path.read_text())
+    for term in data.get("keyterms", []):
+        term = term.strip()
+        if term:
+            query.append(("keyterm", term))
+    for original, replacement in sorted(data.get("replacements", {}).items()):
+        original = original.strip()
+        replacement = replacement.strip()
+        if original and replacement:
+            query.append(("replace", f"{original}:{replacement}"))
+
+print("https://api.deepgram.com/v1/listen?" + urllib.parse.urlencode(query))
+PY
 }
-trap cleanup EXIT
 
-curl_args=(
-  --silent
-  --show-error
-  --fail-with-body
-  --output "$response_file"
-  --write-out "%{time_total}"
-  --request POST "$endpoint"
-  --form "file=@${AUDIO_PATH};type=audio/wav"
-  --form "model=${MODEL_ID}"
-  --form "response_format=json"
+make_elevenlabs_keyterms() {
+  python3 - "${VOCABULARY_PATH:-}" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+vocabulary_path = pathlib.Path(sys.argv[1]) if sys.argv[1] else None
+if not vocabulary_path:
+    sys.exit(0)
+
+def unique(values):
+    seen = set()
+    result = []
+    for value in values:
+        trimmed = value.strip()
+        key = trimmed.casefold()
+        if trimmed and key not in seen:
+            seen.add(key)
+            result.append(trimmed)
+    return result
+
+def spoken_form(keyterm):
+    separated = re.sub(r"[-_.]+", " ", keyterm)
+    if len(separated) <= 1:
+        return separated
+
+    result = []
+    for index, character in enumerate(separated):
+        if index:
+            previous = separated[index - 1]
+            next_character = separated[index + 1] if index + 1 < len(separated) else ""
+            if character.isupper() and (
+                previous.islower()
+                or previous.isdigit()
+                or (previous.isupper() and next_character.islower())
+            ):
+                result.append(" ")
+        result.append(character)
+    return re.sub(r" {2,}", " ", "".join(result)).strip()
+
+def spoken_symbol_form(keyterm, symbol_word):
+    return re.sub(
+        r" {2,}",
+        " ",
+        keyterm.replace(".", f" {symbol_word} ").replace("-", " ").replace("_", " "),
+    ).strip()
+
+def recognition_variants(keyterm):
+    spoken_variants = [
+        keyterm,
+        spoken_form(keyterm),
+        spoken_symbol_form(keyterm, "dot"),
+        spoken_symbol_form(keyterm, "period"),
+    ]
+
+    def add_replacement_variants(needle, replacements):
+        nonlocal spoken_variants
+        if re.search(re.escape(needle), keyterm, flags=re.IGNORECASE):
+            spoken_variants.extend(
+                re.sub(re.escape(needle), replacement, keyterm, flags=re.IGNORECASE)
+                for replacement in replacements
+            )
+
+    add_replacement_variants("Claude", ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Slough", "Clog"])
+    add_replacement_variants("Deepgram", ["Deep gram", "Depgram", "Deppgram"])
+    add_replacement_variants("ElevenLabs", ["Eleven Labs", "11labs"])
+    add_replacement_variants("Local AI Server", ["localize server"])
+    add_replacement_variants(
+        "SapoWhisper",
+        [
+            "Sapo Whisper",
+            "Sapo Visper",
+            "SAP OVISPER",
+            "Sapa Whisper",
+            "SAPA Whisper",
+            "SAP Awhisper",
+            "Zap o Whisper",
+            "Zapo Whisper",
+            "Sapowisper",
+        ],
+    )
+    lower_keyterm = keyterm.casefold()
+    if lower_keyterm == "claude.md":
+        spoken_variants.extend(["claud mendy", "claude mendy", "cod md"])
+    if lower_keyterm == "agents.md":
+        spoken_variants.extend(["agens md", "agents knotsmd", "nats md", "agients md"])
+    if lower_keyterm == "app store connect":
+        spoken_variants.extend(["AppStore Connect", "AppStore, Connect", "Store Connect"])
+    if lower_keyterm == "nova-3":
+        spoken_variants.append("Nova three")
+    if lower_keyterm == "scribe v2":
+        spoken_variants.append("Scribe v two")
+    if lower_keyterm == "git" or lower_keyterm.startswith("git "):
+        add_replacement_variants("git", ["hit"])
+    if lower_keyterm == "push" or " push" in lower_keyterm:
+        add_replacement_variants("push", ["pug"])
+    if lower_keyterm == "git push":
+        spoken_variants.append("hit pug")
+    add_replacement_variants("Hetzner", ["Etzner", "Etsner"])
+    add_replacement_variants("Jellyfin", ["Jellifin", "Gelifin"])
+    add_replacement_variants("PostgreSQL", ["PostgresUL"])
+    add_replacement_variants("Cloudflare", ["ClavFlare"])
+
+    return unique(spoken_variants + [re.sub(r"[-_.\s]+", "", variant) for variant in spoken_variants])
+
+data = json.loads(vocabulary_path.read_text())
+candidates = [
+    term.strip()
+    for term in data.get("keyterms", [])
+    if term.strip()
+]
+candidates.extend(
+    value.strip()
+    for _, value in sorted(data.get("replacements", {}).items())
+    if value.strip()
 )
 
-if [[ -n "${LANGUAGE:-}" && "${LANGUAGE}" != "auto" ]]; then
-  curl_args+=(--form "language=${LANGUAGE}")
-fi
+expanded = []
+for candidate in candidates:
+    expanded.append(candidate)
+for candidate in candidates:
+    expanded.extend(recognition_variants(candidate))
 
-if [[ -n "${API_KEY:-}" ]]; then
-  curl_config="$(mktemp)"
-  chmod 600 "$curl_config"
-  printf 'header = "Authorization: Bearer %s"\n' "$API_KEY" >"$curl_config"
-  curl_args=(--config "$curl_config" "${curl_args[@]}")
-fi
+for term in unique(expanded):
+    if len(term) <= 50 and len(term.split()) <= 5:
+        print(term)
+PY
+}
+
+case "$engine" in
+  deepgram)
+    : "${DEEPGRAM_API_KEY:?Set DEEPGRAM_API_KEY in .env}"
+    endpoint="$(make_deepgram_endpoint)"
+    printf 'header = "Authorization: Token %s"\n' "$DEEPGRAM_API_KEY" >"$curl_config"
+    curl_args=(
+      --config "$curl_config"
+      --silent
+      --show-error
+      --fail-with-body
+      --output "$response_file"
+      --write-out "%{time_total}"
+      --request POST "$endpoint"
+      --header "Content-Type: audio/wav"
+      --data-binary "@${AUDIO_PATH}"
+    )
+    model="nova-3"
+    ;;
+  elevenlabs)
+    : "${ELEVENLABS_API_KEY:?Set ELEVENLABS_API_KEY in .env}"
+    printf 'header = "xi-api-key: %s"\n' "$ELEVENLABS_API_KEY" >"$curl_config"
+    curl_args=(
+      --config "$curl_config"
+      --silent
+      --show-error
+      --fail-with-body
+      --output "$response_file"
+      --write-out "%{time_total}"
+      --request POST "https://api.elevenlabs.io/v1/speech-to-text"
+      --form "model_id=scribe_v2"
+      --form "tag_audio_events=false"
+      --form "timestamps_granularity=none"
+    )
+
+    case "${LANGUAGE:-auto}" in
+      en) curl_args+=(--form "language_code=eng") ;;
+      es) curl_args+=(--form "language_code=spa") ;;
+      auto|"") ;;
+      *) echo "Unsupported ElevenLabs benchmark LANGUAGE=${LANGUAGE}; use auto, en, or es" >&2; exit 2 ;;
+    esac
+
+    while IFS= read -r keyterm; do
+      [[ -n "$keyterm" ]] || continue
+      curl_args+=(--form-string "keyterms=${keyterm}")
+    done < <(make_elevenlabs_keyterms)
+
+    curl_args+=(--form "file=@${AUDIO_PATH};type=audio/wav")
+    model="scribe_v2"
+    ;;
+  *)
+    echo "Unsupported ENGINE=$ENGINE; use deepgram or elevenlabs" >&2
+    exit 2
+    ;;
+esac
 
 set +e
 elapsed="$(curl "${curl_args[@]}" 2>"$curl_error")"
@@ -67,7 +255,7 @@ if [[ "$curl_status" -ne 0 ]]; then
   exit "$curl_status"
 fi
 
-python3 - "$response_file" "$elapsed" "$MODEL_ID" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" <<'PY'
+python3 - "$response_file" "$elapsed" "$engine" "$model" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" <<'PY'
 import difflib
 import json
 import pathlib
@@ -76,19 +264,27 @@ import sys
 
 response_path = pathlib.Path(sys.argv[1])
 elapsed = float(sys.argv[2])
-model = sys.argv[3]
-audio = sys.argv[4]
-transcript_path = pathlib.Path(sys.argv[5]) if sys.argv[5] else None
-vocabulary_path = pathlib.Path(sys.argv[6]) if sys.argv[6] else None
-critical_terms_path = pathlib.Path(sys.argv[7]) if sys.argv[7] else None
-print_text = sys.argv[8] == "1"
+engine = sys.argv[3]
+model = sys.argv[4]
+audio = sys.argv[5]
+transcript_path = pathlib.Path(sys.argv[6]) if sys.argv[6] else None
+vocabulary_path = pathlib.Path(sys.argv[7]) if sys.argv[7] else None
+critical_terms_path = pathlib.Path(sys.argv[8]) if sys.argv[8] else None
+print_text = sys.argv[9] == "1"
 body = response_path.read_text(errors="replace")
 
 try:
     payload = json.loads(body)
-    text = payload.get("text", "")
 except Exception:
-    text = body
+    payload = {}
+
+if engine == "deepgram":
+    try:
+        text = payload["results"]["channels"][0]["alternatives"][0].get("transcript", "")
+    except Exception:
+        text = body
+else:
+    text = payload.get("text", body if isinstance(body, str) else "")
 
 def unique(values):
     seen = set()
@@ -288,6 +484,7 @@ keyterms, replacements = load_vocabulary(vocabulary_path)
 corrected_text = apply_recognition_corrections(text, keyterms, replacements) if keyterms or replacements else text
 
 result = {
+    "engine": engine,
     "audio": audio,
     "model": model,
     "elapsed_seconds": round(elapsed, 3),

@@ -87,4 +87,74 @@ final class VocabularyManagerTests: XCTestCase {
         // AGENTS.md: Deepgram Nova-3 uses the singular `keyterm` query param.
         XCTAssertEqual(manager.keytermQueryItems().first?.name, "keyterm")
     }
+
+    // MARK: - Recognition corrections
+
+    func testRecognitionCorrectionsPreserveSavedCanonicalForms() {
+        let manager = makeManager()
+        manager.addKeyterm("GitHub")
+        manager.addKeyterm("git push")
+        manager.addKeyterm("APP STORE CONNECT")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "open github before Git Push and app store connect"
+        )
+
+        XCTAssertEqual(output, "open GitHub before git push and APP STORE CONNECT")
+    }
+
+    func testRecognitionCorrectionsHandleSpokenTechnicalForms() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addKeyterm("CLAUDE.md")
+        manager.addKeyterm("AGENTS.md")
+        manager.addKeyterm("Claude Code")
+        manager.addKeyterm("ElevenLabs batch")
+        manager.addKeyterm("Jellyfin")
+        manager.addKeyterm("Hetzner")
+        manager.addKeyterm("git push")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "Open SAP-O-Whisper, update CloudMD, then read AgentsMD with CloudCode, 11labsbatch, Jellifin, Etzner, and hitpug."
+        )
+
+        XCTAssertEqual(
+            output,
+            "Open SapoWhisper, update CLAUDE.md, then read AGENTS.md with Claude Code, ElevenLabs batch, Jellyfin, Hetzner, and git push."
+        )
+    }
+
+    func testRecognitionCorrectionsHandlePunctuationAndNarratorVariants() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addKeyterm("CLAUDE.md")
+        manager.addKeyterm("App Store Connect")
+        manager.addKeyterm("Claude Code")
+        manager.addKeyterm("pull request")
+        manager.addKeyterm("Hetzner")
+        manager.addKeyterm("Cloudflare")
+        manager.addKeyterm("AGENTS.md")
+        manager.addKeyterm("Nova-3")
+        manager.addKeyterm("Scribe v2")
+
+        let output = manager.applyingRecognitionCorrections(
+            to:
+                "Open SAP Awhisper, then claud.mendy with Store Connect, claudcode, pull, request, Etsner, NATS.md, Nova three, Scribe v two, and ClavFlare."
+        )
+
+        XCTAssertEqual(
+            output,
+            "Open SapoWhisper, then CLAUDE.md with App Store Connect, Claude Code, pull request, Hetzner, AGENTS.md, Nova-3, Scribe v2, and Cloudflare."
+        )
+    }
+
+    func testRecognitionCorrectionsDoNotReplaceInsideLongerWords() {
+        let manager = makeManager()
+        manager.addKeyterm("Codex")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "codexical examples are different from codex"),
+            "codexical examples are different from Codex"
+        )
+    }
 }

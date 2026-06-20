@@ -1,0 +1,13 @@
+SapoWhisper.
+
+Local AI Server, AI polish.
+
+AGENTS.md, CLAUDE.md, GitHub, git commit, git push, pull request, CI check.
+
+App Store Connect, TestFlight, Xcode, SwiftUI, WhisperKit.
+
+Deepgram batch, ElevenLabs batch, Nova-3, Scribe v2.
+
+Hetzner, Jellyfin, Docker, Nginx, PostgreSQL, Redis, Cloudflare, WireGuard.
+
+SQLite, Keychain, UserDefaults, WebSocket, REST API, JSON, UUID, Codex, Claude Code.
