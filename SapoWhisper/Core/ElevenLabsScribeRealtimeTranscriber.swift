@@ -89,7 +89,7 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private var isActive = false
     private var generation = 0
     private var hasUsedFirstSendBudget = false
-    private var pendingAudio = Data()
+    private var pendingAudio: [UInt8] = []
     private var enqueuedChunks = 0
     private var sentMessages = 0
     private var failedMessages = 0
@@ -209,7 +209,7 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         var chunks: [Data] = []
         var bufferedBytes = 0
         pendingAudioLock.lock()
-        pendingAudio.append(data)
+        pendingAudio.append(contentsOf: data)
         bufferedBytes = pendingAudio.count
 
         while pendingAudio.count >= Constants.targetChunkBytes {
@@ -232,7 +232,7 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         }
 
         pendingAudioLock.lock()
-        var finalAudio = pendingAudio
+        var finalAudio = Data(pendingAudio)
         pendingAudio.removeAll(keepingCapacity: true)
         pendingAudioLock.unlock()
 
