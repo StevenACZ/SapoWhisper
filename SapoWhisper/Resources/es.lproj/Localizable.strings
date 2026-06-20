@@ -29,12 +29,14 @@
 "history.empty" = "Sin historial";
 "history.empty_sub" = "Las transcripciones aparecerán aquí";
 "history.copy" = "Copiar";
-"history.retranscribe_create" = "Crear nueva transcripción";
+"history.retranscribe_create" = "Re-transcribir";
 "history.retranscribing" = "Re-transcribiendo...";
 "history.retranscribe_sheet_title" = "Re-transcribir audio";
-"history.retranscribe_sheet_subtitle" = "Se creará una nueva entrada sin reemplazar la original.";
+"history.retranscribe_sheet_subtitle" = "Se actualizará la entrada original con la nueva transcripción.";
 "history.failed" = "Falló";
 "history.failed_detail" = "La transcripción no pudo completarse. Intenta de nuevo si el audio está guardado.";
+"history.cancelled" = "Cancelado";
+"history.cancelled_detail" = "La grabación fue cancelada. El audio quedó guardado para poder re-transcribirlo.";
 "history.pinned" = "Fijados";
 "history.today" = "Hoy";
 "history.yesterday" = "Ayer";
@@ -530,6 +532,7 @@
 "failure.audio_empty" = "No se grabó audio. Revisá tu micrófono.";
 "failure.audio_corrupt" = "La grabación se dañó y no se pudo procesar.";
 "failure.recording_interrupted" = "La grabación se interrumpió (cambio de micrófono). Reintentá.";
+"failure.user_cancelled" = "La grabación fue cancelada. El audio quedó guardado en Historial.";
 "failure.empty_transcription" = "No se detectó voz en el audio.";
 "failure.unknown" = "%@: ocurrió un error inesperado. Reintentá.";
 

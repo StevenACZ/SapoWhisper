@@ -47,6 +47,54 @@ final class HistoryScaleTests: XCTestCase {
         XCTAssertEqual(entries.first?.failureCode, "ElevenLabs/auth")
     }
 
+    func testUserCancelledFailureCodeMarksEntryAsCancelled() {
+        manager.save(
+            engine: "WhisperKit", language: "es", duration: 12, text: "",
+            status: "failed", failureCode: "WhisperKit/user_cancelled"
+        )
+
+        let entry = manager.fetchEntries().first
+        XCTAssertEqual(entry?.status, "failed")
+        XCTAssertTrue(entry?.isUserCancelled == true)
+    }
+
+    func testNonCancelledFailureIsNotMarkedAsCancelled() {
+        manager.save(
+            engine: "Deepgram", language: "es", duration: 3, text: "",
+            status: "failed", failureCode: "Deepgram/network"
+        )
+
+        XCTAssertFalse(manager.fetchEntries().first?.isUserCancelled == true)
+    }
+
+    func testCompletedRowWithStaleCancelCodeIsNotMarkedAsCancelled() {
+        manager.save(
+            engine: "Local AI Server", language: "auto", duration: 6, text: "texto recuperado",
+            status: "completed", failureCode: "Local AI Server/user_cancelled"
+        )
+
+        let entry = manager.fetchEntries().first
+        XCTAssertEqual(entry?.status, "completed")
+        XCTAssertFalse(entry?.isUserCancelled == true)
+    }
+
+    func testRetranscriptionClearsFailureCode() {
+        let id = manager.save(
+            engine: "Local AI Server", language: "auto", duration: 6, text: "",
+            status: "failed", failureCode: "Local AI Server/user_cancelled"
+        )
+
+        manager.updateRetranscription(
+            id: id, engine: "Local AI Server", finalText: "texto recuperado", rawText: "texto recuperado",
+            aiStatus: .none, aiModel: nil, aiMode: nil, aiError: nil
+        )
+
+        let entry = manager.fetchEntries().first
+        XCTAssertEqual(entry?.status, "completed")
+        XCTAssertNil(entry?.failureCode)
+        XCTAssertFalse(entry?.isUserCancelled == true)
+    }
+
     // MARK: - H2: FTS search
 
     func testSearchFindsSavedTextByPrefix() {

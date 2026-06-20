@@ -29,12 +29,14 @@
 "history.empty" = "No history";
 "history.empty_sub" = "Transcriptions will appear here";
 "history.copy" = "Copy";
-"history.retranscribe_create" = "Create new transcription";
+"history.retranscribe_create" = "Re-transcribe";
 "history.retranscribing" = "Re-transcribing...";
 "history.retranscribe_sheet_title" = "Re-transcribe audio";
-"history.retranscribe_sheet_subtitle" = "A new entry will be created without replacing the original.";
+"history.retranscribe_sheet_subtitle" = "The original entry will be updated with the new transcription.";
 "history.failed" = "Failed";
 "history.failed_detail" = "Transcription could not be completed. Try again if audio is saved.";
+"history.cancelled" = "Cancelled";
+"history.cancelled_detail" = "Recording was cancelled. Audio was saved so you can re-transcribe it.";
 "history.pinned" = "Pinned";
 "history.today" = "Today";
 "history.yesterday" = "Yesterday";
@@ -530,6 +532,7 @@
 "failure.audio_empty" = "No audio was recorded. Check your microphone.";
 "failure.audio_corrupt" = "The recording was damaged and could not be processed.";
 "failure.recording_interrupted" = "Recording was interrupted (microphone change). Please retry.";
+"failure.user_cancelled" = "Recording was cancelled. Audio was saved in History.";
 "failure.empty_transcription" = "No speech detected in the audio.";
 "failure.unknown" = "%@: an unexpected error occurred. Please retry.";
 

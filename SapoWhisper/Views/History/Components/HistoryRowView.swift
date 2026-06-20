@@ -13,7 +13,15 @@ struct HistoryRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // The transcript is the headline; engine and timing are metadata.
-            if isFailed {
+            if entry.isUserCancelled {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                    Text("history.cancelled".localized)
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            } else if isFailed {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption)

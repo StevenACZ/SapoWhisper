@@ -8,7 +8,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - ⚡ Global hotkey recording with a compact floating overlay.
 - 📋 Auto-paste via clipboard + `Cmd+V`; no live typing while you speak.
 - 🧠 Local and cloud transcription engines.
-- 🗂️ Searchable history with saved audio, replay, download, pinning, and re-transcription.
+- 🗂️ Searchable history with saved audio, cancelled-recording recovery, replay, download, pinning, and re-transcription.
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
 - 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
 - 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and an optional output language (English/Spanish) that translates faithfully.
@@ -122,7 +122,7 @@ Use `make ci-check` (lint + build + tests) as the main local gate and `make rele
 
 Tracked and public-safe:
 
-- Source code, app assets, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, changelog, contributing notes, security notes, and license.
+- Source code, app assets, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, changelog, `AGENTS.md`, contributing notes, security notes, and license.
 
 Ignored and local/private:
 

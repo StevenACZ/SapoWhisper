@@ -29,6 +29,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case audioEmpty = "audio_empty"
         case audioCorrupt = "audio_corrupt"
         case recordingInterrupted = "recording_interrupted"
+        case userCancelled = "user_cancelled"
         case emptyTranscription = "empty_transcription"
         case unknown
     }
@@ -86,6 +87,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "failure.audio_corrupt".localized
         case .recordingInterrupted:
             return "failure.recording_interrupted".localized
+        case .userCancelled:
+            return "failure.user_cancelled".localized
         case .emptyTranscription:
             return "failure.empty_transcription".localized
         case .unknown:
@@ -99,7 +102,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .unknown:
             return true
         case .notConfigured, .auth, .outOfCredits, .planRestricted, .clientError,
-            .audioEmpty, .audioCorrupt, .emptyTranscription:
+            .audioEmpty, .audioCorrupt, .userCancelled, .emptyTranscription:
             return false
         }
     }

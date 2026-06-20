@@ -44,6 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         // Safety net: restaurar volumen del sistema si la app se cierra durante grabación
+        SapoWhisperAppEnvironment.shared.viewModel.handleApplicationWillTerminate()
         if let screenChangeObserver {
             NotificationCenter.default.removeObserver(screenChangeObserver)
         }

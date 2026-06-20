@@ -263,7 +263,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
             SET ai_first_status = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_status ELSE ai_first_status END,
                 ai_first_model = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_model ELSE ai_first_model END,
                 ai_first_mode = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_mode ELSE ai_first_mode END,
-                transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?, ai_error = ?, status = 'completed'
+                transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?, ai_error = ?,
+                status = 'completed', failure_code = NULL
             WHERE id = ?;
             """
 
@@ -313,7 +314,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
                 ai_first_model = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_model ELSE ai_first_model END,
                 ai_first_mode = CASE WHEN ai_first_status IS NULL AND ai_status != 'none' THEN ai_mode ELSE ai_first_mode END,
                 transcription = ?, raw_transcription = ?, ai_status = ?, ai_model = ?, ai_mode = ?,
-                ai_error = ?, status = 'completed'
+                ai_error = ?, status = 'completed', failure_code = NULL
             WHERE id = ?;
             """
 

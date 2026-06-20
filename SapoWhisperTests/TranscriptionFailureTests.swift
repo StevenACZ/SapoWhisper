@@ -46,6 +46,16 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(failure.isRetryable)
     }
 
+    func testUserCancelledIsNotRetryable() {
+        let failure = TranscriptionFailure(kind: .userCancelled, engine: "WhisperKit")
+        XCTAssertFalse(failure.isRetryable)
+
+        let errorState = ErrorState(failure: failure)
+        XCTAssertEqual(errorState.kind, .userCancelled)
+        XCTAssertFalse(errorState.isRetryable)
+        XCTAssertFalse(errorState.isNoSpeech)
+    }
+
     func testBodySnippetRedactsSecrets() {
         let failure = TranscriptionFailure.fromHTTP(
             engine: "Deepgram", statusCode: 500,

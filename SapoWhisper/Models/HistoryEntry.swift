@@ -62,6 +62,12 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
         !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var isUserCancelled: Bool {
+        guard status == "failed" else { return false }
+        let cancelledCode = TranscriptionFailure.Kind.userCancelled.rawValue
+        return failureCode == cancelledCode || failureCode?.hasSuffix("/\(cancelledCode)") == true
+    }
+
     var displayEngineName: String {
         switch engine.lowercased() {
         case let value where value.contains("local ai"):
