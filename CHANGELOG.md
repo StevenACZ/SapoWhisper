@@ -21,6 +21,7 @@ Based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - **Cancelled dictations stay recoverable** — pressing Esc now saves captured audio as a cancelled History entry instead of discarding it, and successful re-transcription clears the cancelled state.
+- **ElevenLabs realtime history replay** — re-transcribing saved audio with ElevenLabs realtime no longer crashes while finalizing the replayed audio buffer.
 
 ## [2.4.2] - 2026-06-14
 
