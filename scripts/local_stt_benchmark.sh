@@ -3,7 +3,7 @@ set -euo pipefail
 
 : "${BASE_URL:?Set BASE_URL, for example http://YOUR_SERVER_IP:8000}"
 : "${MODEL_ID:?Set MODEL_ID, for example rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo}"
-: "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/sample-1m.wav}"
+: "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/longform/sample-1m.wav}"
 
 if [[ ! -f "$AUDIO_PATH" ]]; then
   echo "Audio file not found: $AUDIO_PATH" >&2

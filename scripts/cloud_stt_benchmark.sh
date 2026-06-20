@@ -9,7 +9,7 @@ if [[ -f .env ]]; then
 fi
 
 : "${ENGINE:?Set ENGINE to deepgram or elevenlabs}"
-: "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/technical-en-short.wav}"
+: "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/technical/en/short.wav}"
 
 if [[ ! -f "$AUDIO_PATH" ]]; then
   echo "Audio file not found: $AUDIO_PATH" >&2

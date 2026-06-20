@@ -4,16 +4,16 @@ Public benchmark fixtures for SapoWhisper's `Local AI Server (NVIDIA)` engine.
 
 ## Files
 
-- `source-transcript.txt`: source narration text.
-- `sample-1m.wav`: first 1 minute of the fixture.
-- `sample-2m.wav`: first 2 minutes of the fixture.
-- `sample-3m.wav`: first 3 minutes of the fixture.
-- `sample-6m.wav`: full 6 minute fixture.
-- `technical-vocabulary.json`: public keyterms used for technical vocabulary scoring.
-- `technical-en-short.txt` / `technical-en-short.wav`: short English technical dictation fixture.
-- `technical-en-medium.txt` / `technical-en-medium.wav`: medium English technical dictation fixture.
-- `technical-es-short.txt` / `technical-es-short.wav`: short Spanish technical dictation fixture.
-- `technical-es-medium.txt` / `technical-es-medium.wav`: medium Spanish technical dictation fixture.
+- `longform/source-transcript.txt`: source narration text.
+- `longform/sample-1m.wav`: first 1 minute of the fixture.
+- `longform/sample-2m.wav`: first 2 minutes of the fixture.
+- `longform/sample-3m.wav`: first 3 minutes of the fixture.
+- `longform/sample-6m.wav`: full 6 minute fixture.
+- `technical/vocabulary.json`: public keyterms used for technical vocabulary scoring.
+- `technical/en/short.txt` / `technical/en/short.wav`: short English technical dictation fixture.
+- `technical/en/medium.txt` / `technical/en/medium.wav`: medium English technical dictation fixture.
+- `technical/es/short.txt` / `technical/es/short.wav`: short Spanish technical dictation fixture.
+- `technical/es/medium.txt` / `technical/es/medium.wav`: medium Spanish technical dictation fixture.
 
 All WAV files are `16 kHz`, mono, `pcm_s16le`, matching SapoWhisper's normal recording format.
 
@@ -24,7 +24,7 @@ Run the public benchmark script without storing results in the repo:
 ```bash
 BASE_URL=http://YOUR_SERVER_IP:8000 \
 MODEL_ID=rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo \
-AUDIO_PATH=TestAssets/LocalAITranscription/sample-1m.wav \
+AUDIO_PATH=TestAssets/LocalAITranscription/longform/sample-1m.wav \
 scripts/local_stt_benchmark.sh
 ```
 
@@ -33,9 +33,9 @@ Scored technical fixture:
 ```bash
 BASE_URL=http://YOUR_SERVER_IP:8000 \
 MODEL_ID=rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo \
-AUDIO_PATH=TestAssets/LocalAITranscription/technical-en-short.wav \
-TRANSCRIPT_PATH=TestAssets/LocalAITranscription/technical-en-short.txt \
-VOCABULARY_PATH=TestAssets/LocalAITranscription/technical-vocabulary.json \
+AUDIO_PATH=TestAssets/LocalAITranscription/technical/en/short.wav \
+TRANSCRIPT_PATH=TestAssets/LocalAITranscription/technical/en/short.txt \
+VOCABULARY_PATH=TestAssets/LocalAITranscription/technical/vocabulary.json \
 scripts/local_stt_benchmark.sh
 ```
 
@@ -53,9 +53,9 @@ Cloud batch fixtures can be checked with the same metrics:
 ```bash
 ENGINE=deepgram \
 LANGUAGE=en \
-AUDIO_PATH=TestAssets/LocalAITranscription/technical-en-short.wav \
-TRANSCRIPT_PATH=TestAssets/LocalAITranscription/technical-en-short.txt \
-VOCABULARY_PATH=TestAssets/LocalAITranscription/technical-vocabulary.json \
+AUDIO_PATH=TestAssets/LocalAITranscription/technical/en/short.wav \
+TRANSCRIPT_PATH=TestAssets/LocalAITranscription/technical/en/short.txt \
+VOCABULARY_PATH=TestAssets/LocalAITranscription/technical/vocabulary.json \
 scripts/cloud_stt_benchmark.sh
 ```
 

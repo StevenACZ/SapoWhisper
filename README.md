@@ -33,17 +33,19 @@ Batch engines use the selected microphone upload-quality profile: Ultra fast (16
 
 `TestAssets/LocalAITranscription/` contains public synthetic WAV fixtures for local STT testing:
 
-- `sample-1m.wav`
-- `sample-2m.wav`
-- `sample-3m.wav`
-- `sample-6m.wav`
+- `longform/sample-1m.wav`
+- `longform/sample-2m.wav`
+- `longform/sample-3m.wav`
+- `longform/sample-6m.wav`
+- `technical/en/*.wav`
+- `technical/es/*.wav`
 
 Use `scripts/local_stt_benchmark.sh` with any OpenAI-compatible local STT server:
 
 ```bash
 BASE_URL=http://YOUR_SERVER_IP:8000 \
 MODEL_ID=rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo \
-AUDIO_PATH=TestAssets/LocalAITranscription/sample-1m.wav \
+AUDIO_PATH=TestAssets/LocalAITranscription/longform/sample-1m.wav \
 scripts/local_stt_benchmark.sh
 ```
 
