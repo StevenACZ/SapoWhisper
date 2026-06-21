@@ -10,6 +10,9 @@ struct PolishFidelityVerdict {
     let lengthRatio: Double
     let missingAnchors: Int
     let totalAnchors: Int
+    /// May contain transcript tokens already sent to the polish provider.
+    /// Use only inside a retry prompt; never log or persist it.
+    let retryInstruction: String?
 
     /// Counts only — never transcript content.
     var diagnosticSummary: String {
@@ -17,17 +20,16 @@ struct PolishFidelityVerdict {
     }
 }
 
-/// Minimal post-response bound on how far polished text may drift from the raw
-/// transcript. This is intentionally deterministic and narrow: it protects
-/// tokens that should not silently change, while leaving regular wording,
-/// cleanup, and translation decisions to the AI prompt.
+/// Minimal post-response check for hard tokens that should not silently change.
+/// The result is a retry signal, not a user-facing blocker: regular wording,
+/// numbers, length ratio, cleanup, and translation choices are left to the AI
+/// prompt and the user's review.
 enum PolishFidelityGuard {
     /// One raw token that must survive a literal polish. `.literal` anchors
-    /// (numbers, URLs, emails, vocabulary) must appear verbatim — their
-    /// punctuation is semantic (`5.5` != `55`). `.capitalizedWord` anchors
-    /// (proper nouns / identifiers) also survive when only punctuation the
-    /// polish legitimately fixes differs, so a dictation typo like `AGENTS..md`
-    /// being corrected to `AGENTS.md` is not a false rejection — while dropping
+    /// (URLs, emails, vocabulary) must appear verbatim. `.capitalizedWord`
+    /// anchors (identifiers) also survive when only punctuation the polish
+    /// legitimately fixes differs, so a dictation typo like `AGENTS..md` being
+    /// corrected to `AGENTS.md` is not a false retry signal — while dropping
     /// the `md` content (→ `AGENTS`) still fails.
     struct Anchor {
         enum Kind { case literal, capitalizedWord }
@@ -36,12 +38,6 @@ enum PolishFidelityGuard {
 
         func survives(inLiteral literal: String, withoutPunctuation stripped: String) -> Bool {
             let needle = value.lowercased()
-            // Numeric anchors match whole numeric tokens, never substrings: "5"
-            // must not survive inside "15", "5.5", "5,000" or "5:30". Numeric
-            // punctuation is semantic (5.5 != 55), so a changed number fails.
-            if kind == .literal, PolishFidelityGuard.isNumericLiteral(value) {
-                return PolishFidelityGuard.orderedNumericTokens(in: literal).contains(needle)
-            }
             if literal.contains(needle) { return true }
             guard kind == .capitalizedWord else { return false }
             let key = PolishFidelityGuard.strippingPunctuation(value).lowercased()
@@ -50,28 +46,8 @@ enum PolishFidelityGuard {
         }
     }
 
-    /// Polish removes fillers, so shrinking below 1.0 is normal.
-    static let minimumLengthRatio = 0.55
-    static let maximumLengthRatio = 1.6
-    /// Long dictations often include exploratory narrative, fillers, and timing
-    /// estimates ("15, 14 minutes"). For that class of text the guard should
-    /// still catch dangerous drift, but not reject an otherwise useful polish
-    /// only because one low-density number was edited away.
-    static let longNarrativeMinimumLengthRatio = 0.45
-    private static let longNarrativeCharacterThreshold = 1_200
-    private static let longNarrativeMaximumNumericAnchors = 8
-    private static let longNarrativeMaximumToleratedNumericMissing = 2
-    /// Dense scripts (CJK) compress a faithful translation to ~0.2–0.4 of the
-    /// source character count, so the normal floor would reject them. This much
-    /// lower floor still rejects extreme truncation/hallucination, while the
-    /// unconditional ceiling keeps runaway-length protection.
-    static let denseScriptMinimumLengthRatio = 0.15
-    /// Fraction of letter/ideograph output that must be in a dense script
-    /// before the lower floor applies.
-    private static let denseScriptFractionThreshold = 0.35
     private static let maximumAnchors = 60
 
-    private static let numericPattern = #"[0-9]+(?:[.,:][0-9]+)*"#
     private static let emailPattern = #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#
     private static let urlPattern = #"https?://[^\s]+"#
     private static let wwwPattern = #"\bwww\.[^\s]+"#
@@ -90,10 +66,9 @@ enum PolishFidelityGuard {
     private static let accidentalRepeatedFillerPattern =
         #"(?:\b(?:ya\s+est[aá]|listo|dale|ok(?:ay)?|perfecto|eso)\b[\s.,;:!?¡¿-]*){4,}"#
 
-    /// `translationExpected` relaxes the language-bound anchors: a requested
-    /// output language legitimately rewrites every regular word, so only
-    /// translation-invariant tokens (numbers, URLs, emails, vocabulary) must
-    /// survive.
+    /// `translationExpected` relaxes identifier anchors: a requested output
+    /// language legitimately rewrites regular words, so only clear literal
+    /// anchors (URLs, emails, vocabulary) should trigger a retry.
     static func evaluate(
         raw: String,
         polished: String,
@@ -104,7 +79,13 @@ enum PolishFidelityGuard {
         let rawTrimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let polishedTrimmed = polished.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawTrimmed.isEmpty else {
-            return PolishFidelityVerdict(isAcceptable: false, lengthRatio: 0, missingAnchors: 0, totalAnchors: 0)
+            return PolishFidelityVerdict(
+                isAcceptable: false,
+                lengthRatio: 0,
+                missingAnchors: 0,
+                totalAnchors: 0,
+                retryInstruction: "Regenerate the polished transcript from the original text."
+            )
         }
 
         let ratioSource = lengthRatioSourceText(for: rawTrimmed)
@@ -120,58 +101,25 @@ enum PolishFidelityGuard {
         let missing = anchors.filter {
             !$0.survives(inLiteral: polishedLowercased, withoutPunctuation: polishedWithoutPunctuation)
         }
-        // Numbers must survive as an ordered, duplicate-aware subsequence (see
-        // ExtractedAnchors): this catches a swap (5<->6) or a changed duplicate
-        // (5+5 -> 5+15) that the per-anchor membership check above cannot.
-        let numericMissing = missingNumericTokenCount(
-            rawSequence: extracted.numericSequence, in: polishedTrimmed)
-
-        // CJK targets compress a faithful translation well below the normal
-        // floor, so lower the floor only when translating into a dense script
-        // AND the output is actually dominantly dense (a half-translated mixed
-        // output keeps the normal floor). The ceiling stays unconditional.
-        let floor =
-            (translationExpected && targetIsDenseScript
-                && denseScriptFraction(of: polishedTrimmed) >= denseScriptFractionThreshold)
-            ? denseScriptMinimumLengthRatio
-            : minimumLengthRatioFloor(
-                for: rawTrimmed,
-                translationExpected: translationExpected
-            )
-        let ratioAcceptable = ratio >= floor && ratio <= maximumLengthRatio
-        let effectiveNumericMissing = max(
-            0,
-            numericMissing
-                - toleratedNumericMissingCount(
-                    raw: rawTrimmed,
-                    numericSequence: extracted.numericSequence,
-                    missingCount: numericMissing,
-                    translationExpected: translationExpected
-                )
-        )
-        let missingCount = missing.count + effectiveNumericMissing
+        let missingCount = missing.count
         return PolishFidelityVerdict(
-            isAcceptable: ratioAcceptable && missingCount == 0,
+            isAcceptable: missingCount == 0,
             lengthRatio: ratio,
             missingAnchors: missingCount,
-            totalAnchors: anchors.count + extracted.numericSequence.count
+            totalAnchors: anchors.count,
+            retryInstruction: retryInstruction(for: missing)
         )
     }
 
-    /// Anchors split into the deduplicated literal/capitalized/vocabulary set and
-    /// the ordered numeric sequence. Numbers are kept ordered and duplicate-
-    /// preserving (not deduplicated anchors) so a swap (5<->6) or a duplicate-
-    /// count change (5+5 -> 5+15) is caught — a Set would silently lose both.
+    /// Anchors split into the deduplicated literal/capitalized/vocabulary set.
     struct ExtractedAnchors {
         let anchors: [Anchor]
-        let numericSequence: [String]
     }
 
-    /// Tokens that must survive a literal polish: numbers (as an ordered
-    /// sequence), URLs, emails, identifier-like capitalized tokens, and
-    /// vocabulary terms present in raw. Identifier-like words are skipped when a
-    /// translation is expected — only translation-invariant anchors should
-    /// survive across languages.
+    /// Tokens that should survive a polish retry: URLs, emails, identifier-like
+    /// capitalized tokens, and vocabulary terms present in raw. Identifier-like
+    /// words are skipped when a translation is expected — only clear literal
+    /// anchors should survive across languages.
     static func extractAnchors(
         from raw: String,
         vocabularyTerms: [String],
@@ -194,16 +142,6 @@ enum PolishFidelityGuard {
             return exemptSegments.contains { $0.contains(lowered) }
         }
 
-        // Numbers: an ordered, duplicate-preserving sequence (NOT deduplicated
-        // anchors). orderedNumericTokens already drops digits embedded in URLs/
-        // emails, which keep their own literal anchor below. Capped for bounded
-        // work (an independent perf bound from the anchor cap).
-        var numericSequence: [String] = []
-        for token in orderedNumericTokens(in: raw) where !isExempt(token) {
-            numericSequence.append(token)
-            if numericSequence.count >= maximumAnchors { break }
-        }
-
         for pattern in [emailPattern, urlPattern, wwwPattern] {
             for match in matches(of: pattern, in: raw) where !isExempt(match) {
                 add(match, kind: .literal)
@@ -223,7 +161,7 @@ enum PolishFidelityGuard {
             add(trimmed, kind: .literal)
         }
 
-        return ExtractedAnchors(anchors: anchors, numericSequence: numericSequence)
+        return ExtractedAnchors(anchors: anchors)
     }
 
     private static func midSentenceCapitalizedWords(in raw: String) -> [String] {
@@ -293,31 +231,25 @@ enum PolishFidelityGuard {
         return trimmed.isEmpty ? raw : trimmed
     }
 
-    private static func minimumLengthRatioFloor(for raw: String, translationExpected: Bool) -> Double {
-        guard !translationExpected, raw.count >= longNarrativeCharacterThreshold else {
-            return Self.minimumLengthRatio
-        }
-        return longNarrativeMinimumLengthRatio
+    private static func retryInstruction(for missing: [Anchor]) -> String? {
+        guard !missing.isEmpty else { return nil }
+        let protectedTokens = missing.prefix(12)
+            .map { "\"\(promptSafeAnchor($0.value))\"" }
+            .joined(separator: ", ")
+        let suffix = missing.count > 12 ? ", and \(missing.count - 12) more" : ""
+        return """
+            A previous polish attempt removed or changed protected tokens. Regenerate the full polished text from the original transcript and preserve these exact tokens: \(protectedTokens)\(suffix). Return ONLY the final polished transcript.
+            """
     }
 
-    private static func toleratedNumericMissingCount(
-        raw: String,
-        numericSequence: [String],
-        missingCount: Int,
-        translationExpected: Bool
-    ) -> Int {
-        guard !translationExpected else { return 0 }
-        guard raw.count >= longNarrativeCharacterThreshold else { return 0 }
-        guard numericSequence.count >= 2, numericSequence.count <= longNarrativeMaximumNumericAnchors else {
-            return 0
-        }
-        guard missingCount > 0, missingCount < numericSequence.count else { return 0 }
-
-        let allowed = min(
-            longNarrativeMaximumToleratedNumericMissing,
-            max(1, numericSequence.count / 3)
-        )
-        return min(missingCount, allowed)
+    private static func promptSafeAnchor(_ value: String) -> String {
+        value
+            .components(separatedBy: .newlines)
+            .joined(separator: " ")
+            .components(separatedBy: .controlCharacters)
+            .joined(separator: " ")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func matches(of pattern: String, in text: String) -> [String] {
@@ -336,141 +268,4 @@ enum PolishFidelityGuard {
         return String(String.UnicodeScalarView(scalars))
     }
 
-    /// True when `value` reads as a number (digits plus the `.,:` separators the
-    /// anchor regex allows), so its survival must respect digit boundaries.
-    static func isNumericLiteral(_ value: String) -> Bool {
-        guard let first = value.first, first.isASCII, first.isNumber else { return false }
-        return value.allSatisfy { $0.isASCII && ($0.isNumber || $0 == "." || $0 == "," || $0 == ":") }
-    }
-
-    /// The whole reliable numeric tokens in `text`, in document order WITH
-    /// duplicates, lowercased. Digits embedded in URLs/emails are blanked first
-    /// so a preserved-but-moved link does not feed the ordered numeric check
-    /// (the link keeps its own literal anchor). A numeric token matches only as
-    /// an exact token, so "5" does not match inside "15", "5.5", "5,000" or
-    /// "5:30". Malformed mixed-separator fragments from STT, such as
-    /// "0,63.40.64", are not reliable anchors.
-    static func orderedNumericTokens(in text: String) -> [String] {
-        let withoutLinks =
-            text
-            .replacingOccurrences(of: emailPattern, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: urlPattern, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: wwwPattern, with: " ", options: .regularExpression)
-        return matches(of: numericPattern, in: withoutLinks)
-            .filter(isReliableNumericToken)
-            .map { $0.lowercased() }
-    }
-
-    static func isReliableNumericToken(_ token: String) -> Bool {
-        guard let first = token.first, let last = token.last, first.isNumber, last.isNumber else { return false }
-
-        let hasColon = token.contains(":")
-        let hasComma = token.contains(",")
-        let hasDot = token.contains(".")
-
-        if hasColon {
-            if hasDot, !hasComma, isIPv4AddressWithPort(token) { return true }
-            guard !hasComma, !hasDot else { return false }
-            return token.split(separator: ":", omittingEmptySubsequences: false)
-                .allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
-        }
-
-        guard hasComma && hasDot else { return true }
-        return isValidMixedSeparatorNumber(token)
-    }
-
-    private static func isIPv4AddressWithPort(_ token: String) -> Bool {
-        let parts = token.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 2, let host = parts.first, let port = parts.last else { return false }
-        guard !port.isEmpty, port.allSatisfy(\.isNumber) else { return false }
-
-        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
-        guard octets.count == 4 else { return false }
-        return octets.allSatisfy { octet in
-            guard !octet.isEmpty, octet.count <= 3, octet.allSatisfy(\.isNumber) else { return false }
-            guard let value = Int(octet) else { return false }
-            return value <= 255
-        }
-    }
-
-    private static func isValidMixedSeparatorNumber(_ token: String) -> Bool {
-        guard let lastComma = token.lastIndex(of: ","), let lastDot = token.lastIndex(of: ".") else {
-            return true
-        }
-
-        let decimalSeparator: Character = lastComma > lastDot ? "," : "."
-        let thousandsSeparator: Character = decimalSeparator == "," ? "." : ","
-        let decimalParts = token.split(separator: decimalSeparator, omittingEmptySubsequences: false)
-        guard decimalParts.count == 2, let integerPart = decimalParts.first, let decimalPart = decimalParts.last else {
-            return false
-        }
-        guard !integerPart.isEmpty, !decimalPart.isEmpty, decimalPart.allSatisfy(\.isNumber) else {
-            return false
-        }
-
-        let integerGroups = integerPart.split(separator: thousandsSeparator, omittingEmptySubsequences: false)
-        guard integerGroups.count >= 2, let firstGroup = integerGroups.first else { return false }
-        guard (1...3).contains(firstGroup.count), firstGroup.allSatisfy(\.isNumber) else { return false }
-        return integerGroups.dropFirst().allSatisfy {
-            $0.count == 3 && $0.allSatisfy(\.isNumber)
-        }
-    }
-
-    /// Count of raw numeric tokens that do not survive as an ordered, duplicate-
-    /// aware subsequence of the polished numeric tokens. A missing token must
-    /// not consume the rest of the polished sequence, otherwise one malformed
-    /// STT token causes every later number to look missing too.
-    static func missingNumericTokenCount(rawSequence: [String], in polished: String) -> Int {
-        guard !rawSequence.isEmpty else { return 0 }
-        let polishedTokens = orderedNumericTokens(in: polished)
-        var index = 0
-        var missing = 0
-        for token in rawSequence {
-            let searchStart = index
-            var matched = false
-            while index < polishedTokens.count {
-                let current = polishedTokens[index]
-                index += 1
-                if current == token {
-                    matched = true
-                    break
-                }
-            }
-            if !matched {
-                missing += 1
-                index = searchStart
-            }
-        }
-        return missing
-    }
-
-    /// Fraction of letter/ideograph scalars in `text` that belong to a dense
-    /// (CJK) script. Whitespace, punctuation, digits, and symbols are excluded
-    /// so embedded ASCII product names or numbers don't dilute the measure.
-    private static func denseScriptFraction(of text: String) -> Double {
-        var letterCount = 0
-        var denseCount = 0
-        for scalar in text.unicodeScalars {
-            let dense = isDenseScriptScalar(scalar)
-            guard dense || scalar.properties.isAlphabetic else { continue }
-            letterCount += 1
-            if dense { denseCount += 1 }
-        }
-        guard letterCount > 0 else { return 0 }
-        return Double(denseCount) / Double(letterCount)
-    }
-
-    private static func isDenseScriptScalar(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar.value {
-        case 0x4E00...0x9FFF,  // CJK Unified Ideographs
-            0x3400...0x4DBF,  // CJK Extension A
-            0xF900...0xFAFF,  // CJK Compatibility Ideographs
-            0x3040...0x309F,  // Hiragana
-            0x30A0...0x30FF,  // Katakana
-            0xAC00...0xD7AF:  // Hangul Syllables
-            return true
-        default:
-            return false
-        }
-    }
 }

@@ -208,7 +208,7 @@
 "ai.polish.minimum_duration_desc.always" = "Runs on any transcript that is not trivially short.";
 "ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
 "ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
-"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while preserving important details. A fidelity guard keeps the raw transcript when the AI clearly drifts.";
+"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability. If obvious tokens like links or saved terms drift, SapoWhisper asks the AI to retry before applying the result.";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Local Server";

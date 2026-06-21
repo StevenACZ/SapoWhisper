@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-struct PolishResponse {
+struct PolishResponse: Sendable {
     let text: String
     /// Endpoint-qualified model id, e.g. `openrouter/openai/gpt-5.4-nano`.
     let modelIdentifier: String

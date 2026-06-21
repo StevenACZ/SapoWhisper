@@ -8,6 +8,13 @@ import NaturalLanguage
 import os
 
 final class TranscriptPostProcessor {
+    private static let maximumFidelityAttempts = 3
+
+    private struct GuardedPolishResponse: Sendable {
+        let response: PolishResponse
+        let cleanedText: String
+    }
+
     /// L10: hard cap for the whole polish step (including the one translation
     /// retry). Hosted providers keep the snappy 5s-20s budget; local/LAN
     /// models get a larger budget because first-token latency and small-model
@@ -173,49 +180,29 @@ final class TranscriptPostProcessor {
         )
 
         do {
-            let response = try await withTimeout(seconds: timeoutSeconds) {
-                try await self.polishVerifyingTranslation(
+            let guardedResponse = try await withTimeout(seconds: timeoutSeconds) {
+                try await self.polishWithHardGuardRetries(
                     messages: messages,
                     rawText: transcript,
+                    vocabularyTerms: keyterms,
                     outputLanguage: outputLanguage,
                     timeout: TimeInterval(timeoutSeconds)
                 )
             }
-            let cleaned = PolishOutputSanitizer.clean(response.text, rawText: transcript)
-            guard !cleaned.isEmpty else {
+            guard !guardedResponse.cleanedText.isEmpty else {
                 return finish(
                     finalText: transcript,
                     status: .failed,
-                    model: response.modelIdentifier,
+                    model: guardedResponse.response.modelIdentifier,
                     mode: promptProfile.id,
                     error: "empty polished text"
                 )
             }
 
-            let verdict = PolishFidelityGuard.evaluate(
-                raw: transcript,
-                polished: cleaned,
-                vocabularyTerms: keyterms,
-                translationExpected: outputLanguage.requiresTranslation,
-                targetIsDenseScript: outputLanguage.usesDenseScript
-            )
-            guard verdict.isAcceptable else {
-                SapoLog.ai.warning(
-                    "AI polish rejected by fidelity guard \(verdict.diagnosticSummary, privacy: .public)"
-                )
-                return finish(
-                    finalText: transcript,
-                    status: .rejectedFidelity,
-                    model: response.modelIdentifier,
-                    mode: promptProfile.id,
-                    error: verdict.diagnosticSummary
-                )
-            }
-
             return finish(
-                finalText: cleaned,
+                finalText: guardedResponse.cleanedText,
                 status: .applied,
-                model: response.modelIdentifier,
+                model: guardedResponse.response.modelIdentifier,
                 mode: promptProfile.id
             )
         } catch is CancellationError {
@@ -235,6 +222,76 @@ final class TranscriptPostProcessor {
                 error: error.localizedDescription
             )
         }
+    }
+
+    /// Hard-token fidelity is a regeneration hint, not a raw-text fallback. If
+    /// the model still misses a protected token after the retry budget, the last
+    /// AI output ships because the user explicitly opted into AI polish.
+    private func polishWithHardGuardRetries(
+        messages: TranscriptPolishMessages,
+        rawText: String,
+        vocabularyTerms: [String],
+        outputLanguage: TranscriptPolishOutputLanguage,
+        timeout: TimeInterval
+    ) async throws -> GuardedPolishResponse {
+        var attemptMessages = messages
+        var lastRejected: GuardedPolishResponse?
+
+        for attempt in 1...Self.maximumFidelityAttempts {
+            let response = try await polishVerifyingTranslation(
+                messages: attemptMessages,
+                rawText: rawText,
+                outputLanguage: outputLanguage,
+                timeout: timeout
+            )
+            let cleaned = PolishOutputSanitizer.clean(response.text, rawText: rawText)
+            let guarded = GuardedPolishResponse(response: response, cleanedText: cleaned)
+            let verdict = PolishFidelityGuard.evaluate(
+                raw: rawText,
+                polished: cleaned,
+                vocabularyTerms: vocabularyTerms,
+                translationExpected: outputLanguage.requiresTranslation,
+                targetIsDenseScript: outputLanguage.usesDenseScript
+            )
+
+            guard !verdict.isAcceptable else {
+                if attempt > 1 {
+                    SapoLog.ai.info("AI polish hard guard recovered attempt=\(attempt, privacy: .public)")
+                }
+                return guarded
+            }
+
+            lastRejected = guarded
+            SapoLog.ai.warning(
+                "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(verdict.diagnosticSummary, privacy: .public)"
+            )
+            guard attempt < Self.maximumFidelityAttempts else { break }
+
+            let instruction =
+                verdict.retryInstruction ?? """
+                    A previous polish attempt changed protected tokens. Regenerate the full polished text from the original transcript and preserve URLs, emails, vocabulary terms, and identifiers exactly. Return ONLY the final polished transcript.
+                    """
+            attemptMessages = TranscriptPolishMessages(
+                system: messages.system + "\n\n\(instruction)",
+                user: messages.user
+            )
+        }
+
+        if let lastRejected {
+            SapoLog.ai.warning("AI polish shipping last output after hard guard retry budget")
+            return lastRejected
+        }
+
+        let response = try await polishVerifyingTranslation(
+            messages: messages,
+            rawText: rawText,
+            outputLanguage: outputLanguage,
+            timeout: timeout
+        )
+        return GuardedPolishResponse(
+            response: response,
+            cleanedText: PolishOutputSanitizer.clean(response.text, rawText: rawText)
+        )
     }
 
     /// Runs the polish call and, when an explicit output language is set,

@@ -208,7 +208,7 @@
 "ai.polish.minimum_duration_desc.always" = "Corre en cualquier transcript que no sea trivialmente corto.";
 "ai.polish.minimum_duration_desc.20" = "Salta la mejora en grabaciones menores de 20 segundos.";
 "ai.polish.minimum_duration_desc.30" = "Salta la mejora en grabaciones menores de 30 segundos.";
-"ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad preservando detalles importantes. Una guardia de fidelidad mantiene el texto original cuando la IA se desvía claramente.";
+"ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad. Si se alteran tokens obvios como links o términos guardados, SapoWhisper le pide a la IA que reintente antes de aplicar el resultado.";
 "ai.provider.section" = "Proveedor";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Servidor local";

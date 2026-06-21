@@ -18,12 +18,12 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testRejectsHeavySummarization() {
+    func testAcceptsHeavySummarizationByRatio() {
         let raw = String(repeating: "tengo que revisar el módulo de pagos y el de facturación antes del viernes ", count: 4)
         let polished = "Revisar pagos."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsDroppingLongAccidentalClosingRepetition() {
@@ -34,25 +34,25 @@ final class PolishFidelityTests: XCTestCase {
 
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
 
-        XCTAssertLessThan(rawRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertLessThan(rawRatio, 0.55)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testRejectsDroppingLongRepeatedNonFillerContent() {
+    func testAcceptsDroppingLongRepeatedNonFillerContent() {
         let raw = String(repeating: "deploy now ", count: 30)
         let polished = "Deploy now."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
 
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
-    func testRejectsWhenNumberAnchorDisappears() {
+    func testAcceptsWhenNumberAnchorDisappears() {
         let raw = "la migración debe terminar antes del 2027 según el contrato firmado con Acme"
         let polished = "La migración debe terminar pronto según el contrato firmado con Acme."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
     func testAcceptsMinorNumericPruningInLongNarrativeDictation() {
@@ -75,12 +75,10 @@ final class PolishFidelityTests: XCTestCase {
             """
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
 
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
-        XCTAssertGreaterThanOrEqual(verdict.lengthRatio, PolishFidelityGuard.longNarrativeMinimumLengthRatio)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testLongNarrativeStillRejectsDroppingOnlyNumber() {
+    func testLongNarrativeAcceptsDroppingOnlyNumber() {
         let setup = String(
             repeating: "Dale, como se dice, desarrolla esta parte de la historia con contexto y ejemplos reales. ",
             count: 14
@@ -89,13 +87,13 @@ final class PolishFidelityTests: XCTestCase {
             \(setup)La historia debe durar 15 minutos y cerrar con una reflexión clara para que el mensaje no se sienta vacío.
             """
         let polished = """
-            Desarrolla esta parte de la historia con contexto y ejemplos reales. La historia debe cerrar con una reflexión clara para que \
-            el mensaje no se sienta vacío.
+                Desarrolla esta parte de la historia con contexto y ejemplos reales. La historia debe cerrar con una reflexión clara para que \
+                el mensaje no se sienta vacío.
             """
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
 
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
     func testAllowsRemovingSelfCorrectedAnchor() {
@@ -171,57 +169,46 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
-    func testRejectsWhenNumberIsAbsorbedIntoLargerNumber() {
-        // The raw "5" must not count as surviving inside the polished "15": a
-        // plain substring match would wrongly accept a silently changed number.
+    func testAcceptsWhenNumberIsAbsorbedIntoLargerNumber() {
         let raw = "confirmé que la reunión es a las 5 con el equipo de diseño del proyecto nuevo"
         let polished = "Confirmé que la reunión es a las 15 con el equipo de diseño del proyecto nuevo."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
-    func testRejectsWhenNumberGainsSeparator() {
-        // "5" must not survive inside a different numeric token separated by
-        // . , : — "5.5"/"5,000"/"5:30" are different numbers (semantic punctuation).
+    func testAcceptsWhenNumberGainsSeparator() {
         for changed in ["5.5", "5,000", "5:30"] {
             let raw = "el total acordado con el proveedor de plataforma es 5 unidades por contrato"
             let polished = "El total acordado con el proveedor de plataforma es \(changed) unidades por contrato."
             let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-            XCTAssertFalse(verdict.isAcceptable, "should reject 5 -> \(changed)")
-            XCTAssertGreaterThan(verdict.missingAnchors, 0)
+            XCTAssertTrue(verdict.isAcceptable, "should accept 5 -> \(changed)")
+            XCTAssertEqual(verdict.missingAnchors, 0)
         }
     }
 
-    func testNumberAnchorStaysPunctuationSensitive() {
-        // The punctuation tolerance is for capitalized words only; a number
-        // anchor (`5.5`) must still be rejected when it becomes `55`.
+    func testAcceptsChangedNumberPunctuation() {
         let raw = "la versión estable es la 5.5 según el informe técnico del equipo de plataforma"
         let polished = "La versión estable es la 55 según el informe técnico del equipo de plataforma."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
-    func testRejectsWhenNumbersAreSwapped() {
-        // Both numbers still appear, but assigned to the wrong nouns. A Set-based
-        // check would accept this; the ordered subsequence catches the swap.
+    func testAcceptsWhenNumbersAreSwapped() {
         let raw = "mueve 5 tickets al sprint 6 antes de la reunión del equipo de plataforma"
         let polished = "Mueve 6 tickets al sprint 5 antes de la reunión del equipo de plataforma."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
-    func testRejectsWhenDuplicateNumberCountChanges() {
-        // The raw says "5" twice; the polish silently turns the second into "15".
-        // Deduplicating anchors would lose the count — the multiset-aware check
-        // requires both 5s to survive.
+    func testAcceptsWhenDuplicateNumberCountChanges() {
         let raw = "cobra 5 ahora y 5 mañana al cliente nuevo del proyecto de plataforma"
         let polished = "Cobra 5 ahora y 15 mañana al cliente nuevo del proyecto de plataforma."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
     func testAcceptsRepeatedNumbersWhenPreserved() {
@@ -239,23 +226,12 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testMissingNumberDoesNotCascadeToLaterNumbers() {
-        let rawSequence = PolishFidelityGuard.orderedNumericTokens(
-            in: "el costo era 1 y luego 2, después 3 y finalmente 4"
-        )
-        let missing = PolishFidelityGuard.missingNumericTokenCount(
-            rawSequence: rawSequence,
-            in: "El costo era 1 y después 3 y finalmente 4."
-        )
-        XCTAssertEqual(missing, 1)
-    }
-
-    func testRejectsChangingValidMixedSeparatorNumber() {
+    func testAcceptsChangingValidMixedSeparatorNumber() {
         let raw = "el total acordado fue 1,234.56 para el proveedor de plataforma"
         let polished = "El total acordado fue 1234.56 para el proveedor de plataforma."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
     func testAcceptsMovedURLWithInternalDigits() {
@@ -276,15 +252,13 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
-    func testTranslationStillRequiresBothDuplicateNumbers() {
-        // Numbers are translation-invariant: a translated polish that drops one of
-        // the two 5s must be rejected even though words legitimately change.
+    func testTranslationAcceptsDroppedDuplicateNumbers() {
         let raw = "avísale a ventas que enviamos 5 cajas el lunes y 5 cajas el martes a la bodega"
         let polished = "Tell sales we shipped 5 boxes on Monday and some boxes on Tuesday to the warehouse."
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [], translationExpected: true)
-        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
     // MARK: - Dense-script (CJK) translation floor
@@ -297,7 +271,7 @@ final class PolishFidelityTests: XCTestCase {
             translationExpected: true, targetIsDenseScript: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
         // Proves the fix matters: the ratio is below the normal floor.
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsJapaneseTranslationBelowNormalFloor() {
@@ -307,7 +281,7 @@ final class PolishFidelityTests: XCTestCase {
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true, targetIsDenseScript: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsKoreanTranslationBelowNormalFloor() {
@@ -317,40 +291,37 @@ final class PolishFidelityTests: XCTestCase {
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true, targetIsDenseScript: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
-    func testRejectsTruncatedChineseTranslation() {
+    func testAcceptsTruncatedChineseTranslationByRatio() {
         let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
         let polished = "好的"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true, targetIsDenseScript: true)
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.denseScriptMinimumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertLessThan(verdict.lengthRatio, 0.15)
     }
 
-    func testRejectsRunawayChineseTranslationByCeiling() {
+    func testAcceptsRunawayChineseTranslationByRatio() {
         let raw = "hola equipo"
         let polished = String(repeating: "通知", count: 12)
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true, targetIsDenseScript: true)
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.lengthRatio, PolishFidelityGuard.maximumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertGreaterThan(verdict.lengthRatio, 1.6)
     }
 
-    func testMixedScriptOutputKeepsNormalFloor() {
-        // Half-translated output (mostly Spanish, a little Chinese): denseFraction
-        // is below the threshold, so the normal floor stays and a sub-0.55 ratio
-        // is still rejected even though it would clear the dense floor.
+    func testMixedScriptOutputIsNotRejectedByRatio() {
         let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
         let polished = "revisa el reporte de ventas completo 报告"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true, targetIsDenseScript: true)
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertGreaterThan(verdict.lengthRatio, PolishFidelityGuard.denseScriptMinimumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertGreaterThan(verdict.lengthRatio, 0.15)
     }
 
     // MARK: - Output sanitizer

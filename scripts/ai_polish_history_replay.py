@@ -35,9 +35,6 @@ DEFAULT_POLISH_BASE_URL = "http://localhost:8081/v1"
 DEFAULT_POLISH_MODEL = "qwen3.6-35b-a3b"
 DEFAULT_STT_BASE_URL = "http://localhost:8000"
 DEFAULT_STT_MODEL = "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo"
-LONG_NARRATIVE_CHARACTER_THRESHOLD = 1200
-LONG_NARRATIVE_MAX_NUMERIC_ANCHORS = 8
-LONG_NARRATIVE_MAX_TOLERATED_NUMERIC_MISSING = 2
 
 KNOWN_CORRECTIONS = [
     ("deep commit", "git commit"),
@@ -246,19 +243,6 @@ def clean_polish(value: str, raw_text: str) -> str:
 
 def evaluate_guard(raw: str, polished: str, keyterms: list[str]) -> tuple[bool, list[str]]:
     reasons = []
-    raw_len = max(1, len(raw.strip()))
-    ratio = len(polished.strip()) / raw_len
-    floor = 0.45 if raw_len >= LONG_NARRATIVE_CHARACTER_THRESHOLD else 0.55
-    if ratio < floor or ratio > 1.6:
-        reasons.append(f"length_ratio={ratio:.2f}")
-
-    raw_numbers = number_tokens(raw)
-    polished_numbers = number_tokens(polished)
-    numeric_missing = missing_numeric_token_count(raw_numbers, polished_numbers)
-    tolerated_missing = tolerated_numeric_missing_count(raw_len, raw_numbers, numeric_missing)
-    if numeric_missing - tolerated_missing > 0:
-        reasons.append("numbers_changed")
-
     for anchor in url_email_tokens(raw):
         if anchor not in polished:
             reasons.append("url_or_email_missing")
@@ -274,103 +258,8 @@ def evaluate_guard(raw: str, polished: str, keyterms: list[str]) -> tuple[bool, 
     return not reasons, reasons
 
 
-def number_tokens(text: str) -> list[str]:
-    without_links = re.sub(r"\b[\w.+-]+@[\w.-]+\.\w+\b|https?://\S+|\bwww\.\S+", " ", text)
-    tokens = re.findall(r"\d+(?:[.,:]\d+)*", without_links)
-    return [token for token in tokens if is_reliable_numeric_token(token)]
-
-
 def url_email_tokens(text: str) -> list[str]:
     return re.findall(r"\b[\w.+-]+@[\w.-]+\.\w+\b|https?://\S+|\bwww\.\S+", text)
-
-
-def is_reliable_numeric_token(token: str) -> bool:
-    if not token or not token[0].isdigit() or not token[-1].isdigit():
-        return False
-
-    has_colon = ":" in token
-    has_comma = "," in token
-    has_dot = "." in token
-
-    if has_colon:
-        if has_dot and not has_comma and is_ipv4_address_with_port(token):
-            return True
-        if has_comma or has_dot:
-            return False
-        return all(part and part.isdigit() for part in token.split(":"))
-
-    if has_comma and has_dot:
-        return is_valid_mixed_separator_number(token)
-    return True
-
-
-def is_ipv4_address_with_port(token: str) -> bool:
-    parts = token.split(":")
-    if len(parts) != 2:
-        return False
-    host, port = parts
-    if not port.isdigit():
-        return False
-    octets = host.split(".")
-    if len(octets) != 4:
-        return False
-    return all(octet.isdigit() and len(octet) <= 3 and int(octet) <= 255 for octet in octets)
-
-
-def is_valid_mixed_separator_number(token: str) -> bool:
-    last_comma = token.rfind(",")
-    last_dot = token.rfind(".")
-    if last_comma < 0 or last_dot < 0:
-        return True
-
-    decimal_separator = "," if last_comma > last_dot else "."
-    thousands_separator = "." if decimal_separator == "," else ","
-    parts = token.split(decimal_separator)
-    if len(parts) != 2:
-        return False
-    integer_part, decimal_part = parts
-    if not integer_part or not decimal_part.isdigit():
-        return False
-
-    integer_groups = integer_part.split(thousands_separator)
-    if len(integer_groups) < 2:
-        return False
-    first, *rest = integer_groups
-    if not first.isdigit() or not 1 <= len(first) <= 3:
-        return False
-    return all(group.isdigit() and len(group) == 3 for group in rest)
-
-
-def missing_numeric_token_count(expected: list[str], actual: list[str]) -> int:
-    index = 0
-    missing = 0
-    for token in expected:
-        search_start = index
-        matched = False
-        while index < len(actual):
-            current = actual[index]
-            index += 1
-            if current == token:
-                matched = True
-                break
-        if not matched:
-            missing += 1
-            index = search_start
-    return missing
-
-
-def tolerated_numeric_missing_count(raw_len: int, numbers: list[str], missing_count: int) -> int:
-    if raw_len < LONG_NARRATIVE_CHARACTER_THRESHOLD:
-        return 0
-    if not 2 <= len(numbers) <= LONG_NARRATIVE_MAX_NUMERIC_ANCHORS:
-        return 0
-    if missing_count <= 0 or missing_count >= len(numbers):
-        return 0
-    allowed = min(
-        LONG_NARRATIVE_MAX_TOLERATED_NUMERIC_MISSING,
-        max(1, len(numbers) // 3),
-    )
-    return min(missing_count, allowed)
 
 
 def contains_folded(text: str, term: str) -> bool:
