@@ -93,6 +93,17 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(aiza.logSummary.contains("AIzaSyABCDEF0123456789xyz"))
     }
 
+    func testRedactsProviderMaskedOpenAICompatibleKeys() {
+        let snippet = TranscriptionFailure.redactedLogSnippet(
+            from:
+                "Incorrect API key provided: sk-or-v1******************************eb76. You can find your API key at https://platform.openai.com/api-keys."
+        )
+
+        XCTAssertFalse(snippet.contains("sk-or-v1"))
+        XCTAssertFalse(snippet.contains("eb76"))
+        XCTAssertTrue(snippet.contains("[redacted-key]"))
+    }
+
     func testErrorStateTreatsNoSpeechGently() {
         let noSpeech = ErrorState(failure: TranscriptionFailure(kind: .emptyTranscription, engine: "Deepgram"))
         XCTAssertTrue(noSpeech.isNoSpeech)

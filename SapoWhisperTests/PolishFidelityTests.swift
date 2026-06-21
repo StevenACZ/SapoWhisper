@@ -26,6 +26,27 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
     }
 
+    func testAcceptsDroppingLongAccidentalClosingRepetition() {
+        let repeatedClosing = String(repeating: "ya está ", count: 40)
+        let raw = "mejora el servidor local y deja cada proveedor separado \(repeatedClosing)"
+        let polished = "Mejora el servidor local y deja cada proveedor separado."
+        let rawRatio = Double(polished.count) / Double(raw.count)
+
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+
+        XCTAssertLessThan(rawRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRejectsDroppingLongRepeatedNonFillerContent() {
+        let raw = String(repeating: "deploy now ", count: 30)
+        let polished = "Deploy now."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+    }
+
     func testRejectsWhenNumberAnchorDisappears() {
         let raw = "la migración debe terminar antes del 2027 según el contrato firmado con Acme"
         let polished = "La migración debe terminar pronto según el contrato firmado con Acme."

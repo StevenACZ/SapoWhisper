@@ -18,7 +18,7 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var displayName: String {
+    nonisolated var displayName: String {
         switch self {
         case .openRouter:
             return "OpenRouter"
@@ -33,8 +33,8 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Preset base URL; `nil` for `.custom` (user supplied, e.g. Ollama/LM Studio).
-    var presetBaseURL: String? {
+    /// Default base URL. Local/custom endpoints may override this in Settings.
+    var defaultBaseURL: String {
         switch self {
         case .openRouter:
             return "https://openrouter.ai/api/v1"
@@ -45,8 +45,19 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         case .groq:
             return "https://api.groq.com/openai/v1"
         case .custom:
-            return nil
+            return ""
         }
+    }
+
+    /// Fixed hosted presets use their provider URL; local/custom endpoints are
+    /// editable because they often point to a LAN machine or local app.
+    nonisolated var usesEditableBaseURL: Bool {
+        self == .localServer || self == .custom
+    }
+
+    /// Legacy name kept for tests and export/import compatibility.
+    var presetBaseURL: String? {
+        self == .custom ? nil : defaultBaseURL
     }
 
     var defaultModel: String {
@@ -91,9 +102,36 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         self != .custom && self != .localServer
     }
 
+    /// Custom endpoints often still need bearer auth. The local server preset
+    /// stays uncluttered by default because most LAN servers are unauthenticated.
+    var showsAPIKeyByDefault: Bool {
+        self != .localServer
+    }
+
     /// Hosted presets need internet; custom endpoints may be LAN-only.
     var requiresInternet: Bool {
         self != .custom && self != .localServer
+    }
+
+    var apiKeychainKey: KeychainStore.Key {
+        switch self {
+        case .openRouter:
+            return .aiPolishOpenRouterAPIKey
+        case .localServer:
+            return .aiPolishLocalServerAPIKey
+        case .openAI:
+            return .aiPolishOpenAIAPIKey
+        case .groq:
+            return .aiPolishGroqAPIKey
+        case .custom:
+            return .aiPolishCustomAPIKey
+        }
+    }
+
+    fileprivate var managedModels: Set<String> {
+        Set(
+            ([defaultModel] + suggestedModels).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty })
     }
 }
 
@@ -115,18 +153,13 @@ struct PolishProviderConfiguration {
     }
 
     static func current(defaults: UserDefaults = .standard) -> PolishProviderConfiguration? {
-        let endpointValue =
-            defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
-        let endpoint = PolishEndpoint(rawValue: endpointValue) ?? .default
-        let model = (defaults.string(forKey: Constants.StorageKeys.aiPolishModel) ?? endpoint.defaultModel)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let customBaseURL = (defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let apiKey = (KeychainStore.string(for: .aiPolishAPIKey) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint = currentEndpoint(defaults: defaults)
+        let model = storedModel(for: endpoint, defaults: defaults)
+        let baseURLInput = storedBaseURLInput(for: endpoint, defaults: defaults)
+        let apiKey = apiKey(for: endpoint, allowLegacyFallback: true)
 
-        guard isUsable(endpoint: endpoint, model: model, customBaseURL: customBaseURL, apiKey: apiKey),
-            let baseURL = URL(string: endpoint.presetBaseURL ?? customBaseURL)
+        guard isUsable(endpoint: endpoint, model: model, customBaseURL: baseURLInput, apiKey: apiKey),
+            let baseURL = URL(string: resolvedBaseURLString(for: endpoint, input: baseURLInput))
         else {
             return nil
         }
@@ -144,9 +177,10 @@ struct PolishProviderConfiguration {
         let endpoint = currentEndpoint(defaults: defaults)
         guard endpoint != .localServer else { return true }
 
-        let customBaseURL = (defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let baseURL = URL(string: endpoint.presetBaseURL ?? customBaseURL) else { return false }
+        let baseURLInput = storedBaseURLInput(for: endpoint, defaults: defaults)
+        guard let baseURL = URL(string: resolvedBaseURLString(for: endpoint, input: baseURLInput)) else {
+            return false
+        }
         return isLocalNetworkHost(baseURL.host)
     }
 
@@ -166,10 +200,10 @@ struct PolishProviderConfiguration {
         let endpointValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
         let endpoint = PolishEndpoint(rawValue: endpointValue) ?? .default
-        let model = defaults.string(forKey: Constants.StorageKeys.aiPolishModel) ?? endpoint.defaultModel
-        let customBaseURL = defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) ?? ""
+        let model = storedModel(for: endpoint, defaults: defaults)
+        let customBaseURL = storedBaseURLInput(for: endpoint, defaults: defaults)
         // isUsable only checks key presence, so a placeholder stands in for it.
-        let apiKey = KeychainStore.hasValue(for: .aiPolishAPIKey) ? "stored" : ""
+        let apiKey = hasAPIKeyHint(for: endpoint) ? "stored" : ""
         return isUsable(endpoint: endpoint, model: model, customBaseURL: customBaseURL, apiKey: apiKey)
     }
 
@@ -183,11 +217,116 @@ struct PolishProviderConfiguration {
             return false
         }
 
-        let baseURLString = endpoint.presetBaseURL ?? customBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseURLString = resolvedBaseURLString(for: endpoint, input: customBaseURL)
         guard let url = URL(string: baseURLString), let scheme = url.scheme?.lowercased(), url.host != nil else {
             return false
         }
         return scheme == "https" || scheme == "http"
+    }
+
+    static func storedModel(
+        for endpoint: PolishEndpoint,
+        defaults: UserDefaults = .standard,
+        allowLegacyFallback: Bool = true
+    ) -> String {
+        let scoped = (defaults.string(forKey: modelStorageKey(for: endpoint)) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !scoped.isEmpty { return scoped }
+
+        if allowLegacyFallback, endpoint == currentEndpoint(defaults: defaults) {
+            let legacy = (defaults.string(forKey: Constants.StorageKeys.aiPolishModel) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !legacy.isEmpty, !isModelManagedByAnotherPreset(legacy, endpoint: endpoint) {
+                return legacy
+            }
+        }
+
+        return endpoint.defaultModel
+    }
+
+    static func setStoredModel(_ model: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        defaults.set(trimmed, forKey: modelStorageKey(for: endpoint))
+        if endpoint == currentEndpoint(defaults: defaults) {
+            defaults.set(trimmed, forKey: Constants.StorageKeys.aiPolishModel)
+        }
+    }
+
+    static func storedBaseURLInput(
+        for endpoint: PolishEndpoint,
+        defaults: UserDefaults = .standard,
+        allowLegacyFallback: Bool = true
+    ) -> String {
+        guard endpoint.usesEditableBaseURL else { return endpoint.defaultBaseURL }
+
+        let scoped = (defaults.string(forKey: baseURLStorageKey(for: endpoint)) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !scoped.isEmpty { return scoped }
+
+        if allowLegacyFallback, endpoint == .custom {
+            return (defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return endpoint.defaultBaseURL
+    }
+
+    static func setStoredBaseURLInput(_ baseURL: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
+        guard endpoint.usesEditableBaseURL else { return }
+        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        defaults.set(trimmed, forKey: baseURLStorageKey(for: endpoint))
+        if endpoint == .custom {
+            defaults.set(trimmed, forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+        }
+    }
+
+    static func apiKey(for endpoint: PolishEndpoint, allowLegacyFallback: Bool = false) -> String {
+        let scoped = (KeychainStore.string(for: endpoint.apiKeychainKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !scoped.isEmpty { return scoped }
+
+        guard allowLegacyFallback, endpoint.requiresAPIKey else { return "" }
+        let legacy = (KeychainStore.string(for: .aiPolishAPIKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return legacyAPIKeyLooksCompatible(legacy, with: endpoint) ? legacy : ""
+    }
+
+    static func hasAPIKeyHint(for endpoint: PolishEndpoint) -> Bool {
+        KeychainStore.hasValue(for: endpoint.apiKeychainKey)
+    }
+
+    static func resolvedBaseURLString(for endpoint: PolishEndpoint, input: String) -> String {
+        guard endpoint.usesEditableBaseURL else { return endpoint.defaultBaseURL }
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? endpoint.defaultBaseURL : trimmed
+    }
+
+    private static func modelStorageKey(for endpoint: PolishEndpoint) -> String {
+        Constants.StorageKeys.aiPolishEndpointModelPrefix + endpoint.rawValue
+    }
+
+    private static func baseURLStorageKey(for endpoint: PolishEndpoint) -> String {
+        Constants.StorageKeys.aiPolishEndpointBaseURLPrefix + endpoint.rawValue
+    }
+
+    private static func isModelManagedByAnotherPreset(_ model: String, endpoint: PolishEndpoint) -> Bool {
+        PolishEndpoint.allCases
+            .filter { $0 != endpoint && $0 != .custom }
+            .contains { $0.managedModels.contains(model) }
+    }
+
+    private static func legacyAPIKeyLooksCompatible(_ key: String, with endpoint: PolishEndpoint) -> Bool {
+        guard !key.isEmpty else { return false }
+        switch endpoint {
+        case .openRouter:
+            return key.hasPrefix("sk-or-")
+        case .openAI:
+            return !key.hasPrefix("sk-or-") && !key.hasPrefix("gsk_")
+        case .groq:
+            return key.hasPrefix("gsk_")
+        case .localServer, .custom:
+            return false
+        }
     }
 
     private static func isLocalNetworkHost(_ host: String?) -> Bool {

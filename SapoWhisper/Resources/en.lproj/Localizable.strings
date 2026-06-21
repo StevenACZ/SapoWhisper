@@ -214,6 +214,8 @@
 "ai.provider.endpoint_local_server" = "Local Server";
 "ai.provider.endpoint_custom" = "Custom";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
+"ai.provider.base_url" = "Base URL";
+"ai.provider.base_url_hint" = "Use the OpenAI-compatible base URL; SapoWhisper adds /chat/completions.";
 "ai.provider.model" = "Model";
 "ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
 "ai.provider.api_key" = "API key";
@@ -221,6 +223,9 @@
 "ai.provider.api_key_placeholder" = "Paste your API key";
 "ai.provider.api_key_hint" = "Stored securely in your macOS Keychain.";
 "ai.provider.api_key_optional_hint" = "Optional for local servers; stored securely when provided.";
+"ai.provider.optional_key_show" = "Add optional API key";
+"ai.provider.optional_key_edit" = "Edit saved API key";
+"ai.provider.local_key_hidden_hint" = "Usually not needed for local servers.";
 "ai.provider.test" = "Test connection";
 "ai.provider.test_success" = "Works · %@";
 "ai.provider.needs_key" = "Add provider details to run AI polish.";
@@ -234,6 +239,17 @@
 "ai.provider.error_not_configured" = "AI polish is not configured (missing provider details).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
 "ai.provider.error_http" = "AI provider error (%@): %@";
+"ai.provider.error_auth_openai" = "OpenAI rejected the API key. If you pasted an OpenRouter key, switch the provider to OpenRouter; if you want OpenAI, paste an OpenAI key.";
+"ai.provider.error_auth_openrouter" = "OpenRouter rejected the API key. Check that the key belongs to OpenRouter.";
+"ai.provider.error_auth_local" = "%@ rejected the API key. Check the configured token, or leave the field empty if your local server does not require authentication.";
+"ai.provider.error_auth_generic" = "%@ rejected the API key. Check that the key belongs to the selected provider.";
+"ai.provider.error_model_or_endpoint" = "%@ could not find that model or endpoint. Check the model and base URL.";
+"ai.provider.error_rate_limited" = "%@ rejected the request because of rate limits, quota, or credits.";
+"ai.provider.error_server" = "%@ did not respond correctly. Try again or check the server.";
+"ai.provider.error_check_settings" = "%@ rejected the request. Check endpoint, model, and API key.";
+"ai.provider.error_network_local" = "Could not connect to %@. Check that the server is running and that the base URL ends in /v1.";
+"ai.provider.error_network_hosted" = "Could not connect to %@. Check your internet connection and try again.";
+"ai.provider.error_network_timeout" = "%@ took too long to respond. Check the server or try again.";
 "ai.google_change_json" = "Change JSON";
 "ai.mode.automatic" = "Automatic";
 "ai.mode.ai" = "AI Mode";

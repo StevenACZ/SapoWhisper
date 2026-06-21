@@ -66,6 +66,7 @@ enum TranscriptPolishPromptBuilder {
             - The "Output language" section below decides the language of the final text. When it requires a language different from the transcript's, translate the whole transcript faithfully — same ideas, same order, same detail. That translation is required and does not count as rephrasing; every other rule applies to the translated text.
             - Preserve the user's intent, details, and constraints exactly. Never add facts, conclusions, or answers. Never summarize away content.
             - Remove speech fillers (um, uh, eh, o sea, este, bueno, like, you know) unless they are clearly intentional emphasis.
+            - Collapse accidental repeated filler/closing phrases caused by dictation ending late (for example "ya está ya está ya está") to one occurrence, or remove them when they only signal that the user is done.
             - For self-corrections ("no espera, quise decir X", "no wait, I meant X", "mejor dicho X"), keep only the final corrected version.
             - Fix speech-to-text mistakes only when context makes the intended word unambiguous.
             - Normalize whitespace and punctuation: single spaces, sentence-ending periods, straight quotes.

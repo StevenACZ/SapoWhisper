@@ -79,6 +79,8 @@ enum PolishFidelityGuard {
     private static let capitalizedWordStopAnchors: Set<String> = [
         "bueno", "dale", "listo", "obviamente", "perfecto",
     ]
+    private static let accidentalRepeatedFillerPattern =
+        #"(?:\b(?:ya\s+est[aá]|listo|dale|ok(?:ay)?|perfecto|eso)\b[\s.,;:!?¡¿-]*){4,}"#
 
     /// `translationExpected` relaxes the language-bound anchors: a requested
     /// output language legitimately rewrites every regular word, so only
@@ -97,7 +99,8 @@ enum PolishFidelityGuard {
             return PolishFidelityVerdict(isAcceptable: false, lengthRatio: 0, missingAnchors: 0, totalAnchors: 0)
         }
 
-        let ratio = Double(polishedTrimmed.count) / Double(rawTrimmed.count)
+        let ratioSource = lengthRatioSourceText(for: rawTrimmed)
+        let ratio = Double(polishedTrimmed.count) / Double(ratioSource.count)
         let extracted = extractAnchors(
             from: rawTrimmed,
             vocabularyTerms: vocabularyTerms,
@@ -253,6 +256,19 @@ enum PolishFidelityGuard {
             }
         }
         return segments
+    }
+
+    /// Closing fillers can repeat dozens of times when dictation stops late
+    /// ("ya está ya está..."). Collapse only known filler phrases for the length
+    /// ratio, while anchors still come from the untouched raw transcript.
+    private static func lengthRatioSourceText(for raw: String) -> String {
+        let collapsed = raw.replacingOccurrences(
+            of: accidentalRepeatedFillerPattern,
+            with: " filler ",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? raw : trimmed
     }
 
     private static func matches(of pattern: String, in text: String) -> [String] {

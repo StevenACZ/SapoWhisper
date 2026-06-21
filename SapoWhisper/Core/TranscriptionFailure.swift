@@ -197,7 +197,7 @@ extension TranscriptionFailure {
                 #"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization)\s*[:=]\s*["']?[^"',\s}]{6,}"#,
                 "$1=[redacted]"
             ),
-            (#"(?i)sk-[A-Za-z0-9._-]{10,}"#, "[redacted-key]"),
+            (#"(?i)sk-[A-Za-z0-9._*-]{6,}"#, "[redacted-key]"),
             (#"AIza[0-9A-Za-z_-]{10,}"#, "[redacted-key]"),
         ]
         let redacted = patterns.reduce(normalized) { partial, entry in

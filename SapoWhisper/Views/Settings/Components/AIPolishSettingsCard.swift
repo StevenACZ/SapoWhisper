@@ -19,14 +19,16 @@ struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishMinimumDuration) private var aiPolishMinimumDuration =
         TranscriptPolishMinimumDuration.defaultPolicy.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishModel) private var model = PolishEndpoint.default.defaultModel
-    @AppStorage(Constants.StorageKeys.aiPolishCustomBaseURL) private var customBaseURL = ""
     @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
 
+    @State private var model = PolishEndpoint.default.defaultModel
+    @State private var baseURL = PolishEndpoint.default.defaultBaseURL
     @State private var apiKey = ""
     @State private var keychainReadDenied = false
     @State private var testState: ProviderTestState = .idle
     @State private var isProviderExpanded = false
+    @State private var showsOptionalAPIKey = false
+    @State private var isLoadingProviderFields = false
     /// The keychain is only read once the provider section actually expands,
     /// so opening Settings never touches the keychain (guardrail: gate on
     /// `hasValue` hints, never `string(for:)`, in launch/settings paths).
@@ -37,15 +39,16 @@ struct AIPolishSettingsCard: View {
     }
 
     private var isProviderUsable: Bool {
-        if hasLoadedAPIKey {
-            return PolishProviderConfiguration.isUsable(
-                endpoint: endpoint,
-                model: model,
-                customBaseURL: customBaseURL,
-                apiKey: apiKey
-            )
-        }
-        return PolishProviderConfiguration.hasUsableConfiguration()
+        let effectiveAPIKey =
+            hasLoadedAPIKey
+            ? apiKey
+            : (PolishProviderConfiguration.hasAPIKeyHint(for: endpoint) ? "stored" : "")
+        return PolishProviderConfiguration.isUsable(
+            endpoint: endpoint,
+            model: model,
+            customBaseURL: baseURL,
+            apiKey: effectiveAPIKey
+        )
     }
 
     private var currentPrompt: PromptProfile {
@@ -85,13 +88,16 @@ struct AIPolishSettingsCard: View {
                 AIPolishProviderSection(
                     endpointValue: $endpointValue,
                     model: $model,
-                    customBaseURL: $customBaseURL,
+                    baseURL: $baseURL,
                     apiKey: $apiKey,
                     keychainReadDenied: $keychainReadDenied,
                     testState: $testState,
                     isExpanded: $isProviderExpanded,
+                    showsOptionalAPIKey: $showsOptionalAPIKey,
                     isProviderUsable: isProviderUsable,
-                    onWillExpand: loadAPIKeyIfNeeded
+                    hasStoredAPIKey: PolishProviderConfiguration.hasAPIKeyHint(for: endpoint),
+                    onWillExpand: loadAPIKeyIfNeeded,
+                    onWillEditAPIKey: loadAPIKeyForEditing
                 )
                 .disabled(!aiPolishEnabled)
                 .opacity(aiPolishEnabled ? 1 : 0.62)
@@ -121,29 +127,33 @@ struct AIPolishSettingsCard: View {
         .onAppear {
             // Start collapsed when the provider already works; expand (and
             // only then read the keychain) when setup is still pending.
+            loadProviderFields(allowLegacyFallback: true, readAPIKey: false)
             isProviderExpanded = !PolishProviderConfiguration.hasUsableConfiguration()
             if isProviderExpanded {
                 loadAPIKeyIfNeeded()
             }
-            // The curated-catalog picker needs a valid selection to render
-            if endpoint.suggestedModels.isEmpty == false,
-                model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                model = endpoint.defaultModel
-            }
         }
         .onChange(of: apiKey) { _, newValue in
-            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: .aiPolishAPIKey)
+            guard !isLoadingProviderFields else { return }
+            guard hasLoadedAPIKey || endpoint.showsAPIKeyByDefault || showsOptionalAPIKey else { return }
+            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: endpoint.apiKeychainKey)
             testState = .idle
         }
         .onChange(of: endpointValue) { oldValue, _ in
             let previous = PolishEndpoint(rawValue: oldValue) ?? .default
-            if model.isEmpty || model == previous.defaultModel {
-                model = endpoint.defaultModel
+            loadProviderFields(allowLegacyFallback: false, readAPIKey: isProviderExpanded && endpoint.showsAPIKeyByDefault)
+            showsOptionalAPIKey = false
+            if previous != endpoint {
+                keychainReadDenied = false
             }
             testState = .idle
         }
-        .onChange(of: model) { _, _ in
+        .onChange(of: model) { _, newValue in
+            PolishProviderConfiguration.setStoredModel(newValue, for: endpoint)
+            testState = .idle
+        }
+        .onChange(of: baseURL) { _, newValue in
+            PolishProviderConfiguration.setStoredBaseURLInput(newValue, for: endpoint)
             testState = .idle
         }
         .onChange(of: aiPolishOutputLanguage) { _, _ in
@@ -173,10 +183,38 @@ struct AIPolishSettingsCard: View {
     }
 
     private func loadAPIKeyIfNeeded() {
-        guard !hasLoadedAPIKey else { return }
+        guard !hasLoadedAPIKey, endpoint.showsAPIKeyByDefault else { return }
+        loadAPIKeyForEditing()
+    }
+
+    private func loadAPIKeyForEditing() {
+        guard !hasLoadedAPIKey || keychainReadDenied else { return }
         hasLoadedAPIKey = true
-        apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
+        apiKey = PolishProviderConfiguration.apiKey(for: endpoint, allowLegacyFallback: true)
+        if !apiKey.isEmpty, !KeychainStore.hasValue(for: endpoint.apiKeychainKey) {
+            KeychainStore.setString(apiKey, for: endpoint.apiKeychainKey)
+        }
         keychainReadDenied = KeychainStore.isReadDenied
+    }
+
+    private func loadProviderFields(allowLegacyFallback: Bool, readAPIKey: Bool) {
+        isLoadingProviderFields = true
+        model = PolishProviderConfiguration.storedModel(
+            for: endpoint,
+            allowLegacyFallback: allowLegacyFallback
+        )
+        baseURL = PolishProviderConfiguration.storedBaseURLInput(
+            for: endpoint,
+            allowLegacyFallback: allowLegacyFallback
+        )
+        hasLoadedAPIKey = false
+        apiKey = ""
+        if readAPIKey {
+            loadAPIKeyForEditing()
+        }
+        DispatchQueue.main.async {
+            isLoadingProviderFields = false
+        }
     }
 
     // MARK: - Behavior

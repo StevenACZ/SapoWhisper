@@ -214,6 +214,8 @@
 "ai.provider.endpoint_local_server" = "Servidor local";
 "ai.provider.endpoint_custom" = "Personalizado";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
+"ai.provider.base_url" = "URL base";
+"ai.provider.base_url_hint" = "Usa la URL base OpenAI-compatible; SapoWhisper agrega /chat/completions.";
 "ai.provider.model" = "Modelo";
 "ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
 "ai.provider.api_key" = "API key";
@@ -221,6 +223,9 @@
 "ai.provider.api_key_placeholder" = "Pega tu API key";
 "ai.provider.api_key_hint" = "Se guarda de forma segura en el Llavero de macOS.";
 "ai.provider.api_key_optional_hint" = "Opcional para servidores locales; se guarda de forma segura si la agregas.";
+"ai.provider.optional_key_show" = "Agregar API key opcional";
+"ai.provider.optional_key_edit" = "Editar API key guardada";
+"ai.provider.local_key_hidden_hint" = "Normalmente no se necesita para servidores locales.";
 "ai.provider.test" = "Probar conexión";
 "ai.provider.test_success" = "Funciona · %@";
 "ai.provider.needs_key" = "Agrega los datos del proveedor para usar la mejora por IA.";
@@ -234,6 +239,17 @@
 "ai.provider.error_not_configured" = "La mejora por IA no está configurada (faltan datos del proveedor).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
 "ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
+"ai.provider.error_auth_openai" = "OpenAI rechazó la API key. Si pegaste una key de OpenRouter, cambia el proveedor a OpenRouter; si quieres OpenAI, pega una key de OpenAI.";
+"ai.provider.error_auth_openrouter" = "OpenRouter rechazó la API key. Revisa que la key sea de OpenRouter.";
+"ai.provider.error_auth_local" = "%@ rechazó la API key. Revisa el token configurado o deja el campo vacío si tu servidor local no requiere autenticación.";
+"ai.provider.error_auth_generic" = "%@ rechazó la API key. Revisa que la key corresponda al proveedor seleccionado.";
+"ai.provider.error_model_or_endpoint" = "%@ no encontró ese modelo o endpoint. Revisa el modelo y la URL base.";
+"ai.provider.error_rate_limited" = "%@ rechazó la solicitud por límite, cuota o créditos.";
+"ai.provider.error_server" = "%@ no respondió correctamente. Intenta de nuevo o revisa el servidor.";
+"ai.provider.error_check_settings" = "%@ rechazó la solicitud. Revisa endpoint, modelo y API key.";
+"ai.provider.error_network_local" = "No pude conectar con %@. Revisa que el servidor esté encendido y que la URL base termine en /v1.";
+"ai.provider.error_network_hosted" = "No pude conectar con %@. Revisa tu conexión e inténtalo de nuevo.";
+"ai.provider.error_network_timeout" = "%@ tardó demasiado en responder. Revisa el servidor o prueba otra vez.";
 "ai.google_change_json" = "Cambiar JSON";
 "ai.mode.automatic" = "Automático";
 "ai.mode.ai" = "Modo IA";

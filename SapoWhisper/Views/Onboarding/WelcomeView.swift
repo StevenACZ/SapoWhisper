@@ -804,11 +804,13 @@ private struct WelcomeCloudEngineCard: View {
 private struct WelcomeAIPolishStep: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishModel) private var model = PolishEndpoint.default.defaultModel
-    @AppStorage(Constants.StorageKeys.aiPolishCustomBaseURL) private var customBaseURL = ""
 
+    @State private var model = PolishEndpoint.default.defaultModel
+    @State private var baseURL = PolishEndpoint.default.defaultBaseURL
     @State private var apiKey = ""
     @State private var testState: ProviderTestState = .idle
+    @State private var showsOptionalAPIKey = false
+    @State private var isLoadingProviderFields = false
 
     private var endpoint: PolishEndpoint {
         PolishEndpoint(rawValue: endpointValue) ?? .default
@@ -830,10 +832,14 @@ private struct WelcomeAIPolishStep: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
 
-                if endpoint == .custom {
-                    TextField("ai.provider.custom_url_placeholder".localized, text: $customBaseURL)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
+                if endpoint.usesEditableBaseURL {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ai.provider.base_url".localized)
+                            .font(.subheadline)
+                        TextField("ai.provider.custom_url_placeholder".localized, text: $baseURL)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                    }
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -844,13 +850,30 @@ private struct WelcomeAIPolishStep: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(endpoint.requiresAPIKey ? "ai.provider.api_key".localized : "ai.provider.api_key_optional".localized)
+                    if shouldShowAPIKeyRow {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(
+                                endpoint.requiresAPIKey
+                                    ? "ai.provider.api_key".localized : "ai.provider.api_key_optional".localized
+                            )
                             .font(.subheadline)
-                        SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
-                            .textFieldStyle(.roundedBorder)
+                            SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if endpoint == .localServer, !shouldShowAPIKeyRow {
+                    Button {
+                        loadAPIKeyForEditing()
+                        showsOptionalAPIKey = true
+                    } label: {
+                        Label("ai.provider.optional_key_show".localized, systemImage: "key")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 8) {
@@ -875,10 +898,18 @@ private struct WelcomeAIPolishStep: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     case .failure(let message):
-                        Label(message, systemImage: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(Color.sapoError)
-                            .lineLimit(2)
+                        Label {
+                            Text(message)
+                                .lineLimit(3)
+                                .truncationMode(.tail)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(Color.sapoError)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(message)
                     }
 
                     Spacer()
@@ -900,39 +931,44 @@ private struct WelcomeAIPolishStep: View {
         .padding(.horizontal, 32)
         .padding(.top, 18)
         .onAppear {
-            // Prefill only when a key actually exists (hint check), so a
-            // fresh user stepping through onboarding never triggers the
-            // keychain consent dialog here.
-            if KeychainStore.hasValue(for: .aiPolishAPIKey) {
-                apiKey = KeychainStore.string(for: .aiPolishAPIKey) ?? ""
-            }
-            // The curated-catalog picker needs a valid selection to render
-            if endpoint.suggestedModels.isEmpty == false,
-                model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                model = endpoint.defaultModel
-            }
+            loadProviderFields(allowLegacyFallback: true, readAPIKey: endpoint.showsAPIKeyByDefault)
         }
         .onChange(of: apiKey) { _, newValue in
-            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: .aiPolishAPIKey)
+            guard !isLoadingProviderFields else { return }
+            guard endpoint.showsAPIKeyByDefault || showsOptionalAPIKey else { return }
+            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: endpoint.apiKeychainKey)
             testState = .idle
         }
-        .onChange(of: endpointValue) { oldValue, _ in
-            let previous = PolishEndpoint(rawValue: oldValue) ?? .default
-            if model.isEmpty || model == previous.defaultModel {
-                model = endpoint.defaultModel
-            }
+        .onChange(of: endpointValue) { _, _ in
+            loadProviderFields(allowLegacyFallback: false, readAPIKey: endpoint.showsAPIKeyByDefault)
+            showsOptionalAPIKey = false
+            testState = .idle
+        }
+        .onChange(of: model) { _, newValue in
+            PolishProviderConfiguration.setStoredModel(newValue, for: endpoint)
+            testState = .idle
+        }
+        .onChange(of: baseURL) { _, newValue in
+            PolishProviderConfiguration.setStoredBaseURLInput(newValue, for: endpoint)
             testState = .idle
         }
         .animation(.smooth(duration: 0.25), value: endpoint)
     }
 
+    private var shouldShowAPIKeyRow: Bool {
+        endpoint.showsAPIKeyByDefault || showsOptionalAPIKey
+    }
+
     private var isUsable: Bool {
-        PolishProviderConfiguration.isUsable(
+        let effectiveAPIKey =
+            endpoint.showsAPIKeyByDefault || showsOptionalAPIKey
+            ? apiKey
+            : (PolishProviderConfiguration.hasAPIKeyHint(for: endpoint) ? "stored" : "")
+        return PolishProviderConfiguration.isUsable(
             endpoint: endpoint,
             model: model,
-            customBaseURL: customBaseURL,
-            apiKey: apiKey
+            customBaseURL: baseURL,
+            apiKey: effectiveAPIKey
         )
     }
 
@@ -944,8 +980,34 @@ private struct WelcomeAIPolishStep: View {
                 testState = .success(response.modelIdentifier)
                 aiPolishEnabled = true
             } catch {
-                testState = .failure(error.localizedDescription)
+                testState = .failure(PolishProviderError.connectionTestMessage(for: error, endpoint: endpoint))
             }
+        }
+    }
+
+    private func loadProviderFields(allowLegacyFallback: Bool, readAPIKey: Bool) {
+        isLoadingProviderFields = true
+        model = PolishProviderConfiguration.storedModel(
+            for: endpoint,
+            allowLegacyFallback: allowLegacyFallback
+        )
+        baseURL = PolishProviderConfiguration.storedBaseURLInput(
+            for: endpoint,
+            allowLegacyFallback: allowLegacyFallback
+        )
+        apiKey = ""
+        if readAPIKey {
+            loadAPIKeyForEditing()
+        }
+        DispatchQueue.main.async {
+            isLoadingProviderFields = false
+        }
+    }
+
+    private func loadAPIKeyForEditing() {
+        apiKey = PolishProviderConfiguration.apiKey(for: endpoint, allowLegacyFallback: true)
+        if !apiKey.isEmpty, !KeychainStore.hasValue(for: endpoint.apiKeychainKey) {
+            KeychainStore.setString(apiKey, for: endpoint.apiKeychainKey)
         }
     }
 }
