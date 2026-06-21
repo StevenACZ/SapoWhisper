@@ -35,6 +35,9 @@ DEFAULT_POLISH_BASE_URL = "http://localhost:8081/v1"
 DEFAULT_POLISH_MODEL = "qwen3.6-35b-a3b"
 DEFAULT_STT_BASE_URL = "http://localhost:8000"
 DEFAULT_STT_MODEL = "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo"
+LONG_NARRATIVE_CHARACTER_THRESHOLD = 1200
+LONG_NARRATIVE_MAX_NUMERIC_ANCHORS = 8
+LONG_NARRATIVE_MAX_TOLERATED_NUMERIC_MISSING = 2
 
 KNOWN_CORRECTIONS = [
     ("deep commit", "git commit"),
@@ -245,12 +248,15 @@ def evaluate_guard(raw: str, polished: str, keyterms: list[str]) -> tuple[bool, 
     reasons = []
     raw_len = max(1, len(raw.strip()))
     ratio = len(polished.strip()) / raw_len
-    if ratio < 0.45 or ratio > 2.2:
+    floor = 0.45 if raw_len >= LONG_NARRATIVE_CHARACTER_THRESHOLD else 0.55
+    if ratio < floor or ratio > 1.6:
         reasons.append(f"length_ratio={ratio:.2f}")
 
     raw_numbers = number_tokens(raw)
     polished_numbers = number_tokens(polished)
-    if not is_subsequence(raw_numbers, polished_numbers):
+    numeric_missing = missing_numeric_token_count(raw_numbers, polished_numbers)
+    tolerated_missing = tolerated_numeric_missing_count(raw_len, raw_numbers, numeric_missing)
+    if numeric_missing - tolerated_missing > 0:
         reasons.append("numbers_changed")
 
     for anchor in url_email_tokens(raw):
@@ -335,12 +341,36 @@ def is_valid_mixed_separator_number(token: str) -> bool:
     return all(group.isdigit() and len(group) == 3 for group in rest)
 
 
-def is_subsequence(expected: list[str], actual: list[str]) -> bool:
+def missing_numeric_token_count(expected: list[str], actual: list[str]) -> int:
     index = 0
-    for token in actual:
-        if index < len(expected) and token == expected[index]:
+    missing = 0
+    for token in expected:
+        search_start = index
+        matched = False
+        while index < len(actual):
+            current = actual[index]
             index += 1
-    return index == len(expected)
+            if current == token:
+                matched = True
+                break
+        if not matched:
+            missing += 1
+            index = search_start
+    return missing
+
+
+def tolerated_numeric_missing_count(raw_len: int, numbers: list[str], missing_count: int) -> int:
+    if raw_len < LONG_NARRATIVE_CHARACTER_THRESHOLD:
+        return 0
+    if not 2 <= len(numbers) <= LONG_NARRATIVE_MAX_NUMERIC_ANCHORS:
+        return 0
+    if missing_count <= 0 or missing_count >= len(numbers):
+        return 0
+    allowed = min(
+        LONG_NARRATIVE_MAX_TOLERATED_NUMERIC_MISSING,
+        max(1, len(numbers) // 3),
+    )
+    return min(missing_count, allowed)
 
 
 def contains_folded(text: str, term: str) -> bool:

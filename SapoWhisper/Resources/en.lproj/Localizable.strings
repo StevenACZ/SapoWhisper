@@ -208,7 +208,7 @@
 "ai.polish.minimum_duration_desc.always" = "Runs on any transcript that is not trivially short.";
 "ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
 "ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
-"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while staying literal — your words, your order. A fidelity guard pastes the raw transcript whenever the AI drifts.";
+"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while preserving important details. A fidelity guard keeps the raw transcript when the AI clearly drifts.";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Local Server";

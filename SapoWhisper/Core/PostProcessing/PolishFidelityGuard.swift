@@ -53,6 +53,14 @@ enum PolishFidelityGuard {
     /// Polish removes fillers, so shrinking below 1.0 is normal.
     static let minimumLengthRatio = 0.55
     static let maximumLengthRatio = 1.6
+    /// Long dictations often include exploratory narrative, fillers, and timing
+    /// estimates ("15, 14 minutes"). For that class of text the guard should
+    /// still catch dangerous drift, but not reject an otherwise useful polish
+    /// only because one low-density number was edited away.
+    static let longNarrativeMinimumLengthRatio = 0.45
+    private static let longNarrativeCharacterThreshold = 1_200
+    private static let longNarrativeMaximumNumericAnchors = 8
+    private static let longNarrativeMaximumToleratedNumericMissing = 2
     /// Dense scripts (CJK) compress a faithful translation to ~0.2–0.4 of the
     /// source character count, so the normal floor would reject them. This much
     /// lower floor still rejects extreme truncation/hallucination, while the
@@ -125,9 +133,23 @@ enum PolishFidelityGuard {
         let floor =
             (translationExpected && targetIsDenseScript
                 && denseScriptFraction(of: polishedTrimmed) >= denseScriptFractionThreshold)
-            ? denseScriptMinimumLengthRatio : minimumLengthRatio
+            ? denseScriptMinimumLengthRatio
+            : minimumLengthRatioFloor(
+                for: rawTrimmed,
+                translationExpected: translationExpected
+            )
         let ratioAcceptable = ratio >= floor && ratio <= maximumLengthRatio
-        let missingCount = missing.count + numericMissing
+        let effectiveNumericMissing = max(
+            0,
+            numericMissing
+                - toleratedNumericMissingCount(
+                    raw: rawTrimmed,
+                    numericSequence: extracted.numericSequence,
+                    missingCount: numericMissing,
+                    translationExpected: translationExpected
+                )
+        )
+        let missingCount = missing.count + effectiveNumericMissing
         return PolishFidelityVerdict(
             isAcceptable: ratioAcceptable && missingCount == 0,
             lengthRatio: ratio,
@@ -269,6 +291,33 @@ enum PolishFidelityGuard {
         )
         let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? raw : trimmed
+    }
+
+    private static func minimumLengthRatioFloor(for raw: String, translationExpected: Bool) -> Double {
+        guard !translationExpected, raw.count >= longNarrativeCharacterThreshold else {
+            return Self.minimumLengthRatio
+        }
+        return longNarrativeMinimumLengthRatio
+    }
+
+    private static func toleratedNumericMissingCount(
+        raw: String,
+        numericSequence: [String],
+        missingCount: Int,
+        translationExpected: Bool
+    ) -> Int {
+        guard !translationExpected else { return 0 }
+        guard raw.count >= longNarrativeCharacterThreshold else { return 0 }
+        guard numericSequence.count >= 2, numericSequence.count <= longNarrativeMaximumNumericAnchors else {
+            return 0
+        }
+        guard missingCount > 0, missingCount < numericSequence.count else { return 0 }
+
+        let allowed = min(
+            longNarrativeMaximumToleratedNumericMissing,
+            max(1, numericSequence.count / 3)
+        )
+        return min(missingCount, allowed)
     }
 
     private static func matches(of pattern: String, in text: String) -> [String] {

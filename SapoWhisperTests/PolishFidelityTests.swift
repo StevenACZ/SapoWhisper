@@ -55,6 +55,49 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testAcceptsMinorNumericPruningInLongNarrativeDictation() {
+        let setup = String(
+            repeating: "Dale, como se dice, desarrolla esta parte de la historia con contexto y ejemplos reales. ",
+            count: 11
+        )
+        let polishedSetup = String(
+            repeating: "Desarrolla esta parte de la historia con contexto y ejemplos reales. ",
+            count: 5
+        )
+        let raw = """
+            \(setup)La pieza puede durar 15 o 14 minutos, con pausas, bromas internas y una reflexión final para que no quede tan seria. \
+            También quiero que mantenga un tono humano, alegre por momentos, y que el narrador pueda romper la cuarta pared cuando haga falta.
+            """
+        let polished = """
+            \(polishedSetup)La pieza puede durar 15 minutos, con pausas, bromas internas \
+            y una reflexión final para que no quede tan seria. Mantén un tono humano, alegre por momentos, y deja que el narrador rompa la \
+            cuarta pared cuando haga falta.
+            """
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+
+        XCTAssertLessThan(verdict.lengthRatio, PolishFidelityGuard.minimumLengthRatio)
+        XCTAssertGreaterThanOrEqual(verdict.lengthRatio, PolishFidelityGuard.longNarrativeMinimumLengthRatio)
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testLongNarrativeStillRejectsDroppingOnlyNumber() {
+        let setup = String(
+            repeating: "Dale, como se dice, desarrolla esta parte de la historia con contexto y ejemplos reales. ",
+            count: 14
+        )
+        let raw = """
+            \(setup)La historia debe durar 15 minutos y cerrar con una reflexión clara para que el mensaje no se sienta vacío.
+            """
+        let polished = """
+            Desarrolla esta parte de la historia con contexto y ejemplos reales. La historia debe cerrar con una reflexión clara para que \
+            el mensaje no se sienta vacío.
+            """
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
     func testAllowsRemovingSelfCorrectedAnchor() {
         let raw = "la reunión es a las 3 no espera quise decir a las 4 de la tarde con el equipo de Plataforma"
         let polished = "La reunión es a las 4 de la tarde con el equipo de Plataforma."
