@@ -189,6 +189,32 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
+    func testAcceptsNormalizingMalformedMixedSeparatorNumber() {
+        let raw = "el valor local de 0,63.40.64 sería algo de 30 unidades al mes y 10 unidades después"
+        let polished = "El valor local de 0,63 o 0,64 sería algo de 30 unidades al mes y 10 unidades después."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testMissingNumberDoesNotCascadeToLaterNumbers() {
+        let rawSequence = PolishFidelityGuard.orderedNumericTokens(
+            in: "el costo era 1 y luego 2, después 3 y finalmente 4"
+        )
+        let missing = PolishFidelityGuard.missingNumericTokenCount(
+            rawSequence: rawSequence,
+            in: "El costo era 1 y después 3 y finalmente 4."
+        )
+        XCTAssertEqual(missing, 1)
+    }
+
+    func testRejectsChangingValidMixedSeparatorNumber() {
+        let raw = "el total acordado fue 1,234.56 para el proveedor de plataforma"
+        let polished = "El total acordado fue 1234.56 para el proveedor de plataforma."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
     func testAcceptsMovedURLWithInternalDigits() {
         // The URL's internal digit ("v2") must not join the numeric sequence: the
         // link is preserved but moved, and the only real number ("5") survives.

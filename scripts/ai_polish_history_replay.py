@@ -237,11 +237,70 @@ def evaluate_guard(raw: str, polished: str, keyterms: list[str]) -> tuple[bool, 
 
 
 def number_tokens(text: str) -> list[str]:
-    return re.findall(r"(?<![A-Za-z0-9@/.-])\d+(?:[.,:]\d+)*(?![A-Za-z0-9@/.-])", text)
+    without_links = re.sub(r"\b[\w.+-]+@[\w.-]+\.\w+\b|https?://\S+|\bwww\.\S+", " ", text)
+    tokens = re.findall(r"\d+(?:[.,:]\d+)*", without_links)
+    return [token for token in tokens if is_reliable_numeric_token(token)]
 
 
 def url_email_tokens(text: str) -> list[str]:
-    return re.findall(r"\b[\w.+-]+@[\w.-]+\.\w+\b|https?://\S+|\b[\w.-]+\.\w{2,}\b", text)
+    return re.findall(r"\b[\w.+-]+@[\w.-]+\.\w+\b|https?://\S+|\bwww\.\S+", text)
+
+
+def is_reliable_numeric_token(token: str) -> bool:
+    if not token or not token[0].isdigit() or not token[-1].isdigit():
+        return False
+
+    has_colon = ":" in token
+    has_comma = "," in token
+    has_dot = "." in token
+
+    if has_colon:
+        if has_dot and not has_comma and is_ipv4_address_with_port(token):
+            return True
+        if has_comma or has_dot:
+            return False
+        return all(part and part.isdigit() for part in token.split(":"))
+
+    if has_comma and has_dot:
+        return is_valid_mixed_separator_number(token)
+    return True
+
+
+def is_ipv4_address_with_port(token: str) -> bool:
+    parts = token.split(":")
+    if len(parts) != 2:
+        return False
+    host, port = parts
+    if not port.isdigit():
+        return False
+    octets = host.split(".")
+    if len(octets) != 4:
+        return False
+    return all(octet.isdigit() and len(octet) <= 3 and int(octet) <= 255 for octet in octets)
+
+
+def is_valid_mixed_separator_number(token: str) -> bool:
+    last_comma = token.rfind(",")
+    last_dot = token.rfind(".")
+    if last_comma < 0 or last_dot < 0:
+        return True
+
+    decimal_separator = "," if last_comma > last_dot else "."
+    thousands_separator = "." if decimal_separator == "," else ","
+    parts = token.split(decimal_separator)
+    if len(parts) != 2:
+        return False
+    integer_part, decimal_part = parts
+    if not integer_part or not decimal_part.isdigit():
+        return False
+
+    integer_groups = integer_part.split(thousands_separator)
+    if len(integer_groups) < 2:
+        return False
+    first, *rest = integer_groups
+    if not first.isdigit() or not 1 <= len(first) <= 3:
+        return False
+    return all(group.isdigit() and len(group) == 3 for group in rest)
 
 
 def is_subsequence(expected: list[str], actual: list[str]) -> bool:

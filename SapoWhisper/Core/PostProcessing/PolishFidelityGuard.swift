@@ -294,30 +294,90 @@ enum PolishFidelityGuard {
         return value.allSatisfy { $0.isASCII && ($0.isNumber || $0 == "." || $0 == "," || $0 == ":") }
     }
 
-    /// The whole numeric tokens in `text`, in document order WITH duplicates,
-    /// lowercased. Digits embedded in URLs/emails are blanked first so a
-    /// preserved-but-moved link does not feed the ordered numeric check (the link
-    /// keeps its own literal anchor). A numeric token matches only as an exact
-    /// token, so "5" does not match inside "15", "5.5", "5,000" or "5:30".
+    /// The whole reliable numeric tokens in `text`, in document order WITH
+    /// duplicates, lowercased. Digits embedded in URLs/emails are blanked first
+    /// so a preserved-but-moved link does not feed the ordered numeric check
+    /// (the link keeps its own literal anchor). A numeric token matches only as
+    /// an exact token, so "5" does not match inside "15", "5.5", "5,000" or
+    /// "5:30". Malformed mixed-separator fragments from STT, such as
+    /// "0,63.40.64", are not reliable anchors.
     static func orderedNumericTokens(in text: String) -> [String] {
         let withoutLinks =
             text
             .replacingOccurrences(of: emailPattern, with: " ", options: .regularExpression)
             .replacingOccurrences(of: urlPattern, with: " ", options: .regularExpression)
             .replacingOccurrences(of: wwwPattern, with: " ", options: .regularExpression)
-        return matches(of: numericPattern, in: withoutLinks).map { $0.lowercased() }
+        return matches(of: numericPattern, in: withoutLinks)
+            .filter(isReliableNumericToken)
+            .map { $0.lowercased() }
+    }
+
+    static func isReliableNumericToken(_ token: String) -> Bool {
+        guard let first = token.first, let last = token.last, first.isNumber, last.isNumber else { return false }
+
+        let hasColon = token.contains(":")
+        let hasComma = token.contains(",")
+        let hasDot = token.contains(".")
+
+        if hasColon {
+            if hasDot, !hasComma, isIPv4AddressWithPort(token) { return true }
+            guard !hasComma, !hasDot else { return false }
+            return token.split(separator: ":", omittingEmptySubsequences: false)
+                .allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
+        }
+
+        guard hasComma && hasDot else { return true }
+        return isValidMixedSeparatorNumber(token)
+    }
+
+    private static func isIPv4AddressWithPort(_ token: String) -> Bool {
+        let parts = token.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let host = parts.first, let port = parts.last else { return false }
+        guard !port.isEmpty, port.allSatisfy(\.isNumber) else { return false }
+
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4 else { return false }
+        return octets.allSatisfy { octet in
+            guard !octet.isEmpty, octet.count <= 3, octet.allSatisfy(\.isNumber) else { return false }
+            guard let value = Int(octet) else { return false }
+            return value <= 255
+        }
+    }
+
+    private static func isValidMixedSeparatorNumber(_ token: String) -> Bool {
+        guard let lastComma = token.lastIndex(of: ","), let lastDot = token.lastIndex(of: ".") else {
+            return true
+        }
+
+        let decimalSeparator: Character = lastComma > lastDot ? "," : "."
+        let thousandsSeparator: Character = decimalSeparator == "," ? "." : ","
+        let decimalParts = token.split(separator: decimalSeparator, omittingEmptySubsequences: false)
+        guard decimalParts.count == 2, let integerPart = decimalParts.first, let decimalPart = decimalParts.last else {
+            return false
+        }
+        guard !integerPart.isEmpty, !decimalPart.isEmpty, decimalPart.allSatisfy(\.isNumber) else {
+            return false
+        }
+
+        let integerGroups = integerPart.split(separator: thousandsSeparator, omittingEmptySubsequences: false)
+        guard integerGroups.count >= 2, let firstGroup = integerGroups.first else { return false }
+        guard (1...3).contains(firstGroup.count), firstGroup.allSatisfy(\.isNumber) else { return false }
+        return integerGroups.dropFirst().allSatisfy {
+            $0.count == 3 && $0.allSatisfy(\.isNumber)
+        }
     }
 
     /// Count of raw numeric tokens that do not survive as an ordered, duplicate-
-    /// aware subsequence of the polished numeric tokens. Greedy first-match is
-    /// optimal for subsequence containment (taking the earliest match never
-    /// forecloses a later one), so it neither over- nor under-counts.
+    /// aware subsequence of the polished numeric tokens. A missing token must
+    /// not consume the rest of the polished sequence, otherwise one malformed
+    /// STT token causes every later number to look missing too.
     static func missingNumericTokenCount(rawSequence: [String], in polished: String) -> Int {
         guard !rawSequence.isEmpty else { return 0 }
         let polishedTokens = orderedNumericTokens(in: polished)
         var index = 0
         var missing = 0
         for token in rawSequence {
+            let searchStart = index
             var matched = false
             while index < polishedTokens.count {
                 let current = polishedTokens[index]
@@ -327,7 +387,10 @@ enum PolishFidelityGuard {
                     break
                 }
             }
-            if !matched { missing += 1 }
+            if !matched {
+                missing += 1
+                index = searchStart
+            }
         }
         return missing
     }
