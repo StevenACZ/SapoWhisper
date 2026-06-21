@@ -381,6 +381,10 @@ struct VocabularySettingsCard: View {
                         VocabularyReplacementRow(
                             original: replacement.key,
                             replacement: replacement.value,
+                            isAISuggested: replacementWasSuggestedByAI(
+                                original: replacement.key,
+                                replacement: replacement.value
+                            ),
                             usageCount: metricsModel.termCounts[replacement.value.lowercased()]
                         ) {
                             vocabularyManager.removeReplacement(forKey: replacement.key)
@@ -483,6 +487,23 @@ struct VocabularySettingsCard: View {
         newReplaceFrom = suggestion.from
         newReplaceTo = suggestion.to
         isReplaceFromFieldFocused = true
+    }
+
+    private func replacementWasSuggestedByAI(original: String, replacement: String) -> Bool {
+        let originalKey = normalizedSuggestionKey(original)
+        let replacementKey = normalizedSuggestionKey(replacement)
+        return polishMemory.acceptedSuggestions.contains { suggestion in
+            normalizedSuggestionKey(suggestion.from) == originalKey
+                && normalizedSuggestionKey(suggestion.to) == replacementKey
+        }
+    }
+
+    private func normalizedSuggestionKey(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: #"[\s._,-]+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 
     private func exportVocabulary() {

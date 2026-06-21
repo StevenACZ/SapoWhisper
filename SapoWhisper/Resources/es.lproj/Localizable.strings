@@ -472,6 +472,8 @@
 "vocab.learning.title" = "Sugerencias de IA";
 "vocab.learning.badge" = "IA";
 "vocab.learning.badge_help" = "Recomendada por la mejora con IA; no se guarda como correccion automatica hasta que la aceptes.";
+"vocab.learning.saved_badge" = "IA";
+"vocab.learning.saved_badge_help" = "Correccion automatica aceptada desde una sugerencia de IA.";
 "vocab.learning.desc" = "La mejora por IA guarda aqui correcciones probables de voz a texto. Acepta una para agregarla a correcciones automaticas, editala primero o ignorala.";
 "vocab.learning.accept" = "Aceptar corrección";
 "vocab.learning.edit" = "Editar antes de guardar";

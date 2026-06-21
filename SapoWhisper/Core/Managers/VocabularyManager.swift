@@ -436,13 +436,13 @@ class VocabularyManager: ObservableObject {
         appendReplacementVariants(
             for: keyterm,
             replacing: "Claude",
-            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Slough", "Clog"],
+            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
             to: &forms
         )
         appendReplacementVariants(
             for: keyterm,
             replacing: "Deepgram",
-            with: ["Deep gram", "Depgram", "Deppgram"],
+            with: ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
             to: &forms
         )
         appendReplacementVariants(

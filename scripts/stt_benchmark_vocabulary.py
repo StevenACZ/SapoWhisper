@@ -5,8 +5,8 @@ import re
 
 
 BASE_CONFUSIONS = {
-    "Claude": ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Slough", "Clog"],
-    "Deepgram": ["Deep gram", "Depgram", "Deppgram"],
+    "Claude": ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
+    "Deepgram": ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
     "ElevenLabs": ["Eleven Labs", "11labs"],
     "Local AI Server": ["localize server", "local ya server", "localia server"],
     "SapoWhisper": [

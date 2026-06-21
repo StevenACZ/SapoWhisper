@@ -85,6 +85,42 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertFalse(context.promptBlock.contains("Candidate corrections"))
     }
 
+    func testRecordsDynamicDomainSuggestionsFromAcceptedPolish() {
+        let manager = makeManager()
+        let now = Date(timeIntervalSince1970: 1_771_430_400)
+
+        manager.record(
+            observedRawText: "abre clauco y compara con ditgram",
+            correctedText: "abre clauco y compara con ditgram",
+            finalText: "Abre Claude Code y compara con Deepgram.",
+            status: .applied,
+            keyterms: ["Claude Code", "Deepgram"],
+            replacements: [:],
+            now: now
+        )
+
+        let suggestions = manager.snapshot().suggestions
+        XCTAssertTrue(suggestions.contains { $0.from == "clauco" && $0.to == "Claude Code" })
+        XCTAssertTrue(suggestions.contains { $0.from == "ditgram" && $0.to == "Deepgram" })
+    }
+
+    func testDynamicSuggestionsAvoidAmbiguousShortNearMatches() {
+        let manager = makeManager()
+        let now = Date(timeIntervalSince1970: 1_771_430_400)
+
+        manager.record(
+            observedRawText: "abre Code y revisa el archivo",
+            correctedText: "abre Code y revisa el archivo",
+            finalText: "Abre Codex y revisa el archivo.",
+            status: .applied,
+            keyterms: ["Codex"],
+            replacements: [:],
+            now: now
+        )
+
+        XCTAssertFalse(manager.snapshot().suggestions.contains { $0.to == "Codex" })
+    }
+
     func testPromptBuilderIncludesAcceptedCorrectionsOnlyInLocalMemoryContext() throws {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)

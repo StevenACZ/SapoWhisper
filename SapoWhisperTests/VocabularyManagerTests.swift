@@ -136,18 +136,20 @@ final class VocabularyManagerTests: XCTestCase {
         manager.addKeyterm("CLAUDE.md")
         manager.addKeyterm("AGENTS.md")
         manager.addKeyterm("Claude Code")
+        manager.addKeyterm("Deepgram")
         manager.addKeyterm("ElevenLabs batch")
         manager.addKeyterm("Jellyfin")
         manager.addKeyterm("Hetzner")
         manager.addKeyterm("git push")
 
         let output = manager.applyingRecognitionCorrections(
-            to: "Open SAP-O-Whisper, update CloudMD, then read AgentsMD with CloudCode, 11labsbatch, Jellifin, Etzner, and hitpug."
+            to:
+                "Open SAP-O-Whisper, update CloudMD, then read AgentsMD with ClaucoCode, Ditgram, 11labsbatch, Jellifin, Etzner, and hitpug."
         )
 
         XCTAssertEqual(
             output,
-            "Open SapoWhisper, update CLAUDE.md, then read AGENTS.md with Claude Code, ElevenLabs batch, Jellyfin, Hetzner, and git push."
+            "Open SapoWhisper, update CLAUDE.md, then read AGENTS.md with Claude Code, Deepgram, ElevenLabs batch, Jellyfin, Hetzner, and git push."
         )
     }
 

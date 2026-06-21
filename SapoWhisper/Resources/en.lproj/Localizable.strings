@@ -472,6 +472,8 @@
 "vocab.learning.title" = "AI suggestions";
 "vocab.learning.badge" = "AI";
 "vocab.learning.badge_help" = "Recommended by AI polish; it is not saved as an automatic correction until you accept it.";
+"vocab.learning.saved_badge" = "AI";
+"vocab.learning.saved_badge_help" = "Automatic correction accepted from an AI suggestion.";
 "vocab.learning.desc" = "AI polish saves likely speech-to-text corrections here. Accept one to add it to automatic corrections, edit it first, or ignore it.";
 "vocab.learning.accept" = "Accept correction";
 "vocab.learning.edit" = "Edit before saving";

@@ -25,7 +25,7 @@ import uuid
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from stt_benchmark_vocabulary import apply_recognition_corrections, load_vocabulary  # noqa: E402
+from stt_benchmark_vocabulary import apply_recognition_corrections, load_vocabulary, recognition_variants  # noqa: E402
 
 
 DEFAULT_APP_SUPPORT = pathlib.Path.home() / "Library/Application Support/SapoWhisper"
@@ -43,16 +43,33 @@ KNOWN_CORRECTIONS = [
     ("dip comment", "git commit"),
     ("deep push", "git push"),
     ("dip push", "git push"),
+    ("kit push", "git push"),
     ("cloud md", "CLAUDE.md"),
     ("cloud dot md", "CLAUDE.md"),
     ("claude dot md", "CLAUDE.md"),
+    ("clauco", "Claude Code"),
     ("cloud code", "Claude Code"),
     ("claud code", "Claude Code"),
+    ("ditgram", "Deepgram"),
     ("ali test", "REST API"),
     ("restapi", "REST API"),
     ("pool request", "pull request"),
     ("local ya server", "Local AI Server"),
     ("localia server", "Local AI Server"),
+]
+
+DEFAULT_CORRECTION_TARGETS = [
+    "AI polish",
+    "AGENTS.md",
+    "API REST",
+    "CLAUDE.md",
+    "Claude Code",
+    "Deepgram",
+    "Local AI Server",
+    "REST API",
+    "git commit",
+    "git push",
+    "pull request",
 ]
 
 
@@ -63,6 +80,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--min-chars", type=int, default=40)
     parser.add_argument("--engine-contains", default="")
+    parser.add_argument("--since", default="", help="Inclusive ISO timestamp lower bound, e.g. 2026-06-20T00:00:00Z")
+    parser.add_argument("--until", default="", help="Exclusive ISO timestamp upper bound, e.g. 2026-06-21T00:00:00Z")
     parser.add_argument("--polish-base-url", default=DEFAULT_POLISH_BASE_URL)
     parser.add_argument("--polish-model", default=DEFAULT_POLISH_MODEL)
     parser.add_argument("--stt-base-url", default=DEFAULT_STT_BASE_URL)
@@ -74,7 +93,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_rows(db_path: pathlib.Path, limit: int, min_chars: int, engine_contains: str) -> list[sqlite3.Row]:
+def fetch_rows(
+    db_path: pathlib.Path,
+    limit: int,
+    min_chars: int,
+    engine_contains: str,
+    since: str,
+    until: str,
+) -> list[sqlite3.Row]:
     if not db_path.exists():
         raise SystemExit(f"History DB not found: {db_path}")
 
@@ -85,6 +111,12 @@ def fetch_rows(db_path: pathlib.Path, limit: int, min_chars: int, engine_contain
     if engine_contains:
         filters.append("engine LIKE ?")
         values.append(f"%{engine_contains}%")
+    if since:
+        filters.append("timestamp >= ?")
+        values.append(since)
+    if until:
+        filters.append("timestamp < ?")
+        values.append(until)
     values.append(limit)
 
     rows = con.execute(
@@ -319,12 +351,62 @@ def normalize(text: str) -> str:
     return re.sub(r"[\s._,-]+", " ", text.casefold()).strip()
 
 
-def record_correction_suggestions(memory: collections.Counter, raw: str, corrected: str, polished: str) -> None:
+def record_correction_suggestions(
+    memory: collections.Counter,
+    raw: str,
+    corrected: str,
+    polished: str,
+    keyterms: list[str],
+    replacements: dict[str, str],
+) -> None:
     for source, target in KNOWN_CORRECTIONS:
         if contains_folded(raw, source) and contains_folded(polished, target):
             memory[(source, target)] += 1
         elif contains_folded(corrected, target) and contains_folded(polished, target):
             memory[(source, target)] += 0
+
+    existing_sources = {normalize(source) for source in replacements}
+    targets = unique(keyterms + list(replacements.values()) + DEFAULT_CORRECTION_TARGETS)
+    for target in targets:
+        if not is_safe_correction_target(target):
+            continue
+        if contains_folded(raw, target):
+            continue
+        if not (contains_folded(corrected, target) or contains_folded(polished, target)):
+            continue
+        for variant in recognition_variants(target):
+            source_key = normalize(variant)
+            if len(source_key) < 4 or source_key == normalize(target) or source_key in existing_sources:
+                continue
+            if contains_folded(raw, variant):
+                memory[(variant, target)] += 1
+                break
+
+
+def is_safe_correction_target(value: str) -> bool:
+    alnum_count = sum(character.isalnum() for character in value)
+    if alnum_count < 3:
+        return False
+    tokens = re.findall(r"[^\W_]+", value)
+    if len(tokens) > 1:
+        return True
+    if any(character in ".-_" or character.isdigit() for character in value):
+        return True
+    if any(character.isupper() for character in value):
+        return True
+    return len(value) >= 8
+
+
+def unique(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        key = normalize(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
 
 
 def relative_audio_path(value: str | None) -> pathlib.Path | None:
@@ -339,7 +421,7 @@ def relative_audio_path(value: str | None) -> pathlib.Path | None:
 def main() -> int:
     args = parse_args()
     keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
-    rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains)
+    rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains, args.since, args.until)
     correction_suggestions = collections.Counter()
     metrics = collections.Counter()
     latencies: list[float] = []
@@ -380,7 +462,7 @@ def main() -> int:
         accepted, reasons = evaluate_guard(corrected, polished, keyterms)
         if accepted:
             metrics["accepted"] += 1
-            record_correction_suggestions(correction_suggestions, raw, corrected, polished)
+            record_correction_suggestions(correction_suggestions, raw, corrected, polished, keyterms, replacements)
         else:
             metrics["guard_rejected"] += 1
             for reason in reasons:
