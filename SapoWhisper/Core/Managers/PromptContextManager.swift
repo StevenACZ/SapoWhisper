@@ -21,11 +21,14 @@ struct PromptProfile: Codable, Identifiable, Equatable {
     var name: String
     var details: String
     var instruction: String
-    var forcesEnglish: Bool
 
     var trimmedName: String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Untitled prompt" : trimmed
+    }
+
+    var isTranslationProfile: Bool {
+        id == TranscriptPolishMode.translateEnglish.rawValue
     }
 }
 
@@ -90,6 +93,13 @@ final class PromptContextManager: ObservableObject {
         return prompts.first ?? Self.defaultPrompts[0]
     }
 
+    static func effectiveOutputLanguage(
+        selected: TranscriptPolishOutputLanguage,
+        for prompt: PromptProfile
+    ) -> TranscriptPolishOutputLanguage {
+        return selected
+    }
+
     func snapshot() -> PromptContextSnapshot {
         PromptContextSnapshot(personalContext: personalContext, prompts: prompts)
     }
@@ -125,6 +135,7 @@ final class PromptContextManager: ObservableObject {
             return prompt
         }
         var upgraded = prompt
+        upgraded.name = fresh.name
         upgraded.details = fresh.details
         upgraded.instruction = fresh.instruction
         return upgraded
@@ -187,32 +198,28 @@ final class PromptContextManager: ObservableObject {
             name: "Clean-up (literal)",
             details: "Removes fillers and fixes punctuation — nothing else.",
             instruction:
-                "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order — translated faithfully when the output language requires another language. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
-            forcesEnglish: false
+                "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order — translated faithfully when the output language requires another language. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain."
         ),
         PromptProfile(
             id: TranscriptPolishMode.ai.rawValue,
             name: "AI Assistant Prompt",
             details: "Turns dictation into a clear request for coding or reasoning assistants.",
             instruction:
-                "Optimize the text for pasting into an AI assistant without rephrasing the user's words. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas.",
-            forcesEnglish: false
+                "Optimize the text for pasting into an AI assistant without answering or performing the request. Do not solve, research, run commands, or explain limitations. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas."
         ),
         PromptProfile(
             id: TranscriptPolishMode.work.rawValue,
             name: "Work Message",
             details: "Polishes Slack, email, and teammate messages.",
             instruction:
-                "Optimize the text for a work message such as Slack or email. Keep it natural and easy to read while preserving the user's original wording, intent, and tone — trim fillers, do not rewrite. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown.",
-            forcesEnglish: false
+                "Optimize the text for a work message such as Slack or email. Keep it natural and easy to read while preserving the user's original wording, intent, and tone — trim fillers, do not rewrite. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown."
         ),
         PromptProfile(
             id: TranscriptPolishMode.translateEnglish.rawValue,
-            name: "Translate to English",
-            details: "Translates the final transcript to clear English.",
+            name: "Translate",
+            details: "Translates the final transcript to the selected output language.",
             instruction:
-                "Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability.",
-            forcesEnglish: true
+                "Translate the user's text to the selected output language while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability."
         ),
     ]
 
@@ -224,10 +231,14 @@ final class PromptContextManager: ObservableObject {
             "Keep the text literal: remove fillers and self-corrections, fix punctuation and obvious speech-to-text mistakes, and change nothing else. Never paraphrase; reuse the user's own words and sentence order. Use short paragraphs for distinct ideas and \"- \" bullets only when the transcript clearly enumerates items. Never invent labels or headers. Keep formatting plain.",
         ],
         TranscriptPolishMode.ai.rawValue: [
-            "Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas."
+            "Optimize the text for pasting into an AI assistant. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas.",
+            "Optimize the text for pasting into an AI assistant without rephrasing the user's words. Keep the user's intent exact, make requests and constraints easy to parse, preserve technical terms, and use bullets only when they clarify tasks or requirements. Prefer compact plain labels only when the transcript clearly contains those ideas.",
         ],
         TranscriptPolishMode.work.rawValue: [
             "Optimize the text for a work message such as Slack or email. Make it concise, clear, and natural while preserving the user's original intent and tone. Avoid Markdown emphasis unless the user explicitly asks for formatted Markdown."
+        ],
+        TranscriptPolishMode.translateEnglish.rawValue: [
+            "Translate the user's text to clear English while preserving the original intent exactly. Do not add details. Keep technical terms, commands, filenames, and product names precise. Keep the output plain unless formatting is necessary for readability."
         ],
     ]
 }

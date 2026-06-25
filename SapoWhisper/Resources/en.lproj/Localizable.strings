@@ -254,7 +254,8 @@
 "ai.mode.automatic" = "Automatic";
 "ai.mode.ai" = "AI Mode";
 "ai.mode.work" = "Work";
-"ai.mode.translate_english" = "Translate to English";
+"ai.mode.translate_english" = "Translate";
+"ai.mode.translate_target" = "Translate to %@";
 "ai.output_language.same" = "Same as audio";
 "ai.status.none" = "Not applied";
 "ai.status.applied" = "Applied";
@@ -508,11 +509,15 @@
 "prompts.add_prompt" = "Add prompt";
 "prompts.name" = "Name";
 "prompts.description" = "Description";
-"prompts.force_english" = "Force English output";
 "prompts.instruction_hint" = "This instruction is sent to the AI together with personal context, vocabulary, and the raw transcript.";
 "prompts.duplicate_prompt" = "Duplicate";
 "prompts.prompt_duplicated" = "Prompt duplicated.";
 "prompts.base_rules_note" = "Every mode inherits the fidelity-first base rules: never paraphrase, never add facts. Your instruction runs on top of them.";
+"prompts.translation_target" = "Translation target";
+"prompts.translation_target_hint" = "Translate the final transcript to %@.";
+"prompts.translation_target_same_hint" = "Keep the final transcript in the audio language.";
+"prompts.translate_target_desc" = "Translates the final transcript to %@.";
+"prompts.translate_same_desc" = "Keeps the final transcript in the audio language.";
 "prompts.preview_polish" = "Preview polish";
 "prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how this mode cleans it.";
 "prompts.preview_run" = "Polish sample";

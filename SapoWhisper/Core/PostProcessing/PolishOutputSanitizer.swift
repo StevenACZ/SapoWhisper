@@ -14,6 +14,7 @@ enum PolishOutputSanitizer {
         var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         text = stripWrappingCodeFence(text)
         text = stripLeadingPreamble(text)
+        text = stripTranscriptDelimiters(text)
         text = stripWrappingQuotes(text, rawText: rawText)
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? output.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
@@ -45,6 +46,23 @@ enum PolishOutputSanitizer {
             + #"(the |el |la )?(polished|final|cleaned|improved|texto|transcript(o)?)\b[^:\n]{0,40}:$"#
         guard firstLine.range(of: pattern, options: .regularExpression) != nil else { return text }
         return String(text[text.index(after: newlineIndex)...])
+    }
+
+    /// Some small local models echo the transcript wrapper back. Keep only the
+    /// polished text between the known delimiters when they wrap the answer.
+    private static func stripTranscriptDelimiters(_ text: String) -> String {
+        let start = TranscriptPolishPromptBuilder.transcriptStartDelimiter
+        let end = TranscriptPolishPromptBuilder.transcriptEndDelimiter
+        guard
+            let startRange = text.range(of: start),
+            let endRange = text.range(of: end, range: startRange.upperBound..<text.endIndex)
+        else {
+            return text
+        }
+
+        let inner = text[startRange.upperBound..<endRange.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return inner.isEmpty ? text : inner
     }
 
     /// Removes one layer of symmetric quotes when they wrap the whole output

@@ -13,6 +13,7 @@ final class TranscriptPostProcessor {
     private struct GuardedPolishResponse: Sendable {
         let response: PolishResponse
         let cleanedText: String
+        let blockedInstructionResponse: Bool
     }
 
     /// L10: hard cap for the whole polish step (including the one translation
@@ -139,7 +140,10 @@ final class TranscriptPostProcessor {
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
         let selectedOutputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
-        let outputLanguage = promptProfile.forcesEnglish ? TranscriptPolishOutputLanguage.english : selectedOutputLanguage
+        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: promptProfile
+        )
 
         guard force || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
             return finish(
@@ -198,6 +202,15 @@ final class TranscriptPostProcessor {
                     error: "empty polished text"
                 )
             }
+            guard !guardedResponse.blockedInstructionResponse else {
+                return finish(
+                    finalText: transcript,
+                    status: .rejectedFidelity,
+                    model: guardedResponse.response.modelIdentifier,
+                    mode: promptProfile.id,
+                    error: "AI polish answered or performed the transcript instead of polishing it"
+                )
+            }
 
             return finish(
                 finalText: guardedResponse.cleanedText,
@@ -236,6 +249,7 @@ final class TranscriptPostProcessor {
     ) async throws -> GuardedPolishResponse {
         var attemptMessages = messages
         var lastRejected: GuardedPolishResponse?
+        var lastInstructionRejected: GuardedPolishResponse?
 
         for attempt in 1...Self.maximumFidelityAttempts {
             let response = try await polishVerifyingTranslation(
@@ -245,16 +259,21 @@ final class TranscriptPostProcessor {
                 timeout: timeout
             )
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: rawText)
-            let guarded = GuardedPolishResponse(response: response, cleanedText: cleaned)
-            let verdict = PolishFidelityGuard.evaluate(
+            let guarded = GuardedPolishResponse(
+                response: response,
+                cleanedText: cleaned,
+                blockedInstructionResponse: false
+            )
+            let fidelityVerdict = PolishFidelityGuard.evaluate(
                 raw: rawText,
                 polished: cleaned,
                 vocabularyTerms: vocabularyTerms,
                 translationExpected: outputLanguage.requiresTranslation,
                 targetIsDenseScript: outputLanguage.usesDenseScript
             )
+            let instructionVerdict = PolishInstructionResponseGuard.evaluate(raw: rawText, polished: cleaned)
 
-            guard !verdict.isAcceptable else {
+            guard !fidelityVerdict.isAcceptable || !instructionVerdict.isAcceptable else {
                 if attempt > 1 {
                     SapoLog.ai.info("AI polish hard guard recovered attempt=\(attempt, privacy: .public)")
                 }
@@ -262,18 +281,30 @@ final class TranscriptPostProcessor {
             }
 
             lastRejected = guarded
+            if !instructionVerdict.isAcceptable {
+                lastInstructionRejected = guarded
+            }
             SapoLog.ai.warning(
-                "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(verdict.diagnosticSummary, privacy: .public)"
+                "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(fidelityVerdict.diagnosticSummary, privacy: .public) \(instructionVerdict.diagnosticSummary, privacy: .public)"
             )
             guard attempt < Self.maximumFidelityAttempts else { break }
 
             let instruction =
-                verdict.retryInstruction ?? """
+                instructionVerdict.retryInstruction ?? fidelityVerdict.retryInstruction ?? """
                     A previous polish attempt changed protected tokens. Regenerate the full polished text from the original transcript and preserve URLs, emails, vocabulary terms, and identifiers exactly. Return ONLY the final polished transcript.
                     """
             attemptMessages = TranscriptPolishMessages(
                 system: messages.system + "\n\n\(instruction)",
                 user: messages.user
+            )
+        }
+
+        if let lastInstructionRejected {
+            SapoLog.ai.warning("AI polish rejected after instruction-response guard retries")
+            return GuardedPolishResponse(
+                response: lastInstructionRejected.response,
+                cleanedText: lastInstructionRejected.cleanedText,
+                blockedInstructionResponse: true
             )
         }
 
@@ -290,7 +321,8 @@ final class TranscriptPostProcessor {
         )
         return GuardedPolishResponse(
             response: response,
-            cleanedText: PolishOutputSanitizer.clean(response.text, rawText: rawText)
+            cleanedText: PolishOutputSanitizer.clean(response.text, rawText: rawText),
+            blockedInstructionResponse: false
         )
     }
 

@@ -68,29 +68,6 @@ struct AIPolishFidelityBadge: View {
     }
 }
 
-/// Read-only pill shown when a value is locked by the active prompt profile.
-struct FixedValuePill: View {
-    let text: String
-
-    var body: some View {
-        HStack {
-            Text(text)
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 8)
-
-            Image(systemName: "lock.fill")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-}
-
 /// Prominent enable/disable toggle for the AI polish feature.
 struct AIPolishHeroToggle: View {
     @Binding var isOn: Bool

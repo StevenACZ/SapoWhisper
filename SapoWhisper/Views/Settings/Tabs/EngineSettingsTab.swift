@@ -117,10 +117,11 @@ struct EngineSettingsTab: View {
     /// What the AI polish step does to the language of the final text:
     /// translates to an explicit target, or keeps the spoken language.
     private var aiSummaryValue: String {
-        var outputLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
-            outputLanguage = .english
-        }
+        let selectedOutputLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: PromptContextManager.shared.promptProfile(for: aiPolishMode)
+        )
         guard outputLanguage.requiresTranslation else {
             return "config.engine_summary_ai_active".localized
         }

@@ -48,6 +48,23 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
             XCTAssertNotNil(language.nlLanguageCode, "\(language.rawValue) is missing an NL language code")
         }
     }
+
+    func testTranslatePromptUsesSelectedOutputLanguageWithoutCoercion() {
+        let translatePrompt = PromptContextManager.defaultPrompts.first {
+            $0.id == TranscriptPolishMode.translateEnglish.rawValue
+        }
+        XCTAssertNotNil(translatePrompt)
+
+        let prompt = translatePrompt!
+        XCTAssertEqual(
+            PromptContextManager.effectiveOutputLanguage(selected: .sameAsInput, for: prompt),
+            .sameAsInput
+        )
+        XCTAssertEqual(
+            PromptContextManager.effectiveOutputLanguage(selected: .german, for: prompt),
+            .german
+        )
+    }
 }
 
 final class TranscriptPolishTimeoutTests: XCTestCase {

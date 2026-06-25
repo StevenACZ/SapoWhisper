@@ -151,8 +151,7 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             id: "automatic",
             name: "Clean-up",
             details: "test",
-            instruction: "Keep it literal.",
-            forcesEnglish: false
+            instruction: "Keep it literal."
         )
         let messages = TranscriptPolishPromptBuilder.makeMessages(
             rawText: "revisa cloud md",
@@ -173,7 +172,9 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertFalse(messages.system.contains("Top terms"))
         XCTAssertFalse(messages.system.contains("\"cloud md\" -> \"CLAUDE.md\""))
         XCTAssertTrue(messages.system.contains("right side is the canonical wording"))
-        XCTAssertEqual(messages.user, "revisa cloud md")
+        XCTAssertTrue(messages.user.contains("revisa cloud md"))
+        XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptStartDelimiter))
+        XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptEndDelimiter))
     }
 
     func testDoesNotLearnOrPromptKeytermSuggestions() {

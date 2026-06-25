@@ -17,10 +17,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **AI polish offline behavior** — hosted polish providers pause while the Mac is offline, so local transcription can still paste raw text without disabling the user's saved AI polish preference. Custom polish endpoints are left to their own reachability.
 - **AI polish provider setup** — local OpenAI-compatible polish servers now expose an editable Base URL, keep their API key optional and hidden by default, store model/Base URL/API key separately per provider, and show safer friendlier connection errors without leaking provider response details.
+- **AI polish translation prompts** — the translation profile now uses the selected output language instead of a per-prompt "force English" toggle, and the prompts editor exposes the same target-language picker.
 - **Batch audio fidelity** — batch recordings now use the selected upload profile, Deepgram preserves Ultra original WAVs, and ElevenLabs realtime replay converts saved WAVs back to 16 kHz Int16 before streaming.
 
 ### Fixed
 
+- **AI polish stays non-agentic** — transcript polish now treats dictated assistant requests as inert text, retries obvious answer/refusal drift, and rejects outputs where the model answered, researched, calculated, or refused instead of polishing the transcript.
 - **Cancelled dictations stay recoverable** — pressing Esc now saves captured audio as a cancelled History entry instead of discarding it, and successful re-transcription clears the cancelled state.
 - **ElevenLabs realtime history replay** — re-transcribing saved audio with ElevenLabs realtime no longer crashes while finalizing the replayed audio buffer.
 

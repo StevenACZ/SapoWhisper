@@ -18,7 +18,6 @@ struct PromptContextSettingsCard: View {
     @State private var draftName = ""
     @State private var draftDetails = ""
     @State private var draftInstruction = ""
-    @State private var draftForcesEnglish = false
     @State private var selectionBounce = 0
     @State private var isPreviewPolishExpanded = false
     @State private var previewSample = "prompts.preview_sample".localized
@@ -44,16 +43,19 @@ struct PromptContextSettingsCard: View {
             id: selectedPrompt.id,
             name: draftName,
             details: draftDetails,
-            instruction: draftInstruction,
-            forcesEnglish: draftForcesEnglish
+            instruction: draftInstruction
         )
     }
 
+    private var selectedOutputLanguage: TranscriptPolishOutputLanguage {
+        TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+    }
+
     private var draftOutputLanguage: TranscriptPolishOutputLanguage {
-        if draftForcesEnglish {
-            return .english
-        }
-        return TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: draftProfile
+        )
     }
 
     private var isProviderConfigured: Bool {
@@ -67,7 +69,6 @@ struct PromptContextSettingsCard: View {
         return draftName != saved.name
             || draftDetails != saved.details
             || draftInstruction != saved.instruction
-            || draftForcesEnglish != saved.forcesEnglish
     }
 
     var body: some View {
@@ -146,7 +147,7 @@ struct PromptContextSettingsCard: View {
                     .symbolEffect(.bounce, value: isSelected ? selectionBounce : 0)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
-                        Text(prompt.trimmedName)
+                        Text(displayName(for: prompt))
                             .font(.subheadline)
                             .lineLimit(1)
 
@@ -158,7 +159,7 @@ struct PromptContextSettingsCard: View {
                                 .help("prompts.unsaved_changes".localized)
                         }
                     }
-                    Text(prompt.details)
+                    Text(displayDetails(for: prompt))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -190,7 +191,7 @@ struct PromptContextSettingsCard: View {
         case TranscriptPolishMode.translateEnglish.rawValue:
             return "translate"
         default:
-            return prompt.forcesEnglish ? "translate" : "text.alignleft"
+            return "text.alignleft"
         }
     }
 
@@ -202,8 +203,9 @@ struct PromptContextSettingsCard: View {
             TextField("prompts.description".localized, text: $draftDetails)
                 .textFieldStyle(.roundedBorder)
 
-            Toggle("prompts.force_english".localized, isOn: $draftForcesEnglish)
-                .font(.caption)
+            if draftProfile.isTranslationProfile {
+                translationTargetPicker
+            }
 
             Label("prompts.base_rules_note".localized, systemImage: "lock.shield")
                 .font(.caption)
@@ -251,6 +253,35 @@ struct PromptContextSettingsCard: View {
         } message: {
             Text("prompts.delete_confirm_message".localized)
         }
+    }
+
+    private var translationTargetPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("prompts.translation_target".localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("prompts.translation_target".localized, selection: $aiPolishOutputLanguage) {
+                ForEach(TranscriptPolishOutputLanguage.allCases) { language in
+                    Text(language.displayName).tag(language.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(translationTargetHint)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var translationTargetHint: String {
+        guard draftOutputLanguage.requiresTranslation else {
+            return "prompts.translation_target_same_hint".localized
+        }
+        return "prompts.translation_target_hint".localized(draftOutputLanguage.displayName)
     }
 
     // MARK: - Preview polish
@@ -390,7 +421,6 @@ struct PromptContextSettingsCard: View {
         draftName = prompt.name
         draftDetails = prompt.details
         draftInstruction = prompt.instruction
-        draftForcesEnglish = prompt.forcesEnglish
     }
 
     private func addPrompt() {
@@ -398,8 +428,7 @@ struct PromptContextSettingsCard: View {
             id: UUID().uuidString.lowercased(),
             name: "New Prompt",
             details: "Custom dictation mode",
-            instruction: "Polish the transcript while preserving the user's exact intent.",
-            forcesEnglish: false
+            instruction: "Polish the transcript while preserving the user's exact intent."
         )
         promptManager.upsertPrompt(prompt)
         withAnimation(.smooth(duration: 0.28)) {
@@ -413,8 +442,7 @@ struct PromptContextSettingsCard: View {
             id: UUID().uuidString.lowercased(),
             name: String("\(source.trimmedName) copy".prefix(60)),
             details: source.details,
-            instruction: source.instruction,
-            forcesEnglish: source.forcesEnglish
+            instruction: source.instruction
         )
         promptManager.upsertPrompt(copy)
         withAnimation(.smooth(duration: 0.28)) {
@@ -429,8 +457,7 @@ struct PromptContextSettingsCard: View {
             id: selectedPrompt.id,
             name: draftName,
             details: draftDetails,
-            instruction: draftInstruction,
-            forcesEnglish: draftForcesEnglish
+            instruction: draftInstruction
         )
         promptManager.upsertPrompt(prompt)
         selectedPromptID = prompt.id
@@ -444,5 +471,29 @@ struct PromptContextSettingsCard: View {
             selectedPromptID = promptManager.prompts.first?.id
         }
         feedbackMessage = "prompts.prompt_deleted".localized
+    }
+
+    private func displayName(for prompt: PromptProfile) -> String {
+        guard prompt.isTranslationProfile else { return prompt.trimmedName }
+        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: prompt
+        )
+        guard outputLanguage.requiresTranslation else {
+            return "ai.mode.translate_english".localized
+        }
+        return "ai.mode.translate_target".localized(outputLanguage.shortDisplayName)
+    }
+
+    private func displayDetails(for prompt: PromptProfile) -> String {
+        guard prompt.isTranslationProfile else { return prompt.details }
+        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: prompt
+        )
+        guard outputLanguage.requiresTranslation else {
+            return "prompts.translate_same_desc".localized
+        }
+        return "prompts.translate_target_desc".localized(outputLanguage.displayName)
     }
 }

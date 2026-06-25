@@ -252,6 +252,34 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    // MARK: - Instruction-response guard
+
+    func testInstructionGuardAcceptsPolishedAssistantRequest() {
+        let raw = "oye dime cinco más cinco y explícalo para ponerlo en el prompt"
+        let polished = "Oye, dime cinco más cinco y explícalo para ponerlo en el prompt."
+        let verdict = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
+
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testInstructionGuardRejectsMathAnswer() {
+        let raw = "dime cinco más cinco y explícalo"
+        let polished = "Cinco más cinco es 10."
+        let verdict = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertNotNil(verdict.retryInstruction)
+    }
+
+    func testInstructionGuardRejectsAssistantRefusal() {
+        let raw = "investígame por internet qué es WebRTC y dime las fuentes"
+        let polished = "No puedo acceder a internet para buscar fuentes sobre WebRTC."
+        let verdict = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertNotNil(verdict.retryInstruction)
+    }
+
     func testTranslationAcceptsDroppedDuplicateNumbers() {
         let raw = "avísale a ventas que enviamos 5 cajas el lunes y 5 cajas el martes a la bodega"
         let polished = "Tell sales we shipped 5 boxes on Monday and some boxes on Tuesday to the warehouse."
@@ -344,6 +372,19 @@ final class PolishFidelityTests: XCTestCase {
 
     func testSanitizerStripsWrappingQuotes() {
         let output = "\"Hola equipo, mañana llego tarde.\""
+        XCTAssertEqual(
+            PolishOutputSanitizer.clean(output, rawText: "hola equipo mañana llego tarde"),
+            "Hola equipo, mañana llego tarde."
+        )
+    }
+
+    func testSanitizerStripsTranscriptDelimiters() {
+        let output = """
+            \(TranscriptPolishPromptBuilder.transcriptStartDelimiter)
+            Hola equipo, mañana llego tarde.
+            \(TranscriptPolishPromptBuilder.transcriptEndDelimiter)
+            """
+
         XCTAssertEqual(
             PolishOutputSanitizer.clean(output, rawText: "hola equipo mañana llego tarde"),
             "Hola equipo, mañana llego tarde."

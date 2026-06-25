@@ -254,7 +254,8 @@
 "ai.mode.automatic" = "Automático";
 "ai.mode.ai" = "Modo IA";
 "ai.mode.work" = "Trabajo";
-"ai.mode.translate_english" = "Traducir a inglés";
+"ai.mode.translate_english" = "Traducir";
+"ai.mode.translate_target" = "Traducir a %@";
 "ai.output_language.same" = "Mismo idioma del audio";
 "ai.status.none" = "No aplicada";
 "ai.status.applied" = "Aplicada";
@@ -508,11 +509,15 @@
 "prompts.add_prompt" = "Agregar prompt";
 "prompts.name" = "Nombre";
 "prompts.description" = "Descripción";
-"prompts.force_english" = "Forzar salida en inglés";
 "prompts.instruction_hint" = "Esta instrucción se envía a la IA junto con el contexto personal, vocabulario y transcript crudo.";
 "prompts.duplicate_prompt" = "Duplicar";
 "prompts.prompt_duplicated" = "Prompt duplicado.";
 "prompts.base_rules_note" = "Todos los modos heredan las reglas base de fidelidad: nunca parafrasear, nunca añadir datos. Tu instrucción se aplica sobre ellas.";
+"prompts.translation_target" = "Destino de traducción";
+"prompts.translation_target_hint" = "Traduce el transcript final a %@.";
+"prompts.translation_target_same_hint" = "Mantiene el transcript final en el idioma del audio.";
+"prompts.translate_target_desc" = "Traduce el transcript final a %@.";
+"prompts.translate_same_desc" = "Mantiene el transcript final en el idioma del audio.";
 "prompts.preview_polish" = "Probar el polish";
 "prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia este modo.";
 "prompts.preview_run" = "Pulir ejemplo";

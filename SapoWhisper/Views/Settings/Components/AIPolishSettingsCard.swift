@@ -55,11 +55,23 @@ struct AIPolishSettingsCard: View {
         promptContextManager.promptProfile(for: aiPolishMode)
     }
 
+    private var currentPromptDisplayName: String {
+        displayName(for: currentPrompt)
+    }
+
+    private var selectedOutputLanguage: TranscriptPolishOutputLanguage {
+        TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+    }
+
     private var currentOutputLanguage: TranscriptPolishOutputLanguage {
-        if currentPrompt.forcesEnglish {
-            return .english
-        }
-        return TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: currentPrompt
+        )
+    }
+
+    private var outputLanguageOptions: [TranscriptPolishOutputLanguage] {
+        return TranscriptPolishOutputLanguage.allCases
     }
 
     private var currentMinimumDuration: TranscriptPolishMinimumDuration {
@@ -222,11 +234,11 @@ struct AIPolishSettingsCard: View {
     private var modePicker: some View {
         AIPolishSettingRow(
             title: "ai.polish.mode".localized,
-            detail: "ai.polish.mode_desc".localized(currentPrompt.trimmedName)
+            detail: "ai.polish.mode_desc".localized(currentPromptDisplayName)
         ) {
             Picker("ai.polish.mode".localized, selection: $aiPolishMode) {
                 ForEach(promptContextManager.prompts) { prompt in
-                    Text(prompt.trimmedName).tag(prompt.id)
+                    Text(displayName(for: prompt)).tag(prompt.id)
                 }
             }
             .labelsHidden()
@@ -243,20 +255,15 @@ struct AIPolishSettingsCard: View {
                 ? "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName)
                 : "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
         ) {
-            if currentPrompt.forcesEnglish {
-                FixedValuePill(text: currentOutputLanguage.displayName)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
-                    ForEach(TranscriptPolishOutputLanguage.allCases) { language in
-                        Text(language.displayName).tag(language.rawValue)
-                    }
+            Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
+                ForEach(outputLanguageOptions) { language in
+                    Text(language.displayName).tag(language.rawValue)
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!aiPolishEnabled)
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .disabled(!aiPolishEnabled)
         }
     }
 
@@ -279,6 +286,18 @@ struct AIPolishSettingsCard: View {
         } footer: {
             AIPolishFidelityBadge()
         }
+    }
+
+    private func displayName(for prompt: PromptProfile) -> String {
+        guard prompt.isTranslationProfile else { return prompt.trimmedName }
+        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedOutputLanguage,
+            for: prompt
+        )
+        guard outputLanguage.requiresTranslation else {
+            return "ai.mode.translate_english".localized
+        }
+        return "ai.mode.translate_target".localized(outputLanguage.shortDisplayName)
     }
 }
 

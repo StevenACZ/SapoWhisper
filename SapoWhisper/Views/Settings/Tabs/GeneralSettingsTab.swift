@@ -178,14 +178,14 @@ struct GeneralSettingsTab: View {
     }
 
     /// Explicit AI-polish output language currently in effect, or nil when
-    /// translation is off. Mirrors the override in TranscriptPostProcessor:
-    /// a mode that forces English wins over the picker.
+    /// translation is off. Mirrors the effective target in TranscriptPostProcessor.
     private var aiTranslationTarget: TranscriptPolishOutputLanguage? {
         guard aiPolishEnabled else { return nil }
-        var language = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
-            language = .english
-        }
+        let selectedLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        let language = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedLanguage,
+            for: PromptContextManager.shared.promptProfile(for: aiPolishMode)
+        )
         return language.requiresTranslation ? language : nil
     }
 

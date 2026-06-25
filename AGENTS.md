@@ -31,6 +31,7 @@ addresses, and machine-specific workflow details.
 - Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
 - Keep prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
 - Output language belongs to AI polish only; transcription language is recognition context, not translation.
+- The output-language picker is the source of truth for translation targets in every polish mode. Do not reintroduce per-prompt force-English state; translation profiles should read the shared target language and still allow "same as audio".
 - The hard-token guard is retry-only. It may ask the model to regenerate up to 3 total attempts when URLs, emails, vocabulary, or identifier-like tokens drift. Ratio, numbers, generic capitalization, and normal rewording must not raw-fallback an AI polish.
 - `AIPolishMemoryManager` stores only reviewable correction suggestions; only accepted corrections may feed future polish context.
 
