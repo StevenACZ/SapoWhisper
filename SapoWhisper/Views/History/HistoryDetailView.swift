@@ -22,6 +22,7 @@ struct HistoryDetailView: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
 
     private var isFailed: Bool { entry.status == "failed" }
+    private var isUserCancelled: Bool { entry.isUserCancelled }
 
     private var canPolish: Bool {
         entry.status == "completed"
@@ -39,7 +40,9 @@ struct HistoryDetailView: View {
                     polishDetailLines
                 }
 
-                if isFailed {
+                if isUserCancelled {
+                    cancelledCard
+                } else if isFailed {
                     failedCard
                 } else {
                     transcriptSection
@@ -322,8 +325,45 @@ struct HistoryDetailView: View {
         )
     }
 
+    private var cancelledCard: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+
+            Text("history.cancelled".localized)
+                .font(.title3.weight(.semibold))
+
+            Text("history.cancelled_detail".localized)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+
+            if entry.audioFileExists {
+                Button(action: onRetranscribe) {
+                    Label("history.retranscribe_with".localized, systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.sapoGreen)
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.secondary.opacity(0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.secondary.opacity(0.2), lineWidth: 1)
+        )
+    }
+
     private var engineColor: Color {
         switch entry.engine.lowercased() {
+        case let e where e.contains("local ai"): return .indigo
         case let e where e.contains("elevenlabs"): return .teal
         case let e where e.contains("deepgram"): return .blue
         case let e where e.contains("gemini"): return .cyan

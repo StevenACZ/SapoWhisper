@@ -17,7 +17,19 @@ case "$mode" in
     exec gitleaks git --pre-commit --staged --redact --no-banner --config .gitleaks.toml
     ;;
   tree)
-    exec gitleaks dir . --redact --no-banner --config .gitleaks.toml
+    tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-gitleaks.XXXXXX")"
+    cleanup() {
+      rm -rf "$tmp_dir"
+    }
+    trap cleanup EXIT
+
+    git ls-files -z --cached --others --exclude-standard |
+      while IFS= read -r -d '' file; do
+        mkdir -p "$tmp_dir/$(dirname "$file")"
+        cp -p "$file" "$tmp_dir/$file"
+      done
+
+    gitleaks dir "$tmp_dir" --redact --no-banner --config .gitleaks.toml
     ;;
   *)
     echo "secrets-scan: unknown mode '$mode' (use staged|tree)" >&2

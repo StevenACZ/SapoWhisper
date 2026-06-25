@@ -46,6 +46,16 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(failure.isRetryable)
     }
 
+    func testUserCancelledIsNotRetryable() {
+        let failure = TranscriptionFailure(kind: .userCancelled, engine: "WhisperKit")
+        XCTAssertFalse(failure.isRetryable)
+
+        let errorState = ErrorState(failure: failure)
+        XCTAssertEqual(errorState.kind, .userCancelled)
+        XCTAssertFalse(errorState.isRetryable)
+        XCTAssertFalse(errorState.isNoSpeech)
+    }
+
     func testBodySnippetRedactsSecrets() {
         let failure = TranscriptionFailure.fromHTTP(
             engine: "Deepgram", statusCode: 500,
@@ -81,6 +91,17 @@ final class TranscriptionFailureTests: XCTestCase {
             engine: "Gemini", statusCode: 500,
             body: Data("{\"error\":\"AIzaSyABCDEF0123456789xyz bad\"}".utf8))
         XCTAssertFalse(aiza.logSummary.contains("AIzaSyABCDEF0123456789xyz"))
+    }
+
+    func testRedactsProviderMaskedOpenAICompatibleKeys() {
+        let snippet = TranscriptionFailure.redactedLogSnippet(
+            from:
+                "Incorrect API key provided: sk-or-v1******************************eb76. You can find your API key at https://platform.openai.com/api-keys."
+        )
+
+        XCTAssertFalse(snippet.contains("sk-or-v1"))
+        XCTAssertFalse(snippet.contains("eb76"))
+        XCTAssertTrue(snippet.contains("[redacted-key]"))
     }
 
     func testErrorStateTreatsNoSpeechGently() {

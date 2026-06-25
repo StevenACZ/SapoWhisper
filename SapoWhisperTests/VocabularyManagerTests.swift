@@ -87,4 +87,239 @@ final class VocabularyManagerTests: XCTestCase {
         // AGENTS.md: Deepgram Nova-3 uses the singular `keyterm` query param.
         XCTAssertEqual(manager.keytermQueryItems().first?.name, "keyterm")
     }
+
+    func testDeepgramKeytermQueryIncludesExpandedVocabularyHints() {
+        let manager = makeManager()
+        manager.addKeyterm(".gitignore")
+        manager.addKeyterm("git commit")
+        manager.addReplacement(from: "cloud code", to: "Claude Code")
+
+        let values = manager.keytermQueryItems().compactMap(\.value)
+
+        XCTAssertTrue(values.starts(with: [".gitignore", "git commit", "Claude Code"]))
+        XCTAssertTrue(values.contains("punto geek ignore"))
+        XCTAssertTrue(values.contains("Kit commit"))
+    }
+
+    func testDeepgramKeytermQueryHonorsTotalWordBudget() {
+        let manager = makeManager()
+        for index in 0..<600 {
+            manager.addKeyterm("term\(index)")
+        }
+
+        let totalWords = manager.keytermQueryItems()
+            .compactMap(\.value)
+            .map { max(1, $0.split(separator: " ").count) }
+            .reduce(0, +)
+
+        XCTAssertLessThanOrEqual(totalWords, DeepgramKeytermLimits.maxTotalWords)
+    }
+
+    // MARK: - Recognition corrections
+
+    func testRecognitionCorrectionsPreserveSavedCanonicalForms() {
+        let manager = makeManager()
+        manager.addKeyterm("GitHub")
+        manager.addKeyterm("git push")
+        manager.addKeyterm("APP STORE CONNECT")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "open github before Git Push and app store connect"
+        )
+
+        XCTAssertEqual(output, "open GitHub before git push and APP STORE CONNECT")
+    }
+
+    func testRecognitionCorrectionsHandleSpokenTechnicalForms() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addKeyterm("CLAUDE.md")
+        manager.addKeyterm("AGENTS.md")
+        manager.addKeyterm("Claude Code")
+        manager.addKeyterm("Deepgram")
+        manager.addKeyterm("ElevenLabs batch")
+        manager.addKeyterm("Jellyfin")
+        manager.addKeyterm("Hetzner")
+        manager.addKeyterm("git push")
+
+        let output = manager.applyingRecognitionCorrections(
+            to:
+                "Open SAP-O-Whisper, update CloudMD, then read AgentsMD with ClaucoCode, Ditgram, 11labsbatch, Jellifin, Etzner, and hitpug."
+        )
+
+        XCTAssertEqual(
+            output,
+            "Open SapoWhisper, update CLAUDE.md, then read AGENTS.md with Claude Code, Deepgram, ElevenLabs batch, Jellyfin, Hetzner, and git push."
+        )
+    }
+
+    func testRecognitionCorrectionsHandlePunctuationAndNarratorVariants() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addKeyterm("CLAUDE.md")
+        manager.addKeyterm("App Store Connect")
+        manager.addKeyterm("Claude Code")
+        manager.addKeyterm("pull request")
+        manager.addKeyterm("Hetzner")
+        manager.addKeyterm("Cloudflare")
+        manager.addKeyterm("AGENTS.md")
+        manager.addKeyterm("Nova-3")
+        manager.addKeyterm("Scribe v2")
+
+        let output = manager.applyingRecognitionCorrections(
+            to:
+                "Open SAP Awhisper, then claud.mendy with Store Connect, claudcode, pull, request, Etsner, NATS.md, Nova three, Scribe v two, and ClavFlare."
+        )
+
+        XCTAssertEqual(
+            output,
+            "Open SapoWhisper, then CLAUDE.md with App Store Connect, Claude Code, pull request, Hetzner, AGENTS.md, Nova-3, Scribe v2, and Cloudflare."
+        )
+    }
+
+    func testRecognitionCorrectionsHandleDotPrefixedTermsWithoutDuplicatingDots() {
+        let manager = makeManager()
+        manager.addKeyterm(".env")
+        manager.addKeyterm(".md")
+        manager.addKeyterm("AGENTS.md")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "menciona punto m, punto md y Ages punto m d"
+        )
+
+        XCTAssertEqual(output, "menciona .env, .md y AGENTS.md")
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: output), output)
+    }
+
+    func testRecognitionCorrectionsHandleAgentsLegendsConfusion() {
+        let manager = makeManager()
+        manager.addKeyterm("AGENTS.md")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "actualizaste legends.md y Claude Code.md"),
+            "actualizaste AGENTS.md y Claude Code.md"
+        )
+
+        let managerWithBothTerms = makeManager()
+        managerWithBothTerms.addKeyterm("AGENTS.md")
+        managerWithBothTerms.addKeyterm("legends.md")
+        XCTAssertEqual(
+            managerWithBothTerms.applyingRecognitionCorrections(to: "actualizaste legends.md"),
+            "actualizaste legends.md"
+        )
+    }
+
+    func testRecognitionCorrectionsHandleRealSpanishTechnicalVariants() {
+        let manager = makeManager()
+        manager.addKeyterm("git")
+        manager.addKeyterm("commit")
+        manager.addKeyterm("git commit")
+        manager.addKeyterm("git push")
+        manager.addKeyterm("Hetzner")
+        manager.addKeyterm("Jellyfin")
+        manager.addKeyterm("Kimi V2")
+        manager.addKeyterm("qBittorrent")
+        manager.addKeyterm("Vue 3")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "HacerunComet con Edsner, JellyFy, KimiVersión2, Cubitorrel y Vue three."
+        )
+
+        XCTAssertEqual(
+            output,
+            "commit con Hetzner, Jellyfin, Kimi V2, qBittorrent y Vue 3."
+        )
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "uso Kimi p 2"), "uso Kimi V2")
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "hago Kimi"), "git commit")
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "haz un deep comment y un deep push"), "haz un git commit y un git push")
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "abre Vue"), "abre Vue")
+    }
+
+    func testRecognitionCorrectionsHandleGitPhrasesFromSeparateTerms() {
+        let manager = makeManager()
+        manager.addKeyterm("git")
+        manager.addKeyterm("commit")
+        manager.addKeyterm("push")
+
+        let output = manager.applyingRecognitionCorrections(
+            to: "haz un deep comment y un deep push"
+        )
+
+        XCTAssertEqual(output, "haz un git commit y un git push")
+
+        let managerWithoutGit = makeManager()
+        managerWithoutGit.addKeyterm("commit")
+        managerWithoutGit.addKeyterm("push")
+        XCTAssertEqual(
+            managerWithoutGit.applyingRecognitionCorrections(to: "haz un deep comment y un deep push"),
+            "haz un deep comment y un deep push"
+        )
+    }
+
+    func testRecognitionCorrectionsHandleKitGitCommandConfusionsWhenGitIsKnown() {
+        let manager = makeManager()
+        manager.addKeyterm("git")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "hacer KitCom y KitPush"),
+            "hacer git commit y git push"
+        )
+
+        let managerWithoutGit = makeManager()
+        XCTAssertEqual(
+            managerWithoutGit.applyingRecognitionCorrections(to: "hacer KitCom y KitPush"),
+            "hacer KitCom y KitPush"
+        )
+    }
+
+    func testRecognitionCorrectionsHandleNaturalSpanishFixtureVariants() {
+        let manager = makeManager()
+        manager.addKeyterm(".env")
+        manager.addKeyterm(".gitignore")
+        manager.addKeyterm("Local AI Server")
+        manager.addKeyterm("Local AI Server (NVIDIA)")
+        manager.addKeyterm("AI polish")
+        manager.addKeyterm("Nova-3")
+        manager.addKeyterm("Scribe v2")
+        manager.addKeyterm("TestFlight")
+        manager.addKeyterm("PostgreSQL")
+        manager.addKeyterm("Cloudflare")
+        manager.addKeyterm("WireGuard")
+        manager.addKeyterm("SQLite")
+        manager.addKeyterm("UserDefaults")
+        manager.addKeyterm("REST API")
+        manager.addKeyterm("pull request")
+
+        let output = manager.applyingRecognitionCorrections(
+            to:
+                "punto emb, punto geek ignore, local ya server, local ya server NVIDIA, a AI, Nova tres, Scribe versión dos, TestFly, Postgres SQL, CloudFair, WifeWare, UseSqlite, User Default, RESTAPI y pool request"
+        )
+
+        XCTAssertEqual(
+            output,
+            ".env, .gitignore, Local AI Server, Local AI Server (NVIDIA), AI polish, Nova-3, Scribe v2, TestFlight, PostgreSQL, Cloudflare, WireGuard, SQLite, UserDefaults, REST API y pull request"
+        )
+    }
+
+    func testRecognitionCorrectionsDoNotReplaceInsideLongerWords() {
+        let manager = makeManager()
+        manager.addKeyterm("Codex")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "codexical examples are different from codex"),
+            "codexical examples are different from Codex"
+        )
+    }
+
+    func testRecognitionCorrectionsAvoidAmbiguousNearTerms() {
+        let manager = makeManager()
+        manager.addKeyterm("Codex")
+        manager.addKeyterm("Claude Code")
+        manager.addKeyterm("UUID")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "Code, Cloudflare y UID no son equivalentes."),
+            "Code, Cloudflare y UID no son equivalentes."
+        )
+    }
 }

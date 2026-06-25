@@ -40,6 +40,7 @@ struct VocabularyTermRow: View {
 struct VocabularyReplacementRow: View {
     let original: String
     let replacement: String
+    var isAISuggested = false
     /// Appearances of the replacement value in recent transcripts.
     var usageCount: Int?
     let onDelete: () -> Void
@@ -55,6 +56,10 @@ struct VocabularyReplacementRow: View {
                 .foregroundColor(.secondary)
 
             VocabularyMonospacedText(text: replacement)
+
+            if isAISuggested {
+                VocabularyAIBadge()
+            }
 
             if let usageCount, usageCount > 0 {
                 VocabularyUsageBadge(count: usageCount)
@@ -81,6 +86,21 @@ private struct VocabularyUsageBadge: View {
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.tertiary)
             .help("vocab.metrics.top_help".localized)
+    }
+}
+
+private struct VocabularyAIBadge: View {
+    var body: some View {
+        Text("vocab.learning.saved_badge".localized)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color.sapoGreen)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.sapoGreen.opacity(0.12))
+            )
+            .help("vocab.learning.saved_badge_help".localized)
     }
 }
 

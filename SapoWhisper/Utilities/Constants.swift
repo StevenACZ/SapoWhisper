@@ -110,6 +110,8 @@ nonisolated enum Constants {
         static let whisperKitModel = "whisperKitModel"
         /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
         static let whisperKitUnloadAfterMinutes = "whisperKitUnloadAfterMinutes"
+        static let localAIServerBaseURL = "localAIServerBaseURL"
+        static let localAIServerModel = "localAIServerModel"
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
@@ -119,6 +121,8 @@ nonisolated enum Constants {
         static let aiPolishEndpoint = "aiPolishEndpoint"
         static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
         static let aiPolishModel = "aiPolishModel"
+        static let aiPolishEndpointModelPrefix = "aiPolishModel."
+        static let aiPolishEndpointBaseURLPrefix = "aiPolishBaseURL."
 
         // Deepgram
         /// Legacy plaintext location, kept only so the launch migration can
@@ -134,6 +138,7 @@ nonisolated enum Constants {
 
         // Audio
         static let audioGain = "audioGain"
+        static let audioUploadQuality = "audioUploadQuality"
 
         // Overlay
         static let overlayPosition = "overlayPosition"

@@ -1,8 +1,6 @@
 # SapoWhisper - public repo hygiene
 
 # Local/private documentation
-AGENTS.md
-CLAUDE.md
 FUTURE_FEATURES.md
 DMG/
 docs/
@@ -56,6 +54,8 @@ Signing.xcconfig
 Packages/
 Package.resolved
 !SapoWhisper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+__pycache__/
+*.pyc
 
 # CocoaPods, if used later
 Pods/
@@ -122,6 +122,10 @@ temp/
 *.m4a
 *.flac
 !SapoWhisper/Resources/Sounds/*.wav
+!TestAssets/
+!TestAssets/LocalAITranscription/
+!TestAssets/LocalAITranscription/*.wav
+!TestAssets/LocalAITranscription/**/*.wav
 
 # Local AI/editor context
 .agent/
@@ -130,4 +134,6 @@ temp/
 .cursor/
 .claude/
 .superpowers/
+skills/
 skills-lock.json
+scripts/local_polish_model_benchmark.py

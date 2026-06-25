@@ -36,11 +36,14 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var whisperKitModel: String
     var deepgramTranscriptionMode: String
     var elevenLabsTranscriptionMode: String?
+    var localAIServerBaseURL: String?
+    var localAIServerModel: String?
     var hotkeyTriggerKind: String?
     var hotkeyKeyCode: Int
     var hotkeyModifiers: Int
     var hotkeyDoubleTapModifier: Int?
     var audioGain: Double
+    var audioUploadQuality: String?
     var aiPolishEnabled: Bool
     var aiPolishMode: String
     var aiPolishOutputLanguage: String
@@ -277,6 +280,9 @@ struct SettingsTransferManager {
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
             elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
                 ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
+            localAIServerBaseURL: defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL),
+            localAIServerModel: defaults.string(forKey: Constants.StorageKeys.localAIServerModel)
+                ?? LocalAIServerConfiguration.defaultModel,
             hotkeyTriggerKind: defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
                 ?? Constants.Hotkey.defaultTriggerKind,
             hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
@@ -286,6 +292,7 @@ struct SettingsTransferManager {
                 defaultValue: Int(Constants.Hotkey.defaultDoubleTapModifier)
             ),
             audioGain: doubleValue(forKey: Constants.StorageKeys.audioGain, defaultValue: 1.0),
+            audioUploadQuality: AudioUploadQuality.stored(in: defaults).rawValue,
             aiPolishEnabled: boolValue(forKey: Constants.StorageKeys.aiPolishEnabled, defaultValue: false),
             aiPolishMode: defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
                 ?? TranscriptPolishMode.automatic.rawValue,
@@ -314,6 +321,8 @@ struct SettingsTransferManager {
             defaults.set(preferences.autoDuckingEnabled, forKey: Constants.StorageKeys.autoDuckingEnabled)
             defaults.set(preferences.autoDuckingAmount, forKey: Constants.StorageKeys.autoDuckingAmount)
             defaults.set(preferences.audioGain, forKey: Constants.StorageKeys.audioGain)
+            let uploadQuality = AudioUploadQuality(rawValue: preferences.audioUploadQuality ?? "") ?? .defaultValue
+            defaults.set(uploadQuality.rawValue, forKey: Constants.StorageKeys.audioUploadQuality)
         }
 
         if sections.contains(.engine) {
@@ -329,6 +338,13 @@ struct SettingsTransferManager {
             defaults.set(
                 preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
                 forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
+            )
+            if let baseURL = preferences.localAIServerBaseURL {
+                defaults.set(baseURL, forKey: Constants.StorageKeys.localAIServerBaseURL)
+            }
+            defaults.set(
+                preferences.localAIServerModel ?? LocalAIServerConfiguration.defaultModel,
+                forKey: Constants.StorageKeys.localAIServerModel
             )
         }
 

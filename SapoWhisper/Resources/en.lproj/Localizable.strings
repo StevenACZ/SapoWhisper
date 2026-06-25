@@ -29,12 +29,14 @@
 "history.empty" = "No history";
 "history.empty_sub" = "Transcriptions will appear here";
 "history.copy" = "Copy";
-"history.retranscribe_create" = "Create new transcription";
+"history.retranscribe_create" = "Re-transcribe";
 "history.retranscribing" = "Re-transcribing...";
 "history.retranscribe_sheet_title" = "Re-transcribe audio";
-"history.retranscribe_sheet_subtitle" = "A new entry will be created without replacing the original.";
+"history.retranscribe_sheet_subtitle" = "The original entry will be updated with the new transcription.";
 "history.failed" = "Failed";
 "history.failed_detail" = "Transcription could not be completed. Try again if audio is saved.";
+"history.cancelled" = "Cancelled";
+"history.cancelled_detail" = "Recording was cancelled. Audio was saved so you can re-transcribe it.";
 "history.pinned" = "Pinned";
 "history.today" = "Today";
 "history.yesterday" = "Yesterday";
@@ -81,6 +83,7 @@
 "history.filter_all" = "All";
 "history.filter_deepgram" = "Deepgram";
 "history.filter_whisper" = "Whisper";
+"history.filter_local_ai" = "Local AI";
 "history.filter_elevenlabs" = "ElevenLabs";
 "history.filter_other" = "Other engines";
 "history.final_text" = "Final text";
@@ -157,6 +160,7 @@
 "info.privacy_title" = "Privacy";
 "info.privacy.whisper" = "Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.";
 "info.privacy.deepgram" = "Nova-3 or Flux Live cloud transcription. Requires an API key.";
+"info.privacy.local_ai" = "Audio is sent only to the LAN server you configure. Optional API key support is available for protected servers.";
 "info.privacy.elevenlabs" = "Scribe v2 (batch or realtime) cloud transcription. Requires an API key.";
 "info.privacy.ai_polish" = "Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
 "about.version_copy_help" = "Click to copy the version";
@@ -175,7 +179,7 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Download a model first";
 "status.recording_generic" = "Recording...";
-"config.subtitle_info" = "Speech-to-Text with WhisperKit, Deepgram, ElevenLabs, and AI Polish";
+"config.subtitle_info" = "Speech-to-Text with WhisperKit, Local AI Server, Deepgram, ElevenLabs, and AI Polish";
 "app.description" = "Speech-to-Text local and cloud";
 "config.coming_soon" = "Coming Soon";
 "config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
@@ -183,6 +187,7 @@
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
+"engine.local_ai_server.description" = "Local NVIDIA server over LAN. Your Mac records; the GPU server transcribes.";
 
 /* AI Polish */
 "ai.polish.title" = "AI Polish";
@@ -203,33 +208,54 @@
 "ai.polish.minimum_duration_desc.always" = "Runs on any transcript that is not trivially short.";
 "ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
 "ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
-"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability while staying literal — your words, your order. A fidelity guard pastes the raw transcript whenever the AI drifts.";
+"ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability. If obvious tokens like links or saved terms drift, SapoWhisper asks the AI to retry before applying the result.";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
+"ai.provider.endpoint_local_server" = "Local Server";
 "ai.provider.endpoint_custom" = "Custom";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
+"ai.provider.base_url" = "Base URL";
+"ai.provider.base_url_hint" = "Use the OpenAI-compatible base URL; SapoWhisper adds /chat/completions.";
 "ai.provider.model" = "Model";
 "ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
 "ai.provider.api_key" = "API key";
+"ai.provider.api_key_optional" = "API key (optional)";
 "ai.provider.api_key_placeholder" = "Paste your API key";
 "ai.provider.api_key_hint" = "Stored securely in your macOS Keychain.";
+"ai.provider.api_key_optional_hint" = "Optional for local servers; stored securely when provided.";
+"ai.provider.optional_key_show" = "Add optional API key";
+"ai.provider.optional_key_edit" = "Edit saved API key";
+"ai.provider.local_key_hidden_hint" = "Usually not needed for local servers.";
 "ai.provider.test" = "Test connection";
 "ai.provider.test_success" = "Works · %@";
-"ai.provider.needs_key" = "Add an API key and model to run AI polish. Get a key at openrouter.ai.";
+"ai.provider.needs_key" = "Add provider details to run AI polish.";
+"ai.provider.needs_configuration" = "Add provider details to run AI polish.";
 "ai.provider.summary_edit" = "Edit";
 "ai.provider.summary_done" = "Done";
-"ai.provider.summary_key_help" = "API key saved in the macOS Keychain.";
+"ai.provider.summary_key_help" = "AI polish provider is ready.";
 "ai.provider.model_suggestions_help" = "Suggested models";
 "ai.provider.model_custom_hint" = "Accepts any model ID from openrouter.ai/models (e.g. qwen/qwen3-32b).";
 "ai.polish.fidelity_max" = "Fidelity at max";
-"ai.provider.error_not_configured" = "AI polish is not configured (missing API key or model).";
+"ai.provider.error_not_configured" = "AI polish is not configured (missing provider details).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
 "ai.provider.error_http" = "AI provider error (%@): %@";
+"ai.provider.error_auth_openai" = "OpenAI rejected the API key. If you pasted an OpenRouter key, switch the provider to OpenRouter; if you want OpenAI, paste an OpenAI key.";
+"ai.provider.error_auth_openrouter" = "OpenRouter rejected the API key. Check that the key belongs to OpenRouter.";
+"ai.provider.error_auth_local" = "%@ rejected the API key. Check the configured token, or leave the field empty if your local server does not require authentication.";
+"ai.provider.error_auth_generic" = "%@ rejected the API key. Check that the key belongs to the selected provider.";
+"ai.provider.error_model_or_endpoint" = "%@ could not find that model or endpoint. Check the model and base URL.";
+"ai.provider.error_rate_limited" = "%@ rejected the request because of rate limits, quota, or credits.";
+"ai.provider.error_server" = "%@ did not respond correctly. Try again or check the server.";
+"ai.provider.error_check_settings" = "%@ rejected the request. Check endpoint, model, and API key.";
+"ai.provider.error_network_local" = "Could not connect to %@. Check that the server is running and that the base URL ends in /v1.";
+"ai.provider.error_network_hosted" = "Could not connect to %@. Check your internet connection and try again.";
+"ai.provider.error_network_timeout" = "%@ took too long to respond. Check the server or try again.";
 "ai.google_change_json" = "Change JSON";
 "ai.mode.automatic" = "Automatic";
 "ai.mode.ai" = "AI Mode";
 "ai.mode.work" = "Work";
-"ai.mode.translate_english" = "Translate to English";
+"ai.mode.translate_english" = "Translate";
+"ai.mode.translate_target" = "Translate to %@";
 "ai.output_language.same" = "Same as audio";
 "ai.status.none" = "Not applied";
 "ai.status.applied" = "Applied";
@@ -349,7 +375,17 @@
 "settings.record_sample" = "Record sample";
 "settings.stop_sample" = "Stop";
 "settings.sample_original" = "Original";
-"settings.sample_compressed" = "As sent to engine";
+"settings.sample_sent_quality" = "As sent (%@)";
+"settings.audio_upload_quality" = "Audio upload quality";
+"settings.audio_upload_quality_desc" = "Higher quality uploads larger WAV files.";
+"audio_upload_quality.ultra_fast" = "Ultra fast";
+"audio_upload_quality.medium" = "Medium";
+"audio_upload_quality.high" = "High";
+"audio_upload_quality.ultra_original" = "Ultra original";
+"audio_upload_quality.ultra_fast_detail" = "16 kHz Int16 mono · ~32 KB/s";
+"audio_upload_quality.medium_detail" = "24 kHz Int16 mono · ~48 KB/s";
+"audio_upload_quality.high_detail" = "Native rate up to 48 kHz · Int16 mono";
+"audio_upload_quality.ultra_original_detail" = "Native rate · Float32 mono";
 
 /* Recording Overlay */
 "overlay.recording" = "Recording...";
@@ -380,6 +416,24 @@
 "config.deepgram_key_missing" = "API key not configured";
 "config.deepgram_key_configured" = "API key configured";
 
+/* Local AI Server Engine */
+"config.local_ai_base_url" = "Base URL";
+"config.local_ai_base_url_placeholder" = "http://your-server.local:8000";
+"config.local_ai_model" = "Model ID";
+"config.local_ai_model_placeholder" = "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo";
+"config.local_ai_model_suggestions" = "Suggestions";
+"config.local_ai_api_key" = "API key (optional)";
+"config.local_ai_api_key_placeholder" = "Optional bearer token";
+"config.local_ai_api_key_desc" = "Leave empty for a trusted LAN server. If your server requires auth, SapoWhisper sends it as Bearer.";
+"config.local_ai_missing" = "Base URL or model missing";
+"config.local_ai_configured" = "Server configuration saved";
+"config.local_ai_test" = "Test connection";
+"config.local_ai_test_success" = "Connected. Model is listed.";
+"config.local_ai_test_model_unlisted" = "Connected. Model was not listed; the server may download it on first use.";
+"local_ai_server.error_invalid_url" = "Enter a valid http:// or https:// server URL and model.";
+"local_ai_server.error_invalid_response" = "Unexpected server response: %@";
+"local_ai_server.error_http" = "Server returned HTTP %@: %@";
+
 /* ElevenLabs Engine */
 "engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Highest accuracy, requires internet and an API key.";
 "config.elevenlabs_mode" = "Transcription mode";
@@ -398,7 +452,7 @@
 "config.vocabulary" = "Vocabulary";
 "config.keyterms" = "Keywords";
 "config.keyterm_placeholder" = "e.g. Claude Code";
-"config.keyterms_desc" = "Words that supported cloud engines will prioritize when transcribing";
+"config.keyterms_desc" = "User-added or imported words; AI never adds suggestions here.";
 "config.keyterm_limit_batch" = "%@ saved term(s) exceed the ElevenLabs batch limits (50 characters, 5 words) and will be skipped on that engine.";
 "config.keyterm_limit_realtime" = "%@ saved term(s) exceed the ElevenLabs realtime limit (20 characters) and will be skipped on that mode.";
 "config.replacements" = "Auto-corrections";
@@ -406,7 +460,7 @@
 "config.replace_to" = "Replace with";
 "config.replacements_desc" = "Automatically correct words in the transcription output";
 "config.add" = "Add";
-"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections used by Deepgram and AI polish.";
+"settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections. Keywords are manual; AI only suggests automatic corrections.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
 "settings.vocabulary.empty" = "No results";
 "settings.vocabulary.export" = "Export";
@@ -416,6 +470,16 @@
 "settings.vocabulary.export_success" = "Vocabulary exported.";
 "settings.vocabulary.import_success" = "Vocabulary imported.";
 "settings.vocabulary.transfer_help" = "Export or import vocabulary";
+"vocab.learning.title" = "AI suggestions";
+"vocab.learning.badge" = "AI";
+"vocab.learning.badge_help" = "Recommended by AI polish; it is not saved as an automatic correction until you accept it.";
+"vocab.learning.saved_badge" = "AI";
+"vocab.learning.saved_badge_help" = "Automatic correction accepted from an AI suggestion.";
+"vocab.learning.desc" = "AI polish saves likely speech-to-text corrections here. Accept one to add it to automatic corrections, edit it first, or ignore it.";
+"vocab.learning.accept" = "Accept correction";
+"vocab.learning.edit" = "Edit before saving";
+"vocab.learning.ignore" = "Ignore suggestion";
+"vocab.learning.occurrences" = "Seen %@ times";
 
 /* Vocabulary metrics & empty states */
 "vocab.metrics.pace" = "Pace";
@@ -445,11 +509,15 @@
 "prompts.add_prompt" = "Add prompt";
 "prompts.name" = "Name";
 "prompts.description" = "Description";
-"prompts.force_english" = "Force English output";
 "prompts.instruction_hint" = "This instruction is sent to the AI together with personal context, vocabulary, and the raw transcript.";
 "prompts.duplicate_prompt" = "Duplicate";
 "prompts.prompt_duplicated" = "Prompt duplicated.";
 "prompts.base_rules_note" = "Every mode inherits the fidelity-first base rules: never paraphrase, never add facts. Your instruction runs on top of them.";
+"prompts.translation_target" = "Translation target";
+"prompts.translation_target_hint" = "Translate the final transcript to %@.";
+"prompts.translation_target_same_hint" = "Keep the final transcript in the audio language.";
+"prompts.translate_target_desc" = "Translates the final transcript to %@.";
+"prompts.translate_same_desc" = "Keeps the final transcript in the audio language.";
 "prompts.preview_polish" = "Preview polish";
 "prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how this mode cleans it.";
 "prompts.preview_run" = "Polish sample";
@@ -499,6 +567,7 @@
 "failure.audio_empty" = "No audio was recorded. Check your microphone.";
 "failure.audio_corrupt" = "The recording was damaged and could not be processed.";
 "failure.recording_interrupted" = "Recording was interrupted (microphone change). Please retry.";
+"failure.user_cancelled" = "Recording was cancelled. Audio was saved in History.";
 "failure.empty_transcription" = "No speech detected in the audio.";
 "failure.unknown" = "%@: an unexpected error occurred. Please retry.";
 
@@ -540,16 +609,19 @@
 "welcome.engine_subtitle" = "Pick how your voice becomes text. You can switch anytime in Settings.";
 "welcome.engine_required" = "Set up one engine to continue";
 "welcome.whisper_tagline" = "Free · Private · Offline";
+"welcome.local_ai_tagline" = "LAN · NVIDIA GPU · OpenAI-style STT";
 "welcome.deepgram_tagline" = "Fastest · nova-3 / Flux live";
 "welcome.elevenlabs_tagline" = "Scribe v2 · batch / realtime";
 "welcome.whisper_pick_model" = "Pick a model to download:";
 "welcome.whisper_downloading" = "Downloading model…";
+"welcome.local_ai_use_server" = "Use server";
+"welcome.local_ai_key_optional" = "API key is optional";
 "welcome.key_placeholder" = "Paste your API key";
 "welcome.key_validate" = "Validate";
 "welcome.key_invalid" = "That key was rejected. Check it and try again.";
 "welcome.key_server_error" = "The service answered with an error (%@). Try again.";
 "welcome.ai_title" = "AI polish (optional)";
-"welcome.ai_subtitle" = "Have an OpenRouter, OpenAI, or Groq API key? Turn on AI polish: it removes fillers and fixes punctuation without changing your words. If not, just skip — dictation works fully without it.";
+"welcome.ai_subtitle" = "Use a Local Server or your own OpenAI-compatible provider for AI polish. It removes fillers and fixes punctuation without changing your words. If not, just skip — dictation works fully without it.";
 "welcome.ai_footnote" = "You can enable or tune this later in Settings → Engine. The key is stored in your macOS Keychain.";
 "welcome.ready_title" = "You're all set!";
 "welcome.ready_subtitle" = "Press %@, say something, and press it again. The text lands wherever your cursor is.";
@@ -562,3 +634,4 @@
 "menu.setup_pending_title" = "Finish setting up";
 "menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";
 "menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";
+"menu.offline_polish_hint" = "AI polish paused offline; local transcription still works.";

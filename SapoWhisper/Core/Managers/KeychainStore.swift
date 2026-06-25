@@ -25,8 +25,14 @@ enum KeychainStore {
 
     enum Key: String, CaseIterable {
         case aiPolishAPIKey = "ai-polish-api-key"
+        case aiPolishOpenRouterAPIKey = "ai-polish-openrouter-api-key"
+        case aiPolishLocalServerAPIKey = "ai-polish-local-server-api-key"
+        case aiPolishOpenAIAPIKey = "ai-polish-openai-api-key"
+        case aiPolishGroqAPIKey = "ai-polish-groq-api-key"
+        case aiPolishCustomAPIKey = "ai-polish-custom-api-key"
         case deepgramAPIKey = "deepgram-api-key"
         case elevenLabsAPIKey = "elevenlabs-api-key"
+        case localAIServerAPIKey = "local-ai-server-api-key"
     }
 
     /// In-process cache: the keychain is hit once per launch, so repeated

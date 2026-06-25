@@ -1,0 +1,1 @@
+Open SapoWhisper and read AGENTS.md. Then run git status, git commit, and git push after the CI check passes. Leave a short note for App Store Connect, GitHub, Codex, Claude Code, Xcode, SwiftUI, and TestFlight.

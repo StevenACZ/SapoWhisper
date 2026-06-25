@@ -179,6 +179,11 @@ struct AboutSettingsTab: View {
                     detail: "info.privacy.deepgram".localized
                 )
                 privacyRow(
+                    icon: TranscriptionEngine.localAIServer.icon,
+                    title: TranscriptionEngine.localAIServer.displayName,
+                    detail: "info.privacy.local_ai".localized
+                )
+                privacyRow(
                     icon: TranscriptionEngine.elevenLabsScribe.icon,
                     title: TranscriptionEngine.elevenLabsScribe.displayName,
                     detail: "info.privacy.elevenlabs".localized

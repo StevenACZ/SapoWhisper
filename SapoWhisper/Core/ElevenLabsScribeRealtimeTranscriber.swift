@@ -3,6 +3,7 @@
 //  SapoWhisper
 //
 
+@preconcurrency import AVFAudio
 import AVFoundation
 import Combine
 import Foundation
@@ -82,11 +83,13 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.sapowhisper.elevenlabsRealtimeAudioSender", qos: .userInitiated)
     private let statsLock = NSLock()
     private let stateLock = NSLock()
+    private let pendingAudioLock = NSLock()
 
     private var task: URLSessionWebSocketTask?
     private var isActive = false
+    private var generation = 0
     private var hasUsedFirstSendBudget = false
-    private var pendingAudio = Data()
+    private var pendingAudio: [UInt8] = []
     private var enqueuedChunks = 0
     private var sentMessages = 0
     private var failedMessages = 0
@@ -101,16 +104,21 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         stateLock.lock()
         self.task = task
         isActive = true
+        generation &+= 1
         stateLock.unlock()
         SapoLog.recording.info("ElevenLabs realtime audio sender started")
     }
 
     func enqueue(_ data: Data) {
         guard !data.isEmpty else { return }
+        guard let activeGeneration = currentGenerationIfActive() else {
+            registerFailedMessage()
+            return
+        }
         registerEnqueuedChunk(byteCount: data.count)
 
         queue.async { [weak self] in
-            self?.appendAndFlushIfNeeded(data)
+            self?.appendAndFlushIfNeeded(data, generation: activeGeneration)
         }
     }
 
@@ -136,9 +144,13 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
                     _ = resumeOnce(returning: .empty)
                     return
                 }
+                guard let activeGeneration = self.currentGenerationIfActive() else {
+                    _ = resumeOnce(returning: self.snapshot())
+                    return
+                }
 
-                self.flushFinalCommit()
-                self.setActive(false)
+                self.flushFinalCommit(generation: activeGeneration)
+                self.deactivate(generation: activeGeneration)
                 let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
                 let stats = self.snapshot()
                 if resumeOnce(returning: stats) {
@@ -188,34 +200,50 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         )
     }
 
-    private func appendAndFlushIfNeeded(_ data: Data) {
-        guard currentTaskIfActive() != nil else {
+    private func appendAndFlushIfNeeded(_ data: Data, generation: Int) {
+        guard currentTaskIfActive(generation: generation) != nil else {
             registerFailedMessage()
             return
         }
 
-        pendingAudio.append(data)
-        registerBufferedBytes(pendingAudio.count)
+        var chunks: [Data] = []
+        var bufferedBytes = 0
+        pendingAudioLock.lock()
+        pendingAudio.append(contentsOf: data)
+        bufferedBytes = pendingAudio.count
 
         while pendingAudio.count >= Constants.targetChunkBytes {
             let chunk = pendingAudio.prefix(Constants.targetChunkBytes)
             pendingAudio.removeFirst(Constants.targetChunkBytes)
-            sendAudioChunk(Data(chunk), commit: false)
+            chunks.append(Data(chunk))
+        }
+        pendingAudioLock.unlock()
+
+        registerBufferedBytes(bufferedBytes)
+        for chunk in chunks {
+            sendAudioChunk(chunk, commit: false, generation: generation)
         }
     }
 
-    private func flushFinalCommit() {
-        var finalAudio = pendingAudio
+    private func flushFinalCommit(generation: Int) {
+        guard currentTaskIfActive(generation: generation) != nil else {
+            registerFailedMessage()
+            return
+        }
+
+        pendingAudioLock.lock()
+        var finalAudio = Data(pendingAudio)
         pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
 
         // A short silence tail gives the realtime service a clean boundary to finalize.
         finalAudio.append(Data(repeating: 0, count: Constants.finalSilenceBytes))
-        sendAudioChunk(finalAudio, commit: true)
+        sendAudioChunk(finalAudio, commit: true, generation: generation)
     }
 
-    private func sendAudioChunk(_ data: Data, commit: Bool) {
+    private func sendAudioChunk(_ data: Data, commit: Bool, generation: Int) {
         guard !data.isEmpty else { return }
-        guard let task = currentTaskIfActive() else {
+        guard let task = currentTaskIfActive(generation: generation) else {
             registerFailedMessage()
             return
         }
@@ -290,8 +318,11 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     }
 
     private func reset() {
-        statsLock.lock()
+        pendingAudioLock.lock()
         pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
+
+        statsLock.lock()
         hasUsedFirstSendBudget = false
         enqueuedChunks = 0
         sentMessages = 0
@@ -335,24 +366,34 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         statsLock.unlock()
     }
 
-    private func currentTaskIfActive() -> URLSessionWebSocketTask? {
+    private func currentGenerationIfActive() -> Int? {
         stateLock.lock()
         defer { stateLock.unlock() }
         guard isActive else { return nil }
+        return generation
+    }
+
+    private func currentTaskIfActive(generation expectedGeneration: Int) -> URLSessionWebSocketTask? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard isActive, generation == expectedGeneration else { return nil }
         return task
     }
 
-    private func setActive(_ active: Bool) {
+    private func deactivate(generation expectedGeneration: Int) {
         stateLock.lock()
-        isActive = active
+        if generation == expectedGeneration {
+            isActive = false
+        }
         stateLock.unlock()
     }
 
     private func abortPendingSends() {
-        setActive(false)
         stateLock.lock()
         let task = self.task
         self.task = nil
+        isActive = false
+        generation &+= 1
         stateLock.unlock()
         task?.cancel(with: .goingAway, reason: nil)
     }
@@ -384,10 +425,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var stopStartedAt: CFAbsoluteTime = 0
     private var requestedLanguage = "auto"
 
-    private static let engineName = "ElevenLabs"
+    nonisolated private static let engineName = "ElevenLabs"
     private static let maxRealtimeKeyterms = ElevenLabsKeytermLimits.realtimeMaxCount
     private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
-    private static let sampleRate = 16000
+    nonisolated private static let sampleRate = 16000
 
     private enum StartRecovery {
         static let maxAttempts = 3
@@ -972,33 +1013,97 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 
-    private static func extractPCM16MonoData(from wavURL: URL) throws -> Data {
-        let data = try Data(contentsOf: wavURL)
-        guard data.count >= 44 else {
-            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "WAV too small")
+    nonisolated static func extractPCM16MonoData(from wavURL: URL) throws -> Data {
+        let inputFile = try AVAudioFile(forReading: wavURL)
+        let inputFormat = inputFile.processingFormat
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "invalid WAV format")
         }
-        guard String(data: data[0..<4], encoding: .ascii) == "RIFF",
-            String(data: data[8..<12], encoding: .ascii) == "WAVE"
+
+        let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: Double(Self.sampleRate),
+            channels: 1,
+            interleaved: false
+        )!
+        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+            throw TranscriptionFailure(
+                kind: .audioCorrupt,
+                engine: Self.engineName,
+                technicalDetail: "could not create pcm_16000 converter"
+            )
+        }
+
+        let inputFrames = AVAudioFrameCount(inputFile.length)
+        guard inputFrames > 0,
+            let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: inputFrames)
         else {
-            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "not a RIFF/WAVE file")
+            throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "empty WAV input")
+        }
+        do {
+            try inputFile.read(into: inputBuffer)
+        } catch {
+            throw TranscriptionFailure.from(error, engine: Self.engineName)
         }
 
-        var offset = 12
-        while offset + 8 <= data.count {
-            let chunkID = String(data: data[offset..<offset + 4], encoding: .ascii) ?? ""
-            let chunkSize = Int(data.littleEndianUInt32(at: offset + 4))
-            let chunkStart = offset + 8
-            let chunkEnd = chunkStart + chunkSize
-            guard chunkEnd <= data.count else { break }
+        let estimatedFrames = Int(ceil(Double(inputFrames) * outputFormat.sampleRate / inputFormat.sampleRate))
+        let outputCapacity = AVAudioFrameCount(max(1024, estimatedFrames + 512))
+        var pcmData = Data()
+        pcmData.reserveCapacity(max(0, estimatedFrames) * MemoryLayout<Int16>.size)
 
-            if chunkID == "data" {
-                return data.subdata(in: chunkStart..<chunkEnd)
+        let inputConsumed = OSAllocatedUnfairLock(initialState: false)
+
+        while true {
+            guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
+                throw TranscriptionFailure(
+                    kind: .audioCorrupt,
+                    engine: Self.engineName,
+                    technicalDetail: "could not allocate pcm_16000 buffer"
+                )
             }
 
-            offset = chunkEnd + (chunkSize % 2)
-        }
+            var convertError: NSError?
+            let status = converter.convert(to: outputBuffer, error: &convertError) { _, outStatus in
+                let alreadyConsumed = inputConsumed.withLock { (consumed: inout Bool) -> Bool in
+                    if consumed { return true }
+                    consumed = true
+                    return false
+                }
+                if alreadyConsumed {
+                    outStatus.pointee = .endOfStream
+                    return nil
+                }
 
-        throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "missing WAV data chunk")
+                outStatus.pointee = .haveData
+                return inputBuffer
+            }
+
+            appendPCM16(from: outputBuffer, to: &pcmData)
+
+            switch status {
+            case .haveData, .inputRanDry:
+                continue
+            case .endOfStream:
+                guard !pcmData.isEmpty else {
+                    throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName, technicalDetail: "empty pcm_16000 output")
+                }
+                return pcmData
+            case .error:
+                throw TranscriptionFailure(
+                    kind: .audioCorrupt,
+                    engine: Self.engineName,
+                    technicalDetail: convertError?.localizedDescription ?? "pcm_16000 conversion failed"
+                )
+            @unknown default:
+                throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName)
+            }
+        }
+    }
+
+    private nonisolated static func appendPCM16(from buffer: AVAudioPCMBuffer, to data: inout Data) {
+        guard buffer.frameLength > 0, let channelData = buffer.int16ChannelData else { return }
+        let byteCount = Int(buffer.frameLength) * MemoryLayout<Int16>.size
+        data.append(contentsOf: UnsafeRawBufferPointer(start: channelData[0], count: byteCount))
     }
 }
 
@@ -1020,13 +1125,4 @@ nonisolated extension ElevenLabsRealtimeAudioSenderStats {
 extension ElevenLabsScribeRealtimeTranscriber: TranscriptionEngineSession {
     var isReady: Bool { isConfigured }
     var isBusy: Bool { isStreaming || isStopping }
-}
-
-extension Data {
-    fileprivate func littleEndianUInt32(at offset: Int) -> UInt32 {
-        guard offset + 4 <= count else { return 0 }
-        return self[offset..<offset + 4].enumerated().reduce(UInt32(0)) { value, pair in
-            value | (UInt32(pair.element) << UInt32(pair.offset * 8))
-        }
-    }
 }

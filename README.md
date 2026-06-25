@@ -8,9 +8,10 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - ⚡ Global hotkey recording with a compact floating overlay.
 - 📋 Auto-paste via clipboard + `Cmd+V`; no live typing while you speak.
 - 🧠 Local and cloud transcription engines.
-- 🗂️ Searchable history with saved audio, replay, download, pinning, and re-transcription.
+- 🗂️ Searchable history with saved audio, cancelled-recording recovery, replay, download, pinning, and re-transcription.
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
-- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and an optional output language (English/Spanish) that translates faithfully.
+- 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
+- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
 
 ## 🎧 Transcription Engines
@@ -18,12 +19,35 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 | Engine | Mode | Best for |
 |---|---|---|
 | WhisperKit | Local | Private offline transcription. |
+| Local AI Server (NVIDIA) | Batch LAN | Offloading transcription to a local NVIDIA GPU server with an OpenAI-style STT endpoint. |
 | Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
 | Deepgram Flux Live | Realtime | Low-latency streaming with WAV backup. |
 | ElevenLabs Scribe v2 | Batch | Accurate Scribe transcription. |
 | ElevenLabs Scribe Realtime v2 | Realtime | Low-latency Scribe with committed-text buffering. |
 
-Cloud credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+Cloud and optional local-server credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+
+Batch engines use the selected microphone upload-quality profile: Ultra fast (16 kHz Int16), Medium by default (24 kHz Int16), High (native rate up to 48 kHz Int16), or Ultra original (native Float32). Realtime engines keep their required 16 kHz Int16 streaming format.
+
+### Local AI Server Fixtures
+
+`TestAssets/LocalAITranscription/` contains public synthetic WAV fixtures for local STT testing:
+
+- `longform/sample-1m.wav`
+- `longform/sample-2m.wav`
+- `longform/sample-3m.wav`
+- `longform/sample-6m.wav`
+- `technical/en/*.wav`
+- `technical/es/*.wav`
+
+Use `scripts/local_stt_benchmark.sh` with any OpenAI-compatible local STT server:
+
+```bash
+BASE_URL=http://YOUR_SERVER_IP:8000 \
+MODEL_ID=rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo \
+AUDIO_PATH=TestAssets/LocalAITranscription/longform/sample-1m.wav \
+scripts/local_stt_benchmark.sh
+```
 
 ## 🧰 Requirements
 
@@ -88,7 +112,7 @@ Local test DMGs are usually ad-hoc signed with hardened runtime. Do not present 
 
 ## 🧪 Tests
 
-Unit tests live in `SapoWhisperTests` and cover pure logic: the AI polish fidelity guard, failure mapping, engine migration, and settings transfer.
+Unit tests live in `SapoWhisperTests` and cover pure logic: the AI polish fidelity guard, failure mapping, engine migration, audio upload quality, realtime replay conversion, and settings transfer.
 
 ```bash
 make test
@@ -100,11 +124,11 @@ Use `make ci-check` (lint + build + tests) as the main local gate and `make rele
 
 Tracked and public-safe:
 
-- Source code, app assets, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, changelog, contributing notes, security notes, and license.
+- Source code, app assets, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, changelog, `AGENTS.md`, contributing notes, security notes, and license.
 
 Ignored and local/private:
 
-- `CLAUDE.md`, `DMG/`, `docs/`, `.agents/`, `.claude/`, `.codex/`, `skills-lock.json`, `xcuserdata/`, `build/`, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
+- `DMG/`, `docs/`, `.agents/`, `.claude/`, `.codex/`, `skills-lock.json`, `xcuserdata/`, `build/`, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
 
 Before opening a PR:
 

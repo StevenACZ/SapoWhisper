@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-struct PolishResponse {
+struct PolishResponse: Sendable {
     let text: String
     /// Endpoint-qualified model id, e.g. `openrouter/openai/gpt-5.4-nano`.
     let modelIdentifier: String
@@ -15,7 +15,7 @@ struct PolishResponse {
 enum PolishProviderError: LocalizedError {
     case notConfigured
     case emptyResponse(finishReason: String?)
-    case httpError(Int, String)
+    case httpError(statusCode: Int, endpoint: PolishEndpoint, message: String)
 
     var errorDescription: String? {
         switch self {
@@ -23,9 +23,71 @@ enum PolishProviderError: LocalizedError {
             return "ai.provider.error_not_configured".localized
         case .emptyResponse:
             return "ai.provider.error_empty".localized
-        case .httpError(let statusCode, let message):
-            return "ai.provider.error_http".localized(String(statusCode), message)
+        case .httpError(let statusCode, let endpoint, let message):
+            let friendlyMessage = Self.friendlyHTTPMessage(
+                statusCode: statusCode,
+                endpoint: endpoint,
+                message: message
+            )
+            return "ai.provider.error_http".localized(String(statusCode), friendlyMessage)
         }
+    }
+
+    private static func friendlyHTTPMessage(
+        statusCode: Int,
+        endpoint: PolishEndpoint,
+        message: String
+    ) -> String {
+        let lowercasedMessage = message.lowercased()
+
+        if statusCode == 401 || statusCode == 403 || lowercasedMessage.contains("api key")
+            || lowercasedMessage.contains("unauthorized") || lowercasedMessage.contains("invalid_api_key")
+        {
+            switch endpoint {
+            case .openAI:
+                return "ai.provider.error_auth_openai".localized
+            case .openRouter:
+                return "ai.provider.error_auth_openrouter".localized
+            case .localServer, .custom:
+                return "ai.provider.error_auth_local".localized(endpoint.displayName)
+            case .groq:
+                return "ai.provider.error_auth_generic".localized(endpoint.displayName)
+            }
+        }
+
+        if statusCode == 404 || lowercasedMessage.contains("model") || lowercasedMessage.contains("endpoint") {
+            return "ai.provider.error_model_or_endpoint".localized(endpoint.displayName)
+        }
+
+        if statusCode == 429 || lowercasedMessage.contains("rate") || lowercasedMessage.contains("quota")
+            || lowercasedMessage.contains("credit")
+        {
+            return "ai.provider.error_rate_limited".localized(endpoint.displayName)
+        }
+
+        if (500...599).contains(statusCode) {
+            return "ai.provider.error_server".localized(endpoint.displayName)
+        }
+
+        return "ai.provider.error_check_settings".localized(endpoint.displayName)
+    }
+
+    static func connectionTestMessage(for error: Error, endpoint: PolishEndpoint) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            switch URLError.Code(rawValue: nsError.code) {
+            case .timedOut:
+                return "ai.provider.error_network_timeout".localized(endpoint.displayName)
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet, .networkConnectionLost:
+                return endpoint.usesEditableBaseURL
+                    ? "ai.provider.error_network_local".localized(endpoint.displayName)
+                    : "ai.provider.error_network_hosted".localized(endpoint.displayName)
+            default:
+                break
+            }
+        }
+
+        return error.localizedDescription
     }
 }
 
@@ -95,7 +157,11 @@ final class OpenAICompatiblePolisher {
                     includeTemperature: false
                 )
             }
-            throw PolishProviderError.httpError(http.statusCode, message)
+            throw PolishProviderError.httpError(
+                statusCode: http.statusCode,
+                endpoint: configuration.endpoint,
+                message: message
+            )
         }
 
         let body = try JSONDecoder().decode(ChatCompletionsResponse.self, from: data)
@@ -130,7 +196,6 @@ final class OpenAICompatiblePolisher {
             request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
         }
         if configuration.endpoint == .openRouter {
-            request.setValue("https://github.com/StevenACZ/SapoWhisper", forHTTPHeaderField: "HTTP-Referer")
             request.setValue("SapoWhisper", forHTTPHeaderField: "X-Title")
         }
 

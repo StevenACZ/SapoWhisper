@@ -137,6 +137,7 @@ struct HistorySidebarView: View {
         switch engineFilter {
         case .all: return .secondary
         case .whisper: return .purple
+        case .localAI: return .indigo
         case .deepgram: return .blue
         case .elevenLabs: return .teal
         case .other: return .gray

@@ -62,8 +62,16 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
         !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var isUserCancelled: Bool {
+        guard status == "failed" else { return false }
+        let cancelledCode = TranscriptionFailure.Kind.userCancelled.rawValue
+        return failureCode == cancelledCode || failureCode?.hasSuffix("/\(cancelledCode)") == true
+    }
+
     var displayEngineName: String {
         switch engine.lowercased() {
+        case let value where value.contains("local ai"):
+            return "Local AI Server"
         case let value where value.contains("deepgram"):
             return "Deepgram"
         case let value where value.contains("google"):
@@ -107,6 +115,7 @@ enum DateGroup: String, CaseIterable {
 enum EngineFilter: String, CaseIterable, Identifiable {
     case all
     case whisper
+    case localAI = "local_ai"
     case deepgram
     case elevenLabs = "elevenlabs"
     /// Entries from engines that no longer exist (Apple, Google, Gemini, ...).
@@ -119,6 +128,7 @@ enum EngineFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return "history.filter_all".localized
         case .whisper: return "history.filter_whisper".localized
+        case .localAI: return "history.filter_local_ai".localized
         case .deepgram: return "history.filter_deepgram".localized
         case .elevenLabs: return "history.filter_elevenlabs".localized
         case .other: return "history.filter_other".localized
@@ -129,6 +139,7 @@ enum EngineFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return "line.3.horizontal.decrease.circle"
         case .whisper: return "waveform"
+        case .localAI: return "server.rack"
         case .deepgram: return "waveform.badge.mic"
         case .elevenLabs: return "waveform.badge.magnifyingglass"
         case .other: return "archivebox"
@@ -142,12 +153,14 @@ enum EngineFilter: String, CaseIterable, Identifiable {
             return true
         case .whisper:
             return lowercased.contains("whisper")
+        case .localAI:
+            return lowercased.contains("local ai")
         case .deepgram:
             return lowercased.contains("deepgram")
         case .elevenLabs:
             return lowercased.contains("elevenlabs")
         case .other:
-            return !lowercased.contains("whisper") && !lowercased.contains("deepgram")
+            return !lowercased.contains("whisper") && !lowercased.contains("local ai") && !lowercased.contains("deepgram")
                 && !lowercased.contains("elevenlabs")
         }
     }

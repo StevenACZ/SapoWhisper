@@ -18,6 +18,7 @@ struct MenuBarView: View {
     var openWelcomeAction: (() -> Void)?
     var closeMenuBarAction: (() -> Void)?
     @AppStorage(Constants.StorageKeys.onboardingComplete) private var onboardingComplete = false
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
 
@@ -30,6 +31,12 @@ struct MenuBarView: View {
         reachability.isOffline && viewModel.currentEngine.requiresInternet
     }
 
+    private var showsOfflinePolishHint: Bool {
+        aiPolishEnabled
+            && !viewModel.currentEngine.requiresInternet
+            && PolishProviderConfiguration.hostedEndpointIsPausedOffline()
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             headerSection
@@ -40,6 +47,10 @@ struct MenuBarView: View {
 
             if showsOfflineHint {
                 offlineHintBanner
+            }
+
+            if showsOfflinePolishHint {
+                offlinePolishHintBanner
             }
 
             if needsEngineSetup {
@@ -308,6 +319,28 @@ struct MenuBarView: View {
                 .foregroundStyle(.orange)
 
             Text("menu.offline_hint".localized)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.orange.opacity(0.1))
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+    }
+
+    private var offlinePolishHintBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            Text("menu.offline_polish_hint".localized)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

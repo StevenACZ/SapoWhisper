@@ -70,9 +70,9 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     @Published var isRecordingSample = false
     @Published var sampleRecordingDuration: TimeInterval = 0
     @Published var rawSampleURL: URL?
-    @Published var compressedSampleURL: URL?
+    @Published var sentSampleURL: URL?
     @Published var rawSampleMetadata: SampleMetadata?
-    @Published var compressedSampleMetadata: SampleMetadata?
+    @Published var sentSampleMetadata: SampleMetadata?
 
     // sampleFile + sampleWriteActive are touched by the nonisolated tap thread
     // (processBuffer) and the main actor (start/stop/clear), so both go through
@@ -363,7 +363,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Stops recording and converts raw → 16kHz int16
+    /// Stops recording and converts raw audio to the selected upload quality.
     func stopSampleRecording() {
         guard isRecordingSample else { return }
 
@@ -380,16 +380,32 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         // Build raw metadata
         rawSampleMetadata = buildMetadata(for: rawURL)
 
-        // Convert to compressed (16kHz int16 mono)
-        let compressedURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_compressed")
-
-        if convertToCompressed(from: rawURL, to: compressedURL) {
-            self.compressedSampleURL = compressedURL
-            self.compressedSampleMetadata = buildMetadata(for: compressedURL)
-            SapoLog.audioRoute.info("Mic sample stopped raw+compressed=true")
+        if rebuildSentSample() {
+            SapoLog.audioRoute.info("Mic sample stopped raw+sent=true")
         } else {
-            SapoLog.audioRoute.warning("Mic sample compression failed, raw-only available")
+            SapoLog.audioRoute.warning("Mic sample upload-quality conversion failed, raw-only available")
         }
+    }
+
+    @discardableResult
+    func rebuildSentSample() -> Bool {
+        guard let rawURL = rawSampleURL, !isRecordingSample else { return false }
+
+        if let url = sentSampleURL { try? FileManager.default.removeItem(at: url) }
+        sentSampleURL = nil
+        sentSampleMetadata = nil
+
+        let outputURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_sent")
+        let quality = AudioUploadQuality.stored()
+
+        guard convertToUploadQuality(from: rawURL, to: outputURL, quality: quality) else {
+            try? FileManager.default.removeItem(at: outputURL)
+            return false
+        }
+
+        sentSampleURL = outputURL
+        sentSampleMetadata = buildMetadata(for: outputURL)
+        return true
     }
 
     /// Clears recorded sample files
@@ -405,11 +421,11 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         sampleStartTime = nil
 
         if let url = rawSampleURL { try? FileManager.default.removeItem(at: url) }
-        if let url = compressedSampleURL { try? FileManager.default.removeItem(at: url) }
+        if let url = sentSampleURL { try? FileManager.default.removeItem(at: url) }
         rawSampleURL = nil
-        compressedSampleURL = nil
+        sentSampleURL = nil
         rawSampleMetadata = nil
-        compressedSampleMetadata = nil
+        sentSampleMetadata = nil
     }
 
     private func buildMetadata(for url: URL) -> SampleMetadata? {
@@ -433,10 +449,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         )
     }
 
-    private func convertToCompressed(from rawURL: URL, to outputURL: URL) -> Bool {
+    private func convertToUploadQuality(from rawURL: URL, to outputURL: URL, quality: AudioUploadQuality) -> Bool {
         guard let inputFile = try? AVAudioFile(forReading: rawURL) else { return false }
 
-        let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
+        let outputFormat = quality.audioFormat(matching: inputFile.processingFormat)
         guard let converter = AVAudioConverter(from: inputFile.processingFormat, to: outputFormat) else { return false }
 
         guard

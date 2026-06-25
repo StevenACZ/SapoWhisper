@@ -50,7 +50,7 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - AppStorage Properties
 
     /// New installs auto-detect the spoken language; every current engine
-    /// (WhisperKit, Deepgram, ElevenLabs) supports detection natively.
+    /// (WhisperKit, Local AI Server, Deepgram, ElevenLabs) supports detection natively.
     @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
@@ -65,6 +65,8 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
+    @AppStorage(Constants.StorageKeys.localAIServerModel) var selectedLocalAIServerModel: String =
+        LocalAIServerConfiguration.defaultModel
 
     // MARK: - Managers
 
@@ -76,6 +78,7 @@ class SapoWhisperViewModel: ObservableObject {
     let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
     let elevenLabsTranscriber = ElevenLabsScribeTranscriber()
     let elevenLabsRealtimeTranscriber = ElevenLabsScribeRealtimeTranscriber()
+    let localAIServerTranscriber = LocalAIServerTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
     private let transcriptPostProcessor = TranscriptPostProcessor()
 
@@ -158,6 +161,8 @@ class SapoWhisperViewModel: ObservableObject {
         switch engine {
         case .whisperLocal:
             return EngineSessions(readiness: whisperKitTranscriber, busy: [whisperKitTranscriber])
+        case .localAIServer:
+            return EngineSessions(readiness: localAIServerTranscriber, busy: [localAIServerTranscriber])
         case .deepgram:
             return EngineSessions(
                 readiness: deepgramTranscriber,
@@ -797,9 +802,8 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// Cancelación rápida (tecla Esc): descarta el audio de la sesión activa
-    /// sin transcribir ni pegar nada. Cualquier respuesta en vuelo queda
-    /// obsoleta por el gate de sesión.
+    /// Cancelación rápida (tecla Esc): guarda el audio de la sesión activa en
+    /// Historial para re-transcribirlo después, sin transcribir ni pegar nada.
     func cancelActiveDictation() {
         if isStartPending {
             SapoLog.hotkey.info("Dictation cancelled route=pending-start")
@@ -810,14 +814,12 @@ class SapoWhisperViewModel: ObservableObject {
         guard !isStopPending, isAnyRecorderActive else { return }
 
         SapoLog.hotkey.info("Dictation cancelled route=active \(self.diagnosticContext(), privacy: .public)")
-        audioRecorder.discardRecording()
-        deepgramFluxTranscriber.cancel()
-        elevenLabsRealtimeTranscriber.cancel()
-        activeRecordingSessionID = nil
-        overlayManager.updateAudioLevel(0)
+        _ = abortActiveCapturePreservingAudio(
+            reasonLog: "user_cancelled",
+            failureKind: .userCancelled,
+            storeRetryState: false
+        )
         overlayManager.updateState(.hidden)
-        captureCoordinator.endActiveCapture()
-        AutoDuckingManager.shared.restore()
         checkInitialState()
     }
 
@@ -1642,6 +1644,8 @@ class SapoWhisperViewModel: ObservableObject {
             return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+        case .localAIServer:
+            return try await localAIServerTranscriber.transcribe(audioURL: audioURL, language: language)
         case .elevenLabsScribe:
             switch currentElevenLabsMode {
             case .scribeV2Batch:
@@ -1656,6 +1660,8 @@ class SapoWhisperViewModel: ObservableObject {
         switch engine {
         case .elevenLabsScribe:
             return currentElevenLabsMode.historyName
+        case .localAIServer:
+            return "Local AI Server · \(LocalAIServerConfiguration.storedModel)"
         default:
             return engine.displayName
         }
@@ -1675,8 +1681,15 @@ class SapoWhisperViewModel: ObservableObject {
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
             if !isReprocessingHistory {
                 appState = .polishing
+                let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
                 overlayManager.updateState(
-                    .polishing(timeoutSeconds: TranscriptPostProcessor.polishTimeout(forCharacterCount: rawText.count))
+                    .polishing(
+                        timeoutSeconds: TranscriptPostProcessor.polishTimeout(
+                            forCharacterCount: rawText.count,
+                            duration: duration,
+                            usesLocalBudget: usesLocalPolishBudget
+                        )
+                    )
                 )
             }
             SapoLog.ai.info(
@@ -1814,6 +1827,25 @@ class SapoWhisperViewModel: ObservableObject {
         checkInitialState()
     }
 
+    /// Best-effort cleanup for a normal app quit while recording. This is not a
+    /// crash-recovery path; it only handles the delegate's graceful termination.
+    func handleApplicationWillTerminate() {
+        SapoLog.lifecycle.info("Application will terminate \(self.diagnosticContext(), privacy: .public)")
+
+        if isStartPending {
+            cancelPendingRecordingStart()
+            return
+        }
+
+        guard activeTranscriptionSessionID == nil else { return }
+        isStopPending = false
+        _ = abortActiveCapturePreservingAudio(
+            reasonLog: "terminate",
+            failureKind: .userCancelled,
+            storeRetryState: false
+        )
+    }
+
     /// A2: terminal capture interruption (mic died / route recovery failed).
     /// Aborts like the sleep path — WAV preserved, failed row for retry — but
     /// surfaces a clear retryable error instead of hiding the overlay.
@@ -1829,10 +1861,14 @@ class SapoWhisperViewModel: ObservableObject {
         )
     }
 
-    /// Shared abort for sleep and device-failure paths: stops whatever capture
-    /// is active, preserves the WAV in a failed history row so retry works,
+    /// Shared abort for sleep, device-failure, cancel, and quit paths: stops
+    /// whatever capture is active, preserves the WAV in a failed history row,
     /// and releases the mic. Returns false when nothing was recording.
-    private func abortActiveCapturePreservingAudio(reasonLog: String) -> Bool {
+    private func abortActiveCapturePreservingAudio(
+        reasonLog: String,
+        failureKind: TranscriptionFailure.Kind = .recordingInterrupted,
+        storeRetryState: Bool = true
+    ) -> Bool {
         let engine = currentEngine
         var interrupted: (audioURL: URL, duration: TimeInterval)?
 
@@ -1868,15 +1904,21 @@ class SapoWhisperViewModel: ObservableObject {
                 aiResult: nil,
                 status: "failed",
                 failureCode: TranscriptionFailure(
-                    kind: .recordingInterrupted, engine: engine.displayName
+                    kind: failureKind, engine: engine.displayName
                 ).diagnosticCode
             )
-            lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
-            lastFailedAudioURL = persistedEntry.audioURL ?? interrupted.audioURL
+            if storeRetryState {
+                lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
+                lastFailedAudioURL = persistedEntry.audioURL ?? interrupted.audioURL
+            } else {
+                clearFailedRetryState()
+            }
             cleanupSourceAudioIfSafe(sourceURL: interrupted.audioURL, persistedEntry: persistedEntry)
             SapoLog.lifecycle.info(
                 "Recording aborted reason=\(reasonLog, privacy: .public) durationSec=\(Int(interrupted.duration), privacy: .public)"
             )
+        } else if !storeRetryState {
+            clearFailedRetryState()
         }
 
         return true

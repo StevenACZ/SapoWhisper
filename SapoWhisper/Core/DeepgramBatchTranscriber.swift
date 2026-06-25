@@ -118,6 +118,12 @@ class DeepgramBatchTranscriber: ObservableObject {
         do {
             let sourceFile = try AVAudioFile(forReading: wavURL)
             let fileFormat = sourceFile.fileFormat
+            let uploadQuality = AudioUploadQuality.stored()
+
+            if uploadQuality.preservesOriginalEncoding {
+                let originalData = try Data(contentsOf: wavURL)
+                return (originalData, "audio/wav")
+            }
 
             // Fast path: if the source is already int16 WAV on disk, send as-is.
             if fileFormat.commonFormat == .pcmFormatInt16 {

@@ -18,6 +18,8 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
         .rawValue
     @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
+        AudioUploadQuality.defaultValue.rawValue
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
     @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
     @AppStorage(Constants.StorageKeys.soundVolume) private var soundVolume: Double = 1.0
@@ -98,8 +100,43 @@ struct GeneralSettingsTab: View {
                     }
                 }
 
+                Divider()
+
+                audioUploadQualityPicker
+
                 AudioLevelMeterView(deviceUID: selectedMicrophone)
             }
+        }
+    }
+
+    private var currentAudioUploadQuality: AudioUploadQuality {
+        AudioUploadQuality(rawValue: audioUploadQuality) ?? .defaultValue
+    }
+
+    private var audioUploadQualityPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("settings.audio_upload_quality".localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("settings.audio_upload_quality".localized, selection: $audioUploadQuality) {
+                ForEach(AudioUploadQuality.allCases) { quality in
+                    Text(quality.displayName).tag(quality.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(currentAudioUploadQuality.detail)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("settings.audio_upload_quality_desc".localized)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -141,14 +178,14 @@ struct GeneralSettingsTab: View {
     }
 
     /// Explicit AI-polish output language currently in effect, or nil when
-    /// translation is off. Mirrors the override in TranscriptPostProcessor:
-    /// a mode that forces English wins over the picker.
+    /// translation is off. Mirrors the effective target in TranscriptPostProcessor.
     private var aiTranslationTarget: TranscriptPolishOutputLanguage? {
         guard aiPolishEnabled else { return nil }
-        var language = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-        if PromptContextManager.shared.promptProfile(for: aiPolishMode).forcesEnglish {
-            language = .english
-        }
+        let selectedLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
+        let language = PromptContextManager.effectiveOutputLanguage(
+            selected: selectedLanguage,
+            for: PromptContextManager.shared.promptProfile(for: aiPolishMode)
+        )
         return language.requiresTranslation ? language : nil
     }
 
