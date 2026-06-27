@@ -16,6 +16,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - **Prompts tab dark mode** — AI polish behavior pickers (mode, output language, minimum duration) now use primary label color so their selected values stay readable in dark mode.
+- **CI strict concurrency** — mark `PasteManager` paste callbacks as `@MainActor` so GitHub Actions builds pass with complete concurrency checking.
 
 ## [2.5.0] - 2026-06-25
 

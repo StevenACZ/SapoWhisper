@@ -39,6 +39,7 @@ class PasteManager {
     /// Activa la app anterior y pega en cuanto el sistema notifica la
     /// activación (fallback fijo si la notificación no llega), en vez de
     /// esperar con polling.
+    @MainActor
     static func simulatePaste(onPasted: (@MainActor () -> Void)? = nil) {
         let t0 = CFAbsoluteTimeGetCurrent()
         lastPasteTriggerTime = t0
@@ -93,6 +94,7 @@ class PasteManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + activationFallbackDelay, execute: fallback)
     }
 
+    @MainActor
     private static func cancelPendingActivationWait() {
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
@@ -102,6 +104,7 @@ class PasteManager {
         activationFallbackWorkItem = nil
     }
 
+    @MainActor
     private static func performPaste() {
         // When another app holds Secure Keyboard Entry (password fields, some
         // terminals), a synthetic Cmd+V is swallowed silently. Skip it and
@@ -140,7 +143,7 @@ class PasteManager {
     /// Copia texto y lo pega automáticamente
     static func copyAndPaste(_ text: String) {
         copyToClipboard(text)
-        DispatchQueue.main.async {
+        Task { @MainActor in
             simulatePaste()
         }
     }
