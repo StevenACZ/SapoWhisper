@@ -25,6 +25,7 @@ struct AIPolishSettingRow<Control: View, Footer: View>: View {
                 .tracking(0.4)
 
             control()
+                .foregroundStyle(.primary)
 
             Text(detail)
                 .font(.caption2)
@@ -41,6 +42,10 @@ struct AIPolishSettingRow<Control: View, Footer: View>: View {
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
         )
     }
 }

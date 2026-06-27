@@ -6,6 +6,18 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-06-27
+
+### Added
+
+- GitHub Actions CI workflow that runs `make ci-check` (lint, secret scan, Debug build, tests).
+- `make install-dev` / `scripts/install_dev.sh` for fast local reinstalls of the signed Release build without resetting macOS permissions.
+
+### Fixed
+
+- **Prompts tab dark mode** — AI polish behavior pickers (mode, output language, minimum duration) now use primary label color so their selected values stay readable in dark mode.
+- **CI strict concurrency** — mark `PasteManager` paste callbacks as `@MainActor` so GitHub Actions builds pass with complete concurrency checking.
+
 ## [2.5.0] - 2026-06-25
 
 ### Added
@@ -370,7 +382,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Menu bar UI was split into smaller components** — Keeps the codebase within the project size limits while integrating the new permission reminder UI.
 - **Permission onboarding UI was polished** — Shorter microphone helper copy, a taller hero card, and a roomier missing-permissions window improve readability during setup.
 
-### Documentation
+### Changed
 
 - **README updated for public release** — Added the guided permission flow to the feature/installation docs and removed hardcoded personal repository links.
 - **Public-facing copy sanitized** — In-app credits and localized strings were updated to avoid personal attribution in the shared build.
@@ -389,7 +401,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Core Audio HAL integration** — Uses `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` with per-channel fallback, no AVAudioSession (macOS doesn't support it).
 - **Localization** — Full ES/EN support for all Auto-Ducking UI strings.
 
-### Files
+**Files touched:**
 
 - New: `Core/Managers/AutoDuckingManager.swift`
 - Modified: `Constants.swift`, `SapoWhisperViewModel.swift`, `AppDelegate.swift`, `GeneralSettingsTab.swift`, `Localizable.strings` (EN/ES)
@@ -533,7 +545,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`AVAudioConverter` flush on stop** — drains remaining buffered samples before closing the audio file, preventing truncated endings.
 - **History DB migration fixed** — `columnExists()` check before `ALTER TABLE` eliminates the `duplicate column name` warning on every launch.
 
-### Performance Results (10.5s recording, Deepgram Nova-3)
+**Performance results (10.5s recording, Deepgram Nova-3):**
 
 | Metric | Before | After |
 |--------|--------|-------|
