@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-06-27
+
 ### Added
 
 - GitHub Actions CI workflow that runs `make ci-check` (lint, secret scan, Debug build, tests).
