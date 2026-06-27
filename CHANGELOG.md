@@ -9,6 +9,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - GitHub Actions CI workflow that runs `make ci-check` (lint, secret scan, Debug build, tests).
+- `make install-dev` / `scripts/install_dev.sh` for fast local reinstalls of the signed Release build without resetting macOS permissions.
+
+### Fixed
+
+- **Prompts tab dark mode** — AI polish behavior pickers (mode, output language, minimum duration) now use primary label color so their selected values stay readable in dark mode.
 
 ## [2.5.0] - 2026-06-25
 

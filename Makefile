@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build test release size-check secrets-scan ci-check release-check notarized-dmg hooks-install idle-cpu-note
+.PHONY: help tools format format-all lint lint-all build test release install-dev size-check secrets-scan ci-check release-check notarized-dmg hooks-install idle-cpu-note
 
 .DEFAULT_GOAL := help
 
@@ -21,6 +21,7 @@ help:
 	@printf "  make build         Build Debug for Apple Silicon\n"
 	@printf "  make test          Run unit tests\n"
 	@printf "  make release       Build Release for Apple Silicon\n"
+	@printf "  make install-dev   Reinstall signed Release build to /Applications\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
 	@printf "  make secrets-scan  Scan the working tree for leaked secrets\n"
 	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
@@ -78,6 +79,10 @@ release:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
 		-derivedDataPath $(RELEASE_DERIVED_DATA) clean build
+
+install-dev: release
+	@chmod +x scripts/install_dev.sh
+	@scripts/install_dev.sh
 
 size-check:
 	@scripts/measure_release_bundle.sh $(RELEASE_APP)
