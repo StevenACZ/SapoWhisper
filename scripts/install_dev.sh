@@ -17,6 +17,17 @@ if [[ ! -d "$APP_SRC" ]]; then
   exit 1
 fi
 
+SIGNING_DETAILS="$(codesign -dvvv "$APP_SRC" 2>&1 || true)"
+if ! grep -q "Authority=Apple Development" <<<"$SIGNING_DETAILS"; then
+  echo "install-dev: Release app is not signed with Apple Development." >&2
+  echo "install-dev: copy Signing.xcconfig.example to Signing.xcconfig and set DEVELOPMENT_TEAM." >&2
+  exit 65
+fi
+if ! grep -q "^TeamIdentifier=" <<<"$SIGNING_DETAILS"; then
+  echo "install-dev: Release app has no TeamIdentifier; refusing to replace a TCC-granted install." >&2
+  exit 65
+fi
+
 osascript -e 'tell application "SapoWhisper" to quit' 2>/dev/null || true
 sleep 1
 if pgrep -x SapoWhisper >/dev/null 2>&1; then
@@ -25,7 +36,7 @@ if pgrep -x SapoWhisper >/dev/null 2>&1; then
 fi
 
 ditto "$APP_SRC" "$APP_DST"
-open -a "$APP_DST"
+open "$APP_DST"
 
-CDHASH="$(codesign -dv "$APP_DST" 2>&1 | sed -n 's/^CDHash=//p' | head -1)"
+CDHASH="$(codesign -dvvv "$APP_DST" 2>&1 | sed -n 's/^CDHash=//p' | head -1)"
 echo "install-dev: installed CDHash=${CDHASH:-unknown} to $APP_DST"

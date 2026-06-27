@@ -80,7 +80,7 @@ release:
 		-configuration Release -destination 'generic/platform=macOS' \
 		-derivedDataPath $(RELEASE_DERIVED_DATA) clean build
 
-install-dev: release
+install-dev:
 	@chmod +x scripts/install_dev.sh
 	@scripts/install_dev.sh
 

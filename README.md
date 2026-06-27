@@ -83,6 +83,7 @@ make ci-check
 - `make test`: run the `SapoWhisperTests` unit bundle.
 - `make ci-check`: lint + Debug build + unit tests.
 - `make release-check`: lint + Release build + bundle size audit.
+- `make install-dev`: signed Release reinstall to `/Applications` for local UI iteration without resetting macOS permission grants.
 - `make format-all` / `make lint-all`: full-repo passes for planned formatting work.
 
 Optional hooks:
