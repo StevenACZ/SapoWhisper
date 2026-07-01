@@ -35,6 +35,16 @@ enum OverlayPosition: String, CaseIterable, Identifiable {
 /// Pill horizontal posicionado en la parte inferior de la pantalla
 class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
 
+    /// While docked (idle mini chip) the bottom anchor hugs the screen edge;
+    /// active states keep the classic raised margin. Set by the manager on
+    /// every state change.
+    var isDockAnchored = false {
+        didSet {
+            guard isDockAnchored != oldValue else { return }
+            applyConfiguredPosition()
+        }
+    }
+
     init(contentView: NSView, width: CGFloat = 380, height: CGFloat = 48) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -81,10 +91,10 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
 
         let screenFrame = screen.visibleFrame
         let windowFrame = self.frame
-        let margin: CGFloat = 60
+        let margin: CGFloat = isDockAnchored ? 6 : 60
 
         let x = screenFrame.midX - windowFrame.width / 2
-        let y: CGFloat
+        var y: CGFloat
         switch OverlayPosition.configured {
         case .bottom:
             y = screenFrame.minY + margin
@@ -93,6 +103,12 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
         case .center:
             y = screenFrame.midY - windowFrame.height / 2
         }
+
+        // Tall states (expanded transcript, wrapped chips) must never push
+        // the pill past the visible frame — clamp both edges.
+        let minY = screenFrame.minY + 6
+        let maxY = max(minY, screenFrame.maxY - windowFrame.height - 6)
+        y = min(max(y, minY), maxY)
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
         if verbose {

@@ -650,3 +650,7 @@
 "edit.error_empty_clipboard" = "No hay texto en el portapapeles: copia algo primero";
 "edit.error_not_configured" = "Activa la mejora IA y configura un proveedor para editar por voz";
 "edit.error_too_long" = "El texto copiado es demasiado largo para editar por voz";
+"overlay.voice_edit" = "Mejorar por voz";
+"overlay.dock_last" = "Última transcripción";
+"prompts.quick_chip_pin" = "Mostrar como chip rápido al grabar (máx. 3)";
+"prompts.quick_chip_limit" = "Límite de chips rápidos (3): desancla otro primero";

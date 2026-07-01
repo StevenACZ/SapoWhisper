@@ -75,6 +75,10 @@ private struct PillPreview<Content: View>: View {
     PillPreview { CancelledPillView() }
 }
 
+#Preview("Docked") {
+    PillPreview { DockedChipView(onHoverChanged: { _ in }, onTap: {}) }
+}
+
 #Preview("Error") {
     PillPreview { ErrorPillView(message: "No se pudo conectar", onRetry: {}) }
 }

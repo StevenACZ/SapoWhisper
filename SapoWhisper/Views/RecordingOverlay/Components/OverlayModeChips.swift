@@ -20,12 +20,11 @@ struct OverlayModeChips: View {
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var outputLanguageValue =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
-    /// The pill stays compact: extra profiles remain reachable from Settings
-    /// and the menu bar picker.
-    private static let maxModeChips = 6
-
+    /// Only pinned profiles (max 3, configured in Settings → Prompts) appear
+    /// as chips; the full catalog stays reachable from the menu bar picker.
+    /// No chip active = the base clean-up mode.
     private var visiblePrompts: [PromptProfile] {
-        Array(promptManager.prompts.prefix(Self.maxModeChips))
+        promptManager.quickChipPrompts
     }
 
     private var outputLanguage: TranscriptPolishOutputLanguage {
@@ -47,6 +46,13 @@ struct OverlayModeChips: View {
     private func modeChip(for prompt: PromptProfile) -> some View {
         let isSelected = prompt.id == aiPolishMode
         return Button {
+            if isSelected {
+                // Chips toggle: deselecting falls back to the base clean-up
+                // mode, so "no special mode" needs no chip of its own.
+                aiPolishMode = TranscriptPolishMode.automatic.rawValue
+                onModeSelected?(aiPolishMode)
+                return
+            }
             aiPolishMode = prompt.id
             // A translation profile with no target language is a no-op the
             // user cannot see coming — picking it turns the shared output

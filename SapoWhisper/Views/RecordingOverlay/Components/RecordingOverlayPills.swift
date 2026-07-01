@@ -22,7 +22,9 @@ struct RecordingPillView: View {
             HStack(spacing: 10) {
                 FloatingSapoIcon(state: .recording, size: 32)
                 PillDivider()
-                MiniEqualizerView(audioLevelPublisher: audioLevelPublisher)
+                // The chips row already widened the pill — spend that width
+                // on a longer, livelier waveform.
+                MiniEqualizerView(audioLevelPublisher: audioLevelPublisher, barCount: 11)
 
                 if showsNoSpeechHint {
                     HStack(spacing: 5) {
@@ -156,6 +158,7 @@ struct AIPolishingPillView: View {
 struct CompletedPillView: View {
     let text: String
     var onRepolish: (() -> Void)?
+    var onVoiceEdit: (() -> Void)?
     var onClose: (() -> Void)?
 
     @State private var iconScale: CGFloat = 0
@@ -187,6 +190,20 @@ struct CompletedPillView: View {
                     .foregroundColor(.sapoGreen)
 
                 Spacer(minLength: 16)
+
+                if aiPolishEnabled, onVoiceEdit != nil, !text.isEmpty {
+                    Button {
+                        onVoiceEdit?()
+                    } label: {
+                        Image(systemName: "mic.badge.plus")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.aiPolish)
+                            .frame(width: 22, height: 22)
+                            .background(Circle().fill(Color.aiPolish.opacity(0.14)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("overlay.voice_edit".localized)
+                }
 
                 Button {
                     PasteManager.copyToClipboard(text)
@@ -234,8 +251,9 @@ struct CompletedPillView: View {
                             .foregroundColor(.primary.opacity(0.85))
                             .textSelection(.enabled)
                             .frame(width: Self.contentWidth, alignment: .leading)
+                            .padding(.bottom, 6)
                     }
-                    .frame(width: Self.contentWidth, height: 130)
+                    .frame(width: Self.contentWidth, height: 184)
                 }
             }
 
@@ -275,6 +293,31 @@ struct CompletedPillView: View {
         withAnimation(.easeOut(duration: 0.8).delay(1.2)) {
             showGlow = false
         }
+    }
+}
+
+/// Idle resting state: a tiny always-visible bar at the anchor position. The
+/// generous invisible frame keeps it hoverable/clickable despite its size.
+struct DockedChipView: View {
+    var onHoverChanged: (Bool) -> Void
+    var onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Capsule()
+            .fill(Color.sapoGreen.opacity(isHovering ? 0.95 : 0.65))
+            .frame(width: 36, height: 5)
+            .frame(width: 64, height: 18)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isHovering = hovering
+                }
+                onHoverChanged(hovering)
+            }
+            .onTapGesture(perform: onTap)
+            .help("overlay.dock_last".localized)
     }
 }
 

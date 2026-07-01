@@ -107,6 +107,9 @@ class SapoWhisperViewModel: ObservableObject {
     /// dictation becomes the instruction applied to it.
     private var activeEditSourceText: String?
     private static let editSourceMaxCharacters = 20_000
+    /// Voice edits launched from the completed pill iterate on the shown
+    /// text: the result must land in the clipboard/pill only, never re-paste.
+    private var suppressAutoPasteOnce = false
     // Reentrancy guard for retryTranscription: a second Retry (double click /
     // repeated hotkey) before the in-flight retry resolves would transcribe and
     // paste the same audio twice. Set before the Task, cleared in its defer.
@@ -282,6 +285,11 @@ class SapoWhisperViewModel: ObservableObject {
         overlayManager.onRepolishRequested = { [weak self] in
             Task { @MainActor in
                 self?.repolishLastTranscription()
+            }
+        }
+        overlayManager.onVoiceEditRequested = { [weak self] in
+            Task { @MainActor in
+                self?.startVoiceEditOfLastTranscription()
             }
         }
     }
@@ -771,6 +779,9 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard missingPermissions.isEmpty else {
             activeRecordingSessionID = nil
+            activeEditSourceText = nil
+            suppressAutoPasteOnce = false
+            overlayManager.isEditSession = false
             SapoLog.recording.warning("Recording blocked by missing permissions")
             PermissionService.shared.showRequirementsWindow(force: true)
             return
@@ -788,6 +799,9 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard isReady || canReloadOnDemand else {
             activeRecordingSessionID = nil
+            activeEditSourceText = nil
+            suppressAutoPasteOnce = false
+            overlayManager.isEditSession = false
             appState = .noModel
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
@@ -904,6 +918,7 @@ class SapoWhisperViewModel: ObservableObject {
         isStartPending = false
         activeRecordingSessionID = nil
         activeEditSourceText = nil
+        suppressAutoPasteOnce = false
         overlayManager.isEditSession = false
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
@@ -1448,6 +1463,32 @@ class SapoWhisperViewModel: ObservableObject {
         startRecording(editing: clipboardText)
     }
 
+    /// Iterates on the last delivered transcription by voice (mic button on
+    /// the completed pill): the dictation is an instruction applied to the
+    /// shown text. The first delivery already pasted, so the refined result
+    /// only updates the clipboard and the pill.
+    func startVoiceEditOfLastTranscription() {
+        guard canStartRecordingFromHotkey() else { return }
+
+        let source = lastTranscription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, source.count <= Self.editSourceMaxCharacters else { return }
+
+        guard UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled),
+            PolishProviderConfiguration.current() != nil
+        else {
+            overlayManager.showError(
+                message: "edit.error_not_configured".localized,
+                isRetryable: false,
+                autoDismissAfter: 4.0
+            )
+            return
+        }
+
+        SapoLog.ai.info("Voice edit of last transcription starting chars=\(source.count, privacy: .public)")
+        suppressAutoPasteOnce = true
+        startRecording(editing: source)
+    }
+
     private func startRecordingSession(
         sessionID: UInt64,
         microphone: String,
@@ -1751,6 +1792,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// idle and skips the error sound.
     func presentTranscriptionFailure(_ failure: TranscriptionFailure) {
         activeEditSourceText = nil
+        suppressAutoPasteOnce = false
         overlayManager.isEditSession = false
         let errorState = ErrorState(failure: failure)
         if errorState.isNoSpeech {
@@ -2153,6 +2195,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         activeRecordingSessionID = nil
         activeEditSourceText = nil
+        suppressAutoPasteOnce = false
         overlayManager.isEditSession = false
         captureCoordinator.endActiveCapture()
         AutoDuckingManager.shared.restore()
@@ -2249,7 +2292,9 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         PasteManager.copyToClipboard(finalText)
         overlayManager.showCompleted(text: finalText)
 
-        if autoPasteEnabled {
+        let skipPaste = suppressAutoPasteOnce
+        suppressAutoPasteOnce = false
+        if autoPasteEnabled && !skipPaste {
             PasteManager.simulatePaste { perf?.markPasteDone() }
         } else {
             perf?.markPasteDone(skipped: true)

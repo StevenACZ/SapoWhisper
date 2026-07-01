@@ -54,6 +54,10 @@ class OverlayWindowManager: ObservableObject {
     /// with the freshly stored mode/language defaults.
     var onRepolishRequested: (() -> Void)?
 
+    /// Mic button on the completed pill: dictate an instruction applied to
+    /// the shown text (iterate until the text is right).
+    var onVoiceEditRequested: (() -> Void)?
+
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?
@@ -62,6 +66,9 @@ class OverlayWindowManager: ObservableObject {
     private var presentationRevision: UInt = 0
     private var sizeSettleTask: Task<Void, Never>?
     private var completedDismissTask: Task<Void, Never>?
+    private var dockExpandTask: Task<Void, Never>?
+    /// Last delivered transcription, reopened when the dock chip is hovered.
+    private var lastCompletedText: String?
     private let audioLevelSubject = PassthroughSubject<Float, Never>()
     private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
     private var lastAudioLevelValue: Float = 0
@@ -78,14 +85,20 @@ class OverlayWindowManager: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Pre-creates the overlay window so the first hotkey press only needs to show it.
+    /// Creates the overlay window and rests it as the always-visible dock
+    /// chip: recording morphs out of the chip and every dismissal collapses
+    /// back into it.
     func prewarm() {
         let t0 = CFAbsoluteTimeGetCurrent()
         ensureWindow()
-        overlayWindow?.orderOut(nil)
-        overlayWindow?.alphaValue = 0
+        guard let window = overlayWindow else { return }
+        state = .docked
+        window.isDockAnchored = true
+        window.applyConfiguredPosition()
+        window.alphaValue = 1
+        window.orderFrontRegardless()
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        SapoLog.overlay.info("Overlay prewarmed in \(Int(elapsed), privacy: .public)ms")
+        SapoLog.overlay.info("Overlay prewarmed docked in \(Int(elapsed), privacy: .public)ms")
     }
 
     /// Muestra la ventana de overlay con animacion
@@ -137,44 +150,46 @@ class OverlayWindowManager: ObservableObject {
         SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
     }
 
-    /// Oculta la ventana de overlay con animacion
+    /// Collapses whatever is showing back into the idle dock chip. The window
+    /// never disappears: the chip is the overlay's resting state, and hovering
+    /// it reopens the last transcription.
     func hide() {
-        guard let window = overlayWindow else { return }
+        guard overlayWindow != nil else { return }
+        guard state.stateCategory != "docked" else { return }
 
-        let t0 = CFAbsoluteTimeGetCurrent()
-        isAnimating = true
-        isDismissing = true
-        let revisionAtHide = presentationRevision
-        finishMeterSession(reason: "hidden")
-        SapoLog.overlay.info("Overlay hide started")
+        completedDismissTask?.cancel()
+        completedDismissTask = nil
+        finishMeterSession(reason: "docked")
+        displayedRecordingSecond = nil
+        publishAudioLevel(0, force: true)
+        showsNoSpeechHint = false
+        overlayWindow?.isDockAnchored = true
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            state = .docked
+        }
+        SapoLog.overlay.info("Overlay collapsed to dock")
+    }
 
-        // Animacion de salida
-        NSAnimationContext.runAnimationGroup(
-            { context in
-                context.duration = 0.25
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                window.animator().alphaValue = 0
-            },
-            completionHandler: {
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    // Only clean up if this is still the current window
-                    // (a new show() call may have replaced it already)
-                    guard self.overlayWindow === window, self.presentationRevision == revisionAtHide else { return }
-                    self.overlayWindow?.orderOut(nil)
-                    self.state = .hidden
-                    self.isAnimating = false
-                    self.isDismissing = false
-                    self.displayedRecordingSecond = nil
-                    self.publishAudioLevel(0, force: true)
-                    let elapsed = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    SapoLog.overlay.info("Overlay hidden in \(elapsed, privacy: .public)ms")
-                    PerformanceDiagnostics.logRuntimeSnapshot(
-                        reason: "overlay-hidden",
-                        context: "elapsedMs=\(elapsed)"
-                    )
-                }
-            })
+    /// Dock chip hover: after a short dwell (so a stray mouse pass at the
+    /// screen edge does nothing), reopen the last transcription.
+    func handleDockHover(_ hovering: Bool) {
+        dockExpandTask?.cancel()
+        dockExpandTask = nil
+        guard hovering, case .docked = state else { return }
+        dockExpandTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.expandDockToLastTranscription()
+        }
+    }
+
+    func expandDockToLastTranscription() {
+        guard case .docked = state else { return }
+        guard let text = lastCompletedText, !text.isEmpty else { return }
+        updateState(.completed(text: text))
+        // Fallback in case the pointer leaves before the pill registers its
+        // own hover; hovering the pill cancels and re-arms this.
+        scheduleCompletedDismiss(after: 4.0)
     }
 
     // MARK: - Private Methods
@@ -225,6 +240,7 @@ class OverlayWindowManager: ObservableObject {
 
         updateDisplayedSecond(for: newState)
         isDismissing = false
+        overlayWindow?.isDockAnchored = newState.stateCategory == "docked"
         if state.isVisible {
             // Visible-to-visible swaps morph the capsule with a spring; the
             // pill view sequences the content crossfade on top of it.
@@ -316,6 +332,7 @@ class OverlayWindowManager: ObservableObject {
     /// re-polish. Hovering the pill pauses the auto-dismiss so the user can
     /// read, copy, or re-polish; leaving re-arms a short countdown.
     func showCompleted(text: String, autoDismissAfter delay: TimeInterval = 5.0) {
+        lastCompletedText = text
         updateState(.completed(text: text))
         scheduleCompletedDismiss(after: delay)
     }

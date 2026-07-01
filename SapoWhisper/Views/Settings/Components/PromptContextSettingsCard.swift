@@ -165,6 +165,8 @@ struct PromptContextSettingsCard: View {
                         .lineLimit(2)
                 }
                 Spacer(minLength: 0)
+
+                quickChipPin(for: prompt)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -178,6 +180,31 @@ struct PromptContextSettingsCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Star pin: pinned profiles show as quick chips in the overlay (max 3).
+    /// The base clean-up profile is never a chip — deselecting a chip IS the
+    /// clean-up mode.
+    @ViewBuilder
+    private func quickChipPin(for prompt: PromptProfile) -> some View {
+        if prompt.id != TranscriptPolishMode.automatic.rawValue {
+            let isPinned = promptManager.isQuickChip(prompt.id)
+            let pinDisabled = !isPinned && !promptManager.canPinMoreQuickChips
+            Button {
+                promptManager.setQuickChip(prompt.id, pinned: !isPinned)
+            } label: {
+                Image(systemName: isPinned ? "star.fill" : "star")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isPinned ? Color.sapoGreen : .secondary.opacity(pinDisabled ? 0.35 : 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(pinDisabled)
+            .help(
+                pinDisabled
+                    ? "prompts.quick_chip_limit".localized
+                    : "prompts.quick_chip_pin".localized
+            )
+        }
     }
 
     private func profileIcon(for prompt: PromptProfile) -> String {

@@ -650,3 +650,7 @@
 "edit.error_empty_clipboard" = "No text in the clipboard — copy something first";
 "edit.error_not_configured" = "Enable AI polish and configure a provider to use voice editing";
 "edit.error_too_long" = "The copied text is too long for voice editing";
+"overlay.voice_edit" = "Improve by voice";
+"overlay.dock_last" = "Last transcription";
+"prompts.quick_chip_pin" = "Show as a quick chip while recording (max 3)";
+"prompts.quick_chip_limit" = "Quick chip limit reached (3) — unpin another one first";

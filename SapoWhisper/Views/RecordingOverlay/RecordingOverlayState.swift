@@ -10,6 +10,9 @@ import Foundation
 /// Estados posibles de la ventana de overlay durante grabacion/transcripcion
 enum RecordingOverlayState: Equatable {
     case hidden
+    /// Idle mini chip at the anchor position; hovering it reopens the last
+    /// transcription, and every dismissed state collapses back into it.
+    case docked
     case recording(duration: TimeInterval)
     case paused(duration: TimeInterval)
     case transcribing
@@ -22,6 +25,7 @@ enum RecordingOverlayState: Equatable {
     var stateCategory: String {
         switch self {
         case .hidden: return "hidden"
+        case .docked: return "docked"
         case .recording: return "recording"
         case .paused: return "paused"
         case .transcribing: return "transcribing"
@@ -44,7 +48,7 @@ enum RecordingOverlayState: Equatable {
 
     var statusText: String {
         switch self {
-        case .hidden:
+        case .hidden, .docked:
             return ""
         case .recording:
             return "overlay.recording".localized

@@ -40,8 +40,12 @@ struct PromptContextSnapshot: Codable, Equatable {
 final class PromptContextManager: ObservableObject {
     static let shared = PromptContextManager()
 
+    /// The overlay stays scannable with a hard cap on pinned chips.
+    static let maxQuickChips = 3
+
     @Published private(set) var personalContext: PersonalPromptContext = .empty
     @Published private(set) var prompts: [PromptProfile] = []
+    @Published private(set) var quickChipPromptIDs: [String] = []
 
     private let fileURL: URL
 
@@ -51,6 +55,53 @@ final class PromptContextManager: ObservableObject {
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         fileURL = appDir.appendingPathComponent("prompt_context.json")
         load()
+        loadQuickChipIDs()
+    }
+
+    // MARK: - Quick chips (overlay)
+
+    /// Profiles pinned as overlay chips, in pin order. The base clean-up mode
+    /// is never a chip: no chip selected means clean-up.
+    var quickChipPrompts: [PromptProfile] {
+        quickChipPromptIDs.compactMap { id in prompts.first(where: { $0.id == id }) }
+    }
+
+    func isQuickChip(_ id: String) -> Bool {
+        quickChipPromptIDs.contains(id)
+    }
+
+    var canPinMoreQuickChips: Bool {
+        quickChipPromptIDs.count < Self.maxQuickChips
+    }
+
+    func setQuickChip(_ id: String, pinned: Bool) {
+        guard id != TranscriptPolishMode.automatic.rawValue else { return }
+        var ids = quickChipPromptIDs.filter { $0 != id }
+        if pinned {
+            guard ids.count < Self.maxQuickChips else { return }
+            ids.append(id)
+        }
+        quickChipPromptIDs = ids
+        UserDefaults.standard.set(ids, forKey: Constants.StorageKeys.aiPolishQuickChipPromptIDs)
+    }
+
+    private func loadQuickChipIDs() {
+        let stored = UserDefaults.standard.stringArray(forKey: Constants.StorageKeys.aiPolishQuickChipPromptIDs)
+        let defaults = [TranscriptPolishMode.ai.rawValue, TranscriptPolishMode.work.rawValue]
+        let candidate = stored ?? defaults
+        quickChipPromptIDs = Array(
+            candidate
+                .filter { id in id != TranscriptPolishMode.automatic.rawValue && prompts.contains(where: { $0.id == id }) }
+                .prefix(Self.maxQuickChips)
+        )
+    }
+
+    /// Pins can never point at deleted profiles.
+    private func pruneQuickChipIDs() {
+        let pruned = quickChipPromptIDs.filter { id in prompts.contains(where: { $0.id == id }) }
+        guard pruned != quickChipPromptIDs else { return }
+        quickChipPromptIDs = pruned
+        UserDefaults.standard.set(pruned, forKey: Constants.StorageKeys.aiPolishQuickChipPromptIDs)
     }
 
     func updatePersonalContext(details: String) {
@@ -80,6 +131,7 @@ final class PromptContextManager: ObservableObject {
         guard prompts.count > 1 else { return }
         prompts.removeAll { $0.id == id }
         repairSelectedPromptIfNeeded()
+        pruneQuickChipIDs()
         save()
     }
 
@@ -121,6 +173,7 @@ final class PromptContextManager: ObservableObject {
 
         prompts = sanitizedPrompts.isEmpty ? Self.defaultPrompts : sanitizedPrompts
         repairSelectedPromptIfNeeded()
+        pruneQuickChipIDs()
         save()
     }
 
