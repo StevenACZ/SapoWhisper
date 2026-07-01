@@ -76,7 +76,7 @@ private struct PillPreview<Content: View>: View {
 }
 
 #Preview("Docked") {
-    PillPreview { DockedChipView(onHoverChanged: { _ in }, onTap: {}) }
+    PillPreview { DockedChipView(onTap: {}) }
 }
 
 #Preview("Error") {

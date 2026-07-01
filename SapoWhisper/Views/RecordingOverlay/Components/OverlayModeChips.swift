@@ -33,7 +33,10 @@ struct OverlayModeChips: View {
 
     var body: some View {
         if aiPolishEnabled {
-            ChipFlowLayout(maxWidth: 400) {
+            // A plain row: with at most 3 pinned chips plus the translation
+            // chip everything fits in one line, and it avoids the measured
+            // wrap layout whose height could disagree with placement.
+            HStack(spacing: 5) {
                 ForEach(visiblePrompts) { prompt in
                     modeChip(for: prompt)
                 }
@@ -66,7 +69,7 @@ struct OverlayModeChips: View {
                 .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: 92)
+                .frame(maxWidth: 84)
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundColor(isSelected ? .sapoGreen : .primary.opacity(0.75))
                 .padding(.horizontal, 8)
@@ -138,54 +141,5 @@ struct OverlayModeChips: View {
         let target = stored.flatMap { TranscriptPolishOutputLanguage(rawValue: $0) } ?? .english
         let resolved = target.requiresTranslation ? target : .english
         outputLanguageValue = resolved.rawValue
-    }
-}
-
-/// Wraps chips onto new lines once they exceed `maxWidth`, so the pill grows
-/// down instead of sideways. The pill lays out at its ideal size, which would
-/// give a plain HStack unlimited width — this layout imposes its own cap and
-/// reports the real width used, so few chips still hug their content.
-struct ChipFlowLayout: Layout {
-    var maxWidth: CGFloat
-    var spacing: CGFloat = 5
-    var lineSpacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let limit = min(proposal.width ?? maxWidth, maxWidth)
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        var widestLine: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > limit {
-                x = 0
-                y += lineHeight + lineSpacing
-                lineHeight = 0
-            }
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-            widestLine = max(widestLine, x - spacing)
-        }
-        return CGSize(width: widestLine, height: y + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var lineHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x - bounds.minX + size.width > bounds.width {
-                x = bounds.minX
-                y += lineHeight + lineSpacing
-                lineHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
     }
 }

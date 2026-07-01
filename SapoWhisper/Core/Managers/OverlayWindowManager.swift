@@ -66,8 +66,7 @@ class OverlayWindowManager: ObservableObject {
     private var presentationRevision: UInt = 0
     private var sizeSettleTask: Task<Void, Never>?
     private var completedDismissTask: Task<Void, Never>?
-    private var dockExpandTask: Task<Void, Never>?
-    /// Last delivered transcription, reopened when the dock chip is hovered.
+    /// Last delivered transcription, reopened when the dock chip is clicked.
     private var lastCompletedText: String?
     private let audioLevelSubject = PassthroughSubject<Float, Never>()
     private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
@@ -170,19 +169,7 @@ class OverlayWindowManager: ObservableObject {
         SapoLog.overlay.info("Overlay collapsed to dock")
     }
 
-    /// Dock chip hover: after a short dwell (so a stray mouse pass at the
-    /// screen edge does nothing), reopen the last transcription.
-    func handleDockHover(_ hovering: Bool) {
-        dockExpandTask?.cancel()
-        dockExpandTask = nil
-        guard hovering, case .docked = state else { return }
-        dockExpandTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.expandDockToLastTranscription()
-        }
-    }
-
+    /// Dock chip click: reopen the last transcription.
     func expandDockToLastTranscription() {
         guard case .docked = state else { return }
         guard let text = lastCompletedText, !text.isEmpty else { return }

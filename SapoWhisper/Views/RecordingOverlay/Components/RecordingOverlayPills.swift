@@ -296,10 +296,10 @@ struct CompletedPillView: View {
     }
 }
 
-/// Idle resting state: a tiny always-visible bar at the anchor position. The
-/// generous invisible frame keeps it hoverable/clickable despite its size.
+/// Idle resting state: a slim always-visible bar at the anchor position.
+/// Hover only highlights it as an affordance — a click reopens the last
+/// transcription, so a stray mouse pass at the screen edge does nothing.
 struct DockedChipView: View {
-    var onHoverChanged: (Bool) -> Void
     var onTap: () -> Void
 
     @State private var isHovering = false
@@ -307,14 +307,13 @@ struct DockedChipView: View {
     var body: some View {
         Capsule()
             .fill(Color.sapoGreen.opacity(isHovering ? 0.95 : 0.65))
-            .frame(width: 36, height: 5)
-            .frame(width: 64, height: 18)
+            .frame(width: 24, height: 4)
+            .frame(width: 34, height: 8)
             .contentShape(Rectangle())
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.15)) {
                     isHovering = hovering
                 }
-                onHoverChanged(hovering)
             }
             .onTapGesture(perform: onTap)
             .help("overlay.dock_last".localized)

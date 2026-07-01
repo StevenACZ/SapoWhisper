@@ -34,23 +34,23 @@ struct RecordingOverlayView: View {
                     )
                 )
         }
-        .padding(.horizontal, isDocked ? 10 : 20)
-        .padding(.vertical, isDocked ? 5 : 12)
+        .padding(.horizontal, isDocked ? 6 : 20)
+        .padding(.vertical, isDocked ? 2 : 12)
         .background(
             // Continuous rounded rect instead of a capsule: multi-line states
             // (chips, expanded transcript) made the capsule's semicircular
             // ends huge, reading as wasted width. The docked chip shares the
             // same shape so expand/collapse reads as one surface morphing.
-            RoundedRectangle(cornerRadius: isDocked ? 10 : 26, style: .continuous)
+            RoundedRectangle(cornerRadius: isDocked ? 6 : 26, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: isDocked ? 5 : 10, y: 3)
+                .shadow(color: .black.opacity(0.25), radius: isDocked ? 4 : 10, y: 3)
         )
         .fixedSize()
         // Transparent margin inside the auto-sized window so the shadow, the
         // glow stroke, and the micro-bounce overshoot are never clipped at
         // the window edge (a clipped shadow reads as a hard rectangle).
-        .padding(.horizontal, isDocked ? 12 : 36)
-        .padding(.vertical, isDocked ? 8 : 26)
+        .padding(.horizontal, isDocked ? 10 : 36)
+        .padding(.vertical, isDocked ? 6 : 26)
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: OverlayPillSizeKey.self, value: proxy.size)
@@ -131,10 +131,7 @@ struct RecordingOverlayView: View {
             EmptyView()
 
         case .docked:
-            DockedChipView(
-                onHoverChanged: { manager.handleDockHover($0) },
-                onTap: { manager.expandDockToLastTranscription() }
-            )
+            DockedChipView(onTap: { manager.expandDockToLastTranscription() })
 
         case .recording(let duration):
             RecordingPillView(
