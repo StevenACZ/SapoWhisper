@@ -34,9 +34,12 @@ struct RecordingOverlayView: View {
                 )
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .background(
-            Capsule()
+            // Continuous rounded rect instead of a capsule: multi-line states
+            // (chips, expanded transcript) made the capsule's semicircular
+            // ends huge, reading as wasted width.
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
         )
@@ -130,7 +133,10 @@ struct RecordingOverlayView: View {
                 duration: duration,
                 onPause: { manager.onPauseToggle?() },
                 audioLevelPublisher: manager.audioLevelPublisher,
-                showsNoSpeechHint: manager.showsNoSpeechHint
+                showsNoSpeechHint: manager.showsNoSpeechHint,
+                isEditSession: manager.isEditSession,
+                onModeSelected: { manager.onQuickModeSelected?($0) },
+                onTranslationToggled: { manager.onQuickTranslationToggled?($0) }
             )
 
         case .paused(let duration):
@@ -146,7 +152,17 @@ struct RecordingOverlayView: View {
             AIPolishingPillView(timeoutSeconds: timeoutSeconds)
 
         case .completed(let text):
-            CompletedPillView(text: text)
+            CompletedPillView(
+                text: text,
+                onRepolish: { manager.onRepolishRequested?() },
+                onClose: { manager.hide() }
+            )
+            .onHover { hovering in
+                manager.setCompletedHover(hovering)
+            }
+
+        case .cancelled:
+            CancelledPillView()
 
         case .error(let message, let isRetryable):
             ErrorPillView(message: message, onRetry: isRetryable ? manager.onRetry : nil)

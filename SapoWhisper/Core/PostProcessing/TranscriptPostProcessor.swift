@@ -237,6 +237,91 @@ final class TranscriptPostProcessor {
         }
     }
 
+    /// Clipboard-edit sessions: apply a spoken instruction to copied text.
+    /// The output legitimately differs from both inputs, so the fidelity and
+    /// instruction-response guards do not run — only the sanitizer does.
+    /// On any failure the source text ships unchanged (with the error recorded)
+    /// so the flow never blocks or pastes something unrelated.
+    func processEdit(
+        sourceText: String,
+        instruction: String,
+        duration: TimeInterval? = nil
+    ) async -> TranscriptAIResult {
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        let trimmedSource = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedInstruction = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        func finish(
+            finalText: String,
+            status: TranscriptAIStatus,
+            model: String? = nil,
+            error: String? = nil
+        ) -> TranscriptAIResult {
+            makeResult(
+                rawText: trimmedInstruction,
+                finalText: finalText,
+                status: status,
+                model: model,
+                mode: "clipboard_edit",
+                error: error,
+                startedAt: startedAt
+            )
+        }
+
+        guard !trimmedSource.isEmpty, !trimmedInstruction.isEmpty else {
+            return finish(finalText: trimmedSource, status: .none)
+        }
+
+        let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
+        guard enabled, let configuration = PolishProviderConfiguration.current() else {
+            return finish(finalText: trimmedSource, status: .failed, error: "clipboard edit requires a configured AI provider")
+        }
+
+        let messages = ClipboardEditPromptBuilder.makeMessages(
+            sourceText: trimmedSource,
+            instruction: trimmedInstruction
+        )
+        let timeoutSeconds = Self.polishTimeout(
+            forCharacterCount: trimmedSource.count + trimmedInstruction.count,
+            duration: duration,
+            configuration: configuration
+        )
+
+        do {
+            let response = try await withTimeout(seconds: timeoutSeconds) {
+                try await self.polisher.polish(
+                    system: messages.system,
+                    user: messages.user,
+                    timeout: TimeInterval(timeoutSeconds)
+                )
+            }
+            let cleaned = PolishOutputSanitizer.clean(response.text, rawText: trimmedSource)
+            guard !cleaned.isEmpty else {
+                return finish(
+                    finalText: trimmedSource,
+                    status: .failed,
+                    model: response.modelIdentifier,
+                    error: "empty edited text"
+                )
+            }
+            return finish(finalText: cleaned, status: .applied, model: response.modelIdentifier)
+        } catch is CancellationError {
+            return finish(
+                finalText: trimmedSource,
+                status: .failed,
+                model: configuration.modelIdentifier,
+                error: "clipboard edit timed out after \(timeoutSeconds)s"
+            )
+        } catch {
+            return finish(
+                finalText: trimmedSource,
+                status: .failed,
+                model: configuration.modelIdentifier,
+                error: error.localizedDescription
+            )
+        }
+    }
+
     /// Hard-token fidelity is a regeneration hint, not a raw-text fallback. If
     /// the model still misses a protected token after the retry budget, the last
     /// AI output ships because the user explicitly opted into AI polish.

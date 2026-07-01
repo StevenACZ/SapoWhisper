@@ -30,6 +30,10 @@ class OverlayWindowManager: ObservableObject {
     /// (slight scale-down) together with the fade.
     @Published private(set) var isDismissing = false
 
+    /// True while the active dictation is a clipboard-edit session: the pill
+    /// shows the edit label and hides the mode chips.
+    @Published var isEditSession = false
+
     let audioLevelPublisher: AnyPublisher<Float, Never>
 
     // MARK: - Callbacks
@@ -40,6 +44,16 @@ class OverlayWindowManager: ObservableObject {
     /// Callback for retry on failure
     var onRetry: (() -> Void)?
 
+    /// A mode chip was tapped while recording (defaults already updated).
+    var onQuickModeSelected: ((String) -> Void)?
+
+    /// The translation chip was toggled while recording (defaults already updated).
+    var onQuickTranslationToggled: ((Bool) -> Void)?
+
+    /// A chip was tapped on the completed pill: re-polish the last dictation
+    /// with the freshly stored mode/language defaults.
+    var onRepolishRequested: (() -> Void)?
+
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?
@@ -47,6 +61,7 @@ class OverlayWindowManager: ObservableObject {
     private var isAnimating = false
     private var presentationRevision: UInt = 0
     private var sizeSettleTask: Task<Void, Never>?
+    private var completedDismissTask: Task<Void, Never>?
     private let audioLevelSubject = PassthroughSubject<Float, Never>()
     private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
     private var lastAudioLevelValue: Float = 0
@@ -186,6 +201,14 @@ class OverlayWindowManager: ObservableObject {
 
     /// Actualiza el estado del overlay
     func updateState(_ newState: RecordingOverlayState) {
+        // Leaving the completed state through any path invalidates its
+        // pending auto-dismiss so it cannot hide the next state.
+        if case .completed = newState {
+        } else {
+            completedDismissTask?.cancel()
+            completedDismissTask = nil
+        }
+
         // Si se oculta, usar hide() para la animacion
         if case .hidden = newState {
             hide()
@@ -289,14 +312,44 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Muestra el estado de completado con preview del texto
-    func showCompleted(text: String, autoDismissAfter delay: TimeInterval = 2.0) {
+    /// Muestra el estado de completado con el texto final y las acciones de
+    /// re-polish. Hovering the pill pauses the auto-dismiss so the user can
+    /// read, copy, or re-polish; leaving re-arms a short countdown.
+    func showCompleted(text: String, autoDismissAfter delay: TimeInterval = 5.0) {
         updateState(.completed(text: text))
+        scheduleCompletedDismiss(after: delay)
+    }
 
-        // Auto-ocultar despues del delay
+    /// Pauses/resumes the completed pill's auto-dismiss while hovered.
+    func setCompletedHover(_ hovering: Bool) {
+        guard case .completed = state else { return }
+        if hovering {
+            completedDismissTask?.cancel()
+            completedDismissTask = nil
+        } else {
+            scheduleCompletedDismiss(after: 2.0)
+        }
+    }
+
+    private func scheduleCompletedDismiss(after delay: TimeInterval) {
+        completedDismissTask?.cancel()
+        completedDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            if case .completed = self.state {
+                self.hide()
+            }
+        }
+    }
+
+    /// Brief confirmation after an Esc cancel: the audio was preserved in
+    /// History, so the dictation is recoverable — not lost.
+    func showCancelled(autoDismissAfter delay: TimeInterval = 2.5) {
+        updateState(.cancelled)
+
         Task {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            if case .completed = self.state {
+            if case .cancelled = self.state {
                 self.hide()
             }
         }

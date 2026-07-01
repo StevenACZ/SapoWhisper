@@ -635,3 +635,18 @@
 "menu.setup_pending_subtitle" = "Tu motor de transcripción aún no está listo";
 "menu.offline_hint" = "Sin conexión — el motor en la nube no está disponible. Se reanudará al reconectar.";
 "menu.offline_polish_hint" = "Mejora IA pausada sin internet; la transcripción local sigue funcionando.";
+
+/* Overlay quick modes + clipboard edit + audio recovery */
+"overlay.lang_auto" = "Auto";
+"overlay.copied_again" = "Copiado otra vez";
+"overlay.copy" = "Copiar";
+"overlay.close" = "Cerrar";
+"overlay.repolish_hint" = "Mejorar con:";
+"overlay.edit_mode" = "Editando texto copiado…";
+"overlay.cancelled_saved" = "Cancelado — audio guardado en Historial";
+"menu.ai_mode" = "Modo IA";
+"menu.edit_clipboard" = "Mejorar portapapeles por voz";
+"menu.edit_clipboard_sub" = "Copia un texto y habla una instrucción (%@)";
+"edit.error_empty_clipboard" = "No hay texto en el portapapeles: copia algo primero";
+"edit.error_not_configured" = "Activa la mejora IA y configura un proveedor para editar por voz";
+"edit.error_too_long" = "El texto copiado es demasiado largo para editar por voz";

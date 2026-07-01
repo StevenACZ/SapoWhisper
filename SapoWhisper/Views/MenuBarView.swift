@@ -19,6 +19,10 @@ struct MenuBarView: View {
     var closeMenuBarAction: (() -> Void)?
     @AppStorage(Constants.StorageKeys.onboardingComplete) private var onboardingComplete = false
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+        TranscriptPolishOutputLanguage.sameAsInput.rawValue
+    @ObservedObject private var promptContextManager = PromptContextManager.shared
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
 
@@ -59,6 +63,13 @@ struct MenuBarView: View {
 
             recordingSection
 
+            if aiPolishEnabled {
+                Divider()
+                    .padding(.horizontal)
+
+                aiQuickSection
+            }
+
             if !viewModel.lastTranscription.isEmpty {
                 MenuBarTranscriptionSection(transcription: viewModel.lastTranscription) {
                     PasteManager.copyToClipboard(viewModel.lastTranscription)
@@ -73,6 +84,50 @@ struct MenuBarView: View {
         }
         .frame(width: Constants.Sizes.menuBarWidth)
         .background(Color(NSColor.windowBackgroundColor))
+        .onChange(of: aiPolishOutputLanguage) { _, _ in
+            viewModel.syncTranscriptionLanguageForTranslation()
+        }
+    }
+
+    // MARK: - AI Quick Section
+
+    /// Day-to-day mode/language switching without opening Settings; the same
+    /// selection the overlay chips write, so both stay in sync by key.
+    private var aiQuickSection: some View {
+        VStack(spacing: 0) {
+            SettingsRow(
+                icon: "wand.and.stars",
+                title: "menu.ai_mode".localized,
+                subtitle: nil
+            ) {
+                Picker("menu.ai_mode".localized, selection: $aiPolishMode) {
+                    ForEach(promptContextManager.prompts) { prompt in
+                        Text(prompt.trimmedName).tag(prompt.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+            }
+
+            SettingsRow(
+                icon: "globe",
+                title: "ai.polish.output_language".localized,
+                subtitle: nil
+            ) {
+                Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
+                    ForEach(TranscriptPolishOutputLanguage.allCases) { language in
+                        Text(language.shortDisplayName).tag(language.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Header Section
@@ -264,6 +319,20 @@ struct MenuBarView: View {
 
             Divider()
                 .padding(.horizontal)
+
+            if aiPolishEnabled {
+                ActionRow(
+                    icon: "pencil.line",
+                    title: "menu.edit_clipboard".localized,
+                    subtitle: "menu.edit_clipboard_sub".localized(viewModel.hotkeyManager.editHotkeyDescription)
+                ) {
+                    closeMenuBarAction?()
+                    viewModel.startClipboardEditDictation()
+                }
+
+                Divider()
+                    .padding(.horizontal)
+            }
 
             ActionRow(
                 icon: "clock.arrow.circlepath",

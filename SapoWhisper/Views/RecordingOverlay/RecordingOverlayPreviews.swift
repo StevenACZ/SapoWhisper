@@ -48,8 +48,31 @@ private struct PillPreview<Content: View>: View {
     PillPreview { TranscribingPillView() }
 }
 
+#Preview("Recording - Edit Session") {
+    PillPreview {
+        RecordingPillView(
+            duration: 8,
+            onPause: {},
+            audioLevelPublisher: Just(Float(0.5)).eraseToAnyPublisher(),
+            isEditSession: true
+        )
+    }
+}
+
 #Preview("Completed") {
     PillPreview { CompletedPillView(text: "Hola, esta es una transcripcion") }
+}
+
+#Preview("Completed - Long") {
+    PillPreview {
+        CompletedPillView(
+            text: String(repeating: "Esta es una transcripcion larga para probar el scroll del pill. ", count: 12)
+        )
+    }
+}
+
+#Preview("Cancelled") {
+    PillPreview { CancelledPillView() }
 }
 
 #Preview("Error") {

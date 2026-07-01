@@ -26,6 +26,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         observeSleepWake()
         scheduleInitialOnboardingCheck()
         Task.detached(priority: .utility) {
+            // Recovery first: orphaned dictation WAVs become retranscribable
+            // History rows before the stale sweep can consider deleting them.
+            OrphanAudioRecovery.recoverAbandonedRecordings()
             TemporaryAudioStorage.sweepStaleFiles()
         }
         TemporaryAudioStorage.startDailySweep()

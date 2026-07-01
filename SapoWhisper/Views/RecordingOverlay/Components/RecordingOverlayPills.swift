@@ -11,42 +11,64 @@ struct RecordingPillView: View {
     let onPause: () -> Void
     let audioLevelPublisher: AnyPublisher<Float, Never>
     var showsNoSpeechHint: Bool = false
+    /// Clipboard-edit sessions show a distinct label and no mode chips: the
+    /// spoken instruction, not the selected mode, drives the rewrite.
+    var isEditSession: Bool = false
+    var onModeSelected: ((String) -> Void)?
+    var onTranslationToggled: ((Bool) -> Void)?
 
     var body: some View {
-        HStack(spacing: 10) {
-            FloatingSapoIcon(state: .recording, size: 32)
-            PillDivider()
-            MiniEqualizerView(audioLevelPublisher: audioLevelPublisher)
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                FloatingSapoIcon(state: .recording, size: 32)
+                PillDivider()
+                MiniEqualizerView(audioLevelPublisher: audioLevelPublisher)
 
-            if showsNoSpeechHint {
-                HStack(spacing: 5) {
-                    Image(systemName: "mic.slash.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("overlay.no_speech".localized)
+                if showsNoSpeechHint {
+                    HStack(spacing: 5) {
+                        Image(systemName: "mic.slash.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("overlay.no_speech".localized)
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.sapoError)
+                    .transition(.opacity)
+                } else if isEditSession {
+                    HStack(spacing: 5) {
+                        Image(systemName: "pencil.line")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("overlay.edit_mode".localized)
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.aiPolish)
+                } else {
+                    Text("overlay.recording".localized)
                         .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
                 }
-                .foregroundColor(.sapoError)
-                .transition(.opacity)
-            } else {
-                Text("overlay.recording".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+
+                Spacer(minLength: 12)
+
+                Button(action: onPause) {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.primary.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+
+                OverlayTimer(duration: duration)
             }
+            .frame(minWidth: 250)
 
-            Spacer(minLength: 12)
-
-            Button(action: onPause) {
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.primary.opacity(0.1)))
+            if !isEditSession {
+                OverlayModeChips(
+                    onModeSelected: onModeSelected,
+                    onTranslationToggled: onTranslationToggled
+                )
             }
-            .buttonStyle(.plain)
-
-            OverlayTimer(duration: duration)
         }
-        .frame(minWidth: 250)
     }
 }
 
@@ -133,31 +155,110 @@ struct AIPolishingPillView: View {
 
 struct CompletedPillView: View {
     let text: String
+    var onRepolish: (() -> Void)?
+    var onClose: (() -> Void)?
 
     @State private var iconScale: CGFloat = 0
     @State private var showGlow = false
+    @State private var showRecopied = false
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+
+    private static let contentWidth: CGFloat = 400
+
+    /// Rough line estimate at 12pt over `contentWidth`, to decide between a
+    /// content-hugging Text and a fixed scrollable viewport.
+    private var estimatedLineCount: Int {
+        let charactersPerLine = 58
+        return text.components(separatedBy: "\n").reduce(0) { total, paragraph in
+            total + max(1, Int((Double(paragraph.count) / Double(charactersPerLine)).rounded(.up)))
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "doc.on.clipboard.fill")
-                .font(.system(size: 16))
-                .foregroundColor(.sapoGreen)
-                .scaleEffect(iconScale)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.sapoGreen)
+                    .scaleEffect(iconScale)
 
-            Text("overlay.copied".localized)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.sapoGreen)
+                Text((showRecopied ? "overlay.copied_again" : "overlay.copied").localized)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.sapoGreen)
 
-            if !text.isEmpty && text.count <= 30 {
-                PillDivider()
+                Spacer(minLength: 16)
 
-                Text(text)
-                    .font(.system(size: 11))
-                    .foregroundColor(.primary.opacity(0.7))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                Button {
+                    PasteManager.copyToClipboard(text)
+                    showRecopied = true
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.primary.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help("overlay.copy".localized)
+
+                Button {
+                    onClose?()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.primary.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help("overlay.close".localized)
+            }
+
+            if !text.isEmpty {
+                // The hosting pill lays out at its ideal size, so a ScrollView
+                // would grow to the full transcript height. Short texts hug
+                // their content; only genuinely long ones get a fixed,
+                // scrollable viewport — a fixed height on a 3-line text reads
+                // as a giant empty pill.
+                if estimatedLineCount <= 7 {
+                    Text(text)
+                        .font(.system(size: 12))
+                        .foregroundColor(.primary.opacity(0.85))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: Self.contentWidth, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ScrollView {
+                        Text(text)
+                            .font(.system(size: 12))
+                            .foregroundColor(.primary.opacity(0.85))
+                            .textSelection(.enabled)
+                            .frame(width: Self.contentWidth, alignment: .leading)
+                    }
+                    .frame(width: Self.contentWidth, height: 130)
+                }
+            }
+
+            if aiPolishEnabled && !text.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        Text("overlay.repolish_hint".localized)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+
+                    OverlayModeChips(
+                        onModeSelected: { _ in onRepolish?() },
+                        onTranslationToggled: { _ in onRepolish?() }
+                    )
+                }
+                .padding(.top, 2)
             }
         }
+        .frame(maxWidth: Self.contentWidth)
         .overlay(glowStroke(color: .sapoGreen, isVisible: showGlow))
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
@@ -173,6 +274,20 @@ struct CompletedPillView: View {
         }
         withAnimation(.easeOut(duration: 0.8).delay(1.2)) {
             showGlow = false
+        }
+    }
+}
+
+struct CancelledPillView: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 16))
+                .foregroundColor(.secondary)
+
+            Text("overlay.cancelled_saved".localized)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
         }
     }
 }
@@ -277,8 +392,8 @@ struct PillDivider: View {
 }
 
 private func glowStroke(color: Color, isVisible: Bool) -> some View {
-    Capsule()
+    RoundedRectangle(cornerRadius: 26, style: .continuous)
         .strokeBorder(color.opacity(isVisible ? 0.4 : 0), lineWidth: 1.5)
         .padding(.horizontal, -20)
-        .padding(.vertical, -10)
+        .padding(.vertical, -12)
 }

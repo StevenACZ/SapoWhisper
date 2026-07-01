@@ -635,3 +635,18 @@
 "menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";
 "menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";
 "menu.offline_polish_hint" = "AI polish paused offline; local transcription still works.";
+
+/* Overlay quick modes + clipboard edit + audio recovery */
+"overlay.lang_auto" = "Auto";
+"overlay.copied_again" = "Copied again";
+"overlay.copy" = "Copy";
+"overlay.close" = "Close";
+"overlay.repolish_hint" = "Improve with:";
+"overlay.edit_mode" = "Editing copied text…";
+"overlay.cancelled_saved" = "Cancelled — audio saved to History";
+"menu.ai_mode" = "AI mode";
+"menu.edit_clipboard" = "Improve clipboard by voice";
+"menu.edit_clipboard_sub" = "Copy text, then speak an instruction (%@)";
+"edit.error_empty_clipboard" = "No text in the clipboard — copy something first";
+"edit.error_not_configured" = "Enable AI polish and configure a provider to use voice editing";
+"edit.error_too_long" = "The copied text is too long for voice editing";

@@ -117,6 +117,8 @@ nonisolated enum Constants {
         static let aiPolishEnabled = "aiPolishEnabled"
         static let aiPolishMode = "aiPolishMode"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
+        /// Last explicit translation target, restored by the overlay quick chip.
+        static let aiPolishQuickTranslationTarget = "aiPolishQuickTranslationTarget"
         static let aiPolishMinimumDuration = "aiPolishMinimumDuration"
         static let aiPolishEndpoint = "aiPolishEndpoint"
         static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
