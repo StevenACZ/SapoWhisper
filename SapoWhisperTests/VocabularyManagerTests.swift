@@ -79,6 +79,43 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(manager.applyingReplacements(to: "abrí git hub ayer"), "abrí GitHub ayer")
     }
 
+    /// An expansion pair whose key survives inside its own value ("push" ->
+    /// "git push") re-triggers on already-correct text: mechanically it turns
+    /// "git push" into "git git push". Those pairs must be skipped by the
+    /// local pass and by Deepgram's server-side replace, and stay available
+    /// only to the AI polish dictionary, which reads context.
+    func testSelfRetriggeringPairsAreSkippedByMechanicalPasses() {
+        let manager = makeManager()
+        manager.addReplacement(from: "push", to: "git push")
+        manager.addReplacement(from: "code", to: "Claude Code")
+        manager.addReplacement(from: "get push", to: "git push")
+
+        XCTAssertEqual(
+            manager.applyingReplacements(to: "haces git push y luego el code review"),
+            "haces git push y luego el code review"
+        )
+        // A true mishearing key still applies.
+        XCTAssertEqual(manager.applyingReplacements(to: "haces get push ahora"), "haces git push ahora")
+        XCTAssertEqual(
+            manager.replaceQueryItems().compactMap(\.value),
+            ["get push:git push"]
+        )
+    }
+
+    /// Case-normalization ("kubernetes" -> "Kubernetes") and spoken-dot pairs
+    /// ("deep.gram" -> "Deepgram") re-apply as no-ops, so they stay mechanical.
+    func testIdempotentPairsRemainMechanical() {
+        let manager = makeManager()
+        manager.addReplacement(from: "kubernetes", to: "Kubernetes")
+        manager.addReplacement(from: "deep.gram", to: "Deepgram")
+
+        XCTAssertEqual(
+            manager.applyingReplacements(to: "uso kubernetes y deep gram"),
+            "uso Kubernetes y Deepgram"
+        )
+        XCTAssertEqual(manager.replaceQueryItems().count, 2)
+    }
+
     // MARK: - Recognition keyterm payload
 
     func testKeytermPayloadKeepsSavedTermsFirst() {

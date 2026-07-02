@@ -165,12 +165,32 @@ class VocabularyManager: ObservableObject {
 
     /// Returns replace query items for Deepgram batch REST requests
     func replaceQueryItems() -> [URLQueryItem] {
-        replacements.map { URLQueryItem(name: "replace", value: "\($0.key):\($0.value)") }
+        mechanicalReplacements.map { URLQueryItem(name: "replace", value: "\($0.key):\($0.value)") }
+    }
+
+    /// Replacement pairs safe for mechanical passes (the local regex pass and
+    /// Deepgram's server-side `replace`): re-applying the pair to its own
+    /// value must be a no-op. An expansion pair like "push" -> "git push"
+    /// fails that check — mechanically it turns an already-correct "git push"
+    /// into "git git push" — so only the AI polish dictionary (which reads
+    /// context) sees those pairs.
+    var mechanicalReplacements: [String: String] {
+        replacements.filter { Self.isMechanicallyStable(key: $0.key, value: $0.value) }
+    }
+
+    private static func isMechanicallyStable(key: String, value: String) -> Bool {
+        let pattern = replacementPattern(for: key)
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        let template = NSRegularExpression.escapedTemplate(for: value)
+        return regex.stringByReplacingMatches(in: value, options: [], range: range, withTemplate: template) == value
     }
 
     /// Applies saved replacements locally for engines that do not expose replace in their API surface.
     func applyingReplacements(to transcript: String) -> String {
-        replacements
+        mechanicalReplacements
             .sorted { $0.key.count > $1.key.count }
             .reduce(transcript) { current, replacement in
                 let pattern = Self.replacementPattern(for: replacement.key)

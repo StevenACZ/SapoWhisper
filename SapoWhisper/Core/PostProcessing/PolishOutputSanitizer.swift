@@ -12,12 +12,21 @@ enum PolishOutputSanitizer {
 
     static func clean(_ output: String, rawText: String) -> String {
         var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        text = stripThinkingBlock(text)
         text = stripWrappingCodeFence(text)
         text = stripLeadingPreamble(text)
         text = stripTranscriptDelimiters(text)
         text = stripWrappingQuotes(text, rawText: rawText)
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? output.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
+    }
+
+    /// Reasoning-tuned local models can leak a leading <think>…</think> block
+    /// ahead of the answer; pasted verbatim it would flood the destination
+    /// app with the model's private reasoning.
+    private static func stripThinkingBlock(_ text: String) -> String {
+        guard text.hasPrefix("<think>"), let closing = text.range(of: "</think>") else { return text }
+        return String(text[closing.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Removes a fence that wraps the entire output (```...``` with an

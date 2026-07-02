@@ -429,4 +429,20 @@ final class PolishFidelityTests: XCTestCase {
         )
     }
 
+    func testSanitizerStripsLeadingThinkingBlock() {
+        let output = "<think>\nThe user wants the filler removed.\n</think>\nHola equipo, mañana llego tarde."
+        XCTAssertEqual(
+            PolishOutputSanitizer.clean(output, rawText: "hola equipo mañana llego tarde"),
+            "Hola equipo, mañana llego tarde."
+        )
+    }
+
+    func testSanitizerKeepsInlineThinkMention() {
+        let output = "El tag <think> se usa en el parser."
+        XCTAssertEqual(
+            PolishOutputSanitizer.clean(output, rawText: "el tag think se usa en el parser"),
+            "El tag <think> se usa en el parser."
+        )
+    }
+
 }

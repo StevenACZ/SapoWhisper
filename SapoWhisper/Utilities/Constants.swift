@@ -92,7 +92,6 @@ nonisolated enum Constants {
         static let soundVolume = "soundVolume"  // Volumen de 0.0 a 1.0
         static let appLanguage = "appLanguage"
         static let language = "language"
-        static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"
         /// cdhash of the build that last wrote the keychain item, to re-own it after rebuilds
         static let keychainOwnerCodeHash = "keychainOwnerCodeHash"
@@ -116,7 +115,7 @@ nonisolated enum Constants {
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
-        /// Last explicit translation target, restored by the overlay quick chip.
+        /// Last explicit translation target, restored by the overlay translation chip.
         static let aiPolishQuickTranslationTarget = "aiPolishQuickTranslationTarget"
         static let aiPolishEndpoint = "aiPolishEndpoint"
         static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
@@ -146,9 +145,6 @@ nonisolated enum Constants {
         // History retention (H6)
         static let historyAudioMaxMB = "historyAudioMaxMB"
         static let historyAutoDeleteDays = "historyAutoDeleteDays"  // 0 = never
-
-        // Launch at Login
-        static let launchAtLogin = "launchAtLogin"
 
         // Auto-Ducking
         static let autoDuckingEnabled = "autoDuckingEnabled"

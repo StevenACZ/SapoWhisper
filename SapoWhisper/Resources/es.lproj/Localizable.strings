@@ -490,7 +490,7 @@
 "prompts.personal_context_desc" = "Cuéntale a la IA quién eres y qué herramientas usas, para que reconozca tus términos técnicos.";
 "prompts.personal_context_hint" = "Se envía con cada mejora junto a tu vocabulario. Mantenlo corto.";
 "prompts.preview_polish" = "Probar el polish";
-"prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia este modo.";
+"prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia el pulido.";
 "prompts.preview_run" = "Pulir ejemplo";
 "prompts.preview_raw" = "Original";
 "prompts.preview_polished" = "Pulido";
@@ -602,7 +602,7 @@
 "menu.offline_hint" = "Sin conexión — el motor en la nube no está disponible. Se reanudará al reconectar.";
 "menu.offline_polish_hint" = "Mejora IA pausada sin internet; la transcripción local sigue funcionando.";
 
-/* Overlay quick modes + clipboard edit + audio recovery */
+/* Overlay actions + audio recovery */
 "overlay.lang_auto" = "Auto";
 "overlay.copied_again" = "Copiado otra vez";
 "overlay.copy" = "Copiar";

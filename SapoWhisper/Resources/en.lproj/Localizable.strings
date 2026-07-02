@@ -490,7 +490,7 @@
 "prompts.personal_context_desc" = "Tell the AI who you are and which tools you use, so it recognizes your technical terms.";
 "prompts.personal_context_hint" = "Sent with every polish request together with your vocabulary. Keep it short.";
 "prompts.preview_polish" = "Preview polish";
-"prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how this mode cleans it.";
+"prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how the polish cleans it.";
 "prompts.preview_run" = "Polish sample";
 "prompts.preview_raw" = "Raw";
 "prompts.preview_polished" = "Polished";
@@ -602,7 +602,7 @@
 "menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";
 "menu.offline_polish_hint" = "AI polish paused offline; local transcription still works.";
 
-/* Overlay quick modes + clipboard edit + audio recovery */
+/* Overlay actions + audio recovery */
 "overlay.lang_auto" = "Auto";
 "overlay.copied_again" = "Copied again";
 "overlay.copy" = "Copy";

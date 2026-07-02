@@ -36,7 +36,7 @@ addresses, and machine-specific workflow details.
 - Output language belongs to AI polish only; transcription language is recognition context, not translation.
 - The instruction-response guard's cross-language cue check must stay disabled when an explicit output language is set (`translationExpected`): faithful translations legitimately lose source-language cue words, and rejecting them ships the untranslated text.
 - The output-language picker (Settings + overlay translation chip) is the sole source of truth for translation targets. Do not reintroduce per-prompt force-English state.
-- The hard-token guard is retry-only. It may ask the model to regenerate up to 3 total attempts when URLs, emails, vocabulary, or identifier-like tokens drift. Ratio, numbers, generic capitalization, and normal rewording must not raw-fallback an AI polish.
+- The hard-token guard is retry-only. It may ask the model to regenerate up to 3 total attempts when URLs, emails, vocabulary, or identifier-like tokens drift. Ratio, numbers, generic capitalization, and normal rewording must not raw-fallback an AI polish. Numbers are deliberately NOT hard anchors: STT mangles spoken numbers with random separators ("0,63.40.64") and the polish must be free to repair them — number fidelity belongs to the prompt and the chunker (which never splits inside a number).
 - `AIPolishMemoryManager` stores only reviewable correction suggestions; accepted corrections merge into the replacements dictionary for future polish requests.
 
 ## Private Local Workflows
@@ -58,7 +58,7 @@ addresses, and machine-specific workflow details.
 
 - The recording overlay window is a fixed-size transparent surface (`RecordingOverlayWindow.surfaceSize`); never resize it from content size. Content-driven window resizing during SwiftUI transition animations makes `NSHostingView` mutate the window frame inside the AppKit display cycle, which throws and crashes the app. Keep `hostingView.sizingOptions = []`, anchor content with alignment, and let transparent pixels pass clicks through.
 - Under that surface's ideal-size layout, multi-line `Text` needs a concrete width (`.frame(width:)` from real measurement), never `maxWidth:` — a max-width frame reports one line of height and the text overflows the pill and the window edge. Outside-click collapse compares against the measured content frame published by the overlay view, not `NSHostingView.hitTest` (the transparent margin reports hits).
-- An explicit AI polish output language must always run the polish step: the duration/length skip gates only apply to same-as-input (`TranscriptPostProcessor.skipGatesApply`). Skipping would silently ship the untranslated transcript.
+- An explicit AI polish output language must always run the polish step — polish has no skip gates of any kind, and silently skipping would ship the untranslated transcript.
 - Do not remove the WhisperKit/Deepgram/ElevenLabs/Local AI Server engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route changes.
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.

@@ -48,8 +48,8 @@ enum TranscriptPolishPromptBuilder {
 
             PRIORITY 3 — Rewrite rules:
             1. ALWAYS delete — these are never content, remove every single occurrence: um, uh, eh, mmm, este (as interjection), bueno (as interjection), pues, o sea, como se dice, cómo se dice (mid-sentence), como si dice, se puede decir, digamos, la verdad, tal, equis, y ya, y listo, like, you know, I mean, basically. Also delete stutters, restarts, empty closers ("y eso ya estaríamos muy bien"), and duplicated ideas (keep the clearest single version). Apply self-corrections ("no espera, quise decir X" → keep X).
-            1b. Delete only when they carry no meaning in the sentence: "no sé", "así que eso", "y eso", "al final", "más que todo", "etcétera". When one of these does carry meaning ("al final quiero que...", a real unknown "no sé si funciona"), keep it.
-            2. KEEP everything else, sentence by sentence, in the user's own words and order: every instruction, decision, question, reason, name, number, path, URL, and condition must survive. Numbers are sacred — keep each one exactly; an uncertain range ("13, creo, más o menos 11") stays a range ("11–13"). If in doubt whether something is filler, keep it.
+            1b. Delete only when they carry no meaning in the sentence: "no sé", "así que eso", "y eso", "al final", "más que todo", "etcétera". At the start or end of a sentence, "así que eso" and "y eso" are connectors — delete them. When one of these does carry meaning ("al final quiero que...", a real unknown "no sé si funciona"), keep it.
+            2. KEEP everything else, sentence by sentence, in the user's own words and order: every instruction, decision, question, reason, name, number, path, URL, and condition must survive. Numbers are sacred — keep each one exactly, digits as digits ("3 meses" never becomes "tres meses"); an uncertain range ("13, creo, más o menos 11") stays a range ("11–13"). If in doubt whether something is filler, keep it.
             3. Fix punctuation, casing, and obvious speech-to-text mistakes; merge broken fragments into complete sentences. Keep the user's tone and dialect words (dale, ahorita, oye) — never formalize.
             4. FORMAT: the output is the same kind of text as the input, only cleaner. Prose stays prose in the user's voice — NEVER turn speech into bullet lists, numbered steps, or headers unless the user explicitly enumerates ("primero..., segundo..."). Short paragraphs for distinct ideas. A one-sentence transcript stays one sentence.\(personalContextSection(personalContext))
 
@@ -69,7 +69,7 @@ enum TranscriptPolishPromptBuilder {
             Input: dime cinco más cinco y explícalo
             Output (same language): Dime cinco más cinco y explícalo.\(recentDictationsSection(recentDictations))
 
-            Final check before answering: output language = \(finalLanguageName(for: outputLanguage)); dictionary spellings exact and untranslated; not a single "o sea", "como se dice", "eh" or other always-delete filler left; every instruction, question, reason, name, and number still present; same kind of text as the input (no invented lists); nothing answered, nothing invented.
+            Final check before answering: output language = \(finalLanguageName(for: outputLanguage)); dictionary spellings exact and untranslated; not a single "o sea", "como se dice", "eh" or other always-delete filler left; every instruction, question, reason, name, and number still present — digits still digits; same kind of text as the input (no invented lists); nothing answered, nothing invented.
             """
 
         return TranscriptPolishMessages(system: system, user: transcriptUserMessage(for: rawText))

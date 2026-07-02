@@ -254,24 +254,57 @@ final class TranscriptPostProcessor {
     static let chunkThresholdCharacters = 2_200
     /// Target size per chunk once splitting applies.
     static let chunkTargetCharacters = 1_600
+    /// A tail chunk shorter than this polishes badly alone (no surrounding
+    /// context), so it merges back into its neighbor.
+    static let chunkTailMergeCharacters = 300
 
-    /// Splits at sentence enders (. ! ? …) closest to the target size; a text
-    /// under the threshold stays whole. Never splits mid-sentence, so a chunk
-    /// is always a self-contained run of complete sentences.
+    /// Splits at sentence enders (. ! ? …) that close a word — a period inside
+    /// "24.7", "10.000", ".env", or "CLAUDE.md" is not a boundary — grouping
+    /// complete sentences up to the target size. Runs without usable enders
+    /// (some engines emit no punctuation) fall back to whitespace splits, so a
+    /// long transcript still chunks instead of reaching the model whole and
+    /// getting summarized (benchmarked on real history, 2026-07-02).
     static func splitIntoChunks(_ text: String) -> [String] {
         guard text.count > chunkThresholdCharacters else { return [text] }
 
-        var sentences: [String] = []
+        var runs: [String] = []
         var current = ""
-        for character in text {
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
             current.append(character)
+            let nextIndex = text.index(after: index)
             if ".!?…".contains(character) {
-                sentences.append(current)
-                current = ""
+                let next = nextIndex < text.endIndex ? text[nextIndex] : " "
+                if next.isWhitespace {
+                    runs.append(current)
+                    current = ""
+                }
             }
+            index = nextIndex
         }
         if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            sentences.append(current)
+            runs.append(current)
+        }
+
+        var sentences: [String] = []
+        for run in runs {
+            guard run.count > chunkTargetCharacters else {
+                sentences.append(run)
+                continue
+            }
+            var piece = ""
+            for word in run.split(separator: " ", omittingEmptySubsequences: false) {
+                if !piece.isEmpty, piece.count + 1 + word.count > chunkTargetCharacters {
+                    sentences.append(piece + " ")
+                    piece = String(word)
+                } else {
+                    piece = piece.isEmpty ? String(word) : "\(piece) \(word)"
+                }
+            }
+            if !piece.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                sentences.append(piece)
+            }
         }
 
         var chunks: [String] = []
@@ -287,6 +320,13 @@ final class TranscriptPostProcessor {
         let last = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
         if !last.isEmpty {
             chunks.append(last)
+        }
+        if chunks.count >= 2,
+            let tail = chunks.last, tail.count < chunkTailMergeCharacters,
+            chunks[chunks.count - 2].count + tail.count <= chunkThresholdCharacters
+        {
+            chunks.removeLast()
+            chunks[chunks.count - 1] += " \(tail)"
         }
         return chunks.isEmpty ? [text] : chunks
     }

@@ -132,10 +132,53 @@ final class TranscriptChunkingTests: XCTestCase {
         )
     }
 
-    func testTextWithoutSentenceEndersStaysSingleChunk() {
+    /// Punctuation-less speech (some engines emit no enders) must still chunk:
+    /// unchunked 5k+ inputs make small models summarize away real content.
+    /// The fallback splits at whitespace, never mid-word.
+    func testTextWithoutSentenceEndersChunksAtWordBoundaries() {
         let text = String(repeating: "palabras sin puntuacion ", count: 150)  // >3k chars, no enders
         let chunks = TranscriptPostProcessor.splitIntoChunks(text)
-        XCTAssertEqual(chunks.count, 1)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        let vocabulary: Set<String> = ["palabras", "sin", "puntuacion"]
+        for chunk in chunks {
+            XCTAssertLessThanOrEqual(chunk.count, TranscriptPostProcessor.chunkTargetCharacters + 30)
+            let tokens = chunk.split(separator: " ").map(String.init)
+            XCTAssertTrue(
+                tokens.allSatisfy(vocabulary.contains),
+                "seams must fall on whitespace, not mid-word"
+            )
+        }
+    }
+
+    /// A period between digits or inside a filename is spoken content, not a
+    /// sentence end: "24.7", "10.000", ".env", and "CLAUDE.md" must never be
+    /// cut apart by a chunk seam (a mid-number seam loses the number).
+    func testChunkSeamsNeverSplitNumbersOrFilenames() {
+        let filler = String(repeating: "Relleno que ocupa espacio en el dictado real. ", count: 34)  // ~1.6k
+        let sensitive = "El servidor corre 24.7 con menos de 10.000 tokens, revisa el .env y el CLAUDE.md de una vez. "
+        let text = filler + sensitive + filler + sensitive + filler
+
+        let chunks = TranscriptPostProcessor.splitIntoChunks(text)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        for token in ["24.7", "10.000", ".env", "CLAUDE.md"] {
+            let intactOccurrences = chunks.map { $0.components(separatedBy: token).count - 1 }.reduce(0, +)
+            XCTAssertEqual(intactOccurrences, 2, "\(token) must stay whole inside a single chunk")
+        }
+    }
+
+    /// A tiny tail (last sentence overflowing the target) merges back into the
+    /// previous chunk instead of being polished alone without context.
+    func testTinyTailChunkMergesIntoPreviousChunk() {
+        let sentence = "Esta es una frase de prueba que ocupa espacio real en el dictado. "
+        let text = String(repeating: sentence, count: 48) + "Listo."
+
+        let chunks = TranscriptPostProcessor.splitIntoChunks(text)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertGreaterThanOrEqual(chunks.last?.count ?? 0, TranscriptPostProcessor.chunkTailMergeCharacters)
+        XCTAssertTrue(chunks.last?.hasSuffix("Listo.") == true)
     }
 }
 
