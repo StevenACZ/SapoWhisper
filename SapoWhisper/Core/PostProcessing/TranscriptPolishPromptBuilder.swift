@@ -123,7 +123,7 @@ enum TranscriptPolishPromptBuilder {
         return """
 
 
-            Final requirement: write the ENTIRE final text in \(name), translating the transcript when it is in any other language. Never return the transcript's original language.
+            Final requirement: write the ENTIRE final text in \(name), translating the transcript when it is in any other language — including greetings, interjections, and closing phrases. No source-language words may remain except code, commands, filenames, product names, and proper nouns. Never return the transcript's original language.
             """
     }
 

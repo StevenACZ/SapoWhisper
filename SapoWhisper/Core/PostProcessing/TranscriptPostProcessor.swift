@@ -136,16 +136,14 @@ final class TranscriptPostProcessor {
 
         let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
         let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
-        let outputLanguageValue =
-            defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
-            ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
-        let selectedOutputLanguage = TranscriptPolishOutputLanguage(rawValue: outputLanguageValue) ?? .sameAsInput
-        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
-            selected: selectedOutputLanguage,
-            for: promptProfile
-        )
+        let outputLanguage = Self.configuredOutputLanguage(defaults: defaults)
 
-        guard force || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
+        // An explicit output language is a hard user requirement: skipping
+        // polish for a short dictation would silently ship the untranslated
+        // transcript, so the duration/length gates only apply to same-as-input.
+        let skipGatesApply = Self.skipGatesApply(force: force, outputLanguage: outputLanguage)
+
+        guard !skipGatesApply || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
             return finish(
                 finalText: transcript,
                 status: .skippedDuration,
@@ -153,7 +151,7 @@ final class TranscriptPostProcessor {
             )
         }
 
-        guard force || !Self.shouldSkipPolish(transcript) else {
+        guard !skipGatesApply || !Self.shouldSkipPolish(transcript) else {
             return finish(
                 finalText: transcript,
                 status: .skippedShort,
@@ -472,6 +470,27 @@ final class TranscriptPostProcessor {
         return recognizer.dominantLanguage?.rawValue
     }
 
+    /// The duration/length skip gates never apply when the polish was forced
+    /// explicitly or when an explicit output language requires a translation
+    /// pass — a translation the user configured must never be skipped.
+    static func skipGatesApply(force: Bool, outputLanguage: TranscriptPolishOutputLanguage) -> Bool {
+        !force && !outputLanguage.requiresTranslation
+    }
+
+    /// Output language as configured right now (Settings/menu-bar selection),
+    /// resolved through the same profile-aware path `process()` uses.
+    static func configuredOutputLanguage(defaults: UserDefaults = .standard) -> TranscriptPolishOutputLanguage {
+        let modeValue =
+            defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
+            ?? TranscriptPolishMode.automatic.rawValue
+        let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
+        let storedValue =
+            defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
+            ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
+        let selected = TranscriptPolishOutputLanguage(rawValue: storedValue) ?? .sameAsInput
+        return PromptContextManager.effectiveOutputLanguage(selected: selected, for: promptProfile)
+    }
+
     static func shouldSkipPolish(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
@@ -518,7 +537,10 @@ final class TranscriptPostProcessor {
         guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline() else { return false }
         guard enabled, polisher.isConfigured else { return false }
 
-        return force || (!Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(transcript))
+        guard Self.skipGatesApply(force: force, outputLanguage: Self.configuredOutputLanguage()) else {
+            return true
+        }
+        return !Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(transcript)
     }
 
     private func makeResult(

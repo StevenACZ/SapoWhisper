@@ -26,10 +26,6 @@ class OverlayWindowManager: ObservableObject {
     /// the session peak stays under the silence threshold for a few seconds.
     @Published private(set) var showsNoSpeechHint = false
 
-    /// True while the window fade-out runs, so the pill content can recede
-    /// (slight scale-down) together with the fade.
-    @Published private(set) var isDismissing = false
-
     /// True while the active dictation is a clipboard-edit session: the pill
     /// shows the edit label and hides the mode chips.
     @Published var isEditSession = false
@@ -64,10 +60,12 @@ class OverlayWindowManager: ObservableObject {
     private var hostingView: NSHostingView<RecordingOverlayView>?
     private var isAnimating = false
     private var presentationRevision: UInt = 0
-    private var sizeSettleTask: Task<Void, Never>?
     private var completedDismissTask: Task<Void, Never>?
     /// Last delivered transcription, reopened when the dock chip is clicked.
     private var lastCompletedText: String?
+    /// Global+local mouse monitors active while the completed pill is open,
+    /// so a click anywhere outside collapses it back into the dock chip.
+    private var outsideClickMonitors: [Any] = []
     private let audioLevelSubject = PassthroughSubject<Float, Never>()
     private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
     private var lastAudioLevelValue: Float = 0
@@ -75,6 +73,11 @@ class OverlayWindowManager: ObservableObject {
     private var meterSessionStartedAt: CFAbsoluteTime?
     private var meterInputSamples = 0
     private var meterPublishedSamples = 0
+
+    /// Detach/absorb spring for the droplet pill separating from the dock
+    /// chip: slightly bouncier than the active-swap morph so the drop reads
+    /// as physical.
+    static let dropletAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.7)
 
     // MARK: - Initialization
 
@@ -92,7 +95,6 @@ class OverlayWindowManager: ObservableObject {
         ensureWindow()
         guard let window = overlayWindow else { return }
         state = .docked
-        window.isDockAnchored = true
         window.applyConfiguredPosition()
         window.alphaValue = 1
         window.orderFrontRegardless()
@@ -113,7 +115,6 @@ class OverlayWindowManager: ObservableObject {
         presentationRevision &+= 1
         let revision = presentationRevision
         isAnimating = false
-        isDismissing = false
 
         window.applyConfiguredPosition(verbose: true)
         window.contentView?.layer?.removeAllAnimations()
@@ -162,14 +163,27 @@ class OverlayWindowManager: ObservableObject {
         displayedRecordingSecond = nil
         publishAudioLevel(0, force: true)
         showsNoSpeechHint = false
-        overlayWindow?.isDockAnchored = true
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+        withAnimation(Self.dropletAnimation) {
             state = .docked
         }
+        syncOutsideClickMonitors()
         SapoLog.overlay.info("Overlay collapsed to dock")
     }
 
-    /// Dock chip click: reopen the last transcription.
+    /// Dock chip click: toggle — reopen the last transcription when idle,
+    /// collapse the open result back into the chip otherwise.
+    func dockChipTapped() {
+        switch state {
+        case .docked:
+            expandDockToLastTranscription()
+        case .completed:
+            hide()
+        default:
+            break
+        }
+    }
+
+    /// Reopen the last transcription from the dock chip.
     func expandDockToLastTranscription() {
         guard case .docked = state else { return }
         guard let text = lastCompletedText, !text.isEmpty else { return }
@@ -177,6 +191,81 @@ class OverlayWindowManager: ObservableObject {
         // Fallback in case the pointer leaves before the pill registers its
         // own hover; hovering the pill cancels and re-arms this.
         scheduleCompletedDismiss(after: 4.0)
+    }
+
+    // MARK: - Outside-click collapse
+
+    /// While the completed pill is open, any click outside the overlay window
+    /// collapses it back into the dock chip — closing must not require
+    /// hunting the X button. Monitors exist only in that state so recording
+    /// and busy states are never dismissed by stray clicks.
+    private func syncOutsideClickMonitors() {
+        if case .completed = state {
+            installOutsideClickMonitors()
+        } else {
+            removeOutsideClickMonitors()
+        }
+    }
+
+    private func installOutsideClickMonitors() {
+        guard outsideClickMonitors.isEmpty else { return }
+
+        // Global monitor covers clicks landing in other apps; the local one
+        // covers this app's own windows (Settings, History, menu bar). Both
+        // hop through a MainActor task instead of assuming the calling
+        // thread, so a monitor delivered off-main can never crash.
+        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: { _ in
+                Task { @MainActor in
+                    OverlayWindowManager.shared.collapseIfClickLandedOutside()
+                }
+            })
+        {
+            outsideClickMonitors.append(globalMonitor)
+        }
+
+        if let localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: { event in
+                // No window filter: even clicks delivered to the overlay
+                // window may land on its transparent margin, and the
+                // collapse check hit-tests the actual content either way.
+                Task { @MainActor in
+                    OverlayWindowManager.shared.collapseIfClickLandedOutside()
+                }
+                return event
+            })
+        {
+            outsideClickMonitors.append(localMonitor)
+        }
+    }
+
+    private func removeOutsideClickMonitors() {
+        for monitor in outsideClickMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+        outsideClickMonitors.removeAll()
+    }
+
+    private func collapseIfClickLandedOutside() {
+        guard case .completed = state else { return }
+        guard let window = overlayWindow, let contentView = window.contentView else { return }
+
+        let screenPoint = NSEvent.mouseLocation
+        guard window.frame.contains(screenPoint) else {
+            hide()
+            return
+        }
+
+        // Inside the window rect: the fixed surface is mostly transparent
+        // margin, so only a click landing on actual content (pill or chip)
+        // keeps the pill open.
+        let windowPoint = window.convertPoint(fromScreen: screenPoint)
+        let viewPoint = contentView.convert(windowPoint, from: nil)
+        if contentView.hitTest(viewPoint) == nil {
+            hide()
+        }
     }
 
     // MARK: - Private Methods
@@ -190,6 +279,14 @@ class OverlayWindowManager: ObservableObject {
         hostingView = NSHostingView(rootView: overlayView)
 
         guard let hostingView else { return }
+
+        // The window is a fixed-size transparent surface, so the hosting
+        // view must not impose content-driven min/max window constraints.
+        // With the default sizing options and a greedy root view, AppKit
+        // queries sizeThatFits during its constraints pass, the animating
+        // view graph invalidates mid-query, and the re-entrant update throws
+        // NSInternalInconsistencyException — a hard crash.
+        hostingView.sizingOptions = []
 
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -226,19 +323,20 @@ class OverlayWindowManager: ObservableObject {
         }
 
         updateDisplayedSecond(for: newState)
-        isDismissing = false
-        overlayWindow?.isDockAnchored = newState.stateCategory == "docked"
         if state.isVisible {
-            // Visible-to-visible swaps morph the capsule with a spring; the
+            // Leaving the dock plays the bouncier droplet detach; swaps
+            // between active pills morph with the calmer spring while the
             // pill view sequences the content crossfade on top of it.
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            let leavingDock = state.stateCategory == "docked"
+            withAnimation(leavingDock ? Self.dropletAnimation : .spring(response: 0.35, dampingFraction: 0.8)) {
                 state = newState
             }
         } else {
             // Coming from hidden: lay out the pill at its final size with no
-            // animation; the view's entrance pop covers the appearance.
+            // animation; the window fade covers the appearance.
             state = newState
         }
+        syncOutsideClickMonitors()
         if case .recording = newState {
         } else {
             showsNoSpeechHint = false
@@ -252,48 +350,6 @@ class OverlayWindowManager: ObservableObject {
 
         if shouldShowOverlay(for: newState) {
             show()
-        }
-    }
-
-    /// Resizes the panel to the pill's measured size (reported by the SwiftUI
-    /// root) so long error messages grow the window instead of clipping at a
-    /// fixed frame; the window delegate re-anchors after every resize.
-    ///
-    /// Growth applies immediately (a window smaller than its content clips
-    /// the pill and its shadow mid-animation); shrinking waits until the size
-    /// reports settle — the window is transparent, so holding the larger
-    /// frame during the morph is invisible and avoids any hard cut.
-    func updateWindowSize(to size: CGSize) {
-        guard let window = overlayWindow else { return }
-        let target = NSSize(width: ceil(size.width), height: ceil(size.height))
-        guard target.width > 1, target.height > 1 else { return }
-
-        let current = window.frame.size
-        let envelope = NSSize(
-            width: max(current.width, target.width),
-            height: max(current.height, target.height)
-        )
-        if abs(envelope.width - current.width) > 0.5 || abs(envelope.height - current.height) > 0.5 {
-            window.setContentSize(envelope)
-        }
-
-        scheduleSizeSettle(to: target)
-    }
-
-    /// Trims the window down to the final reported size once the layout
-    /// animation stops emitting new sizes, and logs the settled frame once
-    /// (instead of one log per animation frame).
-    private func scheduleSizeSettle(to target: NSSize) {
-        sizeSettleTask?.cancel()
-        sizeSettleTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled, let self, let window = self.overlayWindow else { return }
-            if abs(window.frame.width - target.width) > 0.5 || abs(window.frame.height - target.height) > 0.5 {
-                window.setContentSize(target)
-            }
-            SapoLog.overlay.info(
-                "Overlay size settled \(Int(target.width), privacy: .public)x\(Int(target.height), privacy: .public)"
-            )
         }
     }
 

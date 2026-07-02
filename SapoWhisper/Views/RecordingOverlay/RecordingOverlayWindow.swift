@@ -35,19 +35,17 @@ enum OverlayPosition: String, CaseIterable, Identifiable {
 /// Pill horizontal posicionado en la parte inferior de la pantalla
 class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
 
-    /// While docked (idle mini chip) the bottom anchor hugs the screen edge;
-    /// active states keep the classic raised margin. Set by the manager on
-    /// every state change.
-    var isDockAnchored = false {
-        didSet {
-            guard isDockAnchored != oldValue else { return }
-            applyConfiguredPosition()
-        }
-    }
+    /// Fixed transparent surface large enough for every pill state (widest
+    /// completed transcript + glow). The window must NEVER resize: resizing
+    /// it during a SwiftUI transaction animation makes NSHostingView animate
+    /// the window frame from inside the display cycle, which throws
+    /// NSInternalInconsistencyException and crashes. Empty surface pixels are
+    /// fully transparent, so clicks there fall through to the app behind.
+    static let surfaceSize = NSSize(width: 640, height: 440)
 
-    init(contentView: NSView, width: CGFloat = 380, height: CGFloat = 48) {
+    init(contentView: NSView) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            contentRect: NSRect(origin: .zero, size: Self.surfaceSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -90,8 +88,22 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
         guard let screen = targetScreen() else { return }
 
         let screenFrame = screen.visibleFrame
+
+        // Fit the fixed surface on small screens; on normal displays this
+        // never changes the size (the whole point is a constant frame).
+        let fitted = NSSize(
+            width: min(Self.surfaceSize.width, screenFrame.width - 12),
+            height: min(Self.surfaceSize.height, screenFrame.height - 12)
+        )
+        if abs(frame.width - fitted.width) > 0.5 || abs(frame.height - fitted.height) > 0.5 {
+            setContentSize(fitted)
+        }
+
+        // The dock chip is the permanent fixture hugging the screen edge, so
+        // the window always anchors tight; active pills float above the chip
+        // via the content layout, not via a window margin.
+        let margin: CGFloat = 6
         let windowFrame = self.frame
-        let margin: CGFloat = isDockAnchored ? 6 : 60
 
         let x = screenFrame.midX - windowFrame.width / 2
         var y: CGFloat
@@ -104,8 +116,6 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
             y = screenFrame.midY - windowFrame.height / 2
         }
 
-        // Tall states (expanded transcript, wrapped chips) must never push
-        // the pill past the visible frame — clamp both edges.
         let minY = screenFrame.minY + 6
         let maxY = max(minY, screenFrame.maxY - windowFrame.height - 6)
         y = min(max(y, minY), maxY)

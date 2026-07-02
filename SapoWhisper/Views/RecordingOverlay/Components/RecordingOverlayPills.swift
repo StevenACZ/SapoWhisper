@@ -296,19 +296,33 @@ struct CompletedPillView: View {
     }
 }
 
-/// Idle resting state: a slim always-visible bar at the anchor position.
-/// Hover only highlights it as an affordance — a click reopens the last
-/// transcription, so a stray mouse pass at the screen edge does nothing.
+/// Slim always-visible bar at the anchor position — the overlay's permanent
+/// resting fixture the droplet pill detaches from. Hover only highlights it
+/// as an affordance; a click toggles the last transcription open/closed, so a
+/// stray mouse pass at the screen edge does nothing.
 struct DockedChipView: View {
+    /// True while a droplet pill floats detached above the chip.
+    var isExpanded: Bool = false
     var onTap: () -> Void
 
     @State private var isHovering = false
+    @State private var stretch: CGFloat = 1
 
     var body: some View {
         Capsule()
-            .fill(Color.sapoGreen.opacity(isHovering ? 0.95 : 0.65))
+            .fill(Color.sapoGreen.opacity(isExpanded ? 0.9 : (isHovering ? 0.95 : 0.65)))
             .frame(width: 24, height: 4)
             .frame(width: 34, height: 8)
+            // Same ~46×12 footprint the chip had when it shared the pill's
+            // background, now self-contained.
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.25), radius: 4, y: 3)
+            )
+            .scaleEffect(x: 1, y: stretch)
             .contentShape(Rectangle())
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -316,7 +330,23 @@ struct DockedChipView: View {
                 }
             }
             .onTapGesture(perform: onTap)
+            .onChange(of: isExpanded) { _, _ in
+                splashBounce()
+            }
             .help("overlay.dock_last".localized)
+    }
+
+    /// Squash-and-stretch splash as the droplet detaches from or falls back
+    /// into the chip — sells the "drop separating" read on both directions.
+    private func splashBounce() {
+        withAnimation(.spring(response: 0.14, dampingFraction: 0.4)) {
+            stretch = 1.75
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
+                stretch = 1
+            }
+        }
     }
 }
 

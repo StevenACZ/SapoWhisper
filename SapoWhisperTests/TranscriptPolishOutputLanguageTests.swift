@@ -49,6 +49,15 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         }
     }
 
+    /// An explicit output language must bypass the duration/length skip gates:
+    /// a short dictation with output=English still needs the translation pass,
+    /// otherwise the raw Spanish transcript ships silently (skipped_duration).
+    func testExplicitOutputLanguageBypassesSkipGates() {
+        XCTAssertFalse(TranscriptPostProcessor.skipGatesApply(force: false, outputLanguage: .english))
+        XCTAssertFalse(TranscriptPostProcessor.skipGatesApply(force: true, outputLanguage: .sameAsInput))
+        XCTAssertTrue(TranscriptPostProcessor.skipGatesApply(force: false, outputLanguage: .sameAsInput))
+    }
+
     func testTranslatePromptUsesSelectedOutputLanguageWithoutCoercion() {
         let translatePrompt = PromptContextManager.defaultPrompts.first {
             $0.id == TranscriptPolishMode.translateEnglish.rawValue

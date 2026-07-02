@@ -6,9 +6,26 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Quick mode chips while recording** — the recording pill shows the user's pinned prompt profiles (max 3, starred in Settings → Prompts) plus a translation chip. Selections are sticky across dictations, chips act as toggles back to the base clean-up mode, and an explicit chip tap forces AI polish even on dictations short enough to skip it.
+- **Interactive result pill** — the completed overlay shows the full polished text with copy and close buttons, re-polish chips that update the clipboard and History without re-pasting, and a mic button to dictate corrections over the shown text until it reads right. Hovering pauses the auto-dismiss.
+- **Clipboard voice edit (⌥⇧Space)** — copy any text, speak an instruction, and the AI rewrites the copied text onto the clipboard.
+- **Crash audio recovery** — recordings orphaned by an abrupt quit become re-transcribable History entries at next launch (repairing the truncated WAV header), and cancelling with Esc now confirms the audio was saved to History.
+- **Quick selectors in the menu bar** — AI mode and output language can be switched directly from the popover.
+
 ### Changed
 
+- **Overlay redesign: dock chip + droplet pill** — the dock chip is now a permanent slim bar hugging the screen edge, and every active state (recording, transcribing, result, errors) is a separate droplet pill that detaches from the chip when it appears and is absorbed back on dismiss, with squash-and-stretch chip feedback. This replaces the old background morph that could show an empty half-grown pill with clipped buttons.
+- **Click outside to dismiss** — with a result open, clicking anywhere outside the pill collapses it back into the dock chip; clicking the chip toggles the last transcription open and closed.
+- **Explicit output language always polishes** — when an output language is selected, the minimum-duration and short-text skip gates no longer bypass AI polish, so short dictations get translated instead of silently shipping in the spoken language. The translation prompt is also stricter about leaving no source-language words behind.
 - Tightened `make install-dev` so the local reinstall path builds once, verifies Apple Development signing, and refuses ad-hoc installs that would reset macOS permission grants.
+
+### Fixed
+
+- **Overlay crash during animations** — the recording overlay now lives on a fixed transparent surface instead of a window that tracks content size; resizing the window during SwiftUI transition animations made AppKit throw from inside the display cycle and crash the app as soon as a recording started.
+- **Translate profile with output language on Auto** — selecting a translation profile without an explicit target no longer translates into the same language; it auto-selects the target language (English by default).
+- **Result pill layout** — mode chips render in a single stable row (the flow layout could place a chip outside the pill background), and the overlay window stays clamped inside the visible screen.
 
 ## [2.5.1] - 2026-06-27
 

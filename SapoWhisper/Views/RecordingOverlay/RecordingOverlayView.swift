@@ -7,23 +7,87 @@
 
 import SwiftUI
 
-/// Vista principal del overlay de grabacion - pill horizontal en la parte inferior
+/// Vista principal del overlay de grabacion. Two-piece layout: the dock chip
+/// is a permanent fixture hugging the screen edge, and every active state
+/// (recording, transcribing, completed, ...) is a separate "droplet" pill that
+/// detaches from the chip when it appears and is absorbed back on dismiss.
+/// Because the droplet enters as one finished unit (background + content
+/// together), there is never an empty background morph or content sticking
+/// out of a half-grown pill.
 struct RecordingOverlayView: View {
 
     @ObservedObject var manager: OverlayWindowManager
 
     @State private var scale: CGFloat = 1.0
-    @State private var contentOpacity: Double = 1.0
-    @State private var entranceOffset: CGFloat = 0
 
     private var stateCategory: String { manager.state.stateCategory }
-    private var isDocked: Bool { stateCategory == "docked" }
+    private var isActive: Bool { stateCategory != "hidden" && stateCategory != "docked" }
+    /// The chip hugs the configured screen edge; the droplet detaches toward
+    /// the screen center, so a top-anchored overlay flips the stack.
+    private var chipOnTop: Bool { OverlayPosition.configured == .top }
+
+    /// Where the content rests inside the fixed transparent surface.
+    private var surfaceAlignment: Alignment {
+        switch OverlayPosition.configured {
+        case .top: return .top
+        case .center: return .center
+        case .bottom: return .bottom
+        }
+    }
 
     var body: some View {
-        // The ZStack hosts the outgoing and incoming pill contents during a
-        // state swap so the capsule morphs once while the texts hand off
-        // sequentially (old fades out fast, new fades in right after) instead
-        // of crushing both inside the resizing capsule.
+        VStack(spacing: 0) {
+            if chipOnTop {
+                chip
+            }
+            if isActive {
+                activePill
+                    // Small fixed gap to the chip: at the start of the detach
+                    // the tiny droplet reads as connected, and once grown it
+                    // reads as two separated parts with the chip peeking out.
+                    .padding(chipOnTop ? .top : .bottom, 8)
+                    .transition(dropletTransition)
+            }
+            if !chipOnTop {
+                chip
+            }
+        }
+        .fixedSize()
+        // Slim transparent inset on the chip side so its shadow still renders
+        // while the chip visually hugs the screen edge.
+        .padding(chipOnTop ? .top : .bottom, 4)
+        // The hosting window is a fixed transparent surface that NEVER
+        // resizes: window resizes during SwiftUI transaction animations made
+        // NSHostingView animate the window frame from inside the display
+        // cycle (updateAnimatedWindowSize), which throws and crashes the app.
+        // The content simply lays out against the configured edge; empty
+        // surface pixels are alpha-transparent, so clicks there fall through
+        // to whatever is behind the window.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: surfaceAlignment)
+        .onChange(of: stateCategory) { oldValue, newValue in
+            // Micro-bounce only on active-to-active swaps; dock transitions
+            // are carried entirely by the droplet detach/absorb.
+            guard isActive, oldValue != "hidden", oldValue != "docked" else { return }
+            microBounce()
+        }
+    }
+
+    private var chip: some View {
+        DockedChipView(isExpanded: isActive, onTap: { manager.dockChipTapped() })
+    }
+
+    /// The droplet grows out of the chip's edge and collapses back into it:
+    /// scale is anchored at the chip side and stays fully opaque, so the
+    /// enter/exit reads as a drop separating from (and being absorbed by)
+    /// the resting chip rather than a crossfade.
+    private var dropletTransition: AnyTransition {
+        .scale(scale: 0.04, anchor: chipOnTop ? .top : .bottom)
+    }
+
+    private var activePill: some View {
+        // The ZStack hosts the outgoing and incoming pill contents during an
+        // active-to-active swap so the pill morphs once while the texts hand
+        // off sequentially (old fades out fast, new fades in right after).
         ZStack {
             contentForState
                 .id(stateCategory)
@@ -34,80 +98,17 @@ struct RecordingOverlayView: View {
                     )
                 )
         }
-        .padding(.horizontal, isDocked ? 6 : 20)
-        .padding(.vertical, isDocked ? 2 : 12)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
         .background(
             // Continuous rounded rect instead of a capsule: multi-line states
             // (chips, expanded transcript) made the capsule's semicircular
-            // ends huge, reading as wasted width. The docked chip shares the
-            // same shape so expand/collapse reads as one surface morphing.
-            RoundedRectangle(cornerRadius: isDocked ? 6 : 26, style: .continuous)
+            // ends huge, reading as wasted width.
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: isDocked ? 4 : 10, y: 3)
-        )
-        .fixedSize()
-        // Transparent margin inside the auto-sized window so the shadow, the
-        // glow stroke, and the micro-bounce overshoot are never clipped at
-        // the window edge (a clipped shadow reads as a hard rectangle).
-        .padding(.horizontal, isDocked ? 10 : 36)
-        .padding(.vertical, isDocked ? 6 : 26)
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: OverlayPillSizeKey.self, value: proxy.size)
-            }
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
         )
         .scaleEffect(scale)
-        .opacity(contentOpacity)
-        .offset(y: entranceOffset)
-        .onChange(of: stateCategory) { oldValue, newValue in
-            guard newValue != "hidden" else { return }
-            if oldValue == "hidden" {
-                runEntrance()
-            } else {
-                microBounce()
-            }
-        }
-        .onChange(of: manager.isDismissing) { _, dismissing in
-            if dismissing {
-                withAnimation(.easeIn(duration: 0.22)) {
-                    scale = 0.95
-                }
-            } else {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    scale = 1.0
-                }
-            }
-        }
-        .onAppear {
-            if stateCategory != "hidden" {
-                runEntrance()
-            }
-        }
-        .onPreferenceChange(OverlayPillSizeKey.self) { [manager] size in
-            // The window tracks the pill's laid-out size, so long error
-            // messages grow it instead of being clipped at a fixed frame.
-            Task { @MainActor in
-                manager.updateWindowSize(to: size)
-            }
-        }
-    }
-
-    /// Pop-in played on every appearance (the window is reused, so onAppear
-    /// alone only covers the first one): start slightly small, transparent and
-    /// low, then spring to rest.
-    private func runEntrance() {
-        var snap = Transaction()
-        snap.disablesAnimations = true
-        withTransaction(snap) {
-            scale = 0.92
-            contentOpacity = 0
-            entranceOffset = 6
-        }
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.75)) {
-            scale = 1.0
-            contentOpacity = 1.0
-            entranceOffset = 0
-        }
     }
 
     /// Micro-bounce effect when state changes — subtle scale pop for tactile feedback
@@ -127,11 +128,8 @@ struct RecordingOverlayView: View {
     @ViewBuilder
     private var contentForState: some View {
         switch manager.state {
-        case .hidden:
+        case .hidden, .docked:
             EmptyView()
-
-        case .docked:
-            DockedChipView(onTap: { manager.expandDockToLastTranscription() })
 
         case .recording(let duration):
             RecordingPillView(
@@ -176,14 +174,5 @@ struct RecordingOverlayView: View {
         case .deviceDetected(let deviceName):
             DeviceDetectedPillView(deviceName: deviceName)
         }
-    }
-}
-
-/// Reports the pill's laid-out size so the hosting window can match it.
-private nonisolated struct OverlayPillSizeKey: PreferenceKey {
-    static let defaultValue: CGSize = .zero
-
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
     }
 }

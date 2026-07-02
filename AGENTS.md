@@ -52,6 +52,8 @@ addresses, and machine-specific workflow details.
 
 ## Guardrails
 
+- The recording overlay window is a fixed-size transparent surface (`RecordingOverlayWindow.surfaceSize`); never resize it from content size. Content-driven window resizing during SwiftUI transition animations makes `NSHostingView` mutate the window frame inside the AppKit display cycle, which throws and crashes the app. Keep `hostingView.sizingOptions = []`, anchor content with alignment, and let transparent pixels pass clicks through.
+- An explicit AI polish output language must always run the polish step: the duration/length skip gates only apply to same-as-input (`TranscriptPostProcessor.skipGatesApply`). Skipping would silently ship the untranslated transcript.
 - Do not remove the WhisperKit/Deepgram/ElevenLabs/Local AI Server engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route changes.
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.
