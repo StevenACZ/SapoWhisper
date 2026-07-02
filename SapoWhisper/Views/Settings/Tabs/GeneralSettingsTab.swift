@@ -32,7 +32,6 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.overlayPosition) private var overlayPosition =
         OverlayPosition.bottom.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
@@ -181,11 +180,7 @@ struct GeneralSettingsTab: View {
     /// translation is off. Mirrors the effective target in TranscriptPostProcessor.
     private var aiTranslationTarget: TranscriptPolishOutputLanguage? {
         guard aiPolishEnabled else { return nil }
-        let selectedLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-        let language = PromptContextManager.effectiveOutputLanguage(
-            selected: selectedLanguage,
-            for: PromptContextManager.shared.promptProfile(for: aiPolishMode)
-        )
+        let language = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
         return language.requiresTranslation ? language : nil
     }
 

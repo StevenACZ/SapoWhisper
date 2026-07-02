@@ -29,13 +29,15 @@ addresses, and machine-specific workflow details.
 
 - AI polish is optional and must never block dictation: provider failure, timeout, missing configuration, or empty output keeps the transcript usable.
 - Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
-- Keep prompts conservative: no invented details and preserve technical terms. The polish prompt is dictionary-first: keyterms plus correction targets are canonical spellings that map mishearings, are never translated, and are never injected into text that does not mention them. Benchmark prompt changes against a small local model (4B-class) before shipping.
+- There is exactly ONE polish mode: a single adaptive prompt (no mode picker, no prompt profiles, no duration gates). It deletes filler and duplicated ideas, keeps every instruction/name/number, respects tone, and never converts prose into invented lists. Do not reintroduce per-mode prompts or skip gates — silent gates read as "the AI didn't work".
+- The prompt is dictionary-first: keyterms plus correction targets are canonical spellings that map mishearings, are never translated, and are never injected into text that does not mention them. Benchmark prompt changes case-by-case against real dictation history on a small local model (4B-class) before shipping; never tune by feel.
+- Long transcripts are polished in sentence-boundary chunks (`TranscriptPostProcessor.splitIntoChunks`): past ~2k characters small models under-clean or summarize, and chunking restores medium-length quality. Keep the chunk seams on sentence boundaries.
 - Local STT engines (WhisperKit, Local AI Server) receive the vocabulary as a Whisper-style initial prompt via `VocabularyManager.initialPromptText()` — canonical forms only, never misheard variants.
 - Output language belongs to AI polish only; transcription language is recognition context, not translation.
 - The instruction-response guard's cross-language cue check must stay disabled when an explicit output language is set (`translationExpected`): faithful translations legitimately lose source-language cue words, and rejecting them ships the untranslated text.
-- The output-language picker is the source of truth for translation targets in every polish mode. Do not reintroduce per-prompt force-English state; translation profiles should read the shared target language and still allow "same as audio".
+- The output-language picker (Settings + overlay translation chip) is the sole source of truth for translation targets. Do not reintroduce per-prompt force-English state.
 - The hard-token guard is retry-only. It may ask the model to regenerate up to 3 total attempts when URLs, emails, vocabulary, or identifier-like tokens drift. Ratio, numbers, generic capitalization, and normal rewording must not raw-fallback an AI polish.
-- `AIPolishMemoryManager` stores only reviewable correction suggestions; only accepted corrections may feed future polish context.
+- `AIPolishMemoryManager` stores only reviewable correction suggestions; accepted corrections merge into the replacements dictionary for future polish requests.
 
 ## Private Local Workflows
 

@@ -162,8 +162,6 @@ struct RecordingOverlayView: View {
                 onPause: { manager.onPauseToggle?() },
                 audioLevelPublisher: manager.audioLevelPublisher,
                 showsNoSpeechHint: manager.showsNoSpeechHint,
-                isEditSession: manager.isEditSession,
-                onModeSelected: { manager.onQuickModeSelected?($0) },
                 onTranslationToggled: { manager.onQuickTranslationToggled?($0) }
             )
 
@@ -183,7 +181,6 @@ struct RecordingOverlayView: View {
             CompletedPillView(
                 text: text,
                 onRepolish: { manager.onRepolishRequested?() },
-                onVoiceEdit: { manager.onVoiceEditRequested?() },
                 onClose: { manager.hide() }
             )
             .onHover { hovering in

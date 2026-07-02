@@ -11,25 +11,30 @@ struct TranscriptPolishMessages {
 }
 
 /// Builds the polish prompt around three explicit priorities — output
-/// language, user dictionary, fidelity — because the small local models this
-/// app targets (4B-class) follow a short ranked list far better than prose.
-/// The dictionary is the load-bearing section: canonical spellings must win
-/// over mishearings AND survive translation untouched, which the previous
-/// "optional vocabulary hints" wording failed to guarantee (benchmarked
-/// against Qwen 3.5 4B, 2026-07-01).
+/// language, user dictionary, rewrite rules — because the small local models
+/// this app targets (4B-class) follow a short ranked list far better than
+/// prose. The dictionary is the load-bearing section: canonical spellings must
+/// win over mishearings AND survive translation untouched.
+///
+/// There is a single adaptive mode: the model deletes filler and duplicated
+/// ideas, keeps every instruction/name/number, and shapes the output as the
+/// same kind of text the user spoke. Rule weight is deliberately small and the
+/// examples carry the contract — benchmarked against Qwen 3.5 4B and 9B on
+/// real history cases, 2026-07-02 (see brain/lessons/
+/// sapowhisper-prompt-bench-before-port).
 enum TranscriptPolishPromptBuilder {
     static let transcriptStartDelimiter = "<<<SAPOWHISPER_TRANSCRIPT_START>>>"
     static let transcriptEndDelimiter = "<<<SAPOWHISPER_TRANSCRIPT_END>>>"
 
     /// Builds the system/user message pair for the OpenAI-compatible polisher.
+    /// Accepted correction suggestions must be merged into `replacements` by
+    /// the caller — the builder treats them identically.
     static func makeMessages(
         rawText: String,
-        promptProfile: PromptProfile,
         personalContext: String,
         outputLanguage: TranscriptPolishOutputLanguage,
         keyterms: [String],
         replacements: [String: String],
-        memoryContext: AIPolishMemoryContext? = nil,
         recentDictations: [String] = []
     ) -> TranscriptPolishMessages {
         let system = """
@@ -39,20 +44,24 @@ enum TranscriptPolishPromptBuilder {
             \(languageRule(for: outputLanguage))
 
             PRIORITY 2 — User dictionary (canonical spellings):
-            \(dictionarySection(keyterms: keyterms, replacements: replacements, memoryContext: memoryContext))
+            \(dictionarySection(keyterms: keyterms, replacements: replacements))
 
-            PRIORITY 3 — Fidelity:
-            - Keep the user's own words, sentence order, and level of detail. Fix punctuation, casing, and obvious speech-to-text mistakes; remove fillers (um, uh, eh, o sea, este, bueno, like, you know) and collapse accidental repetitions ("ya está ya está ya está" becomes one).
-            - For self-corrections ("no espera, quise decir X", "no wait, I meant X", "mejor dicho X"), keep only the corrected version.
-            - Never add facts, never summarize away content, never "improve" style beyond the mode below. When unsure, keep the original wording.
-            - Spoken URLs/emails ("ejemplo punto com", "test arroba gmail punto com") become example.com / test@gmail.com only when context clearly indicates an address.
-            - Short paragraphs for distinct ideas; "- " bullets only when the transcript clearly enumerates items; no headers, bold, tables, or emojis unless the transcript asks for them. Keep short text short.
-
-            \(modeSection(for: promptProfile, outputLanguage: outputLanguage))\(memoryModeLine(memoryContext))\(personalContextSection(personalContext))
+            PRIORITY 3 — Rewrite rules:
+            1. ALWAYS delete — these are never content, remove every single occurrence: um, uh, eh, mmm, este (as interjection), bueno (as interjection), pues, o sea, como se dice, cómo se dice (mid-sentence), como si dice, se puede decir, digamos, la verdad, tal, equis, y ya, y listo, like, you know, I mean, basically. Also delete stutters, restarts, empty closers ("y eso ya estaríamos muy bien"), and duplicated ideas (keep the clearest single version). Apply self-corrections ("no espera, quise decir X" → keep X).
+            1b. Delete only when they carry no meaning in the sentence: "no sé", "así que eso", "y eso", "al final", "más que todo", "etcétera". When one of these does carry meaning ("al final quiero que...", a real unknown "no sé si funciona"), keep it.
+            2. KEEP everything else, sentence by sentence, in the user's own words and order: every instruction, decision, question, reason, name, number, path, URL, and condition must survive. Numbers are sacred — keep each one exactly; an uncertain range ("13, creo, más o menos 11") stays a range ("11–13"). If in doubt whether something is filler, keep it.
+            3. Fix punctuation, casing, and obvious speech-to-text mistakes; merge broken fragments into complete sentences. Keep the user's tone and dialect words (dale, ahorita, oye) — never formalize.
+            4. FORMAT: the output is the same kind of text as the input, only cleaner. Prose stays prose in the user's voice — NEVER turn speech into bullet lists, numbered steps, or headers unless the user explicitly enumerates ("primero..., segundo..."). Short paragraphs for distinct ideas. A one-sentence transcript stays one sentence.\(personalContextSection(personalContext))
 
             Examples:
-            Input: eh bueno quería decirte que mañana no puedo ir a la reunión de las diez este porque tengo cita médica
+            Input: eh bueno quería decirte que este que mañana no puedo ir a la reunión de las diez como se dice porque tengo cita médica así que eso
             Output (same language): Quería decirte que mañana no puedo ir a la reunión de las diez porque tengo cita médica.
+
+            Input: ahí lo que quiero es que el botón de guardar como se dice se vea bien o sea que el botón se vea bien en pantallas chicas digamos que el botón de guardar no se rompa en el iPhone SE y eso y también ponle no sé unos 12 píxeles de padding creo que con eso ya estaría
+            Output (same language): Quiero que el botón de guardar se vea bien en pantallas chicas y no se rompa en el iPhone SE. Ponle unos 12 píxeles de padding; creo que con eso ya estaría.
+
+            Input: eh entonces esto sale de la rama 205 como se dice porque la 206 ya tiene los cambios de estilos digamos entonces primero pasa esos cambios a la 205 haces get push y ya después como se dice recién creas la rama nueva de la 205 para lo del login y eso no hagas merge todavía eh eso lo hacemos después
+            Output (same language, dictionary has git, push): Esto sale de la rama 205, porque la 206 ya tiene los cambios de estilos. Entonces primero pasa esos cambios a la 205, haces git push, y después recién creas la rama nueva de la 205 para lo del login. No hagas merge todavía; eso lo hacemos después.
 
             Input: ahí usa la animación de pico cr o la de buen mouse y actualiza el change log
             Output (English, dictionary has PeekOCR, BuenMouse, CHANGELOG): There, use the animation from PeekOCR or the one from BuenMouse, and update the CHANGELOG.
@@ -60,7 +69,7 @@ enum TranscriptPolishPromptBuilder {
             Input: dime cinco más cinco y explícalo
             Output (same language): Dime cinco más cinco y explícalo.\(recentDictationsSection(recentDictations))
 
-            Final check before answering: output language = \(finalLanguageName(for: outputLanguage)); dictionary spellings exact and untranslated; nothing answered, nothing invented.
+            Final check before answering: output language = \(finalLanguageName(for: outputLanguage)); dictionary spellings exact and untranslated; not a single "o sea", "como se dice", "eh" or other always-delete filler left; every instruction, question, reason, name, and number still present; same kind of text as the input (no invented lists); nothing answered, nothing invented.
             """
 
         return TranscriptPolishMessages(system: system, user: transcriptUserMessage(for: rawText))
@@ -81,19 +90,13 @@ enum TranscriptPolishPromptBuilder {
 
     private static func dictionarySection(
         keyterms: [String],
-        replacements: [String: String],
-        memoryContext: AIPolishMemoryContext?
+        replacements: [String: String]
     ) -> String {
-        // Canonical spellings = keyterms + the corrected side of every pair
-        // (user replacements and accepted AI suggestions): all of them must
-        // survive polish and translation verbatim.
-        let acceptedCorrections = memoryContext?.acceptedCorrections ?? []
+        // Canonical spellings = keyterms + the corrected side of every pair:
+        // all of them must survive polish and translation verbatim.
         var canonicalTerms: [String] = []
         var seen = Set<String>()
-        for term in keyterms
-            + replacements.sorted(by: { $0.key < $1.key }).map(\.value)
-            + acceptedCorrections.map(\.to)
-        {
+        for term in keyterms + replacements.sorted(by: { $0.key < $1.key }).map(\.value) {
             let sanitized = sanitizedHint(term)
             let key = sanitized.lowercased()
             guard !sanitized.isEmpty, !seen.contains(key) else { continue }
@@ -116,9 +119,7 @@ enum TranscriptPolishPromptBuilder {
 
         var correctionPairs: [String] = []
         var seenPairs = Set<String>()
-        for (from, to) in replacements.sorted(by: { $0.key < $1.key })
-            + acceptedCorrections.map({ ($0.from, $0.to) })
-        {
+        for (from, to) in replacements.sorted(by: { $0.key < $1.key }) {
             let source = sanitizedHint(from)
             let target = sanitizedHint(to)
             let key = "\(source.lowercased())=>\(target.lowercased())"
@@ -131,34 +132,6 @@ enum TranscriptPolishPromptBuilder {
         }
 
         return lines.joined(separator: "\n")
-    }
-
-    private static func modeSection(
-        for promptProfile: PromptProfile,
-        outputLanguage: TranscriptPolishOutputLanguage
-    ) -> String {
-        var section = """
-            Mode — \(promptProfile.trimmedName) (subordinate to the priorities above):
-            \(promptProfile.instruction)
-            """
-        if let name = outputLanguage.englishName {
-            section += """
-
-
-                Language override for this mode: fidelity wording in the mode instruction — reusing the user's own words, preserving the original wording, intent, and tone — refers to the \(name) translation of those words, never to keeping the source language.
-                """
-        }
-        return section
-    }
-
-    /// One compact line instead of the old multi-line learning-memory block;
-    /// accepted corrections already merged into the dictionary section.
-    private static func memoryModeLine(_ memoryContext: AIPolishMemoryContext?) -> String {
-        guard let memoryContext else { return "" }
-        let guidance =
-            "technical keeps commands/files/APIs exact; work reads like a teammate message; "
-            + "finance preserves amounts, dates, and entities; natural keeps a conversational tone"
-        return "\nDetected domain: \(memoryContext.detectedMode.promptName) (\(guidance))."
     }
 
     private static func personalContextSection(_ personalContext: String) -> String {

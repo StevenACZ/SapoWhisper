@@ -26,10 +26,6 @@ class OverlayWindowManager: ObservableObject {
     /// the session peak stays under the silence threshold for a few seconds.
     @Published private(set) var showsNoSpeechHint = false
 
-    /// True while the active dictation is a clipboard-edit session: the pill
-    /// shows the edit label and hides the mode chips.
-    @Published var isEditSession = false
-
     let audioLevelPublisher: AnyPublisher<Float, Never>
 
     // MARK: - Callbacks
@@ -40,19 +36,12 @@ class OverlayWindowManager: ObservableObject {
     /// Callback for retry on failure
     var onRetry: (() -> Void)?
 
-    /// A mode chip was tapped while recording (defaults already updated).
-    var onQuickModeSelected: ((String) -> Void)?
-
     /// The translation chip was toggled while recording (defaults already updated).
     var onQuickTranslationToggled: ((Bool) -> Void)?
 
-    /// A chip was tapped on the completed pill: re-polish the last dictation
-    /// with the freshly stored mode/language defaults.
+    /// The translation chip was toggled on the completed pill: re-polish the
+    /// last dictation with the freshly stored language default.
     var onRepolishRequested: (() -> Void)?
-
-    /// Mic button on the completed pill: dictate an instruction applied to
-    /// the shown text (iterate until the text is right).
-    var onVoiceEditRequested: (() -> Void)?
 
     // MARK: - Private Properties
 

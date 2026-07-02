@@ -187,20 +187,10 @@
 "ai.polish.enable" = "Mejorar texto con IA";
 "ai.polish.enable_subtitle" = "Refina dictados largos con IA.";
 "ai.polish.enable_active" = "Activo — la IA refina dictados largos.";
-"ai.polish.enable_active_after" = "Activo — se aplica despues de %@ de hablar.";
 "ai.polish.enable_active_always" = "Activo — se aplica a cada transcript elegible.";
-"ai.polish.mode" = "Modo";
-"ai.polish.mode_desc" = "Usa %@ para ordenar y limpiar el texto antes de copiarlo.";
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_desc" = "Genera el texto en %@.";
 "ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
-"ai.polish.minimum_duration" = "Activar desde";
-"ai.polish.minimum_duration.always" = "Siempre";
-"ai.polish.minimum_duration.20" = "20 segundos";
-"ai.polish.minimum_duration.30" = "30 segundos";
-"ai.polish.minimum_duration_desc.always" = "Corre en cualquier transcript que no sea trivialmente corto.";
-"ai.polish.minimum_duration_desc.20" = "Salta la mejora en grabaciones menores de 20 segundos.";
-"ai.polish.minimum_duration_desc.30" = "Salta la mejora en grabaciones menores de 30 segundos.";
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad. Si se alteran tokens obvios como links o términos guardados, SapoWhisper le pide a la IA que reintente antes de aplicar el resultado.";
 "ai.provider.section" = "Proveedor";
 "ai.provider.endpoint" = "Endpoint";
@@ -248,7 +238,6 @@
 "ai.mode.ai" = "Modo IA";
 "ai.mode.work" = "Trabajo";
 "ai.mode.translate_english" = "Traducir";
-"ai.mode.translate_target" = "Traducir a %@";
 "ai.output_language.same" = "Mismo idioma del audio";
 "ai.status.none" = "No aplicada";
 "ai.status.applied" = "Aplicada";
@@ -386,6 +375,7 @@
 "overlay.ai_polishing" = "Mejorando con IA...";
 "overlay.completed" = "¡Listo!";
 "overlay.copied" = "Copiado";
+"overlay.edit_mode" = "Edición por voz";
 "overlay.device_ready" = "Listo para grabar";
 
 /* Sound Settings */
@@ -496,20 +486,9 @@
 
 /* Prompts & Context */
 "prompts.title" = "Prompts y contexto";
-"prompts.project_prompts" = "Prompts por proyecto o destino";
-"prompts.project_prompts_desc" = "Crea modos editables para Codex, Claude Code, Slack, issues o cualquier flujo de dictado.";
-"prompts.add_prompt" = "Agregar prompt";
-"prompts.name" = "Nombre";
-"prompts.description" = "Descripción";
-"prompts.instruction_hint" = "Esta instrucción se envía a la IA junto con el contexto personal, vocabulario y transcript crudo.";
-"prompts.duplicate_prompt" = "Duplicar";
-"prompts.prompt_duplicated" = "Prompt duplicado.";
-"prompts.base_rules_note" = "Todos los modos heredan las reglas base de fidelidad: nunca parafrasear, nunca añadir datos. Tu instrucción se aplica sobre ellas.";
-"prompts.translation_target" = "Destino de traducción";
-"prompts.translation_target_hint" = "Traduce el transcript final a %@.";
-"prompts.translation_target_same_hint" = "Mantiene el transcript final en el idioma del audio.";
-"prompts.translate_target_desc" = "Traduce el transcript final a %@.";
-"prompts.translate_same_desc" = "Mantiene el transcript final en el idioma del audio.";
+"prompts.personal_context" = "Contexto personal";
+"prompts.personal_context_desc" = "Cuéntale a la IA quién eres y qué herramientas usas, para que reconozca tus términos técnicos.";
+"prompts.personal_context_hint" = "Se envía con cada mejora junto a tu vocabulario. Mantenlo corto.";
 "prompts.preview_polish" = "Probar el polish";
 "prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia este modo.";
 "prompts.preview_run" = "Pulir ejemplo";
@@ -518,13 +497,8 @@
 "prompts.preview_needs_provider" = "Configura el proveedor de IA arriba para ejecutar una prueba.";
 "prompts.preview_sample" = "eh bueno quería confirmarte que mañana subo el fix a la rama feature login y luego corro npm run build";
 "prompts.save_prompt" = "Guardar";
-"prompts.delete_prompt" = "Eliminar";
 "prompts.prompt_saved" = "Prompt guardado.";
-"prompts.prompt_deleted" = "Prompt eliminado.";
 "prompts.unsaved_changes" = "Cambios sin guardar";
-"prompts.delete_confirm_title" = "¿Eliminar «%@»?";
-"prompts.delete_confirm_message" = "Este prompt se eliminará permanentemente.";
-"prompts.delete_confirm_action" = "Eliminar";
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrar configuración";
@@ -633,17 +607,6 @@
 "overlay.copied_again" = "Copiado otra vez";
 "overlay.copy" = "Copiar";
 "overlay.close" = "Cerrar";
-"overlay.repolish_hint" = "Mejorar con:";
-"overlay.edit_mode" = "Editando texto copiado…";
 "overlay.cancelled_saved" = "Cancelado — audio guardado en Historial";
-"menu.edit_clipboard" = "Mejorar portapapeles por voz";
-"settings.edit_hotkey_desc" = "Copia cualquier texto, pulsa el atajo y dicta una instrucción: la IA reescribe el portapapeles con el resultado.";
-"settings.edit_hotkey_note" = "Atajo fijo. Requiere la Mejora con IA activada.";
 "settings.welcome_tour_open" = "Abrir";
-"edit.error_empty_clipboard" = "No hay texto en el portapapeles: copia algo primero";
-"edit.error_not_configured" = "Activa la mejora IA y configura un proveedor para editar por voz";
-"edit.error_too_long" = "El texto copiado es demasiado largo para editar por voz";
-"overlay.voice_edit" = "Mejorar por voz";
 "overlay.dock_last" = "Última transcripción";
-"prompts.quick_chip_pin" = "Mostrar como chip rápido al grabar (máx. 3)";
-"prompts.quick_chip_limit" = "Límite de chips rápidos (3): desancla otro primero";

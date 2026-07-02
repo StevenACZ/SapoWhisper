@@ -75,17 +75,14 @@ class HotkeyManager: ObservableObject {
     private var eventHandler: EventHandlerRef?
     private var hotkeyRef: EventHotKeyRef?
     private var cancelHotkeyRef: EventHotKeyRef?
-    private var editHotkeyRef: EventHotKeyRef?
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
     private var cancelCallback: (() -> Void)?
-    private var editCallback: (() -> Void)?
     private var permissionRetryTimer: Timer?
     private static let hotkeySignature = OSType(0x5357_5049)  // "SWPI"
     private static let mainHotkeyID: UInt32 = 1
     private static let cancelHotkeyID: UInt32 = 2
-    private static let editHotkeyID: UInt32 = 3
     private var watchdogTimer: Timer?
     private static let watchdogInterval: TimeInterval = 600
     private var hotkeyPressCount: UInt64 = 0
@@ -152,55 +149,6 @@ class HotkeyManager: ObservableObject {
             registerCancelKey()
         }
 
-        // The clipboard-edit hotkey shares the Carbon handler too, so it must
-        // be re-registered after every main-hotkey re-registration.
-        if editCallback != nil {
-            registerEditKey()
-        }
-    }
-
-    // MARK: - Clipboard-edit hotkey (always armed)
-
-    /// Fixed combo for the clipboard-edit dictation: Option + Shift + Space.
-    /// Registered persistently alongside the main hotkey.
-    func registerEditHotkey(callback: @escaping () -> Void) {
-        guard !UIPreviewMode.skipsConsentPrompts else { return }
-        editCallback = callback
-        registerEditKey()
-    }
-
-    var editHotkeyDescription: String { "⌥ ⇧ Space" }
-
-    private func registerEditKey() {
-        guard editHotkeyRef == nil, installCarbonHandlerIfNeeded() else { return }
-        let hotkeyID = EventHotKeyID(signature: Self.hotkeySignature, id: Self.editHotkeyID)
-        let status = RegisterEventHotKey(
-            UInt32(kVK_Space),
-            UInt32(optionKey | shiftKey),
-            hotkeyID,
-            GetApplicationEventTarget(),
-            0,
-            &editHotkeyRef
-        )
-        if status != noErr {
-            // A conflict (e.g. the main combo IS ⌥⇧Space) only disables the
-            // shortcut; the menu bar action still reaches the same flow.
-            SapoLog.hotkey.error("Failed to register edit hotkey status=\(status, privacy: .public)")
-        } else {
-            SapoLog.hotkey.info("Clipboard-edit hotkey registered \(self.editHotkeyDescription, privacy: .public)")
-        }
-    }
-
-    private func unregisterEditKey() {
-        if let editHotkeyRef {
-            UnregisterEventHotKey(editHotkeyRef)
-            self.editHotkeyRef = nil
-        }
-    }
-
-    private func handleEditKeyPressed() {
-        SapoLog.hotkey.info("Clipboard-edit hotkey pressed")
-        editCallback?()
     }
 
     // MARK: - Watchdog (R2)
@@ -282,8 +230,6 @@ class HotkeyManager: ObservableObject {
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                 if hotkeyID.id == HotkeyManager.cancelHotkeyID {
                     manager.handleCancelKeyPressed()
-                } else if hotkeyID.id == HotkeyManager.editHotkeyID {
-                    manager.handleEditKeyPressed()
                 } else {
                     manager.handleHotkeyPressed(source: "key-combination")
                 }
@@ -492,7 +438,6 @@ class HotkeyManager: ObservableObject {
         // The Esc ref must never outlive the shared Carbon handler: a
         // registered hotkey without a handler would swallow Esc system-wide.
         unregisterCancelKey()
-        unregisterEditKey()
 
         if let eventHandler = eventHandler {
             RemoveEventHandler(eventHandler)

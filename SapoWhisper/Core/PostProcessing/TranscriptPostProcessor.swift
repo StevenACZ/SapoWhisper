@@ -77,8 +77,7 @@ final class TranscriptPostProcessor {
 
     func process(
         rawText: String,
-        duration: TimeInterval? = nil,
-        force: Bool = false
+        duration: TimeInterval? = nil
     ) async -> TranscriptAIResult {
         let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
         defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
@@ -141,99 +140,99 @@ final class TranscriptPostProcessor {
             return finish(finalText: transcript, status: .none)
         }
 
-        let modeValue = defaults.string(forKey: Constants.StorageKeys.aiPolishMode) ?? TranscriptPolishMode.automatic.rawValue
-        let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
         let outputLanguage = Self.configuredOutputLanguage(defaults: defaults)
 
-        // An explicit output language is a hard user requirement: skipping
-        // polish for a short dictation would silently ship the untranslated
-        // transcript, so the duration/length gates only apply to same-as-input.
-        let skipGatesApply = Self.skipGatesApply(force: force, outputLanguage: outputLanguage)
+        // Accepted correction suggestions are canonical pairs too: they join
+        // the user's replacements so polish and translation preserve them.
+        let mergedReplacements = replacements.merging(
+            memoryManager.acceptedReplacementPairs()
+        ) { user, _ in user }
+        let personalContext = PromptContextManager.shared.personalContext.details
+        let recentDictations = recentDictationsProvider()
 
-        guard !skipGatesApply || !Self.shouldSkipPolishForDuration(duration, defaults: defaults) else {
-            return finish(
-                finalText: transcript,
-                status: .skippedDuration,
-                mode: promptProfile.id
+        // Long transcripts overwhelm small-model attention: past ~2k chars the
+        // model either under-cleans or starts summarizing (benchmarked on real
+        // history against Qwen 3.5 4B/9B, 2026-07-02). Sentence-boundary chunks
+        // restore medium-length quality with zero content loss.
+        let chunks = Self.splitIntoChunks(transcript)
+        let chunkDuration = duration.map { $0 / Double(chunks.count) }
+        let timeoutSeconds = chunks.reduce(UInt64(0)) { total, chunk in
+            total
+                + Self.polishTimeout(
+                    forCharacterCount: chunk.count,
+                    duration: chunkDuration,
+                    configuration: configuration
+                )
+        }
+        if chunks.count > 1 {
+            SapoLog.ai.info(
+                "AI polish chunked chars=\(transcript.count, privacy: .public) chunks=\(chunks.count, privacy: .public)"
             )
         }
-
-        guard !skipGatesApply || !Self.shouldSkipPolish(transcript) else {
-            return finish(
-                finalText: transcript,
-                status: .skippedShort,
-                mode: promptProfile.id
-            )
-        }
-
-        let memoryContext = memoryManager.contextPacket(
-            rawText: trimmed,
-            correctedText: transcript,
-            keyterms: keyterms,
-            replacements: replacements
-        )
-        let messages = TranscriptPolishPromptBuilder.makeMessages(
-            rawText: transcript,
-            promptProfile: promptProfile,
-            personalContext: PromptContextManager.shared.personalContext.details,
-            outputLanguage: outputLanguage,
-            keyterms: keyterms,
-            replacements: replacements,
-            memoryContext: memoryContext,
-            recentDictations: recentDictationsProvider()
-        )
-
-        let timeoutSeconds = Self.polishTimeout(
-            forCharacterCount: transcript.count,
-            duration: duration,
-            configuration: configuration
-        )
 
         do {
             // Replacement values are canonical spellings too ("buen mouse" ->
             // "BuenMouse"): once the deterministic correction pass has written
             // them into the transcript, a translation must not undo them, so
             // they anchor the fidelity guard alongside the keyterms.
-            let guardedResponse = try await withTimeout(seconds: timeoutSeconds) {
-                try await self.polishWithHardGuardRetries(
-                    messages: messages,
-                    rawText: transcript,
-                    vocabularyTerms: keyterms + Array(replacements.values),
-                    outputLanguage: outputLanguage,
-                    timeout: TimeInterval(timeoutSeconds)
-                )
+            let vocabularyTerms = keyterms + Array(mergedReplacements.values)
+            let guardedResponses = try await withTimeout(seconds: timeoutSeconds) {
+                var responses: [GuardedPolishResponse] = []
+                for chunk in chunks {
+                    let messages = TranscriptPolishPromptBuilder.makeMessages(
+                        rawText: chunk,
+                        personalContext: personalContext,
+                        outputLanguage: outputLanguage,
+                        keyterms: keyterms,
+                        replacements: mergedReplacements,
+                        recentDictations: recentDictations
+                    )
+                    let guarded = try await self.polishWithHardGuardRetries(
+                        messages: messages,
+                        rawText: chunk,
+                        vocabularyTerms: vocabularyTerms,
+                        outputLanguage: outputLanguage,
+                        timeout: TimeInterval(timeoutSeconds)
+                    )
+                    responses.append(guarded)
+                }
+                return responses
             }
-            guard !guardedResponse.cleanedText.isEmpty else {
+
+            let model = guardedResponses.last?.response.modelIdentifier
+            let cleanedText = guardedResponses.map(\.cleanedText).joined(separator: "\n\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard guardedResponses.allSatisfy({ !$0.cleanedText.isEmpty }) else {
                 return finish(
                     finalText: transcript,
                     status: .failed,
-                    model: guardedResponse.response.modelIdentifier,
-                    mode: promptProfile.id,
+                    model: model,
+                    mode: "automatic",
                     error: "empty polished text"
                 )
             }
-            guard !guardedResponse.blockedInstructionResponse else {
+            guard !guardedResponses.contains(where: \.blockedInstructionResponse) else {
                 return finish(
                     finalText: transcript,
                     status: .rejectedFidelity,
-                    model: guardedResponse.response.modelIdentifier,
-                    mode: promptProfile.id,
+                    model: model,
+                    mode: "automatic",
                     error: "AI polish answered or performed the transcript instead of polishing it"
                 )
             }
 
             return finish(
-                finalText: guardedResponse.cleanedText,
+                finalText: cleanedText,
                 status: .applied,
-                model: guardedResponse.response.modelIdentifier,
-                mode: promptProfile.id
+                model: model,
+                mode: "automatic"
             )
         } catch is CancellationError {
             return finish(
                 finalText: transcript,
                 status: .failed,
                 model: configuration.modelIdentifier,
-                mode: promptProfile.id,
+                mode: "automatic",
                 error: "AI polish timed out after \(timeoutSeconds)s"
             )
         } catch {
@@ -241,95 +240,55 @@ final class TranscriptPostProcessor {
                 finalText: transcript,
                 status: .failed,
                 model: configuration.modelIdentifier,
-                mode: promptProfile.id,
+                mode: "automatic",
                 error: error.localizedDescription
             )
         }
     }
 
-    /// Clipboard-edit sessions: apply a spoken instruction to copied text.
-    /// The output legitimately differs from both inputs, so the fidelity and
-    /// instruction-response guards do not run — only the sanitizer does.
-    /// On any failure the source text ships unchanged (with the error recorded)
-    /// so the flow never blocks or pastes something unrelated.
-    func processEdit(
-        sourceText: String,
-        instruction: String,
-        duration: TimeInterval? = nil
-    ) async -> TranscriptAIResult {
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        let trimmedSource = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedInstruction = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: - Chunking
 
-        func finish(
-            finalText: String,
-            status: TranscriptAIStatus,
-            model: String? = nil,
-            error: String? = nil
-        ) -> TranscriptAIResult {
-            makeResult(
-                rawText: trimmedInstruction,
-                finalText: finalText,
-                status: status,
-                model: model,
-                mode: "clipboard_edit",
-                error: error,
-                startedAt: startedAt
-            )
-        }
+    /// Cleaning quality decays past ~2k characters on small models; above this
+    /// the transcript is split at sentence boundaries and each chunk is
+    /// polished as its own transcript.
+    static let chunkThresholdCharacters = 2_200
+    /// Target size per chunk once splitting applies.
+    static let chunkTargetCharacters = 1_600
 
-        guard !trimmedSource.isEmpty, !trimmedInstruction.isEmpty else {
-            return finish(finalText: trimmedSource, status: .none)
-        }
+    /// Splits at sentence enders (. ! ? …) closest to the target size; a text
+    /// under the threshold stays whole. Never splits mid-sentence, so a chunk
+    /// is always a self-contained run of complete sentences.
+    static func splitIntoChunks(_ text: String) -> [String] {
+        guard text.count > chunkThresholdCharacters else { return [text] }
 
-        let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
-        guard enabled, let configuration = PolishProviderConfiguration.current() else {
-            return finish(finalText: trimmedSource, status: .failed, error: "clipboard edit requires a configured AI provider")
-        }
-
-        let messages = ClipboardEditPromptBuilder.makeMessages(
-            sourceText: trimmedSource,
-            instruction: trimmedInstruction
-        )
-        let timeoutSeconds = Self.polishTimeout(
-            forCharacterCount: trimmedSource.count + trimmedInstruction.count,
-            duration: duration,
-            configuration: configuration
-        )
-
-        do {
-            let response = try await withTimeout(seconds: timeoutSeconds) {
-                try await self.polisher.polish(
-                    system: messages.system,
-                    user: messages.user,
-                    timeout: TimeInterval(timeoutSeconds)
-                )
+        var sentences: [String] = []
+        var current = ""
+        for character in text {
+            current.append(character)
+            if ".!?…".contains(character) {
+                sentences.append(current)
+                current = ""
             }
-            let cleaned = PolishOutputSanitizer.clean(response.text, rawText: trimmedSource)
-            guard !cleaned.isEmpty else {
-                return finish(
-                    finalText: trimmedSource,
-                    status: .failed,
-                    model: response.modelIdentifier,
-                    error: "empty edited text"
-                )
-            }
-            return finish(finalText: cleaned, status: .applied, model: response.modelIdentifier)
-        } catch is CancellationError {
-            return finish(
-                finalText: trimmedSource,
-                status: .failed,
-                model: configuration.modelIdentifier,
-                error: "clipboard edit timed out after \(timeoutSeconds)s"
-            )
-        } catch {
-            return finish(
-                finalText: trimmedSource,
-                status: .failed,
-                model: configuration.modelIdentifier,
-                error: error.localizedDescription
-            )
         }
+        if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sentences.append(current)
+        }
+
+        var chunks: [String] = []
+        var chunk = ""
+        for sentence in sentences {
+            if !chunk.isEmpty, chunk.count + sentence.count > chunkTargetCharacters {
+                chunks.append(chunk.trimmingCharacters(in: .whitespacesAndNewlines))
+                chunk = sentence
+            } else {
+                chunk += sentence
+            }
+        }
+        let last = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !last.isEmpty {
+            chunks.append(last)
+        }
+        return chunks.isEmpty ? [text] : chunks
     }
 
     /// Hard-token fidelity is a regeneration hint, not a raw-text fallback. If
@@ -490,77 +449,24 @@ final class TranscriptPostProcessor {
         return recognizer.dominantLanguage?.rawValue
     }
 
-    /// The duration/length skip gates never apply when the polish was forced
-    /// explicitly or when an explicit output language requires a translation
-    /// pass — a translation the user configured must never be skipped.
-    static func skipGatesApply(force: Bool, outputLanguage: TranscriptPolishOutputLanguage) -> Bool {
-        !force && !outputLanguage.requiresTranslation
-    }
-
-    /// Output language as configured right now (Settings/menu-bar selection),
-    /// resolved through the same profile-aware path `process()` uses.
+    /// Output language as configured right now (Settings/menu-bar selection).
     static func configuredOutputLanguage(defaults: UserDefaults = .standard) -> TranscriptPolishOutputLanguage {
-        let modeValue =
-            defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
-            ?? TranscriptPolishMode.automatic.rawValue
-        let promptProfile = PromptContextManager.shared.promptProfile(for: modeValue)
         let storedValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
-        let selected = TranscriptPolishOutputLanguage(rawValue: storedValue) ?? .sameAsInput
-        return PromptContextManager.effectiveOutputLanguage(selected: selected, for: promptProfile)
+        return TranscriptPolishOutputLanguage(rawValue: storedValue) ?? .sameAsInput
     }
 
-    static func shouldSkipPolish(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-
-        let words =
-            trimmed
-            .split { $0.isWhitespace || $0.isNewline }
-            .map { $0.trimmingCharacters(in: .punctuationCharacters).lowercased() }
-            .filter { !$0.isEmpty }
-
-        if trimmed.count < 35 { return true }
-        if words.count <= 3 { return true }
-
-        let normalized = words.joined(separator: " ")
-        let simpleUtterances: Set<String> = [
-            "hola", "hello", "hi", "ok", "okay", "gracias", "thanks", "si", "sí", "dale", "listo", "ya", "no",
-        ]
-        return simpleUtterances.contains(normalized)
-    }
-
-    static func shouldSkipPolishForDuration(_ duration: TimeInterval?, defaults: UserDefaults = .standard) -> Bool {
-        let value =
-            defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration)
-            ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue
-        let policy = TranscriptPolishMinimumDuration(rawValue: value) ?? .defaultPolicy
-
-        guard let minimumSeconds = policy.minimumSeconds, let duration else {
-            return false
-        }
-
-        return duration < minimumSeconds
-    }
-
-    func willAttemptPolish(rawText: String, duration: TimeInterval? = nil, force: Bool = false) -> Bool {
+    /// Polish runs for every non-empty dictation when enabled and configured —
+    /// no silent duration/length gates (they read as "the AI didn't work";
+    /// see brain/lessons/sapowhisper-skip-gates-vs-explicit-output-language).
+    func willAttemptPolish(rawText: String) -> Bool {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        let recognitionCorrectedText =
-            vocabularyManager
-            .applyingRecognitionCorrections(to: trimmed)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let transcript = recognitionCorrectedText.isEmpty ? trimmed : recognitionCorrectedText
 
         let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
         guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline() else { return false }
-        guard enabled, polisher.isConfigured else { return false }
-
-        guard Self.skipGatesApply(force: force, outputLanguage: Self.configuredOutputLanguage()) else {
-            return true
-        }
-        return !Self.shouldSkipPolishForDuration(duration) && !Self.shouldSkipPolish(transcript)
+        return enabled && polisher.isConfigured
     }
 
     private func makeResult(

@@ -88,13 +88,10 @@ class SapoWhisperViewModel: ObservableObject {
     @Published var lastFailedAudioURL: URL?
     private var lastFailedHistoryId: Int64?
 
-    // Overlay quick modes + re-polish support
-    /// Set when the user taps a mode/translation chip during the session, so
-    /// the polish gates (duration/length) never silently skip an explicit
-    /// choice. Consumed by the next postProcessTranscript call.
-    private var sessionModeExplicitlySelected = false
+    // Overlay re-polish support
     /// Raw transcript + duration of the last live dictation, kept so the
-    /// completed pill can re-polish the same text with another mode.
+    /// completed pill can re-polish the same text (e.g. after toggling the
+    /// translation chip).
     private var lastDictationRawText: String?
     private var lastDictationDuration: TimeInterval?
     /// History row of the last completed dictation (arrives async from the
@@ -104,14 +101,6 @@ class SapoWhisperViewModel: ObservableObject {
     private var dictationGeneration: UInt64 = 0
     private var isRepolishInFlight = false
 
-    // Clipboard-edit session support
-    /// Copied text captured when the edit hotkey started this session; the
-    /// dictation becomes the instruction applied to it.
-    private var activeEditSourceText: String?
-    private static let editSourceMaxCharacters = 20_000
-    /// Voice edits launched from the completed pill iterate on the shown
-    /// text: the result must land in the clipboard/pill only, never re-paste.
-    private var suppressAutoPasteOnce = false
     // Reentrancy guard for retryTranscription: a second Retry (double click /
     // repeated hotkey) before the in-flight retry resolves would transcribe and
     // paste the same audio twice. Set before the Task, cleared in its defer.
@@ -268,17 +257,8 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.retryTranscription()
             }
         }
-        overlayManager.onQuickModeSelected = { [weak self] modeID in
-            guard let self else { return }
-            self.sessionModeExplicitlySelected = true
-            // Picking a translation profile may have just turned the shared
-            // output language on — keep the recognition hint in sync.
-            self.syncTranscriptionLanguageForTranslation()
-            SapoLog.ai.info("Quick mode selected from overlay mode=\(modeID, privacy: .public)")
-        }
         overlayManager.onQuickTranslationToggled = { [weak self] enabled in
             guard let self else { return }
-            self.sessionModeExplicitlySelected = true
             if enabled {
                 self.syncTranscriptionLanguageForTranslation()
             }
@@ -287,11 +267,6 @@ class SapoWhisperViewModel: ObservableObject {
         overlayManager.onRepolishRequested = { [weak self] in
             Task { @MainActor in
                 self?.repolishLastTranscription()
-            }
-        }
-        overlayManager.onVoiceEditRequested = { [weak self] in
-            Task { @MainActor in
-                self?.startVoiceEditOfLastTranscription()
             }
         }
     }
@@ -758,17 +733,13 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// Inicia la grabacion. `editing` carries the copied text of a
-    /// clipboard-edit session; a normal dictation clears any stale one.
-    func startRecording(editing editSourceText: String? = nil) {
+    /// Inicia la grabacion.
+    func startRecording() {
         let triggerTime = CFAbsoluteTimeGetCurrent()
         let engine = currentEngine
         let sessionID = nextRecordingSessionID()
         lastStartHotkeyTime = triggerTime
         activeRecordingSessionID = sessionID
-        activeEditSourceText = editSourceText
-        overlayManager.isEditSession = editSourceText != nil
-        sessionModeExplicitlySelected = false
         SapoLog.hotkey.info(
             "Recording trigger accepted engine=\(engine.rawValue, privacy: .public) session=\(sessionID, privacy: .public)"
         )
@@ -781,9 +752,6 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard missingPermissions.isEmpty else {
             activeRecordingSessionID = nil
-            activeEditSourceText = nil
-            suppressAutoPasteOnce = false
-            overlayManager.isEditSession = false
             SapoLog.recording.warning("Recording blocked by missing permissions")
             PermissionService.shared.showRequirementsWindow(force: true)
             return
@@ -801,9 +769,6 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard isReady || canReloadOnDemand else {
             activeRecordingSessionID = nil
-            activeEditSourceText = nil
-            suppressAutoPasteOnce = false
-            overlayManager.isEditSession = false
             appState = .noModel
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
@@ -919,9 +884,6 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask = nil
         isStartPending = false
         activeRecordingSessionID = nil
-        activeEditSourceText = nil
-        suppressAutoPasteOnce = false
-        overlayManager.isEditSession = false
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
         captureCoordinator.endActiveCapture()
@@ -1346,7 +1308,7 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
 
-        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, duration: entry.duration, force: true)
+        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, duration: entry.duration)
         logAIResult(aiResult, source: "history-polish")
         historyManager.updateAIProcessing(
             id: entry.id,
@@ -1396,99 +1358,6 @@ class SapoWhisperViewModel: ObservableObject {
                 }
             }
         }
-        hotkeyManager.registerEditHotkey { [weak self] in
-            if Thread.isMainThread {
-                MainActor.assumeIsolated {
-                    self?.handleEditHotkey()
-                }
-            } else {
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        self?.handleEditHotkey()
-                    }
-                }
-            }
-        }
-    }
-
-    /// Edit hotkey doubles as the stop key while any session is active, so
-    /// pressing it twice records the instruction and finishes it.
-    private func handleEditHotkey() {
-        if isStartPending || isAnyRecorderActive {
-            toggleRecording()
-        } else {
-            startClipboardEditDictation()
-        }
-    }
-
-    /// Clipboard-edit dictation: reads the copied text, records a spoken
-    /// instruction, and pastes the rewritten result.
-    func startClipboardEditDictation() {
-        guard canStartRecordingFromHotkey() else { return }
-
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled),
-            PolishProviderConfiguration.current() != nil
-        else {
-            SapoLog.ai.warning("Clipboard edit blocked reason=polish-not-configured")
-            overlayManager.showError(
-                message: "edit.error_not_configured".localized,
-                isRetryable: false,
-                autoDismissAfter: 4.0
-            )
-            return
-        }
-
-        let clipboardText =
-            NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !clipboardText.isEmpty else {
-            SapoLog.ai.info("Clipboard edit blocked reason=empty-clipboard")
-            overlayManager.showError(
-                message: "edit.error_empty_clipboard".localized,
-                isRetryable: false,
-                autoDismissAfter: 3.0
-            )
-            return
-        }
-        guard clipboardText.count <= Self.editSourceMaxCharacters else {
-            SapoLog.ai.info("Clipboard edit blocked reason=too-long chars=\(clipboardText.count, privacy: .public)")
-            overlayManager.showError(
-                message: "edit.error_too_long".localized,
-                isRetryable: false,
-                autoDismissAfter: 4.0
-            )
-            return
-        }
-
-        SapoLog.ai.info("Clipboard edit session starting chars=\(clipboardText.count, privacy: .public)")
-        startRecording(editing: clipboardText)
-    }
-
-    /// Iterates on the last delivered transcription by voice (mic button on
-    /// the completed pill): the dictation is an instruction applied to the
-    /// shown text. The first delivery already pasted, so the refined result
-    /// only updates the clipboard and the pill.
-    func startVoiceEditOfLastTranscription() {
-        guard canStartRecordingFromHotkey() else { return }
-
-        let source = lastTranscription.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !source.isEmpty, source.count <= Self.editSourceMaxCharacters else { return }
-
-        guard UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled),
-            PolishProviderConfiguration.current() != nil
-        else {
-            overlayManager.showError(
-                message: "edit.error_not_configured".localized,
-                isRetryable: false,
-                autoDismissAfter: 4.0
-            )
-            return
-        }
-
-        SapoLog.ai.info("Voice edit of last transcription starting chars=\(source.count, privacy: .public)")
-        suppressAutoPasteOnce = true
-        startRecording(editing: source)
     }
 
     private func startRecordingSession(
@@ -1793,9 +1662,6 @@ class SapoWhisperViewModel: ObservableObject {
     /// sound all derive from the failure kind. No-speech keeps the menu bar
     /// idle and skips the error sound.
     func presentTranscriptionFailure(_ failure: TranscriptionFailure) {
-        activeEditSourceText = nil
-        suppressAutoPasteOnce = false
-        overlayManager.isEditSession = false
         let errorState = ErrorState(failure: failure)
         if errorState.isNoSpeech {
             checkInitialState()
@@ -1858,23 +1724,7 @@ class SapoWhisperViewModel: ObservableObject {
         source: String,
         duration: TimeInterval?
     ) async -> TranscriptAIResult {
-        // Clipboard-edit sessions: the dictation is an instruction applied to
-        // the copied text, not a transcript to polish.
-        if let editSource = activeEditSourceText, !isReprocessingHistory {
-            activeEditSourceText = nil
-            return await processClipboardEdit(sourceText: editSource, instruction: rawText, duration: duration)
-        }
-
-        // A chip tapped during this session is an explicit choice — never let
-        // the duration/length gates skip it silently.
-        let forcePolish = sessionModeExplicitlySelected && !isReprocessingHistory
-        sessionModeExplicitlySelected = false
-
-        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(
-            rawText: rawText,
-            duration: duration,
-            force: forcePolish
-        )
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText)
         if willAttemptPolish {
             // History re-runs reuse this helper but must not drive the live
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
@@ -1903,8 +1753,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         let result = await transcriptPostProcessor.process(
             rawText: rawText,
-            duration: duration,
-            force: forcePolish
+            duration: duration
         )
         logAIResult(result, source: source)
         if !isReprocessingHistory {
@@ -1925,41 +1774,8 @@ class SapoWhisperViewModel: ObservableObject {
         return result
     }
 
-    /// Runs the edit LLM call with the polishing overlay; the edited text
-    /// becomes the re-polish baseline so completed-pill chips act on it.
-    private func processClipboardEdit(
-        sourceText: String,
-        instruction: String,
-        duration: TimeInterval?
-    ) async -> TranscriptAIResult {
-        appState = .polishing
-        let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
-        overlayManager.updateState(
-            .polishing(
-                timeoutSeconds: TranscriptPostProcessor.polishTimeout(
-                    forCharacterCount: sourceText.count + instruction.count,
-                    duration: duration,
-                    usesLocalBudget: usesLocalPolishBudget
-                )
-            )
-        )
-        SapoLog.ai.info(
-            "Clipboard edit started sourceChars=\(sourceText.count, privacy: .public) instructionChars=\(instruction.count, privacy: .public)"
-        )
-
-        let result = await transcriptPostProcessor.processEdit(
-            sourceText: sourceText,
-            instruction: instruction,
-            duration: duration
-        )
-        logAIResult(result, source: "clipboard-edit")
-        lastDictationRawText = result.finalText
-        lastDictationDuration = duration
-        return result
-    }
-
-    /// Re-polishes the last dictation with the current (just tapped) mode and
-    /// language defaults: clipboard and History row update, no auto-paste —
+    /// Re-polishes the last dictation with the current (just toggled)
+    /// language default: clipboard and History row update, no auto-paste —
     /// the first delivery already pasted, the user decides where this goes.
     func repolishLastTranscription() {
         guard case .idle = appState else { return }
@@ -1986,8 +1802,7 @@ class SapoWhisperViewModel: ObservableObject {
             defer { isRepolishInFlight = false }
             let result = await transcriptPostProcessor.process(
                 rawText: rawText,
-                duration: duration,
-                force: true
+                duration: duration
             )
             logAIResult(result, source: "overlay-repolish")
 
@@ -2196,9 +2011,6 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         activeRecordingSessionID = nil
-        activeEditSourceText = nil
-        suppressAutoPasteOnce = false
-        overlayManager.isEditSession = false
         captureCoordinator.endActiveCapture()
         AutoDuckingManager.shared.restore()
         overlayManager.updateAudioLevel(0)
@@ -2289,14 +2101,11 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
     func deliverTranscription(_ finalText: String, perf: DictationPerfTimeline?) {
         dictationGeneration &+= 1
         lastCompletedHistoryId = nil
-        overlayManager.isEditSession = false
         lastTranscription = finalText
         PasteManager.copyToClipboard(finalText)
         overlayManager.showCompleted(text: finalText)
 
-        let skipPaste = suppressAutoPasteOnce
-        suppressAutoPasteOnce = false
-        if autoPasteEnabled && !skipPaste {
+        if autoPasteEnabled {
             PasteManager.simulatePaste { perf?.markPasteDone() }
         } else {
             perf?.markPasteDone(skipped: true)

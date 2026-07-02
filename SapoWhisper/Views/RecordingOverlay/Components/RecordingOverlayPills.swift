@@ -11,66 +11,45 @@ struct RecordingPillView: View {
     let onPause: () -> Void
     let audioLevelPublisher: AnyPublisher<Float, Never>
     var showsNoSpeechHint: Bool = false
-    /// Clipboard-edit sessions show a distinct label and no mode chips: the
-    /// spoken instruction, not the selected mode, drives the rewrite.
-    var isEditSession: Bool = false
-    var onModeSelected: ((String) -> Void)?
     var onTranslationToggled: ((Bool) -> Void)?
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                FloatingSapoIcon(state: .recording, size: 32)
-                PillDivider()
-                // The chips row already widened the pill — spend that width
-                // on a longer, livelier waveform.
-                MiniEqualizerView(audioLevelPublisher: audioLevelPublisher, barCount: 11)
+        HStack(spacing: 10) {
+            FloatingSapoIcon(state: .recording, size: 32)
+            PillDivider()
+            MiniEqualizerView(audioLevelPublisher: audioLevelPublisher, barCount: 11)
 
-                if showsNoSpeechHint {
-                    HStack(spacing: 5) {
-                        Image(systemName: "mic.slash.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("overlay.no_speech".localized)
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(.sapoError)
-                    .transition(.opacity)
-                } else if isEditSession {
-                    HStack(spacing: 5) {
-                        Image(systemName: "pencil.line")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("overlay.edit_mode".localized)
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(.aiPolish)
-                } else {
-                    Text("overlay.recording".localized)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
-                }
-
-                Spacer(minLength: 12)
-
-                Button(action: onPause) {
-                    Image(systemName: "pause.fill")
+            if showsNoSpeechHint {
+                HStack(spacing: 5) {
+                    Image(systemName: "mic.slash.fill")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Color.primary.opacity(0.1)))
+                    Text("overlay.no_speech".localized)
+                        .font(.system(size: 13, weight: .medium))
                 }
-                .buttonStyle(.plain)
-
-                OverlayTimer(duration: duration)
+                .foregroundColor(.sapoError)
+                .transition(.opacity)
+            } else {
+                Text("overlay.recording".localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
             }
-            .frame(minWidth: 250)
 
-            if !isEditSession {
-                OverlayModeChips(
-                    onModeSelected: onModeSelected,
-                    onTranslationToggled: onTranslationToggled
-                )
+            Spacer(minLength: 12)
+
+            OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
+
+            Button(action: onPause) {
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(Color.primary.opacity(0.1)))
             }
+            .buttonStyle(.plain)
+
+            OverlayTimer(duration: duration)
         }
+        .frame(minWidth: 250)
     }
 }
 
@@ -158,7 +137,6 @@ struct AIPolishingPillView: View {
 struct CompletedPillView: View {
     let text: String
     var onRepolish: (() -> Void)?
-    var onVoiceEdit: (() -> Void)?
     var onClose: (() -> Void)?
 
     @State private var iconScale: CGFloat = 0
@@ -229,18 +207,10 @@ struct CompletedPillView: View {
 
                 Spacer(minLength: 16)
 
-                if aiPolishEnabled, onVoiceEdit != nil, !text.isEmpty {
-                    Button {
-                        onVoiceEdit?()
-                    } label: {
-                        Image(systemName: "mic.badge.plus")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.aiPolish)
-                            .frame(width: 22, height: 22)
-                            .background(Circle().fill(Color.aiPolish.opacity(0.14)))
-                    }
-                    .buttonStyle(.plain)
-                    .help("overlay.voice_edit".localized)
+                // Toggling the language here re-polishes the shown text into
+                // the new target without re-pasting.
+                if aiPolishEnabled, !text.isEmpty {
+                    OverlayTranslationChip(onTranslationToggled: { _ in onRepolish?() })
                 }
 
                 Button {
@@ -290,24 +260,6 @@ struct CompletedPillView: View {
                 }
             }
 
-            if aiPolishEnabled && !text.isEmpty {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text("overlay.repolish_hint".localized)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
-
-                    OverlayModeChips(
-                        onModeSelected: { _ in onRepolish?() },
-                        onTranslationToggled: { _ in onRepolish?() }
-                    )
-                }
-                .padding(.top, 2)
-            }
         }
         .frame(maxWidth: Self.contentWidth)
         .overlay(glowStroke(color: .sapoGreen, isVisible: showGlow))

@@ -9,25 +9,18 @@ import XCTest
 
 final class TranscriptPolishPromptBuilderTests: XCTestCase {
 
-    private var workProfile: PromptProfile {
-        PromptContextManager.defaultPrompts.first { $0.id == TranscriptPolishMode.work.rawValue }!
-    }
-
     private func makeSystem(
         outputLanguage: TranscriptPolishOutputLanguage = .sameAsInput,
         keyterms: [String] = [],
         replacements: [String: String] = [:],
-        memoryContext: AIPolishMemoryContext? = nil,
         recentDictations: [String] = []
     ) -> String {
         TranscriptPolishPromptBuilder.makeMessages(
             rawText: "hola equipo",
-            promptProfile: workProfile,
             personalContext: "",
             outputLanguage: outputLanguage,
             keyterms: keyterms,
             replacements: replacements,
-            memoryContext: memoryContext,
             recentDictations: recentDictations
         ).system
     }
@@ -55,23 +48,17 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
         XCTAssertTrue(system.contains("\"cloud code\" => \"Claude Code\""))
     }
 
-    func testAcceptedMemoryCorrectionsMergeIntoMishearings() {
-        let accepted = AIPolishCorrectionSuggestion(
-            id: "deep comment->git commit",
-            from: "deep comment",
-            to: "git commit",
-            status: .accepted,
-            occurrences: 3,
-            confidence: 0.9,
-            firstSeen: Date(timeIntervalSince1970: 1_782_000_000),
-            lastSeen: Date(timeIntervalSince1970: 1_782_000_000)
-        )
-        let system = makeSystem(
-            memoryContext: AIPolishMemoryContext(detectedMode: .technical, acceptedCorrections: [accepted])
-        )
+    /// The single adaptive contract: two-tier filler deletion, sacred numbers,
+    /// and never inventing lists — the rules validated on the 2026-07-02 bench.
+    func testAdaptiveContractRulesArePresent() {
+        let system = makeSystem()
 
-        XCTAssertTrue(system.contains("\"deep comment\" => \"git commit\""))
-        XCTAssertTrue(system.contains("Detected domain: technical"))
+        XCTAssertTrue(system.contains("ALWAYS delete"))
+        XCTAssertTrue(system.contains("como se dice"))
+        XCTAssertTrue(system.contains("Delete only when they carry no meaning"))
+        XCTAssertTrue(system.contains("Numbers are sacred"))
+        XCTAssertTrue(system.contains("NEVER turn speech into bullet lists"))
+        XCTAssertFalse(system.contains("Mode —"))
     }
 
     func testEmptyVocabularyMarksDictionaryAsSkippable() {
@@ -107,7 +94,6 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
     func testUserMessageWrapsTranscriptInDelimiters() {
         let messages = TranscriptPolishPromptBuilder.makeMessages(
             rawText: "hola equipo",
-            promptProfile: workProfile,
             personalContext: "",
             outputLanguage: .sameAsInput,
             keyterms: [],
@@ -117,6 +103,39 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
         XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptStartDelimiter))
         XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptEndDelimiter))
         XCTAssertTrue(messages.user.contains("hola equipo"))
+    }
+}
+
+final class TranscriptChunkingTests: XCTestCase {
+
+    func testShortTextStaysWhole() {
+        let text = String(repeating: "Una frase corta. ", count: 20)  // ~340 chars
+        XCTAssertEqual(TranscriptPostProcessor.splitIntoChunks(text), [text])
+    }
+
+    func testLongTextSplitsAtSentenceBoundaries() {
+        let sentence = "Esta es una frase de prueba que ocupa espacio real en el dictado. "
+        let text = String(repeating: sentence, count: 60).trimmingCharacters(in: .whitespaces)  // ~4k chars
+        let chunks = TranscriptPostProcessor.splitIntoChunks(text)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        for chunk in chunks {
+            XCTAssertTrue(chunk.hasSuffix("."), "chunk must end on a sentence boundary")
+            XCTAssertLessThanOrEqual(chunk.count, TranscriptPostProcessor.chunkTargetCharacters + sentence.count)
+        }
+        // No content lost: chunks re-join into the original text (modulo the
+        // whitespace trimmed at the seams).
+        let rejoined = chunks.joined(separator: " ")
+        XCTAssertEqual(
+            rejoined.replacingOccurrences(of: " ", with: ""),
+            text.replacingOccurrences(of: " ", with: "")
+        )
+    }
+
+    func testTextWithoutSentenceEndersStaysSingleChunk() {
+        let text = String(repeating: "palabras sin puntuacion ", count: 150)  // >3k chars, no enders
+        let chunks = TranscriptPostProcessor.splitIntoChunks(text)
+        XCTAssertEqual(chunks.count, 1)
     }
 }
 

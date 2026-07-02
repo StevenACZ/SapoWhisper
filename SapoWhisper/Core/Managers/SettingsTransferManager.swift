@@ -45,9 +45,7 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var audioGain: Double
     var audioUploadQuality: String?
     var aiPolishEnabled: Bool
-    var aiPolishMode: String
     var aiPolishOutputLanguage: String
-    var aiPolishMinimumDuration: String?
     var aiPolishEndpoint: String?
     var aiPolishModel: String?
     var aiPolishCustomBaseURL: String?
@@ -294,12 +292,8 @@ struct SettingsTransferManager {
             audioGain: doubleValue(forKey: Constants.StorageKeys.audioGain, defaultValue: 1.0),
             audioUploadQuality: AudioUploadQuality.stored(in: defaults).rawValue,
             aiPolishEnabled: boolValue(forKey: Constants.StorageKeys.aiPolishEnabled, defaultValue: false),
-            aiPolishMode: defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
-                ?? TranscriptPolishMode.automatic.rawValue,
             aiPolishOutputLanguage: defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
                 ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue,
-            aiPolishMinimumDuration: defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration)
-                ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue,
             aiPolishEndpoint: defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint)
                 ?? PolishEndpoint.default.rawValue,
             aiPolishModel: defaults.string(forKey: Constants.StorageKeys.aiPolishModel),
@@ -366,12 +360,7 @@ struct SettingsTransferManager {
 
         if sections.contains(.aiPolish) {
             defaults.set(preferences.aiPolishEnabled, forKey: Constants.StorageKeys.aiPolishEnabled)
-            defaults.set(preferences.aiPolishMode, forKey: Constants.StorageKeys.aiPolishMode)
             defaults.set(preferences.aiPolishOutputLanguage, forKey: Constants.StorageKeys.aiPolishOutputLanguage)
-            defaults.set(
-                preferences.aiPolishMinimumDuration ?? TranscriptPolishMinimumDuration.defaultPolicy.rawValue,
-                forKey: Constants.StorageKeys.aiPolishMinimumDuration
-            )
             if let endpoint = preferences.aiPolishEndpoint {
                 defaults.set(endpoint, forKey: Constants.StorageKeys.aiPolishEndpoint)
             }

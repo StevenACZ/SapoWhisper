@@ -6,26 +6,6 @@
 import Combine
 import Foundation
 
-enum AIPolishDetectedMode: String, Codable, Equatable {
-    case technical
-    case work
-    case finance
-    case natural
-
-    var promptName: String {
-        switch self {
-        case .technical:
-            return "technical"
-        case .work:
-            return "work"
-        case .finance:
-            return "finance"
-        case .natural:
-            return "natural"
-        }
-    }
-}
-
 enum AIPolishSuggestionStatus: String, Codable, Equatable {
     case pending
     case accepted
@@ -41,42 +21,6 @@ struct AIPolishCorrectionSuggestion: Codable, Equatable, Identifiable {
     var confidence: Double
     var firstSeen: Date
     var lastSeen: Date
-}
-
-struct AIPolishMemoryContext: Equatable {
-    let detectedMode: AIPolishDetectedMode
-    let acceptedCorrections: [AIPolishCorrectionSuggestion]
-
-    var promptBlock: String {
-        var lines: [String] = [
-            "<local_learning_memory>",
-            "Detected writing mode: \(detectedMode.promptName)",
-        ]
-
-        let accepted = acceptedCorrections.map { "\"\(sanitize($0.from))\" -> \"\(sanitize($0.to))\"" }
-        lines.append("Accepted corrections: \(accepted.isEmpty ? "none" : accepted.joined(separator: "; "))")
-
-        lines.append(
-            "For accepted corrections, the right side is the canonical wording. If the transcript contains the left side in the same domain, replace that phrase with the right side."
-        )
-        lines.append(
-            "Use this local memory only as correction context. Never create or recommend vocabulary/keyterms. Never inject a term when the transcript does not clearly point to it."
-        )
-        lines.append(
-            "Mode guidance: technical keeps commands/files/APIs exact; work uses readable message punctuation; finance preserves amounts, dates, tickers, and entities; natural keeps a conversational tone."
-        )
-        lines.append("</local_learning_memory>")
-        return lines.joined(separator: "\n")
-    }
-
-    private func sanitize(_ value: String) -> String {
-        value
-            .components(separatedBy: .newlines)
-            .joined(separator: " ")
-            .components(separatedBy: .controlCharacters)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 final class AIPolishMemoryManager: ObservableObject {
@@ -103,25 +47,17 @@ final class AIPolishMemoryManager: ObservableObject {
         self.init(fileURL: appDir.appendingPathComponent("ai-polish-memory.json"))
     }
 
-    func contextPacket(
-        rawText: String,
-        correctedText: String,
-        keyterms: [String],
-        replacements: [String: String],
-        now: Date = Date()
-    ) -> AIPolishMemoryContext {
+    /// Accepted correction suggestions as heard→intended pairs, ready to merge
+    /// into the user's replacements for the polish dictionary section.
+    func acceptedReplacementPairs(limit: Int = 12) -> [String: String] {
         lock.lock()
         defer { lock.unlock() }
 
-        let detectedMode = Self.detectedMode(
-            in: [rawText, correctedText, keyterms.joined(separator: " "), replacements.values.joined(separator: " ")]
-                .joined(separator: " ")
-        )
-
-        return AIPolishMemoryContext(
-            detectedMode: detectedMode,
-            acceptedCorrections: suggestions(status: .accepted, limit: 12)
-        )
+        var pairs: [String: String] = [:]
+        for suggestion in suggestions(status: .accepted, limit: limit) {
+            pairs[suggestion.from] = suggestion.to
+        }
+        return pairs
     }
 
     func record(
@@ -143,7 +79,6 @@ final class AIPolishMemoryManager: ObservableObject {
 
         store.lastUpdated = now
         store.totalTranscripts += 1
-        store.modeCounts[Self.detectedMode(in: [raw, corrected, final].joined(separator: " ")).rawValue, default: 0] += 1
 
         recordCorrectionSuggestions(
             observedRawText: raw,
@@ -376,42 +311,6 @@ final class AIPolishMemoryManager: ObservableObject {
             }
             .prefix(80)
             .map { $0 }
-    }
-
-    private static func detectedMode(in text: String) -> AIPolishDetectedMode {
-        let lower = text.lowercased()
-        if containsAny(
-            lower,
-            [
-                "git", "commit", "pull request", "api", "rest", "claude", "agents.md", "readme", "xcodebuild",
-                "swift", "npm", "pnpm", "docker", "kubernetes", "ssh", "json", ".env", ".gitignore",
-            ]
-        ) {
-            return .technical
-        }
-        if containsAny(
-            lower,
-            [
-                "acciones", "inversion", "inversión", "portfolio", "dividendo", "ticker", "factura", "presupuesto",
-                "cotizacion", "cotización", "impuesto", "revenue", "margin",
-            ]
-        ) {
-            return .finance
-        }
-        if containsAny(
-            lower,
-            [
-                "reunion", "reunión", "cliente", "slack", "correo", "email", "agenda", "equipo", "entrega",
-                "deadline", "prioridad",
-            ]
-        ) {
-            return .work
-        }
-        return .natural
-    }
-
-    private static func containsAny(_ text: String, _ needles: [String]) -> Bool {
-        needles.contains { text.contains($0) }
     }
 
     private static func uniqueTerms(_ terms: [String]) -> [String] {
@@ -752,7 +651,6 @@ final class AIPolishMemoryManager: ObservableObject {
         var version = 2
         var totalTranscripts = 0
         var lastUpdated: Date?
-        var modeCounts: [String: Int] = [:]
         var correctionSuggestions: [String: AIPolishCorrectionSuggestion] = [:]
     }
 

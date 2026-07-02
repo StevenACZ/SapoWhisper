@@ -429,15 +429,4 @@ final class PolishFidelityTests: XCTestCase {
         )
     }
 
-    // MARK: - Skip heuristics
-
-    func testShouldSkipPolishForShortText() {
-        XCTAssertTrue(TranscriptPostProcessor.shouldSkipPolish("hola"))
-        XCTAssertTrue(TranscriptPostProcessor.shouldSkipPolish("ok dale listo"))
-        XCTAssertFalse(
-            TranscriptPostProcessor.shouldSkipPolish(
-                "necesito que revises el pull request de la rama feature/login antes del mediodía"
-            )
-        )
-    }
 }

@@ -49,107 +49,30 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         }
     }
 
-    /// An explicit output language must bypass the duration/length skip gates:
-    /// a short dictation with output=English still needs the translation pass,
-    /// otherwise the raw Spanish transcript ships silently (skipped_duration).
-    func testExplicitOutputLanguageBypassesSkipGates() {
-        XCTAssertFalse(TranscriptPostProcessor.skipGatesApply(force: false, outputLanguage: .english))
-        XCTAssertFalse(TranscriptPostProcessor.skipGatesApply(force: true, outputLanguage: .sameAsInput))
-        XCTAssertTrue(TranscriptPostProcessor.skipGatesApply(force: false, outputLanguage: .sameAsInput))
-    }
-
-    func testTranslatePromptUsesSelectedOutputLanguageWithoutCoercion() {
-        let translatePrompt = PromptContextManager.defaultPrompts.first {
-            $0.id == TranscriptPolishMode.translateEnglish.rawValue
-        }
-        XCTAssertNotNil(translatePrompt)
-
-        let prompt = translatePrompt!
-        XCTAssertEqual(
-            PromptContextManager.effectiveOutputLanguage(selected: .sameAsInput, for: prompt),
-            .sameAsInput
-        )
-        XCTAssertEqual(
-            PromptContextManager.effectiveOutputLanguage(selected: .german, for: prompt),
-            .german
-        )
-    }
-
-    /// Style modes are worded around fidelity ("preserve the original
-    /// wording"), which small models read as "keep the source language". With
-    /// an explicit target the system prompt must subordinate the mode to the
-    /// output language explicitly; with same-as-input it must not.
-    func testExplicitTargetSubordinatesModeInstructionToOutputLanguage() {
-        let workProfile = PromptContextManager.defaultPrompts.first {
-            $0.id == TranscriptPolishMode.work.rawValue
-        }!
-
+    /// With an explicit target the system prompt must demand a full
+    /// translation; with same-as-input it must pin the transcript language.
+    func testExplicitTargetBuildsFullTranslationRule() {
         let translated = TranscriptPolishPromptBuilder.makeMessages(
             rawText: "hola, ¿cómo estás?",
-            promptProfile: workProfile,
             personalContext: "",
             outputLanguage: .english,
             keyterms: [],
             replacements: [:]
         )
-        XCTAssertTrue(translated.system.contains("Language override for this mode"))
-        XCTAssertTrue(translated.system.contains("never to keeping the source language"))
         XCTAssertTrue(translated.system.contains("Write the ENTIRE output in English"))
         XCTAssertTrue(translated.system.contains("output language = English"))
 
         let literal = TranscriptPolishPromptBuilder.makeMessages(
             rawText: "hola, ¿cómo estás?",
-            promptProfile: workProfile,
             personalContext: "",
             outputLanguage: .sameAsInput,
             keyterms: [],
             replacements: [:]
         )
-        XCTAssertFalse(literal.system.contains("Language override for this mode"))
+        XCTAssertTrue(literal.system.contains("same dominant language as the transcript"))
         XCTAssertTrue(literal.system.contains("output language = same as transcript"))
     }
 
-    /// Selecting a real AI mode must lift the minimum-duration gate: the user
-    /// just asked for polish, so the very next dictation should get it.
-    /// Selecting the base clean-up mode leaves the gate alone.
-    func testSelectingAIModePromotesMinimumDurationToAlways() throws {
-        let suiteName = "mode-promotion-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        defaults.set(
-            TranscriptPolishMinimumDuration.seconds30.rawValue,
-            forKey: Constants.StorageKeys.aiPolishMinimumDuration
-        )
-
-        TranscriptPolishMinimumDuration.promoteToAlwaysForSelectedMode(
-            TranscriptPolishMode.automatic.rawValue, defaults: defaults)
-        XCTAssertEqual(
-            defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration),
-            TranscriptPolishMinimumDuration.seconds30.rawValue
-        )
-
-        TranscriptPolishMinimumDuration.promoteToAlwaysForSelectedMode(
-            TranscriptPolishMode.ai.rawValue, defaults: defaults)
-        XCTAssertEqual(
-            defaults.string(forKey: Constants.StorageKeys.aiPolishMinimumDuration),
-            TranscriptPolishMinimumDuration.always.rawValue
-        )
-    }
-
-    /// Every default style profile must carry the translation clause so an
-    /// explicit output language keeps working when the user dictates in
-    /// AI Assistant or Work Message mode, not only in Translate mode.
-    func testDefaultStylePromptsCarryTranslationClause() {
-        for id in [TranscriptPolishMode.ai.rawValue, TranscriptPolishMode.work.rawValue] {
-            let profile = PromptContextManager.defaultPrompts.first { $0.id == id }
-            XCTAssertNotNil(profile, "missing default profile \(id)")
-            XCTAssertTrue(
-                profile!.instruction.contains("never keep the source language"),
-                "default profile \(id) must subordinate style to the output language"
-            )
-        }
-    }
 }
 
 final class TranscriptPolishTimeoutTests: XCTestCase {
