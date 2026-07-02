@@ -57,15 +57,22 @@ final class TranscriptPostProcessor {
     private let polisher: OpenAICompatiblePolisher
     private let vocabularyManager: VocabularyManager
     private let memoryManager: AIPolishMemoryManager
+    private let recentDictationsProvider: () -> [String]
 
     init(
         polisher: OpenAICompatiblePolisher = OpenAICompatiblePolisher(),
         vocabularyManager: VocabularyManager = .shared,
-        memoryManager: AIPolishMemoryManager = .shared
+        memoryManager: AIPolishMemoryManager = .shared,
+        recentDictationsProvider: @escaping () -> [String] = {
+            RecentDictationContext.contextLines(
+                from: TranscriptionHistoryManager.shared.fetchEntries(limit: 10)
+            )
+        }
     ) {
         self.polisher = polisher
         self.vocabularyManager = vocabularyManager
         self.memoryManager = memoryManager
+        self.recentDictationsProvider = recentDictationsProvider
     }
 
     func process(
@@ -172,7 +179,8 @@ final class TranscriptPostProcessor {
             outputLanguage: outputLanguage,
             keyterms: keyterms,
             replacements: replacements,
-            memoryContext: memoryContext
+            memoryContext: memoryContext,
+            recentDictations: recentDictationsProvider()
         )
 
         let timeoutSeconds = Self.polishTimeout(
@@ -182,11 +190,15 @@ final class TranscriptPostProcessor {
         )
 
         do {
+            // Replacement values are canonical spellings too ("buen mouse" ->
+            // "BuenMouse"): once the deterministic correction pass has written
+            // them into the transcript, a translation must not undo them, so
+            // they anchor the fidelity guard alongside the keyterms.
             let guardedResponse = try await withTimeout(seconds: timeoutSeconds) {
                 try await self.polishWithHardGuardRetries(
                     messages: messages,
                     rawText: transcript,
-                    vocabularyTerms: keyterms,
+                    vocabularyTerms: keyterms + Array(replacements.values),
                     outputLanguage: outputLanguage,
                     timeout: TimeInterval(timeoutSeconds)
                 )
@@ -354,7 +366,11 @@ final class TranscriptPostProcessor {
                 translationExpected: outputLanguage.requiresTranslation,
                 targetIsDenseScript: outputLanguage.usesDenseScript
             )
-            let instructionVerdict = PolishInstructionResponseGuard.evaluate(raw: rawText, polished: cleaned)
+            let instructionVerdict = PolishInstructionResponseGuard.evaluate(
+                raw: rawText,
+                polished: cleaned,
+                translationExpected: outputLanguage.requiresTranslation
+            )
 
             guard !fidelityVerdict.isAcceptable || !instructionVerdict.isAcceptable else {
                 if attempt > 1 {
@@ -423,10 +439,14 @@ final class TranscriptPostProcessor {
         let first = try await polisher.polish(system: messages.system, user: messages.user, timeout: timeout)
         let firstCleaned = PolishOutputSanitizer.clean(first.text, rawText: rawText)
 
+        // 12 chars is enough for NLLanguageRecognizer to call the dominant
+        // language of a short greeting ("hola, ¿cómo estás?"); those short
+        // dictations reach this path since the skip-gate bypass and were
+        // exactly the ones shipping untranslated.
         guard
             let targetCode = outputLanguage.nlLanguageCode,
             let targetName = outputLanguage.englishName,
-            firstCleaned.count >= 20
+            firstCleaned.count >= 12
         else { return first }
 
         let detected = Self.dominantLanguageCode(of: firstCleaned)

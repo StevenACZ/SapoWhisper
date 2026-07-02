@@ -471,6 +471,18 @@ struct GeneralSettingsTab: View {
                 Text("settings.auto_paste_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+
+                Divider()
+
+                HStack(spacing: 12) {
+                    Text("menu.welcome_tour".localized)
+                    Spacer()
+                    Button("settings.welcome_tour_open".localized) {
+                        WelcomeWindowController.shared.show()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
         }
     }

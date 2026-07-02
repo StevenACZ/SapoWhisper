@@ -171,7 +171,8 @@ struct AIPolishSettingsCard: View {
         .onChange(of: aiPolishOutputLanguage) { _, _ in
             syncTranscriptionLanguageWithTranslation()
         }
-        .onChange(of: aiPolishMode) { _, _ in
+        .onChange(of: aiPolishMode) { _, newValue in
+            TranscriptPolishMinimumDuration.promoteToAlwaysForSelectedMode(newValue)
             syncTranscriptionLanguageWithTranslation()
         }
         .onChange(of: aiPolishEnabled) { _, _ in

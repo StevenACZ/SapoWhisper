@@ -18,6 +18,42 @@ final class VocabularyManagerTests: XCTestCase {
         return VocabularyManager(fileURL: url)
     }
 
+    // MARK: - STT initial prompt
+
+    /// The local-STT glossary must show only canonical spellings: keyterms
+    /// plus replacement values, never misheard keys or confusion variants
+    /// (feeding "Sapo Visper" to the decoder would teach it the wrong form).
+    func testInitialPromptTextUsesCanonicalFormsOnly() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addKeyterm("CHANGELOG")
+        manager.addReplacement(from: "buen mouse", to: "BuenMouse")
+
+        let prompt = manager.initialPromptText()
+
+        XCTAssertEqual(prompt, "Glossary: SapoWhisper, CHANGELOG, BuenMouse.")
+        XCTAssertFalse(prompt.contains("buen mouse"))
+        XCTAssertFalse(prompt.contains("Sapo Whisper"))
+    }
+
+    func testInitialPromptTextHonorsLengthCapKeepingKeytermsFirst() {
+        let manager = makeManager()
+        for index in 0..<80 {
+            manager.addKeyterm("VeryLongTechnicalTerm\(index)WithPadding")
+        }
+
+        let prompt = manager.initialPromptText(maxLength: 200)
+
+        XCTAssertLessThanOrEqual(prompt.count, 200)
+        XCTAssertTrue(prompt.hasPrefix("Glossary: VeryLongTechnicalTerm0WithPadding"))
+        XCTAssertTrue(prompt.hasSuffix("."))
+        XCTAssertFalse(prompt.contains("VeryLongTechnicalTerm79WithPadding"))
+    }
+
+    func testInitialPromptTextEmptyWithoutVocabulary() {
+        XCTAssertEqual(makeManager().initialPromptText(), "")
+    }
+
     // MARK: - Replacements
 
     func testApplyingReplacementsIsWholeWordCaseInsensitive() {

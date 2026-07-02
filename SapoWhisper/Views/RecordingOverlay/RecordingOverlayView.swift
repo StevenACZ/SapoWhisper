@@ -7,6 +7,15 @@
 
 import SwiftUI
 
+/// Window-relative frame of the pill + chip stack inside the fixed
+/// transparent surface (`.global` in a hosting view is window space).
+struct OverlayContentFramePreferenceKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 /// Vista principal del overlay de grabacion. Two-piece layout: the dock chip
 /// is a permanent fixture hugging the screen edge, and every active state
 /// (recording, transcribing, completed, ...) is a separate "droplet" pill that
@@ -53,6 +62,17 @@ struct RecordingOverlayView: View {
             }
         }
         .fixedSize()
+        // Publish where the real content sits inside the mostly-transparent
+        // surface, so the outside-click collapse can compare against the
+        // visible pill instead of the whole fixed window rect.
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: OverlayContentFramePreferenceKey.self,
+                    value: proxy.frame(in: .global)
+                )
+            }
+        )
         // Slim transparent inset on the chip side so its shadow still renders
         // while the chip visually hugs the screen edge.
         .padding(chipOnTop ? .top : .bottom, 4)
@@ -64,6 +84,11 @@ struct RecordingOverlayView: View {
         // surface pixels are alpha-transparent, so clicks there fall through
         // to whatever is behind the window.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: surfaceAlignment)
+        .onPreferenceChange(OverlayContentFramePreferenceKey.self) { frame in
+            Task { @MainActor in
+                OverlayWindowManager.shared.setActiveContentFrame(frame)
+            }
+        }
         .onChange(of: stateCategory) { oldValue, newValue in
             // Micro-bounce only on active-to-active swaps; dock transitions
             // are carried entirely by the droplet detach/absorb.

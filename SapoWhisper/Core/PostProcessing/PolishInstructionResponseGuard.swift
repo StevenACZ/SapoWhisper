@@ -20,7 +20,17 @@ struct PolishInstructionResponseVerdict {
 /// retry-oriented: prompts remain the main defense, while this guard catches
 /// obvious assistant/refusal/math-answer drift before it gets pasted.
 enum PolishInstructionResponseGuard {
-    static func evaluate(raw: String, polished: String) -> PolishInstructionResponseVerdict {
+    /// `translationExpected` disables the cue-preservation check: the cue
+    /// word lists are per-language, so a faithful translation legitimately
+    /// "loses" the source-language cue ("genera" → "generates" matches no EN
+    /// pattern) and every retry fails the same way, shipping the untranslated
+    /// text. Direct response/refusal/math-answer detection stays on — those
+    /// patterns match the polished text itself in both languages.
+    static func evaluate(
+        raw: String,
+        polished: String,
+        translationExpected: Bool = false
+    ) -> PolishInstructionResponseVerdict {
         let rawNormalized = normalize(raw)
         let polishedNormalized = normalize(polished)
 
@@ -41,7 +51,7 @@ enum PolishInstructionResponseGuard {
             return rejected()
         }
 
-        if rawHasAssistantDirectedCue, !polishedPreservesRequestCue {
+        if rawHasAssistantDirectedCue, !polishedPreservesRequestCue, !translationExpected {
             return rejected()
         }
 

@@ -248,6 +248,25 @@ class OverlayWindowManager: ObservableObject {
         outsideClickMonitors.removeAll()
     }
 
+    /// Latest window-relative frame of the visible content (pill + chip),
+    /// published by the overlay view on every layout pass.
+    private var activeContentFrame: CGRect = .zero
+
+    func setActiveContentFrame(_ frame: CGRect) {
+        activeContentFrame = frame
+    }
+
+    /// Pure geometry for the outside-click decision, extracted for tests.
+    /// An empty content frame (no layout yet) never collapses.
+    nonisolated static func clickLandsOutsideContent(
+        contentFrame: CGRect,
+        clickPoint: CGPoint,
+        margin: CGFloat = 10
+    ) -> Bool {
+        guard !contentFrame.isEmpty else { return false }
+        return !contentFrame.insetBy(dx: -margin, dy: -margin).contains(clickPoint)
+    }
+
     private func collapseIfClickLandedOutside() {
         guard case .completed = state else { return }
         guard let window = overlayWindow, let contentView = window.contentView else { return }
@@ -258,11 +277,18 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
-        // Inside the window rect: the fixed surface is mostly transparent
-        // margin, so only a click landing on actual content (pill or chip)
-        // keeps the pill open.
+        // Inside the window rect: the fixed 640×440 surface is mostly
+        // transparent margin, so compare against the measured content frame —
+        // NSHostingView.hitTest can report hits on the empty margin, which
+        // made "click outside the pill" only work outside the whole surface.
         let windowPoint = window.convertPoint(fromScreen: screenPoint)
         let viewPoint = contentView.convert(windowPoint, from: nil)
+        if !activeContentFrame.isEmpty {
+            if Self.clickLandsOutsideContent(contentFrame: activeContentFrame, clickPoint: viewPoint) {
+                hide()
+            }
+            return
+        }
         if contentView.hitTest(viewPoint) == nil {
             hide()
         }

@@ -43,12 +43,41 @@ struct HotkeySettingsTab: View {
             ScrollView {
                 VStack(spacing: 16) {
                     hotkeyCard
+                    clipboardEditCard
                     AccessibilityPermissionFooter()
                 }
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
                 .padding(16)
                 .frame(minHeight: proxy.size.height)
+            }
+        }
+    }
+
+    // MARK: - Clipboard edit shortcut
+
+    /// The clipboard-edit dictation shortcut is a fixed Carbon hotkey
+    /// (`HotkeyManager.registerEditHotkey`), so this card documents it with
+    /// keycaps instead of offering a recorder.
+    private var clipboardEditCard: some View {
+        SettingsCard(icon: "pencil.line", title: "menu.edit_clipboard".localized) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("settings.edit_hotkey_desc".localized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    KeycapView(label: "⌥", width: 48)
+                    KeycapView(label: "⇧", width: 48)
+                    KeycapView(label: "Space", width: 88)
+                }
+                .frame(maxWidth: .infinity)
+
+                Text("settings.edit_hotkey_note".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

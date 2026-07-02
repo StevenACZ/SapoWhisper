@@ -39,7 +39,6 @@ class SapoWhisperViewModel: ObservableObject {
     @Published private(set) var appState: AppState = .idle
     @Published private(set) var lastTranscription: String = ""
     @Published var showSettings = false
-    @Published var autoPasteEnabled = true
     @Published var recordingDuration: TimeInterval = 0
 
     // Motor de transcripcion
@@ -60,6 +59,9 @@ class SapoWhisperViewModel: ObservableObject {
         Constants.Hotkey.defaultDoubleTapModifier
     )
     @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
+    /// Same key the Settings toggle writes; before this the menu toggle drove
+    /// a non-persisted @Published and the Settings toggle changed nothing.
+    @AppStorage(Constants.StorageKeys.autoPaste) var autoPasteEnabled = true
     @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.whisperLocal.rawValue
     @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue

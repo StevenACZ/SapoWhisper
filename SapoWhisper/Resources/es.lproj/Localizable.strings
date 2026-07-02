@@ -2,7 +2,6 @@
 "app_name" = "SapoWhisper";
 "version" = "Versión %@";
 "made_by" = "Creado con cuidado para macOS";
-"about.open_source" = "Proyecto open source listo para compartirse publicamente.";
 "close" = "Cerrar";
 "cancel" = "Cancelar";
 "quit" = "Salir de SapoWhisper";
@@ -17,11 +16,9 @@
 "menu.start_recording" = "Iniciar Grabación";
 "menu.stop_recording" = "Detener Grabación";
 "menu.configure_details" = "Configurar reconocimiento de voz";
-"menu.last_transcription" = "Última transcripción";
-"menu.auto_paste" = "Auto-pegar texto";
-"menu.auto_paste_sub" = "Pega automáticamente al terminar";
 "menu.settings" = "Configuración";
 "menu.history" = "Historial";
+"menu.about" = "Acerca de SapoWhisper";
 
 /* History */
 "history.title" = "Historial";
@@ -156,16 +153,13 @@
 "config.app_language" = "Idioma de la App";
 "config.app_language_desc" = "Idioma de la interfaz de usuario";
 
-/* Info Tab */
-"info.privacy_title" = "Privacidad";
-"info.privacy.whisper" = "El audio se procesa 100% en tu Mac usando WhisperKit. Nada sale de tu dispositivo.";
-"info.privacy.deepgram" = "Transcripción en la nube con Nova-3 o Flux Live. Requiere API key.";
-"info.privacy.local_ai" = "El audio se envía sólo al servidor LAN que configures. También soporta API key opcional para servidores protegidos.";
-"info.privacy.elevenlabs" = "Transcripción en la nube con Scribe v2 (batch o realtime). Requiere API key.";
-"info.privacy.ai_polish" = "Opcional. Envía el transcript a tu proveedor de IA configurado (OpenRouter por defecto) para limpiarlo sin cambiar tus palabras.";
+/* About window */
 "about.version_copy_help" = "Clic para copiar la versión";
-"info.permissions_title" = "Permisos necesarios";
-"info.permissions_body" = "• Micrófono: Para capturar tu voz\n• Accesibilidad: Para el atajo de teclado global y el auto-pegado";
+"about.chip_dictation" = "Dictado global";
+"about.chip_ai" = "Mejora con IA";
+"about.chip_private" = "Privado por diseño";
+"about.github" = "GitHub";
+"about.report_issue" = "Reportar problema";
 
 /* Languages */
 "lang.spanish" = "Español";
@@ -183,7 +177,6 @@
 "app.description" = "Speech-to-Text local y en la nube";
 "config.coming_soon" = "Próximamente";
 "config.whisper_coming_soon_desc" = "En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.";
-"menu.copy_clipboard" = "Copiar al portapapeles";
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% privado, sin internet. Procesa todo en tu Mac.";
@@ -284,7 +277,6 @@
 "tab.prompts" = "Prompts";
 "tab.prompts_short" = "Prompts";
 "tab.hotkey" = "Atajo";
-"tab.about" = "Info";
 
 /* Hotkey Settings */
 "settings.hotkey_activation_mode" = "Modo de activación";
@@ -644,9 +636,10 @@
 "overlay.repolish_hint" = "Mejorar con:";
 "overlay.edit_mode" = "Editando texto copiado…";
 "overlay.cancelled_saved" = "Cancelado — audio guardado en Historial";
-"menu.ai_mode" = "Modo IA";
 "menu.edit_clipboard" = "Mejorar portapapeles por voz";
-"menu.edit_clipboard_sub" = "Copia un texto y habla una instrucción (%@)";
+"settings.edit_hotkey_desc" = "Copia cualquier texto, pulsa el atajo y dicta una instrucción: la IA reescribe el portapapeles con el resultado.";
+"settings.edit_hotkey_note" = "Atajo fijo. Requiere la Mejora con IA activada.";
+"settings.welcome_tour_open" = "Abrir";
 "edit.error_empty_clipboard" = "No hay texto en el portapapeles: copia algo primero";
 "edit.error_not_configured" = "Activa la mejora IA y configura un proveedor para editar por voz";
 "edit.error_too_long" = "El texto copiado es demasiado largo para editar por voz";

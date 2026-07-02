@@ -50,45 +50,6 @@ struct RecordingTimer: View {
     }
 }
 
-struct SettingsRow<Content: View>: View {
-    let icon: String
-    let title: String
-    let subtitle: String?
-    let content: () -> Content
-
-    init(icon: String, title: String, subtitle: String? = nil, @ViewBuilder content: @escaping () -> Content) {
-        self.icon = icon
-        self.title = title
-        self.subtitle = subtitle
-        self.content = content
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .frame(width: 20)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.subheadline)
-
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Spacer()
-            content()
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-    }
-}
-
 struct ActionRow: View {
     let icon: String
     let title: String

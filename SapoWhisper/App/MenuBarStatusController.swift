@@ -21,6 +21,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var isPopoverTransitioning = false
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
+    private var aboutWindowController: NSWindowController?
     private let secureInputReleaseDelegate = SecureInputReleasingWindowDelegate()
     private var pendingPopoverRefresh = false
     private var hiddenPopoverRefreshSkipCount = 0
@@ -242,6 +243,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             openHistory: { [weak self] in self?.openHistoryWindow() },
             openPermissions: { [weak self] in self?.openPermissionsWindow() },
             openWelcome: { [weak self] in self?.openWelcomeWindow() },
+            openAbout: { [weak self] in self?.openAboutWindow() },
             closePopover: { [weak self] in self?.closePopover() }
         )
     }
@@ -328,6 +330,35 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private func openWelcomeWindow() {
         closePopover()
         WelcomeWindowController.shared.show()
+    }
+
+    func openAboutWindow() {
+        closePopover()
+        let controller = aboutWindowController ?? makeAboutWindowController()
+        aboutWindowController = controller
+        show(controller)
+    }
+
+    /// The About window sizes itself to its content and hides the resize
+    /// affordances; everything else follows the shared window styling.
+    private func makeAboutWindowController() -> NSWindowController {
+        let window = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = ""
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+
+        let hostingController = NSHostingController(rootView: AboutWindowHost())
+        window.contentViewController = hostingController
+        window.setContentSize(hostingController.view.fittingSize)
+        return NSWindowController(window: window)
     }
 
     private func makeWindowController<Content: View>(

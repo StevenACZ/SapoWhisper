@@ -104,6 +104,29 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertTrue(suggestions.contains { $0.from == "ditgram" && $0.to == "Deepgram" })
     }
 
+    /// A correctly-spelled fragment of a term ("push", "Code") must never be
+    /// proposed as a correction source: applied as a whole-word replacement it
+    /// would rewrite normal prose (every plain "push" becoming "git push").
+    /// Only distortions of the full term qualify.
+    func testFragmentSourcesNeverBecomeSuggestions() {
+        let manager = makeManager()
+        let now = Date(timeIntervalSince1970: 1_771_430_400)
+
+        manager.record(
+            observedRawText: "haz push a la rama y abre Code para revisar",
+            correctedText: "haz push a la rama y abre Code para revisar",
+            finalText: "Haz git push a la rama y abre Claude Code para revisar.",
+            status: .applied,
+            keyterms: ["git push", "Claude Code"],
+            replacements: [:],
+            now: now
+        )
+
+        let suggestions = manager.snapshot().suggestions
+        XCTAssertFalse(suggestions.contains { $0.from.lowercased() == "push" })
+        XCTAssertFalse(suggestions.contains { $0.from.lowercased() == "code" })
+    }
+
     func testDynamicSuggestionsAvoidAmbiguousShortNearMatches() {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
@@ -164,14 +187,12 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         )
 
         XCTAssertLessThan(context.promptBlock.count, 1_800)
-        XCTAssertTrue(messages.system.contains("<local_learning_memory>"))
-        XCTAssertTrue(messages.system.contains("Detected writing mode: technical"))
-        XCTAssertTrue(messages.system.contains("Accepted corrections"))
-        XCTAssertTrue(messages.system.contains("\"deep commit\" -> \"git commit\""))
+        XCTAssertTrue(messages.system.contains("Detected domain: technical"))
+        XCTAssertTrue(messages.system.contains("Known mishearings (heard => intended)"))
+        XCTAssertTrue(messages.system.contains("\"deep commit\" => \"git commit\""))
         XCTAssertFalse(messages.system.contains("Candidate corrections"))
         XCTAssertFalse(messages.system.contains("Top terms"))
-        XCTAssertFalse(messages.system.contains("\"cloud md\" -> \"CLAUDE.md\""))
-        XCTAssertTrue(messages.system.contains("right side is the canonical wording"))
+        XCTAssertFalse(messages.system.contains("\"cloud md\" => \"CLAUDE.md\""))
         XCTAssertTrue(messages.user.contains("revisa cloud md"))
         XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptStartDelimiter))
         XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptEndDelimiter))

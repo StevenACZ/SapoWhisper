@@ -149,6 +149,10 @@ final class LocalAIServerTranscriber: ObservableObject {
         if let languageCode = TranscriptionLanguageCatalog.whisperLanguageCode(for: language) {
             appendFormField(name: "language", value: languageCode, boundary: boundary, to: &body)
         }
+        let vocabularyPrompt = VocabularyManager.shared.initialPromptText()
+        if !vocabularyPrompt.isEmpty {
+            appendFormField(name: "prompt", value: vocabularyPrompt, boundary: boundary, to: &body)
+        }
         appendFileField(
             name: "file",
             filename: "recording.wav",

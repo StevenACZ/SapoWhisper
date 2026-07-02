@@ -430,6 +430,22 @@ class WhisperKitTranscriber: ObservableObject {
                 var options = DecodingOptions()
                 options.language = TranscriptionLanguageCatalog.whisperLanguageCode(for: language)
 
+                // Whisper-style initial prompt: condition the decoder on the
+                // user's canonical vocabulary so keyterms come out spelled
+                // right on the first pass. WhisperKit trims to its max prompt
+                // length and strips special tokens internally.
+                let vocabularyPrompt = VocabularyManager.shared.initialPromptText()
+                if !vocabularyPrompt.isEmpty, let tokenizer = whisperKit.tokenizer {
+                    let promptTokens = tokenizer.encode(text: " " + vocabularyPrompt)
+                        .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                    if !promptTokens.isEmpty {
+                        options.promptTokens = promptTokens
+                        SapoLog.recording.info(
+                            "WhisperKit vocabulary prompt attached tokens=\(promptTokens.count, privacy: .public)"
+                        )
+                    }
+                }
+
                 progress = 0.3
 
                 // Realizar transcripcion

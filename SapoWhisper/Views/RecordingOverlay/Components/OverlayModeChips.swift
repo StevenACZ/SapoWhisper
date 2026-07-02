@@ -57,6 +57,9 @@ struct OverlayModeChips: View {
                 return
             }
             aiPolishMode = prompt.id
+            // Choosing a mode means "polish from now on": lift the
+            // minimum-duration gate so the very next dictation uses it.
+            TranscriptPolishMinimumDuration.promoteToAlwaysForSelectedMode(prompt.id)
             // A translation profile with no target language is a no-op the
             // user cannot see coming — picking it turns the shared output
             // language on (last target, English by default).

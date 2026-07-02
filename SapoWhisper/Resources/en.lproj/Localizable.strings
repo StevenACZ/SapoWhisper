@@ -2,7 +2,6 @@
 "app_name" = "SapoWhisper";
 "version" = "Version %@";
 "made_by" = "Built with care for macOS";
-"about.open_source" = "Open-source project prepared for public sharing.";
 "close" = "Close";
 "cancel" = "Cancel";
 "quit" = "Quit SapoWhisper";
@@ -17,11 +16,9 @@
 "menu.start_recording" = "Start Recording";
 "menu.stop_recording" = "Stop Recording";
 "menu.configure_details" = "Configure voice recognition";
-"menu.last_transcription" = "Last transcription";
-"menu.auto_paste" = "Auto-paste text";
-"menu.auto_paste_sub" = "Pastes automatically when finished";
 "menu.settings" = "Settings";
 "menu.history" = "History";
+"menu.about" = "About SapoWhisper";
 
 /* History */
 "history.title" = "History";
@@ -156,16 +153,13 @@
 "config.app_language" = "App Language";
 "config.app_language_desc" = "User interface language";
 
-/* Info Tab */
-"info.privacy_title" = "Privacy";
-"info.privacy.whisper" = "Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.";
-"info.privacy.deepgram" = "Nova-3 or Flux Live cloud transcription. Requires an API key.";
-"info.privacy.local_ai" = "Audio is sent only to the LAN server you configure. Optional API key support is available for protected servers.";
-"info.privacy.elevenlabs" = "Scribe v2 (batch or realtime) cloud transcription. Requires an API key.";
-"info.privacy.ai_polish" = "Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
+/* About window */
 "about.version_copy_help" = "Click to copy the version";
-"info.permissions_title" = "Required Permissions";
-"info.permissions_body" = "• Microphone: To capture your voice\n• Accessibility: For global hotkey support and auto-paste";
+"about.chip_dictation" = "Global dictation";
+"about.chip_ai" = "AI polish";
+"about.chip_private" = "Private by design";
+"about.github" = "GitHub";
+"about.report_issue" = "Report an issue";
 
 /* Languages */
 "lang.spanish" = "Spanish";
@@ -183,7 +177,6 @@
 "app.description" = "Speech-to-Text local and cloud";
 "config.coming_soon" = "Coming Soon";
 "config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
-"menu.copy_clipboard" = "Copy to clipboard";
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
@@ -284,7 +277,6 @@
 "tab.prompts" = "Prompts";
 "tab.prompts_short" = "Prompts";
 "tab.hotkey" = "Hotkey";
-"tab.about" = "About";
 
 /* Hotkey Settings */
 "settings.hotkey_activation_mode" = "Activation mode";
@@ -644,9 +636,10 @@
 "overlay.repolish_hint" = "Improve with:";
 "overlay.edit_mode" = "Editing copied text…";
 "overlay.cancelled_saved" = "Cancelled — audio saved to History";
-"menu.ai_mode" = "AI mode";
 "menu.edit_clipboard" = "Improve clipboard by voice";
-"menu.edit_clipboard_sub" = "Copy text, then speak an instruction (%@)";
+"settings.edit_hotkey_desc" = "Copy any text, press the shortcut, and speak an instruction: the AI rewrites the clipboard with the result.";
+"settings.edit_hotkey_note" = "Fixed shortcut. Requires AI polish enabled.";
+"settings.welcome_tour_open" = "Open";
 "edit.error_empty_clipboard" = "No text in the clipboard — copy something first";
 "edit.error_not_configured" = "Enable AI polish and configure a provider to use voice editing";
 "edit.error_too_long" = "The copied text is too long for voice editing";

@@ -46,43 +46,6 @@ struct SettingsCard<Content: View>: View {
     }
 }
 
-/// Sección de información con icono, título y contenido de texto
-struct InfoSection: View {
-    let icon: String
-    let title: String
-    let content: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Constants.Colors.sapoGreen)
-                    .frame(width: 18, alignment: .leading)
-
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-            }
-
-            Text(content)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-    }
-}
-
 #Preview("Settings Cards") {
     VStack(spacing: 16) {
         SettingsCard(icon: "gear", title: "Configuration") {
@@ -98,12 +61,6 @@ struct InfoSection: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
-
-        InfoSection(
-            icon: "lock.shield.fill",
-            title: "Privacy",
-            content: "All audio is processed locally on your device. No data is sent to external servers."
-        )
     }
     .padding()
     .frame(width: 420)

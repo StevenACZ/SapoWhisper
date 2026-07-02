@@ -280,6 +280,36 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertNotNil(verdict.retryInstruction)
     }
 
+    /// Real regression: a Spanish dictation containing a cue verb ("genera")
+    /// translated to English loses that cue ("generates" matches no EN
+    /// pattern), so the cross-language cue-preservation check rejected every
+    /// faithful translation and the untranslated text shipped.
+    func testInstructionGuardAcceptsFaithfulTranslationLosingSourceCue() {
+        let raw = "sería bueno que la ventana que genera el resumen se cierre cuando doy clic afuera"
+        let polished = "It would be good if the window that generates the summary closed when I click outside."
+
+        let translated = PolishInstructionResponseGuard.evaluate(
+            raw: raw, polished: polished, translationExpected: true)
+        XCTAssertTrue(translated.isAcceptable, translated.diagnosticSummary)
+
+        // Without a translation target the cue check still applies.
+        let sameLanguage = PolishInstructionResponseGuard.evaluate(
+            raw: raw, polished: polished, translationExpected: false)
+        XCTAssertFalse(sameLanguage.isAcceptable)
+    }
+
+    /// Direct answer/refusal detection must survive the translation
+    /// relaxation — those patterns match the polished text itself.
+    func testInstructionGuardStillRejectsAnswersWhenTranslating() {
+        let raw = "dime cuánto es cinco más cinco"
+        let polished = "Cinco más cinco es 10."
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: raw, polished: polished, translationExpected: true)
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertNotNil(verdict.retryInstruction)
+    }
+
     func testTranslationAcceptsDroppedDuplicateNumbers() {
         let raw = "avísale a ventas que enviamos 5 cajas el lunes y 5 cajas el martes a la bodega"
         let polished = "Tell sales we shipped 5 boxes on Monday and some boxes on Tuesday to the warehouse."

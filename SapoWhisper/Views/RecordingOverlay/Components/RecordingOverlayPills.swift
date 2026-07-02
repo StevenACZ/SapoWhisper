@@ -167,18 +167,56 @@ struct CompletedPillView: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
 
     private static let contentWidth: CGFloat = 400
+    private static let transcriptFontSize: CGFloat = 12
+    private static let transcriptLineSpacing: CGFloat = 3.5
+    /// Measured text taller than this (~10 lines) scrolls in a fixed viewport;
+    /// anything shorter hugs its real height so the pill never shows a mostly
+    /// empty scroll area.
+    private static let scrollThresholdHeight: CGFloat = 178
+    private static let scrollViewportHeight: CGFloat = 184
 
-    /// Rough line estimate at 12pt over `contentWidth`, to decide between a
-    /// content-hugging Text and a fixed scrollable viewport.
-    private var estimatedLineCount: Int {
-        let charactersPerLine = 58
-        return text.components(separatedBy: "\n").reduce(0) { total, paragraph in
-            total + max(1, Int((Double(paragraph.count) / Double(charactersPerLine)).rounded(.up)))
-        }
+    /// Real Core Text measurement at the pill's wrap width. The layout never
+    /// trusts this number for sizing — the concrete-width frame plus
+    /// `fixedSize(vertical:)` below re-measure inside SwiftUI — it only picks
+    /// hugging vs scroll and slims single-line pills. The old estimate
+    /// (characters per line) routinely undersized multi-line text, and under
+    /// the overlay's ideal-size layout a `maxWidth` frame reports one line of
+    /// height, so the transcript overflowed past the pill background and the
+    /// fixed window edge (clipped chips and dock chip).
+    private static func measuredTextSize(_ text: String) -> CGSize {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = transcriptLineSpacing
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: transcriptFontSize),
+                .paragraphStyle: paragraphStyle,
+            ]
+        )
+        let bounds = attributed.boundingRect(
+            with: CGSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+    }
+
+    /// Concrete wrap width: measured single lines keep the pill slim (plus a
+    /// small cushion against Core Text/SwiftUI rounding differences), longer
+    /// text uses the full column.
+    private static func transcriptWidth(for measuredSize: CGSize) -> CGFloat {
+        min(measuredSize.width + 2, contentWidth)
+    }
+
+    private var transcriptText: some View {
+        Text(text)
+            .font(.system(size: Self.transcriptFontSize))
+            .lineSpacing(Self.transcriptLineSpacing)
+            .foregroundColor(.primary.opacity(0.9))
+            .textSelection(.enabled)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.on.clipboard.fill")
                     .font(.system(size: 16))
@@ -234,26 +272,21 @@ struct CompletedPillView: View {
             if !text.isEmpty {
                 // The hosting pill lays out at its ideal size, so a ScrollView
                 // would grow to the full transcript height. Short texts hug
-                // their content; only genuinely long ones get a fixed,
-                // scrollable viewport — a fixed height on a 3-line text reads
-                // as a giant empty pill.
-                if estimatedLineCount <= 7 {
-                    Text(text)
-                        .font(.system(size: 12))
-                        .foregroundColor(.primary.opacity(0.85))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: Self.contentWidth, alignment: .leading)
+                // their measured content; only genuinely long ones get a
+                // fixed, scrollable viewport — a fixed height on a 3-line
+                // text reads as a giant empty pill.
+                let measuredSize = Self.measuredTextSize(text)
+                if measuredSize.height <= Self.scrollThresholdHeight {
+                    transcriptText
+                        .frame(width: Self.transcriptWidth(for: measuredSize), alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ScrollView {
-                        Text(text)
-                            .font(.system(size: 12))
-                            .foregroundColor(.primary.opacity(0.85))
-                            .textSelection(.enabled)
+                        transcriptText
                             .frame(width: Self.contentWidth, alignment: .leading)
                             .padding(.bottom, 6)
                     }
-                    .frame(width: Self.contentWidth, height: 184)
+                    .frame(width: Self.contentWidth, height: Self.scrollViewportHeight)
                 }
             }
 

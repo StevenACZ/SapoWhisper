@@ -25,6 +25,9 @@ case "$mode" in
 
     git ls-files -z --cached --others --exclude-standard |
       while IFS= read -r -d '' file; do
+        # Files deleted in the working tree but not yet staged are still
+        # listed by --cached; there is nothing on disk to scan.
+        [ -f "$file" ] || continue
         mkdir -p "$tmp_dir/$(dirname "$file")"
         cp -p "$file" "$tmp_dir/$file"
       done

@@ -449,6 +449,7 @@ final class AIPolishMemoryManager: ObservableObject {
             let sourceKey = normalizedKey(variant)
             guard
                 sourceKey != targetKey,
+                !isFragmentOfTarget(sourceKey: sourceKey, targetKey: targetKey),
                 !existingReplacementKeys.contains(sourceKey),
                 containsTerm(variant, in: rawText)
             else {
@@ -461,6 +462,15 @@ final class AIPolishMemoryManager: ObservableObject {
         let sourceKey = normalizedKey(fuzzy)
         guard sourceKey != targetKey, !existingReplacementKeys.contains(sourceKey) else { return nil }
         return fuzzy
+    }
+
+    /// A legitimate correction source is a DISTORTION of the target ("kit
+    /// push", "cloud code"), never a correctly-spelled fragment of it ("push",
+    /// "Code"). Fragment mappings applied as whole-word replacements would
+    /// rewrite normal prose — every plain "push" becoming "git push" — so they
+    /// are rejected before ever reaching the suggestions UI.
+    private static func isFragmentOfTarget(sourceKey: String, targetKey: String) -> Bool {
+        !sourceKey.isEmpty && targetKey.contains(sourceKey)
     }
 
     private static func correctionSourceVariants(for target: String) -> [String] {
@@ -540,6 +550,7 @@ final class AIPolishMemoryManager: ObservableObject {
                 guard
                     sourceKey.count >= 4,
                     !sourceKey.contains(normalizedKey(target)),
+                    !isFragmentOfTarget(sourceKey: sourceKey, targetKey: normalizedKey(target)),
                     !commonCorrectionSourceWords.contains(sourceKey)
                 else {
                     continue

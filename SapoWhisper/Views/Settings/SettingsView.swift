@@ -91,16 +91,15 @@ struct SettingsView: View {
             tabContent(for: .hotkey) {
                 HotkeySettingsTab()
             }
-            tabContent(for: .about) {
-                AboutSettingsTab()
-            }
         }
+        .animation(Constants.Animation.easeOut, value: selectedTab)
     }
 
     @ViewBuilder
     private func tabContent<Content: View>(for tab: SettingsTab, @ViewBuilder content: () -> Content) -> some View {
         content()
             .opacity(selectedTab == tab ? 1 : 0)
+            .scaleEffect(selectedTab == tab ? 1 : 0.98)
             .allowsHitTesting(selectedTab == tab)
             .accessibilityHidden(selectedTab != tab)
     }
@@ -127,7 +126,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case vocabulary
     case prompts
     case hotkey
-    case about
 
     var id: String { rawValue }
 
@@ -143,8 +141,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             return "tab.prompts".localized
         case .hotkey:
             return "tab.hotkey".localized
-        case .about:
-            return "tab.about".localized
         }
     }
 

@@ -231,6 +231,35 @@ class VocabularyManager: ObservableObject {
         return (terms, max(0, expandedTerms.count - terms.count))
     }
 
+    /// Whisper-style initial prompt for local STT engines (WhisperKit and the
+    /// Local AI Server). Unlike the cloud keyterm payloads, this shows the
+    /// decoder only the CANONICAL spellings — feeding misheard variants here
+    /// would teach the model the wrong forms. Whisper conditions on roughly the
+    /// last 224 tokens, so the glossary is capped and keeps the user's own
+    /// keyterms first (they outrank replacement values on overflow).
+    func initialPromptText(maxLength: Int = 700) -> String {
+        var seen = Set<String>()
+        var terms: [String] = []
+        for candidate in recognitionCandidates(includeReplacementValues: true) {
+            let sanitized = Self.sanitizedRecognitionHint(candidate)
+            let key = sanitized.lowercased()
+            guard !sanitized.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            terms.append(sanitized)
+        }
+        guard !terms.isEmpty else { return "" }
+
+        let prefix = "Glossary: "
+        var body = ""
+        for term in terms {
+            let candidate = body.isEmpty ? term : "\(body), \(term)"
+            guard prefix.count + candidate.count + 1 <= maxLength else { break }
+            body = candidate
+        }
+        guard !body.isEmpty else { return "" }
+        return "\(prefix)\(body)."
+    }
+
     /// Applies saved replacements and high-confidence vocabulary spelling corrections.
     func applyingRecognitionCorrections(to transcript: String) -> String {
         let replacedTranscript = applyingReplacements(to: transcript)
