@@ -61,6 +61,12 @@ addresses, and machine-specific workflow details.
 - An explicit AI polish output language must always run the polish step — polish has no skip gates of any kind, and silently skipping would ship the untranslated transcript.
 - Do not remove the WhisperKit/Deepgram/ElevenLabs/Local AI Server engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route changes.
+- Route every AVAudioEngine call that can assert (`inputNode`, `installTap`,
+  `prepare`/`start`) through `AudioEngineGuard`: AVFAudio throws uncatchable
+  Objective-C NSExceptions mid route transition, which killed the app before
+  the guard existed. Treat the guarded error as transient and retry.
+- Never use a zero-length read as the EOF signal on `AVAudioFile` — reading at
+  exact EOF throws; gate reads on `framePosition < length`.
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.
 - The history retranscribe/re-polish path must not drive live `appState` or overlay.
 - Hotkey registration should fall back to the default combo when registration fails, and re-arm `Esc` after mid-session re-registration.
