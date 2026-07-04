@@ -103,6 +103,10 @@ nonisolated enum Constants {
         static let hotkeyModifiers = "hotkeyModifiers"
         static let hotkeyDoubleTapModifier = "hotkeyDoubleTapModifier"
         static let selectedMicrophone = "selectedMicrophone"
+        /// Pin the explicit mic selection as the system default input (defaults
+        /// to true): device swaps (AirPods connecting) never steal the mic, and
+        /// captures always open the already-warm default route.
+        static let pinPrimaryMicrophone = "pinPrimaryMicrophone"
 
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"

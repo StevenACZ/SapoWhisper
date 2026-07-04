@@ -18,6 +18,7 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
         .rawValue
     @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.pinPrimaryMicrophone) private var pinPrimaryMicrophone = true
     @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
         AudioUploadQuality.defaultValue.rawValue
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
@@ -96,6 +97,31 @@ struct GeneralSettingsTab: View {
                     .labelsHidden()
                     .onChange(of: selectedMicrophone) { _, newUID in
                         syncSystemDefaultInput(uid: newUID)
+                    }
+                }
+
+                if selectedMicrophone != AudioDevice.systemDefault.uid {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: $pinPrimaryMicrophone) {
+                            Text("settings.pin_primary_mic".localized)
+                                .font(.caption)
+                        }
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .onChange(of: pinPrimaryMicrophone) { _, pinned in
+                            if pinned {
+                                syncSystemDefaultInput(uid: selectedMicrophone)
+                            }
+                        }
+
+                        Text(
+                            (pinPrimaryMicrophone
+                                ? "settings.pin_primary_mic_desc_on"
+                                : "settings.pin_primary_mic_desc_off").localized
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 

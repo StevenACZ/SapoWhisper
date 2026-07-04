@@ -850,6 +850,15 @@ class SapoWhisperViewModel: ObservableObject {
         // Guardar la app activa para volver a ella despues de pegar
         PasteManager.savePreviousApp()
 
+        // Primary-mic sync: a pinned explicit mic becomes the system default
+        // input NOW. Opening a non-default device pays full route setup on
+        // every take (on AirPods, the whole Bluetooth handshake); keeping app
+        // and system aligned makes the fast path the only path. The route
+        // settle window this may open is honored by the recorder start below.
+        if PreferredMicrophoneCoordinator.shared.ensureSystemDefaultMatchesSelection() {
+            SapoLog.recording.info("Recording start synced system default input to primary mic")
+        }
+
         // Mostrar overlay PRIMERO para feedback visual inmediato
         sessionPeakAudioLevel = 0
         sessionLevelTrackingStartedAt = triggerTime

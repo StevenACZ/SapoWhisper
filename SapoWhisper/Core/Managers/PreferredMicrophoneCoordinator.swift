@@ -71,6 +71,39 @@ final class PreferredMicrophoneCoordinator {
         AudioInputPreflightManager.shared.preflightSoon(reason: "mic-selection")
     }
 
+    /// Synchronous pre-capture sync: when an explicit mic is selected, make it
+    /// the system default input right now. A capture that opens a device that
+    /// is NOT the system default pays the full route setup every time — on
+    /// Bluetooth (AirPods) that is the whole 1–3 s A2DP→HFP handshake, because
+    /// macOS only keeps the link warm for the default input. Aligning both
+    /// (what the app shows = what System Settings shows) makes the fast path
+    /// the only path. Returns true when the default actually changed, so the
+    /// caller can respect the route settle window.
+    @discardableResult
+    func ensureSystemDefaultMatchesSelection() -> Bool {
+        guard isPrimaryMicPinned else { return false }
+        let preferredUID = selectedMicrophoneUID()
+        guard preferredUID != AudioDevice.systemDefault.uid else { return false }
+
+        if deviceManager.getDeviceID(for: preferredUID) == nil {
+            deviceManager.refreshDevices()
+        }
+        guard let preferredDeviceID = deviceManager.getDeviceID(for: preferredUID),
+            let currentDefaultID = deviceManager.getSystemDefaultInputDevice(),
+            currentDefaultID != preferredDeviceID
+        else { return false }
+
+        let changed = deviceManager.setSystemDefaultInputDevice(preferredDeviceID)
+        if changed {
+            lastResolvedInputDeviceID = preferredDeviceID
+            let deviceName = deviceManager.getDeviceName(for: preferredDeviceID) ?? preferredUID
+            SapoLog.audioRoute.info(
+                "System default input synced to selection device=\(deviceName, privacy: .public)"
+            )
+        }
+        return changed
+    }
+
     private func scheduleReconciliation(
         announceFinalDevice: Bool,
         delayOverride: TimeInterval? = nil
@@ -131,7 +164,7 @@ final class PreferredMicrophoneCoordinator {
         var finalDefaultDeviceID = currentDefaultDeviceID
         var restoredPreferredInput = false
 
-        if currentDefaultDeviceID != preferredDeviceID {
+        if currentDefaultDeviceID != preferredDeviceID, isPrimaryMicPinned {
             restoredPreferredInput = deviceManager.setSystemDefaultInputDevice(preferredDeviceID)
             finalDefaultDeviceID =
                 restoredPreferredInput
@@ -182,5 +215,12 @@ final class PreferredMicrophoneCoordinator {
 
     private func selectedMicrophoneUID() -> String {
         userDefaults.string(forKey: Constants.StorageKeys.selectedMicrophone) ?? AudioDevice.systemDefault.uid
+    }
+
+    /// "Primary microphone" pin (default ON): an explicit selection is imposed
+    /// as the system default input and restored after every device swap, so
+    /// connecting AirPods or a headset never steals the mic.
+    private var isPrimaryMicPinned: Bool {
+        (userDefaults.object(forKey: Constants.StorageKeys.pinPrimaryMicrophone) as? Bool) ?? true
     }
 }
