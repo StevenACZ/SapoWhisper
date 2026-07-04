@@ -192,7 +192,6 @@
 "ai.polish.enable_active" = "Active — AI refines longer transcripts.";
 "ai.polish.enable_active_always" = "Active — runs on every eligible transcript.";
 "ai.polish.output_language" = "Output language";
-"ai.polish.output_language_desc" = "Generates the text in %@.";
 "ai.polish.output_language_translation_desc" = "Speak any language — the AI translates the final text into %@.";
 "ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability. If obvious tokens like links or saved terms drift, SapoWhisper asks the AI to retry before applying the result.";
 "ai.provider.section" = "Provider";
@@ -494,7 +493,6 @@
 "config.delete_term_accessibility" = "Delete term";
 
 /* Prompts & Context */
-"prompts.title" = "Prompts and context";
 "prompts.personal_context" = "Personal context";
 "prompts.personal_context_desc" = "Tell the AI who you are and which tools you use, so it recognizes your technical terms.";
 "prompts.personal_context_hint" = "Sent with every polish request together with your vocabulary. Keep it short.";
@@ -506,7 +504,7 @@
 "prompts.preview_needs_provider" = "Configure the AI provider above to run a preview.";
 "prompts.preview_sample" = "um so basically I wanted to confirm that tomorrow I will push the fix to the feature login branch and then run npm run build";
 "prompts.save_prompt" = "Save";
-"prompts.prompt_saved" = "Prompt saved.";
+"prompts.prompt_saved" = "Saved";
 "prompts.unsaved_changes" = "Unsaved changes";
 
 /* Settings Transfer */

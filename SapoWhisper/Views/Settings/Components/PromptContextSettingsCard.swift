@@ -15,7 +15,8 @@ struct PromptContextSettingsCard: View {
     @State private var isPreviewPolishExpanded = false
     @State private var previewSample = "prompts.preview_sample".localized
     @State private var previewState: PolishPreviewState = .idle
-    @State private var feedbackMessage: String?
+    @State private var showsSavedConfirmation = false
+    @State private var savedConfirmationTask: Task<Void, Never>?
 
     private enum PolishPreviewState: Equatable {
         case idle
@@ -33,17 +34,11 @@ struct PromptContextSettingsCard: View {
     }
 
     var body: some View {
-        SettingsCard(icon: "text.badge.star", title: "prompts.title".localized) {
-            VStack(alignment: .leading, spacing: 18) {
+        SettingsCard(icon: "person.text.rectangle", title: "prompts.personal_context".localized) {
+            VStack(alignment: .leading, spacing: 12) {
                 personalContextSection
                 Divider()
                 previewPolishSection
-
-                if let feedbackMessage {
-                    Text(feedbackMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
         .onAppear {
@@ -54,20 +49,27 @@ struct PromptContextSettingsCard: View {
     // MARK: - Personal context
 
     private var personalContextSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(
-                title: "prompts.personal_context".localized,
-                subtitle: "prompts.personal_context_desc".localized
-            )
+        VStack(alignment: .leading, spacing: 8) {
+            Text("prompts.personal_context_desc".localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             SettingsTextEditor(text: $draftContext, minHeight: 96)
 
             HStack(spacing: 8) {
                 Text("prompts.personal_context_hint".localized)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                     .lineLimit(2)
-                Spacer()
+                Spacer(minLength: 8)
+
+                if showsSavedConfirmation {
+                    Label("prompts.prompt_saved".localized, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.sapoGreen)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
 
                 if hasUnsavedChanges {
                     Circle()
@@ -77,16 +79,27 @@ struct PromptContextSettingsCard: View {
                         .help("prompts.unsaved_changes".localized)
                 }
 
-                Button("prompts.save_prompt".localized) {
-                    promptManager.updatePersonalContext(details: draftContext)
-                    draftContext = promptManager.personalContext.details
-                    feedbackMessage = "prompts.prompt_saved".localized
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Constants.Colors.sapoGreen)
-                .disabled(!hasUnsavedChanges)
+                Button("prompts.save_prompt".localized, action: saveContext)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Constants.Colors.sapoGreen)
+                    .disabled(!hasUnsavedChanges)
             }
             .animation(.smooth(duration: 0.2), value: hasUnsavedChanges)
+            .animation(.smooth(duration: 0.2), value: showsSavedConfirmation)
+        }
+    }
+
+    private func saveContext() {
+        promptManager.updatePersonalContext(details: draftContext)
+        draftContext = promptManager.personalContext.details
+        savedConfirmationTask?.cancel()
+        showsSavedConfirmation = true
+        savedConfirmationTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.smooth(duration: 0.3)) {
+                showsSavedConfirmation = false
+            }
         }
     }
 

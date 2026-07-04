@@ -192,7 +192,6 @@
 "ai.polish.enable_active" = "Activo — la IA refina dictados largos.";
 "ai.polish.enable_active_always" = "Activo — se aplica a cada transcript elegible.";
 "ai.polish.output_language" = "Idioma de salida";
-"ai.polish.output_language_desc" = "Genera el texto en %@.";
 "ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad. Si se alteran tokens obvios como links o términos guardados, SapoWhisper le pide a la IA que reintente antes de aplicar el resultado.";
 "ai.provider.section" = "Proveedor";
@@ -494,7 +493,6 @@
 "config.delete_term_accessibility" = "Eliminar término";
 
 /* Prompts & Context */
-"prompts.title" = "Prompts y contexto";
 "prompts.personal_context" = "Contexto personal";
 "prompts.personal_context_desc" = "Cuéntale a la IA quién eres y qué herramientas usas, para que reconozca tus términos técnicos.";
 "prompts.personal_context_hint" = "Se envía con cada mejora junto a tu vocabulario. Mantenlo corto.";
@@ -506,7 +504,7 @@
 "prompts.preview_needs_provider" = "Configura el proveedor de IA arriba para ejecutar una prueba.";
 "prompts.preview_sample" = "eh bueno quería confirmarte que mañana subo el fix a la rama feature login y luego corro npm run build";
 "prompts.save_prompt" = "Guardar";
-"prompts.prompt_saved" = "Prompt guardado.";
+"prompts.prompt_saved" = "Guardado";
 "prompts.unsaved_changes" = "Cambios sin guardar";
 
 /* Settings Transfer */

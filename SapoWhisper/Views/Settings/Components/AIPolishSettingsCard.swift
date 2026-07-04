@@ -51,10 +51,6 @@ struct AIPolishSettingsCard: View {
         TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
     }
 
-    private var outputLanguageOptions: [TranscriptPolishOutputLanguage] {
-        return TranscriptPolishOutputLanguage.allCases
-    }
-
     var body: some View {
         SettingsCard(icon: "sparkles", title: "ai.polish.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
@@ -90,8 +86,7 @@ struct AIPolishSettingsCard: View {
 
                 Divider()
 
-                outputLanguagePicker
-                    .fixedSize(horizontal: false, vertical: true)
+                outputLanguageRow
                     .opacity(aiPolishEnabled ? 1 : 0.62)
             }
             .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
@@ -186,27 +181,43 @@ struct AIPolishSettingsCard: View {
         }
     }
 
-    // MARK: - Behavior
+    // MARK: - Output language
 
-    private var outputLanguagePicker: some View {
-        AIPolishSettingRow(
-            title: "ai.polish.output_language".localized,
-            detail: currentOutputLanguage.requiresTranslation
-                ? "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName)
-                : "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
-        ) {
-            Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
-                ForEach(outputLanguageOptions) { language in
-                    Text(language.displayName).tag(language.rawValue)
+    /// Single inline row: the picker already names the current value, so the
+    /// only extra copy is the translation note when a target is picked.
+    private var outputLanguageRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("ai.polish.output_language".localized)
+                    .font(.subheadline.weight(.semibold))
+
+                AIPolishFidelityBadge()
+
+                Spacer(minLength: 8)
+
+                Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
+                    ForEach(TranscriptPolishOutputLanguage.allCases) { language in
+                        Text(language.displayName).tag(language.rawValue)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!aiPolishEnabled)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!aiPolishEnabled)
-        } footer: {
-            AIPolishFidelityBadge()
+
+            if currentOutputLanguage.requiresTranslation {
+                Label(
+                    "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName),
+                    systemImage: "globe"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
+        .animation(.smooth(duration: 0.22), value: currentOutputLanguage.requiresTranslation)
     }
 }
 
