@@ -35,9 +35,10 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         try writeWAV(to: orphan, seconds: 5, staleHeader: true)
         try backdate(orphan, by: 300)
 
-        let recovered = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+        let recovery = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
 
-        XCTAssertEqual(recovered, 1)
+        XCTAssertEqual(recovery.count, 1)
+        XCTAssertEqual(recovery.latest?.duration ?? 0, 5.0, accuracy: 0.1)
         let entries = manager.fetchAll()
         XCTAssertEqual(entries.count, 1)
         let entry = try XCTUnwrap(entries.first)
@@ -87,14 +88,56 @@ final class OrphanAudioRecoveryTests: XCTestCase {
             audioPath: referenced.path, status: "failed"
         )
 
-        let recovered = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+        let recovery = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
 
-        XCTAssertEqual(recovered, 0)
+        XCTAssertEqual(recovery.count, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: short.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: micTest.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: referenced.path))
         XCTAssertEqual(manager.fetchAll().count, 1)
+    }
+
+    func testDeadOwnerMarkerRecoversFreshWAVImmediately() throws {
+        // Fresh WAV (no backdate) that the old 60 s age gate would skip, but
+        // its active-recording marker names a dead PID → instant adoption.
+        let orphan = tempDir.appendingPathComponent("recording_marked.wav")
+        try writeWAV(to: orphan, seconds: 4, staleHeader: true)
+        let marker = ActiveRecordingMarker.markerURL(for: orphan)
+        try "99999999".write(to: marker, atomically: true, encoding: .utf8)
+
+        let recovery = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+
+        XCTAssertEqual(recovery.count, 1)
+        XCTAssertEqual(manager.fetchAll().count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "dead marker must be cleaned up")
+    }
+
+    func testLiveOwnerMarkerProtectsFreshWAV() throws {
+        // PID 1 (launchd) always reads as alive → the WAV belongs to a live
+        // session and must not be stolen.
+        let active = tempDir.appendingPathComponent("recording_live.wav")
+        try writeWAV(to: active, seconds: 4, staleHeader: true)
+        let marker = ActiveRecordingMarker.markerURL(for: active)
+        try "1".write(to: marker, atomically: true, encoding: .utf8)
+
+        let recovery = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+
+        XCTAssertEqual(recovery.count, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: active.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "live marker must stay")
+    }
+
+    func testMarkClearRoundTrip() throws {
+        let wav = tempDir.appendingPathComponent("recording_roundtrip.wav")
+        try writeWAV(to: wav, seconds: 1, staleHeader: false)
+
+        ActiveRecordingMarker.mark(wav)
+        let marker = ActiveRecordingMarker.markerURL(for: wav)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+
+        ActiveRecordingMarker.clear(wav)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
 
     // MARK: - Helpers

@@ -20,8 +20,11 @@ nonisolated extension StreamingAudioCapture {
         converter = nil
         converterOutputFormat = nil
         chunkHandler = nil
-        if deleteTemporaryFile, let url = recordingURL ?? self.recordingURL {
-            deleteRecording(at: url)
+        if let url = recordingURL ?? self.recordingURL {
+            ActiveRecordingMarker.clear(url)
+            if deleteTemporaryFile {
+                deleteRecording(at: url)
+            }
         }
         self.recordingURL = nil
     }

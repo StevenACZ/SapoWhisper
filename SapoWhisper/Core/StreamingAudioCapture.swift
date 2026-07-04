@@ -141,7 +141,10 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
                 do {
                     let localEngine = AVAudioEngine()
                     engine = localEngine
-                    let inputNode = localEngine.inputNode
+                    // AudioEngineGuard: route changes mid-setup raise
+                    // uncatchable NSExceptions inside AVFAudio; the guard
+                    // makes them transient start failures instead of SIGABRT.
+                    let inputNode = try AudioEngineGuard.inputNode(of: localEngine, operation: "streaming-input-node")
                     let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
                     let tapFormat = hwFormat ?? inputNode.outputFormat(forBus: 0)
 
@@ -163,14 +166,19 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
                     self.audioFile = audioFile
                     self.converterOutputFormat = self.outputFormat
                     self.recordingURL = recordingURL
+                    // Sidecar marker: crash/force-quit recovery adopts this
+                    // WAV instantly on relaunch (see ActiveRecordingMarker).
+                    ActiveRecordingMarker.mark(recordingURL)
 
-                    inputNode.installTap(onBus: 0, bufferSize: self.tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+                    try AudioEngineGuard.installTap(
+                        on: inputNode, bufferSize: self.tapBufferSize, format: tapFormat,
+                        operation: "streaming-install-tap"
+                    ) { [weak self] buffer, _ in
                         self?.processAudioBuffer(buffer)
                     }
 
-                    localEngine.prepare()
                     self.startRecordingTime = CFAbsoluteTimeGetCurrent()
-                    try localEngine.start()
+                    try AudioEngineGuard.prepareAndStart(localEngine, operation: "streaming-engine-start")
                     MicrophonePermission.noteAudioInputGranted()
 
                     // A2: keep the engine reachable from the setup queue and watch
@@ -217,6 +225,9 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
             audioWriteQueue.sync {}
 
             let currentURL = recordingURL
+            if let currentURL {
+                ActiveRecordingMarker.clear(currentURL)
+            }
             audioFile = nil
             audioEngine = nil
             converter = nil

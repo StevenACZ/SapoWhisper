@@ -109,6 +109,12 @@ class SapoWhisperViewModel: ObservableObject {
     private static let stopTailPadding: TimeInterval = 0.12
     private static let firstInputBufferTimeout: TimeInterval = 0.8
     private static let startRetryBudget: TimeInterval = 1.0
+    /// Bluetooth inputs renegotiate the link when the mic opens (AirPods
+    /// switch A2DP→HFP, 1–3 s of dead air). The default timeouts declared the
+    /// capture failed while the handshake was still in flight, so BT inputs
+    /// get a wider first-buffer window and retry budget.
+    private static let bluetoothFirstInputBufferTimeout: TimeInterval = 2.5
+    private static let bluetoothStartRetryBudget: TimeInterval = 5.0
     private static let startRetryBackoffs: [TimeInterval] = [0.15, 0.30]
     private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
@@ -134,6 +140,46 @@ class SapoWhisperViewModel: ObservableObject {
 
     var sessionLooksSilent: Bool {
         sessionPeakAudioLevel < Self.noSpeechPeakLevelThreshold
+    }
+
+    // MARK: - Resumable dictation (continue-previous merge)
+
+    /// A recently cancelled or crash-recovered take the user may prepend to
+    /// the next recording ("continuar dictado anterior").
+    struct ResumableDictation {
+        let historyId: Int64
+        let audioURL: URL
+        let duration: TimeInterval
+        let capturedAt: Date
+    }
+
+    private var resumableDictation: ResumableDictation?
+    /// The user opted into the merge via the recording pill chip.
+    private var resumeMergeRequested = false
+    /// Offers older than this are stale — a new dictation is a new thought.
+    private static let resumableDictationWindow: TimeInterval = 30 * 60
+
+    /// The current offer, or nil when expired / audio gone.
+    private var validResumableDictation: ResumableDictation? {
+        guard let resumable = resumableDictation else { return nil }
+        guard Date().timeIntervalSince(resumable.capturedAt) < Self.resumableDictationWindow,
+            FileManager.default.fileExists(atPath: resumable.audioURL.path)
+        else {
+            resumableDictation = nil
+            return nil
+        }
+        return resumable
+    }
+
+    /// Launch-time entry point: the orphan recovery adopted a crashed take.
+    func offerResumableDictation(_ resumable: ResumableDictation) {
+        resumableDictation = resumable
+    }
+
+    /// m:ss label for the resume chip.
+    private static func formatResumeDuration(_ duration: TimeInterval) -> String {
+        let total = max(0, Int(duration.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     // MARK: - Computed Properties
@@ -268,6 +314,11 @@ class SapoWhisperViewModel: ObservableObject {
             Task { @MainActor in
                 self?.repolishLastTranscription()
             }
+        }
+        overlayManager.onResumeToggled = { [weak self] isActive in
+            guard let self else { return }
+            self.resumeMergeRequested = isActive
+            SapoLog.recording.info("Resume-previous merge toggled active=\(isActive, privacy: .public)")
         }
     }
 
@@ -517,11 +568,11 @@ class SapoWhisperViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // Observe device changes for visual notification
-        AudioDeviceManager.shared.$detectedDeviceName
+        AudioDeviceManager.shared.$deviceChangeAnnouncement
             .compactMap { $0 }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] deviceName in
-                self?.overlayManager.showDeviceDetected(deviceName: deviceName)
+            .sink { [weak self] announcement in
+                self?.overlayManager.showDeviceChange(announcement)
             }
             .store(in: &cancellables)
     }
@@ -805,6 +856,20 @@ class SapoWhisperViewModel: ObservableObject {
         appState = .recording
 
         overlayManager.updateState(.recording(duration: 0))
+        // Until the first real buffer lands, the pill says "connecting <mic>"
+        // instead of showing a dead flat waveform — Bluetooth inputs spend
+        // 1–3 s renegotiating (A2DP→HFP) before any signal flows.
+        overlayManager.setMicConnecting(deviceName: effectiveInputDisplayName())
+
+        // Continue-previous offer: only the batch recorder can prepend audio
+        // at stop time (streaming engines transcribe live). Starts opted-out.
+        resumeMergeRequested = false
+        let isBatchEngine = !isElevenLabsRealtimeSelected && !isDeepgramFluxLiveSelected
+        if isBatchEngine, let resumable = validResumableDictation {
+            overlayManager.setResumeOffer(durationLabel: Self.formatResumeDuration(resumable.duration))
+        } else {
+            overlayManager.setResumeOffer(durationLabel: nil)
+        }
         let uiReadyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
         SapoLog.recording.info("Recording UI ready in \(uiReadyMs, privacy: .public)ms")
         PerformanceDiagnostics.logRuntimeSnapshot(
@@ -1138,10 +1203,18 @@ class SapoWhisperViewModel: ObservableObject {
                 return
             }
 
+            // Continue-previous merge: prepend the offered take before
+            // transcription so one transcript covers both. On merge failure
+            // the current take still transcribes alone — never lose new audio
+            // over an enhancement.
+            let mergeResumable = resumeMergeRequested ? validResumableDictation : nil
+            resumeMergeRequested = false
+
             // No-speech fast path: the whole session peaked below the silence
             // threshold, so skip the network entirely. The WAV stays on disk
-            // (guardrail) and no failed history row is created.
-            if sessionLooksSilent {
+            // (guardrail) and no failed history row is created. A requested
+            // merge bypasses the gate — the previous take carries the speech.
+            if sessionLooksSilent && mergeResumable == nil {
                 activeTranscriptionSessionID = nil
                 SapoLog.recording.info(
                     "No-speech fast path engaged engine=\(engine.rawValue, privacy: .public) peakDb=\(self.approximateSessionPeakDb, privacy: .public)"
@@ -1155,6 +1228,28 @@ class SapoWhisperViewModel: ObservableObject {
                 return
             }
 
+            var effectiveAudioURL = audioURL
+            var effectiveDuration = duration
+            if let mergeResumable {
+                do {
+                    let mergedURL = try AudioFileMerger.merge(first: mergeResumable.audioURL, second: audioURL)
+                    audioRecorder.deleteRecording(at: audioURL)
+                    effectiveAudioURL = mergedURL
+                    effectiveDuration = mergeResumable.duration + duration
+                    resumableDictation = nil
+                    // The merged take supersedes the recovered/cancelled row;
+                    // keeping it would duplicate the same audio in History.
+                    historyManager.delete(id: mergeResumable.historyId)
+                    SapoLog.recording.info(
+                        "Continue-previous merge applied durationSec=\(Int(effectiveDuration), privacy: .public)"
+                    )
+                } catch {
+                    SapoLog.recording.error(
+                        "Continue-previous merge failed, transcribing current take only error=\(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+
             let request = TranscriptionPipeline.Request(
                 sessionID: sessionID,
                 engine: engine,
@@ -1166,16 +1261,18 @@ class SapoWhisperViewModel: ObservableObject {
                 perf: perf
             )
 
+            let transcriptionURL = effectiveAudioURL
+            let transcriptionDuration = effectiveDuration
             await transcriptionPipeline.run(request) {
-                let transcript = try await self.transcribeAudio(at: audioURL, using: engine, language: language)
+                let transcript = try await self.transcribeAudio(at: transcriptionURL, using: engine, language: language)
                 return TranscriptionPipeline.EngineOutput(
                     transcript: transcript,
-                    audioURL: audioURL,
-                    duration: duration,
+                    audioURL: transcriptionURL,
+                    duration: transcriptionDuration,
                     language: language
                 )
             } captureResultOnFailure: {
-                (audioURL, duration)
+                (transcriptionURL, transcriptionDuration)
             }
         }
     }
@@ -1546,7 +1643,12 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func startRecorderWithRecovery(microphone: String) async throws {
-        let deadline = CFAbsoluteTimeGetCurrent() + Self.startRetryBudget
+        let transport = AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: microphone)
+        let retryBudget = transport == .bluetooth ? Self.bluetoothStartRetryBudget : Self.startRetryBudget
+        if transport == .bluetooth {
+            SapoLog.recording.info("Capture start on Bluetooth input, using extended timeouts")
+        }
+        let deadline = CFAbsoluteTimeGetCurrent() + retryBudget
         var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
 
         for attempt in 1...3 {
@@ -1556,7 +1658,9 @@ class SapoWhisperViewModel: ObservableObject {
                 let didStart = try await attemptRecorderStart(
                     microphone: microphone,
                     attempt: attempt,
-                    minimumDelay: attempt == 1 ? 0 : Self.startRetryBackoffs[attempt - 2]
+                    minimumDelay: attempt == 1 ? 0 : Self.startRetryBackoffs[attempt - 2],
+                    firstInputTimeout: transport == .bluetooth
+                        ? Self.bluetoothFirstInputBufferTimeout : Self.firstInputBufferTimeout
                 )
                 if didStart {
                     if attempt > 1 {
@@ -1602,7 +1706,8 @@ class SapoWhisperViewModel: ObservableObject {
     private func attemptRecorderStart(
         microphone: String,
         attempt: Int,
-        minimumDelay: TimeInterval
+        minimumDelay: TimeInterval,
+        firstInputTimeout: TimeInterval
     ) async throws -> Bool {
         audioRecorder.selectedDeviceUID = microphone
         let settleDelay = max(minimumDelay, audioRecorder.prepareInputDeviceForRecording())
@@ -1615,7 +1720,7 @@ class SapoWhisperViewModel: ObservableObject {
         guard !Task.isCancelled else { return false }
 
         try await audioRecorder.startRecording()
-        let receivedInput = await audioRecorder.waitForFirstInputBuffer(timeout: Self.firstInputBufferTimeout)
+        let receivedInput = await audioRecorder.waitForFirstInputBuffer(timeout: firstInputTimeout)
         if receivedInput {
             return true
         }
@@ -1623,7 +1728,7 @@ class SapoWhisperViewModel: ObservableObject {
         let diagnostics = audioRecorder.currentCaptureDiagnostics()
         let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
         SapoLog.recording.warning(
-            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(Self.firstInputBufferTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .public)"
+            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .public)"
         )
         return false
     }
@@ -1645,12 +1750,40 @@ class SapoWhisperViewModel: ObservableObject {
 
     // MARK: - No-speech handling
 
+    /// First real signal (above digital silence) collapses the "connecting"
+    /// label; genuinely quiet rooms still read above this because the level
+    /// floor maps ambient noise well over zero.
+    private static let micConnectedLevelThreshold: Float = 0.02
+
     /// Tracks the session peak and drives the live "no voice?" overlay hint.
     private func registerSessionAudioLevel(_ level: Float) {
         guard case .recording = appState else { return }
         sessionPeakAudioLevel = max(sessionPeakAudioLevel, level)
+
+        if overlayManager.micConnectingName != nil, level > Self.micConnectedLevelThreshold {
+            overlayManager.setMicConnecting(deviceName: nil)
+        }
+
         let elapsed = CFAbsoluteTimeGetCurrent() - sessionLevelTrackingStartedAt
-        overlayManager.setNoSpeechHint(sessionLooksSilent && elapsed >= Self.noSpeechHintDelay)
+        // While the mic is still handshaking, "no voice?" would be misleading
+        // — the connecting label owns that window.
+        let hintEligible = overlayManager.micConnectingName == nil
+        overlayManager.setNoSpeechHint(hintEligible && sessionLooksSilent && elapsed >= Self.noSpeechHintDelay)
+    }
+
+    /// Display name of the input the capture will open: the selected device,
+    /// or whatever the system default resolves to right now.
+    private func effectiveInputDisplayName() -> String {
+        let deviceManager = AudioDeviceManager.shared
+        let uid = selectedMicrophone
+        let deviceID =
+            uid == AudioDevice.systemDefault.uid
+            ? deviceManager.getSystemDefaultInputDevice()
+            : deviceManager.getDeviceID(for: uid)
+        guard let deviceID, let name = deviceManager.getDeviceName(for: deviceID) else {
+            return "overlay.mic_generic".localized
+        }
+        return name
     }
 
     /// Approximate session peak in dBFS, derived from the normalized level.
@@ -2033,6 +2166,16 @@ class SapoWhisperViewModel: ObservableObject {
                 lastFailedAudioURL = persistedEntry.audioURL ?? interrupted.audioURL
             } else {
                 clearFailedRetryState()
+            }
+            // Every preserved take becomes the "continue previous dictation"
+            // offer for the next recording (Esc, sleep, device death alike).
+            if persistedEntry.id > 0 {
+                resumableDictation = ResumableDictation(
+                    historyId: persistedEntry.id,
+                    audioURL: persistedEntry.audioURL ?? interrupted.audioURL,
+                    duration: interrupted.duration,
+                    capturedAt: Date()
+                )
             }
             cleanupSourceAudioIfSafe(sourceURL: interrupted.audioURL, persistedEntry: persistedEntry)
             SapoLog.lifecycle.info(

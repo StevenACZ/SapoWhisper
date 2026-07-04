@@ -12,6 +12,29 @@ import Foundation
 import OSLog
 import os
 
+/// Transport class of an audio device, mapped from the Core Audio transport
+/// type. Bluetooth inputs need extra patience: opening the mic renegotiates
+/// the link (A2DP→HFP on AirPods), which takes 1–3 s of silent buffers.
+nonisolated enum AudioDeviceTransport: String {
+    case bluetooth
+    case usb
+    case builtIn
+    case other
+
+    init(coreAudioTransportType: UInt32) {
+        switch coreAudioTransportType {
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
+            self = .bluetooth
+        case kAudioDeviceTransportTypeUSB:
+            self = .usb
+        case kAudioDeviceTransportTypeBuiltIn:
+            self = .builtIn
+        default:
+            self = .other
+        }
+    }
+}
+
 /// Representa un dispositivo de audio (micrófono)
 nonisolated struct AudioDevice: Identifiable, Hashable {
     let id: AudioDeviceID
@@ -58,8 +81,9 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
     @Published var availableDevices: [AudioDevice] = []
     @Published var selectedDeviceUID: String = "default"
 
-    /// Name of the newly detected default input device (published when it changes)
-    @Published var detectedDeviceName: String? = nil
+    /// Latest device-route event for the overlay HUD (phase-aware: connecting,
+    /// ready, fallback). Republished even when equal so repeated events re-show.
+    @Published var deviceChangeAnnouncement: DeviceChangeAnnouncement? = nil
     var routeChanges: AnyPublisher<Void, Never> {
         routeChangeSubject.eraseToAnyPublisher()
     }
@@ -285,6 +309,30 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         captureRouteSettleDelay()
     }
 
+    /// Transport class of a device (Bluetooth/USB/built-in), used to size
+    /// capture-start timeouts and pick HUD icons.
+    nonisolated func transportType(for deviceID: AudioDeviceID) -> AudioDeviceTransport {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var transportType: UInt32 = 0
+        var dataSize = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &transportType)
+        guard status == noErr else { return .other }
+        return AudioDeviceTransport(coreAudioTransportType: transportType)
+    }
+
+    /// Transport of the input the next capture will actually open: the
+    /// selected device when set, otherwise the current system default.
+    nonisolated func effectiveInputTransport(forSelectedUID uid: String) -> AudioDeviceTransport {
+        let deviceID = uid == AudioDevice.systemDefault.uid ? getSystemDefaultInputDevice() : getDeviceID(for: uid)
+        guard let deviceID else { return .other }
+        return transportType(for: deviceID)
+    }
+
     /// Gets the name of a device by its ID
     nonisolated func getDeviceName(for deviceID: AudioDeviceID) -> String? {
         if let cachedName = readState({ state in
@@ -438,10 +486,10 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         notifyRouteChange()
     }
 
-    nonisolated func publishDetectedDeviceName(_ deviceName: String) {
+    nonisolated func publishDeviceChange(_ announcement: DeviceChangeAnnouncement) {
         let publish: @MainActor () -> Void = {
-            self.detectedDeviceName = nil
-            self.detectedDeviceName = deviceName
+            self.deviceChangeAnnouncement = nil
+            self.deviceChangeAnnouncement = announcement
         }
 
         if Thread.isMainThread {

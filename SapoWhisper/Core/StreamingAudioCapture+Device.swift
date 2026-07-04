@@ -141,7 +141,7 @@ nonisolated extension StreamingAudioCapture {
 
     private func rebuildCaptureEngine(afterEvent event: CaptureDeviceSentinel.Event) throws {
         let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
+        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "streaming-rebuild-input-node")
 
         var deviceUID = currentCaptureDeviceUID()
         var boundDeviceID: AudioDeviceID?
@@ -171,11 +171,13 @@ nonisolated extension StreamingAudioCapture {
         // A health probe after this rebuild must see buffers from the new
         // engine, not a fresh-looking timestamp left by the dead one.
         resetLastInputBufferTime()
-        inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+        try AudioEngineGuard.installTap(
+            on: inputNode, bufferSize: tapBufferSize, format: tapFormat,
+            operation: "streaming-rebuild-install-tap"
+        ) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
-        engine.prepare()
-        try engine.start()
+        try AudioEngineGuard.prepareAndStart(engine, operation: "streaming-rebuild-engine-start")
 
         audioEngine = engine
         beginDeviceSentinel(engine: engine, deviceID: boundDeviceID)

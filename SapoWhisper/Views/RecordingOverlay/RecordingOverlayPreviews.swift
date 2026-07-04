@@ -72,6 +72,43 @@ private struct PillPreview<Content: View>: View {
     PillPreview { ErrorPillView(message: "No se pudo conectar", onRetry: {}) }
 }
 
-#Preview("Device Detected") {
-    PillPreview { DeviceDetectedPillView(deviceName: "MacBook Pro Microphone") }
+#Preview("Device Connecting") {
+    PillPreview {
+        DeviceChangePillView(
+            announcement: DeviceChangeAnnouncement(
+                deviceName: "AirPods Pro", transport: .bluetooth, phase: .connecting
+            )
+        )
+    }
+}
+
+#Preview("Device Ready") {
+    PillPreview {
+        DeviceChangePillView(
+            announcement: DeviceChangeAnnouncement(
+                deviceName: "MacBook Pro Microphone", transport: .builtIn, phase: .ready
+            )
+        )
+    }
+}
+
+#Preview("Device Fallback") {
+    PillPreview {
+        DeviceChangePillView(
+            announcement: DeviceChangeAnnouncement(
+                deviceName: "MacBook Pro Microphone", transport: .builtIn, phase: .fallback
+            )
+        )
+    }
+}
+
+#Preview("Recording Connecting") {
+    PillPreview {
+        RecordingPillView(
+            duration: 0,
+            onPause: {},
+            audioLevelPublisher: Just(Float(0)).eraseToAnyPublisher(),
+            connectingDeviceName: "AirPods Pro"
+        )
+    }
 }

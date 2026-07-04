@@ -377,6 +377,12 @@
 "overlay.copied" = "Copied";
 "overlay.edit_mode" = "Voice edit";
 "overlay.device_ready" = "Ready to record";
+"overlay.device_connecting" = "Connecting…";
+"overlay.device_fallback" = "Preferred mic unavailable — using this one";
+"overlay.mic_connecting" = "Connecting %@…";
+"overlay.mic_generic" = "microphone";
+"overlay.resume_previous" = "Include previous dictation";
+"overlay.resume_chip" = "+%@";
 
 /* Sound Settings */
 "settings.sounds" = "Sounds";

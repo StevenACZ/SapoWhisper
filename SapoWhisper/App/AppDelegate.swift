@@ -28,8 +28,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .utility) {
             // Recovery first: orphaned dictation WAVs become retranscribable
             // History rows before the stale sweep can consider deleting them.
-            OrphanAudioRecovery.recoverAbandonedRecordings()
+            let recovery = OrphanAudioRecovery.recoverAbandonedRecordings()
             TemporaryAudioStorage.sweepStaleFiles()
+            // A freshly crashed take (dead-owner marker) becomes the
+            // "continue previous dictation" offer for the next recording.
+            if let latest = recovery.latest, Date().timeIntervalSince(latest.modifiedAt) < 30 * 60 {
+                await MainActor.run {
+                    SapoWhisperAppEnvironment.shared.viewModel.offerResumableDictation(
+                        SapoWhisperViewModel.ResumableDictation(
+                            historyId: latest.historyId,
+                            audioURL: latest.audioURL,
+                            duration: latest.duration,
+                            capturedAt: latest.modifiedAt
+                        )
+                    )
+                }
+            }
         }
         TemporaryAudioStorage.startDailySweep()
         runHistoryAutoDeleteIfConfigured()

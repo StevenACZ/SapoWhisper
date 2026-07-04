@@ -162,6 +162,9 @@ struct RecordingOverlayView: View {
                 onPause: { manager.onPauseToggle?() },
                 audioLevelPublisher: manager.audioLevelPublisher,
                 showsNoSpeechHint: manager.showsNoSpeechHint,
+                connectingDeviceName: manager.micConnectingName,
+                resumeOffer: manager.resumeOffer,
+                onResumeToggle: { manager.toggleResumeOffer() },
                 onTranslationToggled: { manager.onQuickTranslationToggled?($0) }
             )
 
@@ -193,8 +196,8 @@ struct RecordingOverlayView: View {
         case .error(let message, let isRetryable):
             ErrorPillView(message: message, onRetry: isRetryable ? manager.onRetry : nil)
 
-        case .deviceDetected(let deviceName):
-            DeviceDetectedPillView(deviceName: deviceName)
+        case .deviceChange(let announcement):
+            DeviceChangePillView(announcement: announcement)
         }
     }
 }

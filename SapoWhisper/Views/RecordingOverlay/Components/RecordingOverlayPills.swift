@@ -11,15 +11,32 @@ struct RecordingPillView: View {
     let onPause: () -> Void
     let audioLevelPublisher: AnyPublisher<Float, Never>
     var showsNoSpeechHint: Bool = false
+    /// Non-nil while the input still delivers dead air (Bluetooth handshake):
+    /// the pill explains the silence instead of showing a flat waveform.
+    var connectingDeviceName: String? = nil
+    /// "Continue previous dictation" chip: a recent cancelled/crashed take can
+    /// be prepended to this recording at stop time.
+    var resumeOffer: OverlayWindowManager.ResumeOffer? = nil
+    var onResumeToggle: (() -> Void)?
     var onTranslationToggled: ((Bool) -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
             FloatingSapoIcon(state: .recording, size: 32)
             PillDivider()
-            MiniEqualizerView(audioLevelPublisher: audioLevelPublisher, barCount: 11)
+            MiniEqualizerView(
+                audioLevelPublisher: audioLevelPublisher,
+                barCount: 11,
+                isConnecting: connectingDeviceName != nil
+            )
 
-            if showsNoSpeechHint {
+            if let connectingDeviceName {
+                Text("overlay.mic_connecting".localized(connectingDeviceName))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .transition(.opacity)
+            } else if showsNoSpeechHint {
                 HStack(spacing: 5) {
                     Image(systemName: "mic.slash.fill")
                         .font(.system(size: 11, weight: .semibold))
@@ -32,9 +49,14 @@ struct RecordingPillView: View {
                 Text("overlay.recording".localized)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.primary)
+                    .transition(.opacity)
             }
 
             Spacer(minLength: 12)
+
+            if let resumeOffer {
+                ResumePreviousChip(offer: resumeOffer, onTap: { onResumeToggle?() })
+            }
 
             OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
 
@@ -50,6 +72,35 @@ struct RecordingPillView: View {
             OverlayTimer(duration: duration)
         }
         .frame(minWidth: 250)
+        .animation(.easeInOut(duration: 0.2), value: connectingDeviceName)
+    }
+}
+
+/// Opt-in chip to prepend the previous (cancelled or crash-recovered) take to
+/// the current recording. Shows the recoverable duration; active state fills
+/// green so "this dictation will include the previous one" is unambiguous.
+struct ResumePreviousChip: View {
+    let offer: OverlayWindowManager.ResumeOffer
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("overlay.resume_chip".localized(offer.durationLabel))
+                    .font(.system(size: 11, weight: .medium))
+                    .monospacedDigit()
+            }
+            .foregroundColor(offer.isActive ? .white : .primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule().fill(offer.isActive ? Color.sapoGreen : Color.primary.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+        .help("overlay.resume_previous".localized)
     }
 }
 
@@ -402,39 +453,98 @@ struct ErrorPillView: View {
     }
 }
 
-struct DeviceDetectedPillView: View {
-    let deviceName: String
+/// Phase-aware device HUD: a Bluetooth device appears with its real glyph
+/// (AirPods get AirPods), pulses while the route settles, then morphs in place
+/// to a green "ready" check — or to an amber fallback notice when the
+/// preferred mic vanished. The pill view is stable across phase changes
+/// (same overlay state category), so the phase swap animates inside it.
+struct DeviceChangePillView: View {
+    let announcement: DeviceChangeAnnouncement
 
-    @State private var checkScale: CGFloat = 0
+    @State private var badgeScale: CGFloat = 0
+    @State private var iconPulsing = false
+
+    private var accentColor: Color {
+        switch announcement.phase {
+        case .connecting: return .aiPolish
+        case .ready: return .sapoGreen
+        case .fallback: return .sapoError
+        }
+    }
+
+    private var subtitle: String {
+        switch announcement.phase {
+        case .connecting: return "overlay.device_connecting".localized
+        case .ready: return "overlay.device_ready".localized
+        case .fallback: return "overlay.device_fallback".localized
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "mic.badge.plus")
-                .font(.system(size: 18))
-                .foregroundColor(.sapoGreen)
+        HStack(spacing: 12) {
+            Image(systemName: announcement.symbolName)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(accentColor)
                 .symbolRenderingMode(.hierarchical)
+                .frame(width: 28)
+                .opacity(iconPulsing ? 0.35 : 1.0)
+                .contentTransition(.symbolEffect(.replace))
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(deviceName)
-                    .font(.system(size: 12, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(announcement.deviceName)
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
-                Text("overlay.device_ready".localized)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundColor(announcement.phase == .fallback ? accentColor : .secondary)
+                    .lineLimit(2)
+                    .contentTransition(.opacity)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 16))
-                .foregroundColor(.sapoGreen)
-                .scaleEffect(checkScale)
+            phaseBadge
         }
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.2)) {
-                checkScale = 1.0
+        .frame(minWidth: 230)
+        .onAppear { applyPhaseAnimation() }
+        .onChange(of: announcement.phase) { _, _ in
+            badgeScale = 0
+            applyPhaseAnimation()
+        }
+    }
+
+    @ViewBuilder
+    private var phaseBadge: some View {
+        switch announcement.phase {
+        case .connecting:
+            TranscribingIndicator(color: accentColor)
+        case .ready:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 17))
+                .foregroundColor(accentColor)
+                .scaleEffect(badgeScale)
+        case .fallback:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundColor(accentColor)
+                .scaleEffect(badgeScale)
+        }
+    }
+
+    private func applyPhaseAnimation() {
+        switch announcement.phase {
+        case .connecting:
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                iconPulsing = true
+            }
+        case .ready, .fallback:
+            withAnimation(.easeOut(duration: 0.2)) {
+                iconPulsing = false
+            }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.55).delay(0.1)) {
+                badgeScale = 1.0
             }
         }
     }

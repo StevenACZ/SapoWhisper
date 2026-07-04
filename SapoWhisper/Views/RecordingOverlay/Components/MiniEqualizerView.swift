@@ -17,9 +17,14 @@ struct MiniEqualizerView: View {
     let audioLevelPublisher: AnyPublisher<Float, Never>
     /// Odd count keeps a single center bar for the outward ripple.
     var barCount: Int = 5
+    /// While the input is still handshaking (Bluetooth), no real levels
+    /// arrive; a gentle travelling wave shows the meter is alive and waiting
+    /// instead of a dead flat line.
+    var isConnecting: Bool = false
 
     @State private var envelope: CGFloat = 0
     @State private var barLevels: [CGFloat] = []
+    @State private var connectingPhase: Double = 0
 
     private let barWidth: CGFloat = 4
     private let barSpacing: CGFloat = 2.5
@@ -58,10 +63,34 @@ struct MiniEqualizerView: View {
         .onReceive(audioLevelPublisher.receive(on: RunLoop.main)) { audioLevel in
             ingest(CGFloat(audioLevel))
         }
+        .task(id: isConnecting) {
+            guard isConnecting else { return }
+            while !Task.isCancelled {
+                advanceConnectingWave()
+                try? await Task.sleep(nanoseconds: 120_000_000)
+            }
+        }
+    }
+
+    /// Low-amplitude sine travelling outward from the center: clearly alive,
+    /// clearly not voice. Real levels take over the moment they arrive.
+    private func advanceConnectingWave() {
+        guard barLevels.count == barCount else { return }
+        connectingPhase += 0.55
+
+        var levels = barLevels
+        for index in 0..<barCount {
+            let distance = Double(abs(index - centerIndex))
+            let wave = (1 + sin(connectingPhase - distance * 0.9)) / 2
+            levels[index] = CGFloat(0.10 + 0.16 * wave)
+        }
+        withAnimation(.easeInOut(duration: 0.12)) {
+            barLevels = levels
+        }
     }
 
     private func ingest(_ rawLevel: CGFloat) {
-        guard barLevels.count == barCount else { return }
+        guard barLevels.count == barCount, !isConnecting else { return }
         let banded = min(1, max(0, (rawLevel - silenceFloor) / (speechCeiling - silenceFloor)))
         let shaped = banded > 0 ? CGFloat(pow(Double(banded), 0.85)) : 0
 

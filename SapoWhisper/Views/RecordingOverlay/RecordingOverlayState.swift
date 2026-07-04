@@ -20,7 +20,7 @@ enum RecordingOverlayState: Equatable {
     case completed(text: String)
     case cancelled
     case error(message: String, isRetryable: Bool)
-    case deviceDetected(deviceName: String)
+    case deviceChange(DeviceChangeAnnouncement)
     /// Identifies the state type (ignoring associated values) for animation triggers
     var stateCategory: String {
         switch self {
@@ -33,7 +33,7 @@ enum RecordingOverlayState: Equatable {
         case .completed: return "completed"
         case .cancelled: return "cancelled"
         case .error: return "error"
-        case .deviceDetected: return "deviceDetected"
+        case .deviceChange: return "deviceChange"
         }
     }
 
@@ -64,8 +64,8 @@ enum RecordingOverlayState: Equatable {
             return "overlay.cancelled_saved".localized
         case .error(let message, _):
             return message
-        case .deviceDetected(let name):
-            return name
+        case .deviceChange(let announcement):
+            return announcement.deviceName
         }
     }
 }

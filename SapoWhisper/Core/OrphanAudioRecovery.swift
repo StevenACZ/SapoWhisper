@@ -16,34 +16,56 @@ nonisolated enum OrphanAudioRecovery {
 
     /// Only real dictation captures are recoverable; mic-test WAVs are noise.
     static let recoverablePrefixes = ["recording_", "flux_recording_"]
-    /// Files newer than this could still belong to a live session.
+    /// Unmarked files newer than this could still belong to a live session.
+    /// WAVs whose ActiveRecordingMarker owner died skip this gate entirely.
     static let minimumAge: TimeInterval = 60
     /// Sub-second stubs (a start that never captured speech) are not worth a row.
     static let minimumDuration: TimeInterval = 1.0
     static let failureCode = "SapoWhisper/recovered_after_crash"
     static let engineName = "Recovered"
 
+    /// One dictation adopted into History by the recovery sweep.
+    struct RecoveredRecording {
+        let historyId: Int64
+        let audioURL: URL
+        let duration: TimeInterval
+        let modifiedAt: Date
+    }
+
+    struct Result {
+        var recovered: [RecoveredRecording] = []
+        var count: Int { recovered.count }
+        /// Most recently captured recovery — the "continue previous
+        /// dictation?" offer candidate.
+        var latest: RecoveredRecording? {
+            recovered.max(by: { $0.modifiedAt < $1.modifiedAt })
+        }
+    }
+
     /// Scans `directory` for abandoned dictation WAVs and persists each one as
-    /// a failed History row. Returns the number of recovered recordings.
+    /// a failed History row. A WAV is abandoned when its active-recording
+    /// marker names a dead process (instant), or when it is unmarked and older
+    /// than `minimumAge` (legacy crash paths, older app versions).
     @discardableResult
     static func recoverAbandonedRecordings(
         in directory: URL = TemporaryAudioStorage.directory,
         historyManager: TranscriptionHistoryManager = .shared,
         now: Date = Date()
-    ) -> Int {
+    ) -> Result {
         let fileManager = FileManager.default
         guard
             let files = try? fileManager.contentsOfDirectory(
                 at: directory,
                 includingPropertiesForKeys: [.contentModificationDateKey]
             )
-        else { return 0 }
+        else { return Result() }
 
+        let markerAbandoned = Set(ActiveRecordingMarker.abandonedRecordings(in: directory))
         let referencedNames = Set(
             historyManager.referencedAudioPaths().map { ($0 as NSString).lastPathComponent }
         )
 
-        var recovered = 0
+        var result = Result()
         for file in files {
             let name = file.lastPathComponent
             guard name.hasSuffix(".wav"), recoverablePrefixes.contains(where: name.hasPrefix) else { continue }
@@ -52,7 +74,10 @@ nonisolated enum OrphanAudioRecovery {
             let modified =
                 (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate ?? .distantPast
-            guard now.timeIntervalSince(modified) > minimumAge else { continue }
+            if !markerAbandoned.contains(file) {
+                // No dead-owner marker: a live session may still be writing.
+                guard now.timeIntervalSince(modified) > minimumAge else { continue }
+            }
 
             guard let info = WAVHeaderRepair.repairIfNeeded(at: file) else {
                 SapoLog.recording.warning(
@@ -67,7 +92,7 @@ nonisolated enum OrphanAudioRecovery {
                 continue
             }
 
-            let result = historyManager.persistEntry(
+            let persisted = historyManager.persistEntry(
                 audioSource: file,
                 engine: engineName,
                 language: "auto",
@@ -77,23 +102,34 @@ nonisolated enum OrphanAudioRecovery {
                 status: "failed",
                 failureCode: failureCode
             )
-            guard result.rowID > 0 else {
+            guard persisted.rowID > 0 else {
                 SapoLog.recording.error("Orphan WAV recovery insert failed file=\(name, privacy: .public)")
                 continue
             }
-            if result.copiedToHistory {
+            var recoveredURL = file
+            if persisted.copiedToHistory {
                 try? fileManager.removeItem(at: file)
+                if let historyPath = persisted.audioPath {
+                    recoveredURL = URL(fileURLWithPath: historyPath)
+                }
             }
-            recovered += 1
+            result.recovered.append(
+                RecoveredRecording(
+                    historyId: persisted.rowID,
+                    audioURL: recoveredURL,
+                    duration: info.duration,
+                    modifiedAt: modified
+                )
+            )
             SapoLog.recording.info(
                 "Orphan WAV recovered durationSec=\(Int(info.duration), privacy: .public) repairedHeader=\(info.repairedHeader, privacy: .public)"
             )
         }
 
-        if recovered > 0 {
-            SapoLog.recording.info("Orphan audio recovery finished recovered=\(recovered, privacy: .public)")
+        if result.count > 0 {
+            SapoLog.recording.info("Orphan audio recovery finished recovered=\(result.count, privacy: .public)")
         }
-        return recovered
+        return result
     }
 }
 

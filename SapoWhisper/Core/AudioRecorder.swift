@@ -170,7 +170,11 @@ nonisolated class AudioRecorder: @unchecked Sendable {
 
                     let localEngine = AVAudioEngine()
                     engine = localEngine
-                    let inputNode = localEngine.inputNode
+                    // AudioEngineGuard: AVFAudio asserts with uncatchable
+                    // NSException when the route changes under it (AirPods
+                    // handshake); the guard turns that into a transient error
+                    // the start-retry path already knows how to recover from.
+                    let inputNode = try AudioEngineGuard.inputNode(of: localEngine, operation: "recorder-input-node")
 
                     let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
 
@@ -229,9 +233,16 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                     self.audioFile = audioFile
                     self.converterOutputFormat = outputFormat
                     self.recordingURL = recordingURL
+                    // Sidecar marker: lets a relaunch after crash/force-quit
+                    // recover this WAV instantly instead of after the 60 s
+                    // orphan age gate.
+                    ActiveRecordingMarker.mark(recordingURL)
 
                     // Install tap with actual hardware format (queried via Core Audio, not the stale inputNode cache)
-                    inputNode.installTap(onBus: 0, bufferSize: self.tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+                    try AudioEngineGuard.installTap(
+                        on: inputNode, bufferSize: self.tapBufferSize, format: tapFormat,
+                        operation: "recorder-install-tap"
+                    ) { [weak self] buffer, _ in
                         self?.processAudioBuffer(buffer)
                     }
 
@@ -241,10 +252,9 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                         return
                     }
 
-                    localEngine.prepare()
                     // Record start time just before engine.start() so the audio tap sees the correct value
                     self.startRecordingTime = CFAbsoluteTimeGetCurrent()
-                    try localEngine.start()
+                    try AudioEngineGuard.prepareAndStart(localEngine, operation: "recorder-engine-start")
                     MicrophonePermission.noteAudioInputGranted()
 
                     guard self.isSetupGenerationCurrent(setupGeneration) else {
@@ -625,6 +635,9 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         audioWriteQueue.sync {}
 
         let currentURL = recordingURL
+        if let currentURL {
+            ActiveRecordingMarker.clear(currentURL)
+        }
         audioFile = nil
         audioEngine = nil
         converter = nil
@@ -868,8 +881,11 @@ nonisolated class AudioRecorder: @unchecked Sendable {
 
         let cleanupURL = self.recordingURL ?? recordingURL
         self.recordingURL = nil
-        if deleteTemporaryFile, let cleanupURL {
-            deleteRecording(at: cleanupURL)
+        if let cleanupURL {
+            ActiveRecordingMarker.clear(cleanupURL)
+            if deleteTemporaryFile {
+                deleteRecording(at: cleanupURL)
+            }
         }
     }
 
@@ -965,7 +981,7 @@ nonisolated class AudioRecorder: @unchecked Sendable {
 
     private func rebuildCaptureEngine(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) throws {
         let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
+        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "recorder-rebuild-input-node")
 
         var deviceUID = currentCaptureDeviceUID()
         var boundDeviceID: AudioDeviceID?
@@ -995,11 +1011,13 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         // A health probe after this rebuild must see buffers from the new
         // engine, not a fresh-looking timestamp left by the dead one.
         resetLastInputBufferTime()
-        inputNode.installTap(onBus: 0, bufferSize: tapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+        try AudioEngineGuard.installTap(
+            on: inputNode, bufferSize: tapBufferSize, format: tapFormat,
+            operation: "recorder-rebuild-install-tap"
+        ) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
-        engine.prepare()
-        try engine.start()
+        try AudioEngineGuard.prepareAndStart(engine, operation: "recorder-rebuild-engine-start")
 
         audioEngine = engine
         beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
@@ -1072,6 +1090,16 @@ struct RecordingStartFailureClassification {
 func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) -> RecordingStartFailureClassification {
     if error is CancellationError {
         return RecordingStartFailureClassification(isTransient: false, reason: "cancelled")
+    }
+
+    // A caught AVFAudio NSException means the hardware format/HAL state moved
+    // under the engine mid-setup — the signature of an in-flight route change
+    // even when the transition window has already elapsed. Always retry.
+    if let objcException = error as? AudioEngineObjCException {
+        return RecordingStartFailureClassification(
+            isTransient: true,
+            reason: "objc-exception(\(objcException.operation))"
+        )
     }
 
     if let recordingError = error as? RecordingError {

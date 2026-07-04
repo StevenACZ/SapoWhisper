@@ -26,6 +26,29 @@ class OverlayWindowManager: ObservableObject {
     /// the session peak stays under the silence threshold for a few seconds.
     @Published private(set) var showsNoSpeechHint = false
 
+    /// While recording: name of the input that has not delivered real signal
+    /// yet. Bluetooth mics (AirPods) spend 1–3 s renegotiating before audio
+    /// flows — the pill shows "connecting" instead of a dead flat waveform.
+    /// Cleared by the first non-silent buffer, a timeout, or leaving recording.
+    @Published private(set) var micConnectingName: String?
+    private var micConnectingTimeoutTask: Task<Void, Never>?
+    /// Give up on the connecting label after this long; the regular no-speech
+    /// hint takes over for genuinely dead inputs.
+    private static let micConnectingTimeout: TimeInterval = 6.0
+
+    /// "Continue previous dictation" chip state while recording: a recent
+    /// cancelled/crashed take can be prepended to this one at stop time.
+    /// `nil` means no offer; set by the ViewModel when a resumable take exists.
+    struct ResumeOffer: Equatable {
+        let durationLabel: String
+        var isActive: Bool
+    }
+
+    @Published private(set) var resumeOffer: ResumeOffer?
+
+    /// The user toggled the resume chip (already reflected in `resumeOffer`).
+    var onResumeToggled: ((Bool) -> Void)?
+
     let audioLevelPublisher: AnyPublisher<Float, Never>
 
     // MARK: - Callbacks
@@ -355,6 +378,8 @@ class OverlayWindowManager: ObservableObject {
         if case .recording = newState {
         } else {
             showsNoSpeechHint = false
+            setMicConnecting(deviceName: nil)
+            resumeOffer = nil
         }
         SapoLog.overlay.info("Overlay state changed to \(newState.stateCategory, privacy: .public)")
 
@@ -430,8 +455,10 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Shows a brief notification that a new audio device was detected
-    func showDeviceDetected(deviceName: String, autoDismissAfter delay: TimeInterval = 2.5) {
+    /// Shows a device-route event, morphing between phases in place: the
+    /// "connecting" pill upgrades to "ready" without collapsing back to the
+    /// dock, so the switch reads as one continuous story.
+    func showDeviceChange(_ announcement: DeviceChangeAnnouncement) {
         // Don't interrupt active recording/transcribing states
         switch state {
         case .recording, .transcribing, .polishing, .paused:
@@ -440,12 +467,60 @@ class OverlayWindowManager: ObservableObject {
             break
         }
 
-        updateState(.deviceDetected(deviceName: deviceName))
+        updateState(.deviceChange(announcement))
+
+        // Connecting waits generously for its "ready" upgrade; terminal
+        // phases dismiss on their own.
+        let delay: TimeInterval
+        switch announcement.phase {
+        case .connecting: delay = 5.0
+        case .ready: delay = 2.5
+        case .fallback: delay = 4.0
+        }
 
         Task {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            if case .deviceDetected = self.state {
+            if case .deviceChange(let current) = self.state, current == announcement {
                 self.hide()
+            }
+        }
+    }
+
+    /// Arms (or clears) the "continue previous dictation" chip for the
+    /// current recording session. The chip starts inactive; the user opts in.
+    func setResumeOffer(durationLabel: String?) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            resumeOffer = durationLabel.map { ResumeOffer(durationLabel: $0, isActive: false) }
+        }
+    }
+
+    /// Chip tap: flip the opt-in and tell the ViewModel.
+    func toggleResumeOffer() {
+        guard var offer = resumeOffer else { return }
+        offer.isActive.toggle()
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            resumeOffer = offer
+        }
+        onResumeToggled?(offer.isActive)
+    }
+
+    /// Toggles the "connecting <mic>" phase of the recording pill. Passing a
+    /// name arms a timeout that clears the label if signal never arrives.
+    func setMicConnecting(deviceName: String?) {
+        guard micConnectingName != deviceName else { return }
+
+        micConnectingTimeoutTask?.cancel()
+        micConnectingTimeoutTask = nil
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            micConnectingName = deviceName
+        }
+
+        if deviceName != nil {
+            micConnectingTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.micConnectingTimeout * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.setMicConnecting(deviceName: nil)
             }
         }
     }

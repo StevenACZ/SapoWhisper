@@ -112,7 +112,9 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         selectedDeviceUID = deviceUID
 
         do {
-            let inputNode = audioEngine.inputNode
+            // AudioEngineGuard: device switches mid-setup raise uncatchable
+            // NSExceptions inside AVFAudio; route them into this catch.
+            let inputNode = try AudioEngineGuard.inputNode(of: audioEngine, operation: "monitor-input-node")
             let hwFormat = try bindMonitorDevice(to: inputNode)
 
             // Use hardware format to avoid stale cache after device switch
@@ -125,11 +127,12 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
             sampleTapFormat = tapFormat
 
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
+            try AudioEngineGuard.installTap(
+                on: inputNode, bufferSize: 1024, format: tapFormat, operation: "monitor-install-tap"
+            ) { [weak self] buffer, _ in
                 self?.processBuffer(buffer)
             }
-            audioEngine.prepare()
-            try audioEngine.start()
+            try AudioEngineGuard.prepareAndStart(audioEngine, operation: "monitor-engine-start")
             MicrophonePermission.noteAudioInputGranted()
             self.audioEngine = audioEngine
             isMonitoring = true
