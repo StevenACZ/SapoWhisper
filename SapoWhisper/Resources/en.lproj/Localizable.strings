@@ -223,6 +223,9 @@
 "ai.polish.fidelity_max" = "Fidelity at max";
 "ai.provider.error_not_configured" = "AI polish is not configured (missing provider details).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
+"ai.provider.error_truncated" = "The AI response was cut off before finishing.";
+"error.whisperkit.model_load" = "Error loading model: %@";
+"error.whisperkit.transcription" = "Transcription error: %@";
 "ai.provider.error_http" = "AI provider error (%@): %@";
 "ai.provider.error_auth_openai" = "OpenAI rejected the API key. If you pasted an OpenRouter key, switch the provider to OpenRouter; if you want OpenAI, paste an OpenAI key.";
 "ai.provider.error_auth_openrouter" = "OpenRouter rejected the API key. Check that the key belongs to OpenRouter.";

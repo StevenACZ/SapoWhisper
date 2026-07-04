@@ -14,7 +14,7 @@ class DeepgramBatchTranscriber: ObservableObject {
     @Published var isTranscribing: Bool = false
 
     /// Brand name surfaced in user-facing failures and logs.
-    private static let engineName = "Deepgram"
+    nonisolated private static let engineName = "Deepgram"
 
     /// Check if Deepgram API key is configured (hint-based: no keychain prompt)
     var isConfigured: Bool {
@@ -31,11 +31,11 @@ class DeepgramBatchTranscriber: ObservableObject {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
 
-        await MainActor.run { isTranscribing = true }
-        defer { Task { @MainActor in isTranscribing = false } }
+        isTranscribing = true
+        defer { isTranscribing = false }
 
         // Compress audio for faster upload (int16 ~2x smaller than float32)
-        let (audioData, contentType) = compressAudio(from: audioURL)
+        let (audioData, contentType) = await Self.compressAudio(from: audioURL)
 
         // Build URL with query parameters
         // Note: smart_format already includes punctuation, no need for separate punctuate=true
@@ -114,7 +114,10 @@ class DeepgramBatchTranscriber: ObservableObject {
 
     /// Convert WAV float32 to int16 WAV for faster upload (~2x smaller)
     /// while staying in memory to avoid extra disk I/O before the request.
-    private func compressAudio(from wavURL: URL) -> (Data, String) {
+    /// Runs off the main actor: reading and repacking a long take is heavy
+    /// enough to stutter the UI under default MainActor isolation.
+    @concurrent
+    private static func compressAudio(from wavURL: URL) async -> (Data, String) {
         do {
             let sourceFile = try AVAudioFile(forReading: wavURL)
             let fileFormat = sourceFile.fileFormat
@@ -131,7 +134,10 @@ class DeepgramBatchTranscriber: ObservableObject {
                 return (passthroughData, "audio/wav")
             }
 
-            let int16File = try AVAudioFile(forReading: wavURL, commonFormat: .pcmFormatInt16, interleaved: false)
+            // Interleaved client format so each read already carries the exact
+            // little-endian byte layout of a WAV data chunk — the samples are
+            // appended in bulk instead of 2 bytes per loop iteration.
+            let int16File = try AVAudioFile(forReading: wavURL, commonFormat: .pcmFormatInt16, interleaved: true)
             let format = int16File.processingFormat
             let channelCount = Int(format.channelCount)
             let sampleRate = UInt32(format.sampleRate)
@@ -148,21 +154,16 @@ class DeepgramBatchTranscriber: ObservableObject {
 
             while int16File.framePosition < int16File.length {
                 try int16File.read(into: buffer)
+                // Defensive stall guard only — EOF is gated by framePosition above.
+                guard buffer.frameLength > 0 else { break }
                 guard let channels = buffer.int16ChannelData else {
                     throw TranscriptionFailure(
                         kind: .audioCorrupt, engine: Self.engineName,
                         technicalDetail: "failed to access int16 channel data")
                 }
 
-                let frameLength = Int(buffer.frameLength)
-                for frame in 0..<frameLength {
-                    for channel in 0..<channelCount {
-                        var int16 = channels[channel][frame].littleEndian
-                        withUnsafeBytes(of: &int16) { bytes in
-                            pcm16Data.append(contentsOf: bytes)
-                        }
-                    }
-                }
+                let sampleCount = Int(buffer.frameLength) * channelCount
+                pcm16Data.append(UnsafeBufferPointer(start: channels[0], count: sampleCount))
             }
 
             let wavData = makePCM16WAVData(
@@ -180,7 +181,7 @@ class DeepgramBatchTranscriber: ObservableObject {
         }
     }
 
-    private func makePCM16WAVData(pcm16Data: Data, sampleRate: UInt32, channelCount: UInt16) -> Data {
+    nonisolated private static func makePCM16WAVData(pcm16Data: Data, sampleRate: UInt32, channelCount: UInt16) -> Data {
         let bitsPerSample: UInt16 = 16
         let byteRate = sampleRate * UInt32(channelCount) * UInt32(bitsPerSample / 8)
         let blockAlign = channelCount * (bitsPerSample / 8)
@@ -208,7 +209,7 @@ class DeepgramBatchTranscriber: ObservableObject {
         return wav
     }
 
-    private func appendLE<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+    nonisolated private static func appendLE<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
         var littleEndianValue = value.littleEndian
         withUnsafeBytes(of: &littleEndianValue) { bytes in
             data.append(contentsOf: bytes)

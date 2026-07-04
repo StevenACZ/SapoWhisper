@@ -523,16 +523,30 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let senderStats = await audioSender.finishAndCommit(timeout: 2.0)
         defer { cleanupWebSocket() }
 
-        // A failed final-commit send must not discard segments the server
-        // already committed: surface .network only when nothing was captured,
-        // otherwise fall through so waitForFinalTranscript salvages the text.
-        if senderStats.failedMessages > 0 && transcriptAccumulator.transcript.isEmpty {
-            throw TranscriptionFailure(
-                kind: .network,
-                engine: Self.engineName,
-                technicalDetail:
-                    "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends)"
+        // Degraded stream: chunks never reached the server, so the realtime
+        // transcript is missing audio the local WAV still has. Re-transcribe
+        // the full take through the batch endpoint (same pattern as the Flux
+        // fallback); a failed fallback falls through so waitForFinalTranscript
+        // still salvages whatever the server already committed.
+        if senderStats.failedMessages > 0 {
+            SapoLog.recording.warning(
+                "ElevenLabs realtime sender incomplete failedMessages=\(senderStats.failedMessages, privacy: .public) timedOut=\(senderStats.timedOutSends, privacy: .public); falling back to batch transcription"
             )
+            do {
+                return try await transcribeFullCaptureFallback(captureResult, reason: "sender_incomplete")
+            } catch {
+                guard !transcriptAccumulator.transcript.isEmpty else {
+                    throw TranscriptionFailure(
+                        kind: .network,
+                        engine: Self.engineName,
+                        technicalDetail:
+                            "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends); batch fallback failed: \(error.localizedDescription)"
+                    )
+                }
+                SapoLog.recording.warning(
+                    "ElevenLabs realtime batch fallback failed reason=\(error.localizedDescription, privacy: .public); salvaging committed segments"
+                )
+            }
         }
 
         let finalWaitStartedAt = CFAbsoluteTimeGetCurrent()
@@ -547,15 +561,29 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         } else {
             finalWaitTimeout = 0.75
         }
-        let transcript = try await waitForFinalTranscript(
-            timeout: finalWaitTimeout,
+        let transcript: String
+        do {
+            transcript = try await waitForFinalTranscript(
+                timeout: finalWaitTimeout,
+                committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
+            )
+        } catch {
+            // The stream died without committing anything usable; the local
+            // WAV still has the take, so batch it instead of losing the words.
+            SapoLog.recording.warning(
+                "ElevenLabs realtime final transcript failed reason=\(error.localizedDescription, privacy: .public); falling back to batch transcription"
+            )
+            return try await transcribeFullCaptureFallback(captureResult, reason: "final_transcript_failed")
+        }
+        let salvagedTranscript = salvagingPendingPartial(
+            transcript,
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
         )
         let finalWaitMs = Int((CFAbsoluteTimeGetCurrent() - finalWaitStartedAt) * 1000)
         let stopElapsedMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
 
         let cleanedTranscript = VocabularyManager.shared
-            .applyingRecognitionCorrections(to: transcript)
+            .applyingRecognitionCorrections(to: salvagedTranscript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         SapoLog.recording.info(
@@ -569,7 +597,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         )
 
         guard !cleanedTranscript.isEmpty else {
-            throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
+            // The realtime session produced nothing while the WAV has audio
+            // (VAD never fired, final commit lost): batch the take before
+            // surfacing an empty transcription.
+            return try await transcribeFullCaptureFallback(captureResult, reason: "empty_realtime_transcript")
         }
 
         return ElevenLabsScribeRealtimeResult(
@@ -579,6 +610,54 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             language: requestedLanguage,
             diagnostics: captureResult.diagnostics
         )
+    }
+
+    /// Batch fallback for a degraded realtime session (mirrors
+    /// `DeepgramFluxLiveTranscriber.transcribeFullCaptureFallback`): the local
+    /// WAV holds the complete take, so re-transcribing it through the Scribe
+    /// batch endpoint recovers words the stream lost. The batch transcriber
+    /// reads the same Keychain API key and already applies vocabulary
+    /// corrections and the empty-transcript guard.
+    private func transcribeFullCaptureFallback(
+        _ captureResult: StreamingAudioCaptureResult,
+        reason: String
+    ) async throws -> ElevenLabsScribeRealtimeResult {
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        let transcript = try await ElevenLabsScribeTranscriber().transcribe(
+            audioURL: captureResult.audioURL,
+            language: requestedLanguage
+        )
+
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+        SapoLog.recording.info(
+            "ElevenLabs realtime fallback transcript completed reason=\(reason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(transcript.count, privacy: .public) bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
+        )
+
+        return ElevenLabsScribeRealtimeResult(
+            transcript: transcript,
+            audioURL: captureResult.audioURL,
+            duration: captureResult.duration,
+            language: requestedLanguage,
+            diagnostics: captureResult.diagnostics
+        )
+    }
+
+    /// The final commit can outlive the stop wait; when it never arrived, the
+    /// pending partial still holds the tail of the dictation — append it
+    /// instead of silently truncating the take.
+    private func salvagingPendingPartial(
+        _ transcript: String,
+        committedCountBeforeFinalCommit: Int
+    ) -> String {
+        guard transcriptAccumulator.committedCount == committedCountBeforeFinalCommit,
+            transcriptAccumulator.hasUncommittedPartial
+        else { return transcript }
+
+        let pendingPartial = transcriptAccumulator.latestPartial
+        SapoLog.recording.warning(
+            "ElevenLabs realtime final commit missing; appending pending partial chars=\(pendingPartial.count, privacy: .public)"
+        )
+        return transcript.isEmpty ? pendingPartial : "\(transcript) \(pendingPartial)"
     }
 
     func transcribe(audioURL: URL, language: String) async throws -> String {
@@ -630,8 +709,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             timeout: 6.0,
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
         )
+        let salvagedTranscript = salvagingPendingPartial(
+            transcript,
+            committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
+        )
         let cleanedTranscript = VocabularyManager.shared
-            .applyingRecognitionCorrections(to: transcript)
+            .applyingRecognitionCorrections(to: salvagedTranscript)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.recording.info(
@@ -1033,6 +1116,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
                 technicalDetail: "could not create pcm_16000 converter"
             )
         }
+        // Mastering-grade sample rate conversion: the default SRC's
+        // anti-aliasing is mediocre for the 48k→16k hop.
+        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
 
         let inputFrames = AVAudioFrameCount(inputFile.length)
         guard inputFrames > 0,

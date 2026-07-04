@@ -69,6 +69,12 @@ final class AIPolishMemoryManager: ObservableObject {
         replacements: [String: String],
         now: Date = Date()
     ) {
+        // Suggestions only ever come from applied polishes; every other
+        // status has nothing to learn, and this runs before the paste — no
+        // reason to lock, prune, and rewrite the store JSON on each dictation
+        // (it used to fire even with AI polish disabled).
+        guard status == .applied else { return }
+
         let raw = observedRawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let corrected = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
         let final = finalText.trimmingCharacters(in: .whitespacesAndNewlines)

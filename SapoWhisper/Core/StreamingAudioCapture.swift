@@ -61,8 +61,8 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
     var smoothedAudioLevel: Float = 0
     var lastAudioLevelPublishTime: CFAbsoluteTime = 0
     var activeGain: Float = 1
-    var converterLock = os_unfair_lock()
-    var captureStateLock = os_unfair_lock()
+    let converterLock = OSAllocatedUnfairLock()
+    let captureStateLock = OSAllocatedUnfairLock()
     var startRecordingTime: CFAbsoluteTime = 0
     var firstInputBufferLogged = false
     // captureStateLock-guarded: written by the tap via registerInputBuffer(at:),
@@ -277,8 +277,13 @@ nonisolated final class StreamingAudioCapture: @unchecked Sendable {
 
     func resumeRecording() throws {
         guard isRecording, isPaused else { return }
-        // A4: engine lifecycle stays on audioSetupQueue (see pauseRecording).
-        try audioSetupQueue.sync { try audioEngine?.start() }
+        // A4: engine lifecycle stays on audioSetupQueue (see pauseRecording),
+        // and the start goes through AudioEngineGuard — AVFAudio can assert
+        // with an uncatchable NSException if the route changed while paused.
+        try audioSetupQueue.sync {
+            guard let engine = audioEngine else { return }
+            try AudioEngineGuard.run("streaming-resume-engine-start") { try engine.start() }
+        }
         MicrophonePermission.noteAudioInputGranted()
         isPaused = false
         startTime = Date()

@@ -20,6 +20,12 @@ enum DeepgramFluxRequestFactory {
         ]
         if let languageHint = TranscriptionLanguageCatalog.deepgramFluxLanguageHint(for: language) {
             components.queryItems?.append(URLQueryItem(name: "language_hint", value: languageHint))
+        } else if language == "auto" {
+            // Flux documents `language_hint` as repeatable and recommends
+            // sending every expected language for bilingual speakers, so auto
+            // mode hints the user's es+en profile instead of none.
+            components.queryItems?.append(URLQueryItem(name: "language_hint", value: "es"))
+            components.queryItems?.append(URLQueryItem(name: "language_hint", value: "en"))
         }
         components.queryItems?.append(contentsOf: VocabularyManager.shared.keytermQueryItems())
 

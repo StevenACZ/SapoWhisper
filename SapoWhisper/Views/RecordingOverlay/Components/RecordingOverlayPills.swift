@@ -72,7 +72,8 @@ struct RecordingPillView: View {
             OverlayTimer(duration: duration)
         }
         .frame(minWidth: 250)
-        .animation(.easeInOut(duration: 0.2), value: connectingDeviceName)
+        // No local animation for the connecting swap: the manager's spring
+        // transaction drives it (same pattern as `showsNoSpeechHint`).
     }
 }
 
@@ -179,6 +180,7 @@ struct AIPolishingPillView: View {
                     .monospacedDigit()
                     .foregroundColor(.secondary)
                     .contentTransition(.numericText(countsDown: true))
+                    .animation(Constants.Animation.tick, value: remaining)
             }
         }
         .onAppear { startedAt = Date() }
@@ -191,7 +193,7 @@ struct CompletedPillView: View {
     var onClose: (() -> Void)?
 
     @State private var iconScale: CGFloat = 0
-    @State private var showGlow = false
+    @State private var glowFlash = 0
     @State private var showRecopied = false
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
 
@@ -213,6 +215,12 @@ struct CompletedPillView: View {
     /// height, so the transcript overflowed past the pill background and the
     /// fixed window edge (clipped chips and dock chip).
     private static func measuredTextSize(_ text: String) -> CGSize {
+        // Single-entry cache: the body re-evaluates repeatedly for the same
+        // transcript (hover, recopy, glow), and each Core Text pass is
+        // comparatively expensive.
+        if let lastMeasurement, lastMeasurement.text == text {
+            return lastMeasurement.size
+        }
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = transcriptLineSpacing
         let attributed = NSAttributedString(
@@ -226,8 +234,12 @@ struct CompletedPillView: View {
             with: CGSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
-        return CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+        let size = CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+        lastMeasurement = (text, size)
+        return size
     }
+
+    private static var lastMeasurement: (text: String, size: CGSize)?
 
     /// Concrete wrap width: measured single lines keep the pill slim (plus a
     /// small cushion against Core Text/SwiftUI rounding differences), longer
@@ -313,21 +325,25 @@ struct CompletedPillView: View {
 
         }
         .frame(maxWidth: Self.contentWidth)
-        .overlay(glowStroke(color: .sapoGreen, isVisible: showGlow))
+        // One-shot success outline: short delay, ~0.3 s flash in, hold,
+        // ~0.8 s fade out. Keyframes replace the old pair of delayed
+        // withAnimation calls, which competed over one flag and could leave
+        // a stale glow when the pill changed under them.
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
+            content.overlay(glowStroke(color: .sapoGreen, intensity: glow))
+        } keyframes: { _ in
+            KeyframeTrack {
+                LinearKeyframe(0.0, duration: 0.15)
+                CubicKeyframe(1.0, duration: 0.3)
+                LinearKeyframe(1.0, duration: 0.75)
+                CubicKeyframe(0.0, duration: 0.8)
+            }
+        }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
                 iconScale = 1.0
             }
-            animateGlow()
-        }
-    }
-
-    private func animateGlow() {
-        withAnimation(.easeIn(duration: 0.3).delay(0.15)) {
-            showGlow = true
-        }
-        withAnimation(.easeOut(duration: 0.8).delay(1.2)) {
-            showGlow = false
+            glowFlash += 1
         }
     }
 }
@@ -342,7 +358,8 @@ struct DockedChipView: View {
     var onTap: () -> Void
 
     @State private var isHovering = false
-    @State private var stretch: CGFloat = 1
+    @State private var splashTrigger = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Capsule()
@@ -358,7 +375,15 @@ struct DockedChipView: View {
                     .fill(.ultraThinMaterial)
                     .shadow(color: .black.opacity(0.25), radius: 4, y: 3)
             )
-            .scaleEffect(x: 1, y: stretch)
+            // Squash-and-stretch splash as the droplet detaches from or falls
+            // back into the chip — sells the "drop separating" read on both
+            // directions. Phase-driven so rapid open/close toggles can never
+            // strand the chip stretched.
+            .phaseAnimator([1.0, 1.75], trigger: splashTrigger) { content, stretch in
+                content.scaleEffect(x: 1, y: stretch)
+            } animation: { stretch in
+                stretch > 1 ? Constants.Animation.microBounce : .spring(duration: 0.3, bounce: 0.45)
+            }
             .contentShape(Rectangle())
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -367,22 +392,10 @@ struct DockedChipView: View {
             }
             .onTapGesture(perform: onTap)
             .onChange(of: isExpanded) { _, _ in
-                splashBounce()
+                guard !reduceMotion else { return }
+                splashTrigger += 1
             }
             .help("overlay.dock_last".localized)
-    }
-
-    /// Squash-and-stretch splash as the droplet detaches from or falls back
-    /// into the chip — sells the "drop separating" read on both directions.
-    private func splashBounce() {
-        withAnimation(.spring(response: 0.14, dampingFraction: 0.4)) {
-            stretch = 1.75
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
-                stretch = 1
-            }
-        }
     }
 }
 
@@ -404,7 +417,7 @@ struct ErrorPillView: View {
     let message: String
     var onRetry: (() -> Void)?
 
-    @State private var showGlow = false
+    @State private var glowFlash = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -441,14 +454,19 @@ struct ErrorPillView: View {
                 .buttonStyle(.plain)
             }
         }
-        .overlay(glowStroke(color: .sapoError, isVisible: showGlow))
+        // Same one-shot outline flash as the completed pill, in error amber.
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
+            content.overlay(glowStroke(color: .sapoError, intensity: glow))
+        } keyframes: { _ in
+            KeyframeTrack {
+                LinearKeyframe(0.0, duration: 0.15)
+                CubicKeyframe(1.0, duration: 0.3)
+                LinearKeyframe(1.0, duration: 0.75)
+                CubicKeyframe(0.0, duration: 0.8)
+            }
+        }
         .onAppear {
-            withAnimation(.easeIn(duration: 0.3).delay(0.15)) {
-                showGlow = true
-            }
-            withAnimation(.easeOut(duration: 0.8).delay(1.2)) {
-                showGlow = false
-            }
+            glowFlash += 1
         }
     }
 }
@@ -463,6 +481,7 @@ struct DeviceChangePillView: View {
 
     @State private var badgeScale: CGFloat = 0
     @State private var iconPulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var accentColor: Color {
         switch announcement.phase {
@@ -536,6 +555,8 @@ struct DeviceChangePillView: View {
     private func applyPhaseAnimation() {
         switch announcement.phase {
         case .connecting:
+            // Reduce Motion keeps the glyph steady instead of pulsing.
+            guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                 iconPulsing = true
             }
@@ -543,7 +564,7 @@ struct DeviceChangePillView: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 iconPulsing = false
             }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.55).delay(0.1)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.55).delay(0.1)) {
                 badgeScale = 1.0
             }
         }
@@ -558,9 +579,10 @@ struct PillDivider: View {
     }
 }
 
-private func glowStroke(color: Color, isVisible: Bool) -> some View {
+/// `intensity` is the 0...1 keyframe value; full flash keeps the old 0.4 peak.
+private func glowStroke(color: Color, intensity: Double) -> some View {
     RoundedRectangle(cornerRadius: 26, style: .continuous)
-        .strokeBorder(color.opacity(isVisible ? 0.4 : 0), lineWidth: 1.5)
+        .strokeBorder(color.opacity(0.4 * intensity), lineWidth: 1.5)
         .padding(.horizontal, -20)
         .padding(.vertical, -12)
 }

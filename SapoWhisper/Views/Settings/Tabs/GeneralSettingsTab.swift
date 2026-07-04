@@ -123,6 +123,7 @@ struct GeneralSettingsTab: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 Divider()
@@ -131,6 +132,7 @@ struct GeneralSettingsTab: View {
 
                 AudioLevelMeterView(deviceUID: selectedMicrophone)
             }
+            .animation(Constants.Animation.reveal, value: selectedMicrophone)
         }
     }
 
@@ -297,6 +299,7 @@ struct GeneralSettingsTab: View {
                         Slider(value: $soundVolume, in: 0.05...1.0, step: 0.05)
                             .tint(Constants.Colors.sapoGreen)
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
 
                     Button(action: {
                         SoundManager.shared.play(.success)
@@ -306,12 +309,14 @@ struct GeneralSettingsTab: View {
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(Constants.Colors.sapoGreen)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 Text("settings.play_sounds_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .animation(Constants.Animation.reveal, value: playSound)
         }
     }
 
@@ -344,12 +349,14 @@ struct GeneralSettingsTab: View {
                         Slider(value: $autoDuckingAmount, in: 0.1...1.0, step: 0.05)
                             .tint(Constants.Colors.sapoGreen)
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 Text("settings.auto_ducking_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .animation(Constants.Animation.reveal, value: autoDuckingEnabled)
         }
     }
 

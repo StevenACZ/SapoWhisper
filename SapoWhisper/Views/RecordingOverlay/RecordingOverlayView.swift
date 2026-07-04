@@ -27,7 +27,8 @@ struct RecordingOverlayView: View {
 
     @ObservedObject var manager: OverlayWindowManager
 
-    @State private var scale: CGFloat = 1.0
+    @State private var pillBounceTrigger = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var stateCategory: String { manager.state.stateCategory }
     private var isActive: Bool { stateCategory != "hidden" && stateCategory != "docked" }
@@ -89,11 +90,12 @@ struct RecordingOverlayView: View {
                 OverlayWindowManager.shared.setActiveContentFrame(frame)
             }
         }
-        .onChange(of: stateCategory) { oldValue, newValue in
+        .onChange(of: stateCategory) { oldValue, _ in
             // Micro-bounce only on active-to-active swaps; dock transitions
             // are carried entirely by the droplet detach/absorb.
             guard isActive, oldValue != "hidden", oldValue != "docked" else { return }
-            microBounce()
+            guard !reduceMotion else { return }
+            pillBounceTrigger += 1
         }
     }
 
@@ -133,18 +135,13 @@ struct RecordingOverlayView: View {
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
         )
-        .scaleEffect(scale)
-    }
-
-    /// Micro-bounce effect when state changes — subtle scale pop for tactile feedback
-    private func microBounce() {
-        withAnimation(.spring(response: 0.12, dampingFraction: 0.4)) {
-            scale = 1.05
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                scale = 1.0
-            }
+        // Micro-bounce on state swaps — subtle scale pop for tactile
+        // feedback. Phase-driven so a swap mid-bounce can never leave the
+        // pill stuck scaled up (the old detached asyncAfter could).
+        .phaseAnimator([1.0, 1.05], trigger: pillBounceTrigger) { content, bounceScale in
+            content.scaleEffect(bounceScale)
+        } animation: { bounceScale in
+            bounceScale > 1 ? Constants.Animation.microBounce : .spring(duration: 0.25, bounce: 0.3)
         }
     }
 

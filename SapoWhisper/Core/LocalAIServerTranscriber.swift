@@ -37,7 +37,7 @@ final class LocalAIServerTranscriber: ObservableObject {
 
     @Published var isTranscribing = false
 
-    private static let engineName = "Local AI Server"
+    nonisolated private static let engineName = "Local AI Server"
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -63,19 +63,22 @@ final class LocalAIServerTranscriber: ObservableObject {
         let apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
 
         try AudioFileValidator.validate(audioURL)
-        let audioData = try Data(contentsOf: audioURL)
 
-        await MainActor.run { isTranscribing = true }
-        defer { Task { @MainActor in isTranscribing = false } }
+        isTranscribing = true
+        defer { isTranscribing = false }
 
-        var request = makeTranscriptionRequest(
+        // Reading the WAV and copying it into the multipart body is heavy for
+        // long takes, so the request is assembled off the main actor.
+        let payload = try await Self.makeTranscriptionRequest(
             baseURL: baseURL,
             model: model,
-            audioData: audioData,
-            language: language,
+            audioURL: audioURL,
+            languageCode: TranscriptionLanguageCatalog.whisperLanguageCode(for: language),
+            vocabularyPrompt: VocabularyManager.shared.initialPromptText(),
             apiKey: apiKey
         )
-        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: audioData.count)
+        var request = payload.request
+        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: payload.audioByteCount)
 
         let data: Data
         let httpResponse: HTTPURLResponse
@@ -127,29 +130,34 @@ final class LocalAIServerTranscriber: ObservableObject {
         return LocalAIServerConnectionResult(modelIDs: modelIDs, selectedModel: trimmedModel)
     }
 
-    private func makeTranscriptionRequest(
+    /// Reads the recorded WAV and assembles the multipart request off the main
+    /// actor; only Sendable values (URL, strings, Data) cross the boundary.
+    @concurrent
+    private static func makeTranscriptionRequest(
         baseURL: URL,
         model: String,
-        audioData: Data,
-        language: String,
+        audioURL: URL,
+        languageCode: String?,
+        vocabularyPrompt: String,
         apiKey: String
-    ) -> URLRequest {
+    ) async throws -> (request: URLRequest, audioByteCount: Int) {
+        let audioData = try Data(contentsOf: audioURL)
         let boundary = "Boundary-\(UUID().uuidString)"
         let url = LocalAIServerConfiguration.transcriptionsURL(from: baseURL)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            request.setValue("Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedKey.isEmpty {
+            request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
         }
 
         var body = Data()
         appendFormField(name: "model", value: model, boundary: boundary, to: &body)
         appendFormField(name: "response_format", value: "json", boundary: boundary, to: &body)
-        if let languageCode = TranscriptionLanguageCatalog.whisperLanguageCode(for: language) {
+        if let languageCode {
             appendFormField(name: "language", value: languageCode, boundary: boundary, to: &body)
         }
-        let vocabularyPrompt = VocabularyManager.shared.initialPromptText()
         if !vocabularyPrompt.isEmpty {
             appendFormField(name: "prompt", value: vocabularyPrompt, boundary: boundary, to: &body)
         }
@@ -163,7 +171,7 @@ final class LocalAIServerTranscriber: ObservableObject {
         )
         body.appendUTF8("--\(boundary)--\r\n")
         request.httpBody = body
-        return request
+        return (request, audioData.count)
     }
 
     private func probe(url: URL, apiKey: String) async throws {
@@ -244,7 +252,7 @@ final class LocalAIServerTranscriber: ObservableObject {
         return TranscriptionFailure.redactedLogSnippet(from: body)
     }
 
-    private func appendFormField(name: String, value: String, boundary: String, to body: inout Data) {
+    nonisolated private static func appendFormField(name: String, value: String, boundary: String, to body: inout Data) {
         let safeValue =
             value
             .replacingOccurrences(of: "\r", with: " ")
@@ -254,7 +262,7 @@ final class LocalAIServerTranscriber: ObservableObject {
         body.appendUTF8("\(safeValue)\r\n")
     }
 
-    private func appendFileField(
+    nonisolated private static func appendFileField(
         name: String,
         filename: String,
         contentType: String,
@@ -289,7 +297,7 @@ private struct LocalAIModel: Decodable {
     let id: String
 }
 
-extension Data {
+nonisolated extension Data {
     fileprivate mutating func appendUTF8(_ string: String) {
         append(Data(string.utf8))
     }

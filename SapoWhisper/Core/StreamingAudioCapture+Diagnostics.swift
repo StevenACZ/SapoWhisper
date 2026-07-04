@@ -45,18 +45,18 @@ nonisolated extension StreamingAudioCapture {
     }
 
     func resetCaptureDiagnostics(deviceUID: String) {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         inputBufferCount = 0
         writtenFrameCount = 0
         emittedChunkCount = 0
         firstInputLatencyMs = nil
         maxInputGapMs = 0
         captureDeviceUID = deviceUID
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
     }
 
     func registerInputBuffer(at timestamp: CFAbsoluteTime) -> (count: Int, gapMs: Double?) {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let previousInputTime = lastInputBufferTime
         // Publish the timestamp under the lock (read before this point for the
         // gap). The tap thread used to write it bare in processAudioBuffer; the
@@ -72,71 +72,71 @@ nonisolated extension StreamingAudioCapture {
         if firstInputLatencyMs == nil {
             firstInputLatencyMs = (timestamp - startRecordingTime) * 1000
         }
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
         return (count, gapMs)
     }
 
     func currentLastInputBufferTime() -> CFAbsoluteTime {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
         return lastInputBufferTime
     }
 
     func resetLastInputBufferTime() {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
         lastInputBufferTime = 0
     }
 
     func registerWrittenFrames(_ frameCount: AVAudioFrameCount) {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         writtenFrameCount += AVAudioFramePosition(frameCount)
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
     }
 
     func registerEmittedChunk() -> Int {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         emittedChunkCount += 1
         let count = emittedChunkCount
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
         return count
     }
 
     func setCaptureActive(_ active: Bool) {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         captureActive = active
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
     }
 
     func isCaptureActiveFlag() -> Bool {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let active = captureActive
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
         return active
     }
 
     func setCaptureDeviceUID(_ uid: String) {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         captureDeviceUID = uid
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
     }
 
     func currentCaptureDeviceUID() -> String {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let uid = captureDeviceUID
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
         return uid
     }
 
     func hasReceivedInputBuffer() -> Bool {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let hasInput = inputBufferCount > 0
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
         return hasInput
     }
 
     func makeCaptureDiagnostics(fileURL: URL?, referenceTime: CFAbsoluteTime) -> RecordingCaptureDiagnostics {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let bufferCount = inputBufferCount
         let frameCount = writtenFrameCount
         let chunkCount = emittedChunkCount
@@ -144,7 +144,7 @@ nonisolated extension StreamingAudioCapture {
         let maxGap = maxInputGapMs
         let deviceUID = captureDeviceUID
         let lastBuffer = lastInputBufferTime
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
 
         let lastBufferAgeMs = lastBuffer > 0 ? (referenceTime - lastBuffer) * 1000 : nil
         let fileSizeBytes: Int

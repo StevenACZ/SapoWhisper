@@ -161,7 +161,11 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(manager.keytermQueryItems().first?.name, "keyterm")
     }
 
-    func testDeepgramKeytermQueryIncludesExpandedVocabularyHints() {
+    /// Cloud hints carry CANONICAL spellings only: sending misheard variants
+    /// ("punto geek ignore", "Kit commit") as keyterms biases the engine
+    /// toward the wrong form and burns the provider's term budget. Variants
+    /// are recovered locally by the correction pass instead.
+    func testDeepgramKeytermQuerySendsOnlyCanonicalForms() {
         let manager = makeManager()
         manager.addKeyterm(".gitignore")
         manager.addKeyterm("git commit")
@@ -169,9 +173,7 @@ final class VocabularyManagerTests: XCTestCase {
 
         let values = manager.keytermQueryItems().compactMap(\.value)
 
-        XCTAssertTrue(values.starts(with: [".gitignore", "git commit", "Claude Code"]))
-        XCTAssertTrue(values.contains("punto geek ignore"))
-        XCTAssertTrue(values.contains("Kit commit"))
+        XCTAssertEqual(values, [".gitignore", "git commit", "Claude Code"])
     }
 
     func testDeepgramKeytermQueryHonorsTotalWordBudget() {
@@ -371,6 +373,38 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(
             output,
             ".env, .gitignore, Local AI Server, Local AI Server (NVIDIA), AI polish, Nova-3, Scribe v2, TestFlight, PostgreSQL, Cloudflare, WireGuard, SQLite, UserDefaults, REST API y pull request"
+        )
+    }
+
+    /// Single-word variants that are real everyday words must never apply
+    /// mechanically: "a hit on Spotify" is not about git, and the old pass
+    /// rewrote exactly that (plus "pug"→push, "comet"→commit, "cloud"→Claude).
+    /// Multi-word variants ("hit pug") stay mechanical — the bigram is
+    /// specific enough.
+    func testRecognitionCorrectionsLeaveRealWordVariantsAlone() {
+        let manager = makeManager()
+        manager.addKeyterm("git")
+        manager.addKeyterm("git push")
+        manager.addKeyterm("commit")
+        manager.addKeyterm("Claude")
+
+        let input = "a hit on Spotify, mi perro pug, el comet Halley y cloud storage"
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: input), input)
+
+        // The bigram form still corrects.
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "haz hit pug ahora"), "haz git push ahora")
+    }
+
+    /// A correction match must not swallow a sentence-ending period: the old
+    /// short-token pattern carried a trailing `\.?` and turned "un comit.
+    /// Luego…" into "un commit Luego…".
+    func testRecognitionCorrectionsPreserveSentencePeriod() {
+        let manager = makeManager()
+        manager.addKeyterm("commit")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "haz un comit. Luego revisa el estado."),
+            "haz un commit. Luego revisa el estado."
         )
     }
 

@@ -63,7 +63,10 @@ class SapoWhisperViewModel: ObservableObject {
     /// a non-persisted @Published and the Settings toggle changed nothing.
     @AppStorage(Constants.StorageKeys.autoPaste) var autoPasteEnabled = true
     @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.whisperLocal.rawValue
-    @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String = WhisperKitModel.small.rawValue
+    // Default: the official large-v3 turbo — a whole WER class above `small`
+    // for Spanish + technical terms at low latency on Apple Silicon.
+    @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String =
+        WhisperKitModel.largev3V20240930.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
@@ -600,12 +603,15 @@ class SapoWhisperViewModel: ObservableObject {
             // Mid-recording reload failures surface at stop time through the
             // normal transcription failure path; do not clobber the session.
             guard activeRecordingSessionID == nil else { return }
-            appState = .error(ErrorState(message: "Error cargando modelo: \(errorMsg)"))
+            let displayMessage = "error.whisperkit.model_load".localized(errorMsg)
+            appState = .error(ErrorState(message: displayMessage))
 
-            // Mostrar el error un momento y volver a noModel para reintentar.
+            // Show the error briefly, then return to noModel for retry — but
+            // only while THIS error is still showing; a newer, different
+            // error inside the window must not be clobbered.
             Task {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if case .error(_) = self.appState {
+                if case .error(let state) = self.appState, state.message == displayMessage {
                     self.checkInitialState()
                 }
             }
@@ -1841,12 +1847,11 @@ class SapoWhisperViewModel: ObservableObject {
         case .localAIServer:
             return try await localAIServerTranscriber.transcribe(audioURL: audioURL, language: language)
         case .elevenLabsScribe:
-            switch currentElevenLabsMode {
-            case .scribeV2Batch:
-                return try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
-            case .scribeV2Realtime:
-                return try await elevenLabsRealtimeTranscriber.transcribe(audioURL: audioURL, language: language)
-            }
+            // File transcription (retry, history, resume-merge) always uses
+            // the batch endpoint even when the live mode is realtime:
+            // replaying a finished file through the streaming WebSocket is
+            // slower and strictly less accurate than batch on the same file.
+            return try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
         }
     }
 
@@ -1873,10 +1878,12 @@ class SapoWhisperViewModel: ObservableObject {
             if !isReprocessingHistory {
                 appState = .polishing
                 let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
+                // Same per-chunk sum the processor enforces — a chunked
+                // transcript's countdown must not hit 0 mid-polish.
                 overlayManager.updateState(
                     .polishing(
-                        timeoutSeconds: TranscriptPostProcessor.polishTimeout(
-                            forCharacterCount: rawText.count,
+                        timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
+                            forText: rawText,
                             duration: duration,
                             usesLocalBudget: usesLocalPolishBudget
                         )
@@ -1932,8 +1939,8 @@ class SapoWhisperViewModel: ObservableObject {
         let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
         overlayManager.updateState(
             .polishing(
-                timeoutSeconds: TranscriptPostProcessor.polishTimeout(
-                    forCharacterCount: rawText.count,
+                timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
+                    forText: rawText,
                     duration: duration,
                     usesLocalBudget: usesLocalPolishBudget
                 )

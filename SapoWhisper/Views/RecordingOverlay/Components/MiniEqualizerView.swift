@@ -24,7 +24,7 @@ struct MiniEqualizerView: View {
 
     @State private var envelope: CGFloat = 0
     @State private var barLevels: [CGFloat] = []
-    @State private var connectingPhase: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let barWidth: CGFloat = 4
     private let barSpacing: CGFloat = 2.5
@@ -47,12 +47,19 @@ struct MiniEqualizerView: View {
     }
 
     var body: some View {
-        HStack(spacing: barSpacing) {
-            ForEach(0..<barCount, id: \.self) { index in
-                Capsule()
-                    .fill(Color.recording.opacity(barOpacity(for: index)))
-                    .frame(width: barWidth, height: barHeight(for: index))
+        // The connecting wave is derived from the timeline clock instead of a
+        // manual sleep loop: pausing is free, there is no phase state, and the
+        // look is unchanged (same 120 ms cadence and easing as the old loop).
+        TimelineView(.animation(minimumInterval: 0.12, paused: !isConnecting || reduceMotion)) { context in
+            let levels = isConnecting ? connectingLevels(at: context.date) : barLevels
+            HStack(spacing: barSpacing) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    Capsule()
+                        .fill(Color.recording.opacity(barOpacity(levels, index)))
+                        .frame(width: barWidth, height: barHeight(levels, index))
+                }
             }
+            .animation(isConnecting ? .easeInOut(duration: 0.12) : nil, value: levels)
         }
         .frame(height: maxHeight)
         .onAppear {
@@ -63,29 +70,30 @@ struct MiniEqualizerView: View {
         .onReceive(audioLevelPublisher.receive(on: RunLoop.main)) { audioLevel in
             ingest(CGFloat(audioLevel))
         }
-        .task(id: isConnecting) {
-            guard isConnecting else { return }
-            while !Task.isCancelled {
-                advanceConnectingWave()
-                try? await Task.sleep(nanoseconds: 120_000_000)
-            }
+        .onChange(of: isConnecting) { _, connecting in
+            // The wave never writes state; freeze its current levels into the
+            // live meter when the handshake ends so real levels ripple from
+            // where the wave left off instead of snapping to a flat line.
+            guard !connecting, barLevels.count == barCount else { return }
+            barLevels = connectingLevels(at: Date())
         }
     }
 
     /// Low-amplitude sine travelling outward from the center: clearly alive,
     /// clearly not voice. Real levels take over the moment they arrive.
-    private func advanceConnectingWave() {
-        guard barLevels.count == barCount else { return }
-        connectingPhase += 0.55
-
-        var levels = barLevels
-        for index in 0..<barCount {
-            let distance = Double(abs(index - centerIndex))
-            let wave = (1 + sin(connectingPhase - distance * 0.9)) / 2
-            levels[index] = CGFloat(0.10 + 0.16 * wave)
+    /// Reduce Motion holds the meter at the wave's resting level instead.
+    private func connectingLevels(at date: Date) -> [CGFloat] {
+        guard !reduceMotion else {
+            return Array(repeating: 0.18, count: barCount)
         }
-        withAnimation(.easeInOut(duration: 0.12)) {
-            barLevels = levels
+
+        // Same pace as the old loop, which advanced the phase 0.55 per 120 ms.
+        let phase = (date.timeIntervalSinceReferenceDate * (0.55 / 0.12))
+            .truncatingRemainder(dividingBy: 2 * .pi)
+        return (0..<barCount).map { index in
+            let distance = Double(abs(index - centerIndex))
+            let wave = (1 + sin(phase - distance * 0.9)) / 2
+            return CGFloat(0.10 + 0.16 * wave)
         }
     }
 
@@ -119,14 +127,14 @@ struct MiniEqualizerView: View {
         }
     }
 
-    private func barHeight(for index: Int) -> CGFloat {
-        guard barLevels.indices.contains(index) else { return minHeight }
-        let activeHeight = (maxHeight - minHeight) * barLevels[index] * weight(for: index)
+    private func barHeight(_ levels: [CGFloat], _ index: Int) -> CGFloat {
+        guard levels.indices.contains(index) else { return minHeight }
+        let activeHeight = (maxHeight - minHeight) * levels[index] * weight(for: index)
         return min(maxHeight, minHeight + activeHeight)
     }
 
-    private func barOpacity(for index: Int) -> Double {
-        guard barLevels.indices.contains(index) else { return 0.5 }
-        return 0.5 + Double(barLevels[index]) * 0.5
+    private func barOpacity(_ levels: [CGFloat], _ index: Int) -> Double {
+        guard levels.indices.contains(index) else { return 0.5 }
+        return 0.5 + Double(levels[index]) * 0.5
     }
 }

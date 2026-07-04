@@ -22,11 +22,20 @@ nonisolated struct DeepgramFluxAudioSenderStats {
 }
 
 /// Concurrency: nonisolated by design — chunk sends run on the serial send
-/// queue and every counter sits behind `statsLock`/`stateLock`.
+/// queue, every counter sits behind `statsLock`/`stateLock`, and sub-chunk
+/// audio accumulates behind `pendingAudioLock`.
 nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
+    /// Flux strongly recommends ~80 ms audio chunks, but the capture tap
+    /// emits ~21 ms blocks — coalesce to 2560 bytes (80 ms @ 16 kHz mono
+    /// int16) before sending.
+    private static let targetChunkBytes = 2560
+
     private let queue = DispatchQueue(label: "com.sapowhisper.fluxAudioSender", qos: .userInitiated)
     private let statsLock = NSLock()
     private let stateLock = NSLock()
+    private let pendingAudioLock = NSLock()
+
+    private var pendingAudio: [UInt8] = []
 
     private var task: URLSessionWebSocketTask?
     private var isActive = false
@@ -41,6 +50,9 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
 
     func start(task: URLSessionWebSocketTask) {
         resetStats()
+        pendingAudioLock.lock()
+        pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
         stateLock.lock()
         self.task = task
         isActive = true
@@ -50,15 +62,31 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
 
     func enqueue(_ data: Data) {
         guard !data.isEmpty else { return }
-        let chunkIndex = registerEnqueuedChunk(byteCount: data.count)
 
-        queue.async { [weak self] in
-            self?.send(data, chunkIndex: chunkIndex)
+        var chunks: [Data] = []
+        pendingAudioLock.lock()
+        pendingAudio.append(contentsOf: data)
+        while pendingAudio.count >= Self.targetChunkBytes {
+            let chunk = pendingAudio.prefix(Self.targetChunkBytes)
+            pendingAudio.removeFirst(Self.targetChunkBytes)
+            chunks.append(Data(chunk))
+        }
+        pendingAudioLock.unlock()
+
+        for chunk in chunks {
+            let chunkIndex = registerEnqueuedChunk(byteCount: chunk.count)
+            queue.async { [weak self] in
+                self?.send(chunk, chunkIndex: chunkIndex)
+            }
         }
     }
 
     func finishAndWait(timeout: TimeInterval) async -> DeepgramFluxAudioSenderStats {
         let startedAt = CFAbsoluteTimeGetCurrent()
+
+        // Ship the sub-80 ms remainder before draining so the tail of the
+        // dictation reaches the server ahead of CloseStream.
+        flushPendingAudio()
 
         return await withCheckedContinuation { continuation in
             let resumeGate = OSAllocatedUnfairLock(initialState: false)
@@ -109,6 +137,9 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
     }
 
     func cancel() {
+        pendingAudioLock.lock()
+        pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
         abortPendingSends()
         let stats = snapshot()
         if stats.pendingChunks > 0 || stats.failedChunks > 0 {
@@ -132,6 +163,22 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
             maxSendWaitMs: maxSendWaitMs,
             timedOutSends: timedOutSends
         )
+    }
+
+    /// Enqueues whatever sub-chunk audio is still buffered. The serial queue
+    /// keeps FIFO order, so a remainder posted before the drain block in
+    /// `finishAndWait` is sent before the stats snapshot resolves.
+    private func flushPendingAudio() {
+        pendingAudioLock.lock()
+        let remainder = Data(pendingAudio)
+        pendingAudio.removeAll(keepingCapacity: true)
+        pendingAudioLock.unlock()
+
+        guard !remainder.isEmpty else { return }
+        let chunkIndex = registerEnqueuedChunk(byteCount: remainder.count)
+        queue.async { [weak self] in
+            self?.send(remainder, chunkIndex: chunkIndex)
+        }
     }
 
     private func send(_ data: Data, chunkIndex: Int) {

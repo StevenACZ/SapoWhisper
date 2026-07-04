@@ -32,56 +32,88 @@ struct FloatingSapoIcon: View {
     let state: SapoIconState
     let size: CGFloat
 
-    @State private var floatOffset: CGFloat = 0
-    @State private var pulseScale: CGFloat = 1.0
+    @State private var completedPop = 0
+    @State private var errorShake = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(state: SapoIconState, size: CGFloat = 60) {
         self.state = state
         self.size = size
     }
 
+    /// Looping idle pulse per state: scale target, float offset, half-period.
+    private var pulse: (scale: CGFloat, offset: CGFloat, period: Double)? {
+        switch state {
+        case .paused: return (0.92, 0, 2.0)
+        case .transcribing: return (1.08, 0, 0.8)
+        case .polishing: return (1.06, -2, 1.0)
+        case .recording, .completed, .error: return nil
+        }
+    }
+
     var body: some View {
+        pulsingIcon
+            // One-shot completed pop, keyframe-driven so a state change
+            // mid-pop can never strand the icon scaled up.
+            .keyframeAnimator(initialValue: 1.0, trigger: completedPop) { content, popScale in
+                content.scaleEffect(popScale)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    SpringKeyframe(1.15, spring: Spring(response: 0.4, dampingRatio: 0.5))
+                    SpringKeyframe(1.0, spring: Spring(response: 0.3, dampingRatio: 0.6))
+                }
+            }
+            // Real bidirectional error shake; the old one-way -3 nudge read
+            // as a tic.
+            .keyframeAnimator(initialValue: 0.0, trigger: errorShake) { content, shakeOffset in
+                content.offset(x: shakeOffset)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(-3, duration: 0.08)
+                    CubicKeyframe(3, duration: 0.1)
+                    CubicKeyframe(-2, duration: 0.1)
+                    CubicKeyframe(2, duration: 0.1)
+                    CubicKeyframe(0, duration: 0.08)
+                }
+            }
+            .onAppear { fireOneShotEffect() }
+            .onChange(of: state) { _, _ in fireOneShotEffect() }
+    }
+
+    /// The idle pulse loops via phases (no resettable state), and rests as a
+    /// static icon under Reduce Motion.
+    @ViewBuilder
+    private var pulsingIcon: some View {
+        if let pulse, !reduceMotion {
+            icon
+                .phaseAnimator([false, true]) { content, pulsing in
+                    content
+                        .scaleEffect(pulsing ? pulse.scale : 1.0)
+                        .offset(y: pulsing ? pulse.offset : 0)
+                } animation: { _ in
+                    .easeInOut(duration: pulse.period)
+                }
+        } else {
+            icon
+        }
+    }
+
+    private var icon: some View {
         Image(state.imageName)
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
-            .scaleEffect(pulseScale)
-            .offset(y: floatOffset)
-            .onAppear { startAnimations() }
-            .onChange(of: state) { _, _ in startAnimations() }
     }
 
-    private func startAnimations() {
-        floatOffset = 0
-        pulseScale = 1.0
-
+    private func fireOneShotEffect() {
+        guard !reduceMotion else { return }
         switch state {
-        case .recording:
-            break
-        case .paused:
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                pulseScale = 0.92
-            }
-        case .transcribing:
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                pulseScale = 1.08
-            }
-        case .polishing:
-            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                pulseScale = 1.06
-                floatOffset = -2
-            }
         case .completed:
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) {
-                pulseScale = 1.15
-            }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.2)) {
-                pulseScale = 1.0
-            }
+            completedPop += 1
         case .error:
-            withAnimation(.easeInOut(duration: 0.1).repeatCount(3)) {
-                floatOffset = -3
-            }
+            errorShake += 1
+        case .recording, .paused, .transcribing, .polishing:
+            break
         }
     }
 }

@@ -29,8 +29,13 @@ nonisolated extension StreamingAudioCapture {
         // registerInputBuffer(at:) above — do not write it bare here.
         logFirstInputBufferIfNeeded(buffer: buffer, inputTime: inputTime)
 
-        os_unfair_lock_lock(&converterLock)
-        defer { os_unfair_lock_unlock(&converterLock) }
+        // Gain runs on the raw tap buffer BEFORE conversion: amplifying the
+        // already-quantized int16 output hard-clipped at high gain settings
+        // and threw away the float headroom the limiter needs.
+        applyGainIfNeeded(to: buffer)
+
+        converterLock.lock()
+        defer { converterLock.unlock() }
 
         // A2: rebuilt when the tap format changes mid-capture (route recovery rebinds the input).
         if converter == nil || converter?.inputFormat != buffer.format {
@@ -40,6 +45,10 @@ nonisolated extension StreamingAudioCapture {
                 )
             }
             converter = AVAudioConverter(from: buffer.format, to: outputFormat)
+            // Mastering-grade sample rate conversion: the default SRC's
+            // anti-aliasing is mediocre for the 48k→16k hop.
+            converter?.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+            converter?.sampleRateConverterQuality = AVAudioQuality.max.rawValue
         }
         guard let converter else { return }
 
@@ -74,6 +83,11 @@ nonisolated extension StreamingAudioCapture {
                 writeAndEmit(convertedBuffer, to: audioFile, publishLevel: !didPublishLevel)
                 didPublishLevel = true
             case .inputRanDry, .endOfStream:
+                // The converter can hand back a short tail together with
+                // inputRanDry — emit it instead of dropping those frames.
+                if convertedBuffer.frameLength > 0 {
+                    writeAndEmit(convertedBuffer, to: audioFile, publishLevel: !didPublishLevel)
+                }
                 return
             case .error:
                 SapoLog.flux.error(
@@ -88,7 +102,8 @@ nonisolated extension StreamingAudioCapture {
 
     func writeAndEmit(_ buffer: AVAudioPCMBuffer, to audioFile: AVAudioFile, publishLevel: Bool) {
         guard buffer.frameLength > 0 else { return }
-        applyGainIfNeeded(to: buffer)
+        // Gain was already applied to the tap buffer before conversion, so the
+        // published level below still reflects the post-gain signal.
         if publishLevel { publishAudioLevel(from: buffer) }
 
         // Emit to the streaming engine first: the WAV is the local backup and
@@ -144,22 +159,57 @@ nonisolated extension StreamingAudioCapture {
         }
     }
 
+    /// Applies capture gain to the raw tap buffer before conversion, with a
+    /// soft limiter instead of a hard clip: linear below the knee, smooth tanh
+    /// compression above it, asymptotic to full scale. High gain settings (the
+    /// slider allows up to 40x) compress peaks instead of squaring them off,
+    /// which every downstream engine hears as distortion.
     func applyGainIfNeeded(to buffer: AVAudioPCMBuffer) {
-        guard activeGain != 1, let channelData = buffer.int16ChannelData else { return }
+        guard activeGain != 1 else { return }
         let frameCount = Int(buffer.frameLength)
-        let maxSample = Float(Int16.max)
-        let minSample = Float(Int16.min)
+        guard frameCount > 0 else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let gain = activeGain
 
-        for index in 0..<frameCount {
-            let amplified = Float(channelData[0][index]) * activeGain
-            channelData[0][index] = Int16(max(minSample, min(maxSample, amplified)))
+        if let channelData = buffer.floatChannelData {
+            for channel in 0..<channelCount {
+                let samples = channelData[channel]
+                for index in 0..<frameCount {
+                    samples[index] = Self.softLimitedSample(samples[index], gain: gain)
+                }
+            }
+            return
         }
+
+        guard let channelData = buffer.int16ChannelData else { return }
+        let scale = Float(Int16.max)
+
+        for channel in 0..<channelCount {
+            let samples = channelData[channel]
+            for index in 0..<frameCount {
+                let normalized = Float(samples[index]) / scale
+                samples[index] = Int16(Self.softLimitedSample(normalized, gain: gain) * scale)
+            }
+        }
+    }
+
+    /// Identity below the knee, tanh compression above it, asymptote at ±1 —
+    /// so the later int16 conversion can never hard-clip a gained sample.
+    static let softLimiterKnee: Float = 0.85
+
+    static func softLimitedSample(_ sample: Float, gain: Float) -> Float {
+        let amplified = sample * gain
+        let magnitude = abs(amplified)
+        guard magnitude > softLimiterKnee else { return amplified }
+        let headroom = 1 - softLimiterKnee
+        let limited = softLimiterKnee + headroom * tanhf((magnitude - softLimiterKnee) / headroom)
+        return amplified < 0 ? -limited : limited
     }
 
     func flushRemainingConvertedAudio() -> AVAudioFrameCount {
         guard let converter, let outputFormat = converterOutputFormat, let audioFile else { return 0 }
-        os_unfair_lock_lock(&converterLock)
-        defer { os_unfair_lock_unlock(&converterLock) }
+        converterLock.lock()
+        defer { converterLock.unlock() }
 
         var frames: AVAudioFrameCount = 0
         while true {
@@ -175,6 +225,11 @@ nonisolated extension StreamingAudioCapture {
                 writeAndEmit(buffer, to: audioFile, publishLevel: false)
                 frames += buffer.frameLength
             case .endOfStream, .inputRanDry:
+                // The last drain can carry a short tail — emit it too.
+                if buffer.frameLength > 0 {
+                    writeAndEmit(buffer, to: audioFile, publishLevel: false)
+                    frames += buffer.frameLength
+                }
                 return frames
             case .error:
                 SapoLog.flux.error(

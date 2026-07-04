@@ -12,6 +12,12 @@ enum PolishOutputSanitizer {
 
     static func clean(_ output: String, rawText: String) -> String {
         var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        // An unterminated <think> means the whole output is reasoning that
+        // never reached an answer; there is nothing usable to fall back to,
+        // so return empty and let the pipeline keep the raw transcript.
+        if text.hasPrefix("<think>"), text.range(of: "</think>") == nil {
+            return ""
+        }
         text = stripThinkingBlock(text)
         text = stripWrappingCodeFence(text)
         text = stripLeadingPreamble(text)
@@ -75,7 +81,10 @@ enum PolishOutputSanitizer {
     }
 
     /// Removes one layer of symmetric quotes when they wrap the whole output
-    /// and the raw transcript itself was not quoted.
+    /// and the raw transcript itself was not quoted. Text with interior
+    /// closing quotes is left alone: in `"Guardar" y "Cancelar"` the outer
+    /// pair belongs to two separate quoted spans, and stripping it would
+    /// corrupt both.
     private static func stripWrappingQuotes(_ text: String, rawText: String) -> String {
         let pairs: [(Character, Character)] = [("\"", "\""), ("“", "”"), ("'", "'"), ("‘", "’"), ("«", "»")]
         guard let first = text.first, let last = text.last, text.count >= 2 else { return text }
@@ -85,7 +94,9 @@ enum PolishOutputSanitizer {
         guard !rawIsQuoted else { return text }
 
         for (opening, closing) in pairs where first == opening && last == closing {
-            return String(text.dropFirst().dropLast())
+            let inner = text.dropFirst().dropLast()
+            guard !inner.contains(closing) else { return text }
+            return String(inner)
         }
         return text
     }

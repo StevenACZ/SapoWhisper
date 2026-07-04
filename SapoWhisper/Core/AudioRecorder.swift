@@ -61,14 +61,14 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     private var smoothedAudioLevel: Float = 0
     private var lastAudioLevelPublishTime: CFAbsoluteTime = 0
     private var activeGain: Float = 1.0
-    private var converterLock = os_unfair_lock()
+    private let converterLock = OSAllocatedUnfairLock()
     private let tapBufferSize: AVAudioFrameCount = 1024
     private var startRecordingTime: CFAbsoluteTime = 0
     private var firstInputBufferLogged = false
     // captureStateLock-guarded: written by the tap via registerInputBuffer,
     // read by diagnostics/health-probe, reset via resetLastInputBufferTime().
     private var lastInputBufferTime: CFAbsoluteTime = 0
-    private var captureStateLock = os_unfair_lock()
+    private let captureStateLock = OSAllocatedUnfairLock()
     private let audioSetupQueue = DispatchQueue(label: "com.sapowhisper.audioSetup", qos: .userInitiated)
     private let setupGenerationQueue = DispatchQueue(label: "com.sapowhisper.audioSetup.generation", qos: .userInitiated)
     /// A1: disk writes drain here so a slow flush never stalls the audio tap thread.
@@ -401,8 +401,13 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                 "First input buffer in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public) sampleRate=\(Int(buffer.format.sampleRate), privacy: .public) input=\(effectiveDevice, privacy: .public)"
             )
         }
-        os_unfair_lock_lock(&converterLock)
-        defer { os_unfair_lock_unlock(&converterLock) }
+        // Gain runs on the raw tap buffer BEFORE conversion: amplifying the
+        // already-quantized int16 output hard-clipped at high gain settings
+        // and threw away the float headroom the limiter needs.
+        applyGainIfNeeded(to: buffer)
+
+        converterLock.lock()
+        defer { converterLock.unlock() }
 
         // Lazy converter creation from actual buffer format (avoids stale format cache after device switch).
         // A2: rebuilt when the tap format changes mid-capture (route recovery rebinds the input).
@@ -418,7 +423,13 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                 )
             }
             converter = AVAudioConverter(from: inputFmt, to: outputFormat)
-            if converter == nil {
+            if let converter {
+                // Mastering-grade sample rate conversion: the default SRC's
+                // anti-aliasing is mediocre for the 48k→16k hop; harmless when
+                // no rate conversion happens.
+                converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+                converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+            } else {
                 SapoLog.recording.error(
                     "Recorder converter creation failed inHz=\(Int(inputFmt.sampleRate), privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public)"
                 )
@@ -457,6 +468,11 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                 writeConvertedBuffer(convertedBuffer, to: audioFile, publishLevel: !didPublishLevel)
                 didPublishLevel = true
             case .inputRanDry, .endOfStream:
+                // The converter can hand back a short tail together with
+                // inputRanDry — write it instead of dropping those frames.
+                if convertedBuffer.frameLength > 0 {
+                    writeConvertedBuffer(convertedBuffer, to: audioFile, publishLevel: !didPublishLevel)
+                }
                 return
             case .error:
                 SapoLog.recording.error(
@@ -472,8 +488,8 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     private func writeConvertedBuffer(_ convertedBuffer: AVAudioPCMBuffer, to audioFile: AVAudioFile, publishLevel: Bool) {
         guard convertedBuffer.frameLength > 0 else { return }
 
-        applyGainIfNeeded(to: convertedBuffer)
-
+        // Gain was already applied to the tap buffer before conversion, so the
+        // published level below still reflects the post-gain signal.
         if publishLevel {
             publishAudioLevel(from: convertedBuffer)
         }
@@ -532,35 +548,62 @@ nonisolated class AudioRecorder: @unchecked Sendable {
         }
     }
 
+    /// Applies capture gain to the raw tap buffer before conversion, with a
+    /// soft limiter instead of a hard clip: linear below the knee, smooth tanh
+    /// compression above it, asymptotic to full scale. High gain settings (the
+    /// slider allows up to 40x) compress peaks instead of squaring them off,
+    /// which every downstream engine hears as distortion.
     private func applyGainIfNeeded(to buffer: AVAudioPCMBuffer) {
         guard activeGain != 1.0 else { return }
 
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let gain = activeGain
 
         if let channelData = buffer.floatChannelData {
-            for i in 0..<frameCount {
-                channelData[0][i] *= activeGain
+            for channel in 0..<channelCount {
+                let samples = channelData[channel]
+                for i in 0..<frameCount {
+                    samples[i] = Self.softLimitedSample(samples[i], gain: gain)
+                }
             }
             return
         }
 
         guard let channelData = buffer.int16ChannelData else { return }
-        let maxSample = Float(Int16.max)
-        let minSample = Float(Int16.min)
+        let scale = Float(Int16.max)
 
-        for i in 0..<frameCount {
-            let amplified = Float(channelData[0][i]) * activeGain
-            let clamped = max(minSample, min(maxSample, amplified))
-            channelData[0][i] = Int16(clamped)
+        for channel in 0..<channelCount {
+            let samples = channelData[channel]
+            for i in 0..<frameCount {
+                let normalized = Float(samples[i]) / scale
+                samples[i] = Int16(Self.softLimitedSample(normalized, gain: gain) * scale)
+            }
         }
+    }
+
+    /// Identity below the knee, tanh compression above it, asymptote at ±1 —
+    /// so the later int16 conversion can never hard-clip a gained sample.
+    private static let softLimiterKnee: Float = 0.85
+
+    private static func softLimitedSample(_ sample: Float, gain: Float) -> Float {
+        let amplified = sample * gain
+        let magnitude = abs(amplified)
+        guard magnitude > softLimiterKnee else { return amplified }
+        let headroom = 1 - softLimiterKnee
+        let limited = softLimiterKnee + headroom * tanhf((magnitude - softLimiterKnee) / headroom)
+        return amplified < 0 ? -limited : limited
     }
 
     /// Pausa la grabación manteniendo el archivo abierto
     func pauseRecording() {
         guard isRecording, !isPaused else { return }
 
-        audioEngine?.pause()
+        // A4: engine lifecycle stays on audioSetupQueue (like start/stop) so a
+        // pause never races a concurrent recoverCapture rebuilding the engine
+        // on that queue.
+        audioSetupQueue.sync { audioEngine?.pause() }
         isPaused = true
 
         // Guardar tiempo acumulado
@@ -579,7 +622,13 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     func resumeRecording() throws {
         guard isRecording, isPaused else { return }
 
-        try audioEngine?.start()
+        // A4: engine lifecycle stays on audioSetupQueue (see pauseRecording),
+        // and the start goes through AudioEngineGuard — AVFAudio can assert
+        // with an uncatchable NSException if the route changed while paused.
+        try audioSetupQueue.sync {
+            guard let engine = audioEngine else { return }
+            try AudioEngineGuard.run("recorder-resume-engine-start") { try engine.start() }
+        }
         MicrophonePermission.noteAudioInputGranted()
         isPaused = false
         startTime = Date()
@@ -715,8 +764,8 @@ nonisolated class AudioRecorder: @unchecked Sendable {
             return (0, 0, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
         }
 
-        os_unfair_lock_lock(&converterLock)
-        defer { os_unfair_lock_unlock(&converterLock) }
+        converterLock.lock()
+        defer { converterLock.unlock() }
 
         let frameCapacity: AVAudioFrameCount = 4096
         var chunks = 0
@@ -739,6 +788,12 @@ nonisolated class AudioRecorder: @unchecked Sendable {
                 chunks += 1
                 frames += convertedBuffer.frameLength
             case .endOfStream, .inputRanDry:
+                // The last drain can carry a short tail — write it too.
+                if convertedBuffer.frameLength > 0 {
+                    writeConvertedBuffer(convertedBuffer, to: audioFile, publishLevel: false)
+                    chunks += 1
+                    frames += convertedBuffer.frameLength
+                }
                 return (chunks, frames, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
             case .error:
                 SapoLog.recording.error(
@@ -757,8 +812,8 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     }
 
     private func resetCaptureDiagnostics() {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
 
         inputBufferCount = 0
         writtenFrameCount = 0
@@ -767,8 +822,8 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     }
 
     private func registerInputBuffer(at timestamp: CFAbsoluteTime) {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
 
         lastInputBufferTime = timestamp
         inputBufferCount += 1
@@ -778,51 +833,51 @@ nonisolated class AudioRecorder: @unchecked Sendable {
     }
 
     private func registerWrittenFrames(_ frameCount: AVAudioFrameCount) {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
 
         writtenFrameCount += AVAudioFramePosition(frameCount)
     }
 
     private func hasReceivedInputBuffer() -> Bool {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
         return inputBufferCount > 0
     }
 
     private func setCaptureDeviceUID(_ uid: String) {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         captureDeviceUID = uid
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
     }
 
     private func currentCaptureDeviceUID() -> String {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let uid = captureDeviceUID
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
         return uid
     }
 
     private func currentLastInputBufferTime() -> CFAbsoluteTime {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
         return lastInputBufferTime
     }
 
     private func resetLastInputBufferTime() {
-        os_unfair_lock_lock(&captureStateLock)
-        defer { os_unfair_lock_unlock(&captureStateLock) }
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
         lastInputBufferTime = 0
     }
 
     private func makeCaptureDiagnostics(fileURL: URL?, referenceTime: CFAbsoluteTime) -> RecordingCaptureDiagnostics {
-        os_unfair_lock_lock(&captureStateLock)
+        captureStateLock.lock()
         let bufferCount = inputBufferCount
         let frameCount = writtenFrameCount
         let firstLatency = firstInputLatencyMs
         let deviceUID = captureDeviceUID
         let lastBuffer = lastInputBufferTime
-        os_unfair_lock_unlock(&captureStateLock)
+        captureStateLock.unlock()
 
         let lastBufferAgeMs = lastBuffer > 0 ? (referenceTime - lastBuffer) * 1000 : nil
         let fileSizeBytes: Int

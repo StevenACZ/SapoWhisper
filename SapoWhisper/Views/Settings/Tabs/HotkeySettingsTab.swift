@@ -23,6 +23,7 @@ struct HotkeySettingsTab: View {
     @State private var doubleTapFeedbackPhase = 0
     @State private var doubleTapFeedbackResetTask: Task<Void, Never>?
     @Namespace private var doubleTapSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var triggerKind: HotkeyTriggerKind {
         HotkeyTriggerKind(rawValue: hotkeyTriggerKindRaw) ?? .keyCombination
@@ -140,7 +141,8 @@ struct HotkeySettingsTab: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.sapoGreen, lineWidth: 2)
                 .blur(radius: 2.5)
-                .phaseAnimator([0.35, 0.85]) { content, opacity in
+                // Reduce Motion holds the glow at a steady mid opacity.
+                .phaseAnimator(reduceMotion ? [0.6] : [0.35, 0.85]) { content, opacity in
                     content.opacity(opacity)
                 } animation: { _ in
                     .easeInOut(duration: 0.7)
@@ -353,9 +355,12 @@ private struct DoubleTapModifierOption: View {
 private struct DoubleTapKeycapDemo: View {
     let symbol: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         KeycapView(label: symbol, width: 56)
-            .phaseAnimator([0, 1, 2, 3]) { content, phase in
+            // Reduce Motion pins the loop to its resting phase.
+            .phaseAnimator(reduceMotion ? [0] : [0, 1, 2, 3]) { content, phase in
                 content.scaleEffect(phase == 1 || phase == 3 ? 0.92 : 1.0)
             } animation: { phase in
                 switch phase {

@@ -187,6 +187,7 @@ private struct WelcomeIntroStep: View {
     let hotkeyDescription: String
     let trigger: HotkeyKeycapsDemo.Trigger
     @State private var bouncing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 22) {
@@ -198,8 +199,11 @@ private struct WelcomeIntroStep: View {
                 .frame(width: 96, height: 96)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: Color.sapoGreen.opacity(0.3), radius: 18, y: 6)
-                .scaleEffect(bouncing ? 1.04 : 1.0)
-                .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: bouncing)
+                .scaleEffect(bouncing && !reduceMotion ? 1.04 : 1.0)
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 1.6).repeatForever(autoreverses: true),
+                    value: bouncing
+                )
                 .onAppear { bouncing = true }
 
             VStack(spacing: 8) {
@@ -243,6 +247,8 @@ private struct HotkeyKeycapsDemo: View {
 
     let trigger: Trigger
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         switch trigger {
         case .combo(let tokens):
@@ -256,7 +262,8 @@ private struct HotkeyKeycapsDemo: View {
                     KeycapView(label: token, width: keycapWidth(for: token))
                 }
             }
-            .phaseAnimator([false, true]) { content, pressed in
+            // Reduce Motion pins the loop to its resting phase.
+            .phaseAnimator(reduceMotion ? [false] : [false, true]) { content, pressed in
                 content
                     .scaleEffect(pressed ? 0.94 : 1.0)
             } animation: { pressed in
@@ -264,9 +271,10 @@ private struct HotkeyKeycapsDemo: View {
             }
         case .doubleTap(let symbol):
             // Phases 1 and 3 are the two quick presses; the slow return to 0
-            // is the pause before the rhythm repeats.
+            // is the pause before the rhythm repeats. Reduce Motion pins the
+            // loop to its resting phase.
             KeycapView(label: symbol, width: 64)
-                .phaseAnimator([0, 1, 2, 3]) { content, phase in
+                .phaseAnimator(reduceMotion ? [0] : [0, 1, 2, 3]) { content, phase in
                     content
                         .scaleEffect(phase == 1 || phase == 3 ? 0.90 : 1.0)
                 } animation: { phase in

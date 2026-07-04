@@ -41,17 +41,33 @@ nonisolated enum Constants {
 
     // MARK: - Animaciones
 
+    /// Semantic motion tokens shared across the app.
     enum Animation {
-        static let springResponse: Double = 0.3
-        static let springDamping: Double = 0.7
-        static let defaultDuration: Double = 0.2
+        /// Main HUD morph: active-pill swaps inside the overlay and other
+        /// state-driven layout springs.
+        static let morph: SwiftUI.Animation = .spring(duration: 0.35, bounce: 0.2)
 
-        static var spring: SwiftUI.Animation {
-            .spring(response: springResponse, dampingFraction: springDamping)
-        }
+        /// Detach/absorb spring for the droplet pill separating from the dock
+        /// chip: slightly bouncier than `morph` so the drop reads as physical.
+        static let droplet: SwiftUI.Animation = .spring(duration: 0.42, bounce: 0.3)
 
-        static var easeOut: SwiftUI.Animation {
-            .easeOut(duration: defaultDuration)
+        /// Conditional sections revealing/collapsing (settings cards, hints).
+        static let reveal: SwiftUI.Animation = .smooth(duration: 0.2)
+
+        /// Pop half of a one-shot scale bounce; call sites pair it with their
+        /// own calmer settle spring.
+        static let microBounce: SwiftUI.Animation = .spring(duration: 0.14, bounce: 0.6)
+
+        /// Rolling digits paired with `.contentTransition(.numericText())`.
+        static let tick: SwiftUI.Animation = .easeOut(duration: 0.2)
+
+        /// Continuous progress fills (audio players) bridging 0.1 s timer ticks.
+        static let progress: SwiftUI.Animation = .linear(duration: 0.1)
+
+        /// System Reduce Motion for non-View call sites (managers); views
+        /// should read `@Environment(\.accessibilityReduceMotion)` instead.
+        @MainActor static var reduceMotion: Bool {
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         }
     }
 

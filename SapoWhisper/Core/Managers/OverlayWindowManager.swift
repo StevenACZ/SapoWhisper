@@ -70,7 +70,6 @@ class OverlayWindowManager: ObservableObject {
 
     private var overlayWindow: RecordingOverlayWindow?
     private var hostingView: NSHostingView<RecordingOverlayView>?
-    private var isAnimating = false
     private var presentationRevision: UInt = 0
     private var completedDismissTask: Task<Void, Never>?
     /// Last delivered transcription, reopened when the dock chip is clicked.
@@ -85,11 +84,6 @@ class OverlayWindowManager: ObservableObject {
     private var meterSessionStartedAt: CFAbsoluteTime?
     private var meterInputSamples = 0
     private var meterPublishedSamples = 0
-
-    /// Detach/absorb spring for the droplet pill separating from the dock
-    /// chip: slightly bouncier than the active-swap morph so the drop reads
-    /// as physical.
-    static let dropletAnimation: Animation = .spring(response: 0.42, dampingFraction: 0.7)
 
     // MARK: - Initialization
 
@@ -126,7 +120,6 @@ class OverlayWindowManager: ObservableObject {
         }
         presentationRevision &+= 1
         let revision = presentationRevision
-        isAnimating = false
 
         window.applyConfiguredPosition(verbose: true)
         window.contentView?.layer?.removeAllAnimations()
@@ -175,7 +168,7 @@ class OverlayWindowManager: ObservableObject {
         displayedRecordingSecond = nil
         publishAudioLevel(0, force: true)
         showsNoSpeechHint = false
-        withAnimation(Self.dropletAnimation) {
+        withAnimation(motionAnimation(Constants.Animation.droplet)) {
             state = .docked
         }
         syncOutsideClickMonitors()
@@ -265,6 +258,7 @@ class OverlayWindowManager: ObservableObject {
     private var activeContentFrame: CGRect = .zero
 
     func setActiveContentFrame(_ frame: CGRect) {
+        guard frame != activeContentFrame else { return }
         activeContentFrame = frame
     }
 
@@ -308,6 +302,11 @@ class OverlayWindowManager: ObservableObject {
 
     // MARK: - Private Methods
 
+    /// Droplet/morph springs collapse to instant changes under Reduce Motion.
+    private func motionAnimation(_ animation: Animation) -> Animation? {
+        Constants.Animation.reduceMotion ? nil : animation
+    }
+
     private func ensureWindow() {
         if overlayWindow != nil { return }
 
@@ -331,7 +330,6 @@ class OverlayWindowManager: ObservableObject {
         hostingView.layer?.isOpaque = false
 
         overlayWindow = RecordingOverlayWindow(contentView: hostingView)
-        isAnimating = false
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         SapoLog.overlay.info("Overlay window created in \(Int(elapsed), privacy: .public)ms")
     }
@@ -366,7 +364,7 @@ class OverlayWindowManager: ObservableObject {
             // between active pills morph with the calmer spring while the
             // pill view sequences the content crossfade on top of it.
             let leavingDock = state.stateCategory == "docked"
-            withAnimation(leavingDock ? Self.dropletAnimation : .spring(response: 0.35, dampingFraction: 0.8)) {
+            withAnimation(motionAnimation(leavingDock ? Constants.Animation.droplet : Constants.Animation.morph)) {
                 state = newState
             }
         } else {
@@ -576,7 +574,7 @@ class OverlayWindowManager: ObservableObject {
     private func shouldShowOverlay(for state: RecordingOverlayState) -> Bool {
         guard state.isVisible else { return false }
         guard let overlayWindow else { return true }
-        return overlayWindow.isVisible != true || isAnimating || overlayWindow.alphaValue < 0.99
+        return overlayWindow.isVisible != true || overlayWindow.alphaValue < 0.99
     }
 
     private func publishAudioLevel(_ level: Float, force: Bool = false) {

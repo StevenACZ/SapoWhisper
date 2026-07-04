@@ -20,12 +20,19 @@ struct PolishInstructionResponseVerdict {
 /// retry-oriented: prompts remain the main defense, while this guard catches
 /// obvious assistant/refusal/math-answer drift before it gets pasted.
 enum PolishInstructionResponseGuard {
-    /// `translationExpected` disables the cue-preservation check: the cue
-    /// word lists are per-language, so a faithful translation legitimately
-    /// "loses" the source-language cue ("genera" → "generates" matches no EN
-    /// pattern) and every retry fails the same way, shipping the untranslated
-    /// text. Direct response/refusal/math-answer detection stays on — those
-    /// patterns match the polished text itself in both languages.
+    /// Everyday dictation legitimately contains "no puedo ir a la reunión" or
+    /// "claro, mándame el reporte", and a faithful polish keeps those words.
+    /// A response phrase therefore only signals drift when the model
+    /// INTRODUCED it — it appears in the polished text but nowhere in the raw
+    /// transcript. A true refusal is always the model's own wording, so this
+    /// keeps every real rejection while releasing normal speech (which
+    /// previously burned the whole retry budget and shipped the raw text).
+    ///
+    /// `translationExpected` narrows the check to self-reference markers only:
+    /// a translation rewrites every phrase into the target language, so any
+    /// language-bound pattern would read as "introduced". The cue-preservation
+    /// check stays off for the same reason ("genera" → "generates" matches no
+    /// EN pattern).
     static func evaluate(
         raw: String,
         polished: String,
@@ -38,20 +45,45 @@ enum PolishInstructionResponseGuard {
             return acceptable()
         }
 
-        let rawHasAssistantDirectedCue = containsAnyPattern(assistantDirectedCuePatterns, in: rawNormalized)
         let polishedPreservesRequestCue =
             containsAnyPattern(assistantDirectedCuePatterns, in: polishedNormalized)
             || containsAnyPattern(genericRequestCuePatterns, in: polishedNormalized)
 
-        if containsAnyPattern(assistantResponsePatterns, in: polishedNormalized), !polishedPreservesRequestCue {
+        if introducedMatch(of: selfReferencePatterns, raw: rawNormalized, polished: polishedNormalized) {
             return rejected()
         }
 
-        if looksLikeMathAnswer(raw: rawNormalized, polished: polishedNormalized), !polishedPreservesRequestCue {
+        // The math-answer format ("5 + 5 = 10") is language-independent, so
+        // this check stays on for translations too.
+        if looksLikeMathAnswer(raw: rawNormalized, polished: polishedNormalized),
+            introducedMatch(of: mathAnswerPatterns, raw: rawNormalized, polished: polishedNormalized),
+            !polishedPreservesRequestCue
+        {
             return rejected()
         }
 
-        if rawHasAssistantDirectedCue, !polishedPreservesRequestCue, !translationExpected {
+        guard !translationExpected else { return acceptable() }
+
+        if introducedMatch(of: capabilityRefusalPatterns, raw: rawNormalized, polished: polishedNormalized),
+            !polishedPreservesRequestCue
+        {
+            return rejected()
+        }
+
+        // Weak phrases ("no puedo", "claro,", "here's") open normal sentences
+        // too, so beyond being introduced they must also sit where an
+        // assistant reply starts: the leading characters of the output.
+        if introducedMatch(
+            of: responseOpenerPatterns,
+            raw: rawNormalized,
+            polished: polishedNormalized,
+            withinLeading: 30
+        ), !polishedPreservesRequestCue {
+            return rejected()
+        }
+
+        let rawHasAssistantDirectedCue = containsAnyPattern(assistantDirectedCuePatterns, in: rawNormalized)
+        if rawHasAssistantDirectedCue, !polishedPreservesRequestCue {
             return rejected()
         }
 
@@ -80,9 +112,23 @@ enum PolishInstructionResponseGuard {
         #"\b(necesito que|quiero que|puedes|podrias|tienes que|por favor|please|can you|could you|i need you to|i want you to)\b"#
     ]
 
-    private static let assistantResponsePatterns: [String] = [
-        #"\b(como una ia|como ia|as an ai|no puedo|no tengo acceso|no tengo conexion|no cuento con conexion|no puedo acceder|no puedo navegar|no puedo buscar|no puedo ejecutar|no puedo correr|no encontre|no pude encontrar|i cannot|i can'?t|i do not have access|i don'?t have access|cannot browse|can'?t browse|cannot access|unable to access|i am unable to|i'?m unable to)\b"#,
-        #"\b(aqui tienes|here'?s|por supuesto|claro[,!]?|la respuesta es|the answer is|el resultado es|the result is)\b"#,
+    /// Nobody dictates these about themselves; they stay active even for
+    /// translations, where every other phrase legitimately changes language.
+    private static let selfReferencePatterns: [String] = [
+        #"\b(como una ia|como ia|as an ai)\b"#
+    ]
+
+    /// Capability-refusal phrasing. A person can dictate these ("no tengo
+    /// acceso al server"), so they only reject when the model introduced them.
+    private static let capabilityRefusalPatterns: [String] = [
+        #"\b(no tengo acceso|no tengo conexion|no cuento con conexion|no puedo acceder|no puedo navegar|no puedo buscar|no puedo ejecutar|no puedo correr|i do not have access|i don'?t have access|cannot browse|can'?t browse|cannot access|unable to access|i am unable to|i'?m unable to)\b"#
+    ]
+
+    /// Assistant reply openers that are also common in everyday speech;
+    /// checked introduced-only AND anchored to the start of the output.
+    private static let responseOpenerPatterns: [String] = [
+        #"\b(no puedo|no encontre|no pude encontrar|i cannot|i can'?t)\b"#,
+        #"\b(aqui tienes|here'?s|here is|por supuesto[,!]|claro[,!]|la respuesta es|the answer is|el resultado es|the result is)\b"#,
     ]
 
     private static func looksLikeMathAnswer(raw: String, polished: String) -> Bool {
@@ -109,6 +155,52 @@ enum PolishInstructionResponseGuard {
         #"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s*(plus|minus|times|divided by|\+|-|x|\*)\s*(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s*(is|equals|=)\s*-?\d+\b"#,
         #"\b(la respuesta es|el resultado es|the answer is|the result is)\s*-?\d+\b"#,
     ]
+
+    /// True when some pattern matches `polished` with a concrete phrase that
+    /// does not appear in `raw` (both already normalized) — phrasing the model
+    /// introduced rather than preserved. The raw lookup ignores punctuation:
+    /// a polish legitimately adds commas/apostrophes to preserved speech
+    /// ("claro mandame" → "Claro, mándame") and that must not read as
+    /// introduced. `withinLeading` further requires the match to start inside
+    /// the first N characters.
+    private static func introducedMatch(
+        of patterns: [String],
+        raw: String,
+        polished: String,
+        withinLeading leadingLimit: Int? = nil
+    ) -> Bool {
+        var rawSearchable: String?
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let fullRange = NSRange(polished.startIndex..<polished.endIndex, in: polished)
+            for match in regex.matches(in: polished, range: fullRange) {
+                guard let matchRange = Range(match.range, in: polished) else { continue }
+                if let leadingLimit {
+                    let offset = polished.distance(from: polished.startIndex, to: matchRange.lowerBound)
+                    guard offset < leadingLimit else { continue }
+                }
+                let phrase = searchableText(String(polished[matchRange]))
+                guard !phrase.isEmpty else { continue }
+                let haystack = rawSearchable ?? searchableText(raw)
+                rawSearchable = haystack
+                if !haystack.contains(phrase) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Letters, digits, and single spaces only — the punctuation-insensitive
+    /// form used to check whether a matched phrase came from the transcript.
+    private static func searchableText(_ text: String) -> String {
+        String(
+            text.unicodeScalars.map { scalar -> Character in
+                if CharacterSet.alphanumerics.contains(scalar) { return Character(scalar) }
+                return " "
+            }
+        )
+        .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespaces)
+    }
 
     private static func containsAnyPattern(_ patterns: [String], in text: String) -> Bool {
         patterns.contains { pattern in

@@ -16,16 +16,21 @@ final class TranscriptPostProcessor {
         let blockedInstructionResponse: Bool
     }
 
-    /// L10: hard cap for the whole polish step (including the one translation
-    /// retry). Hosted providers keep the snappy 5s-20s budget; local/LAN
-    /// models get a larger budget because first-token latency and small-model
-    /// reasoning can be much slower. The overlay countdown receives this same
-    /// value via the polishing overlay state, so they stay in sync by
-    /// construction.
-    static func polishTimeout(forCharacterCount count: Int) -> UInt64 {
-        polishTimeout(forCharacterCount: count, duration: nil, usesLocalBudget: false)
+    /// Result of polishing one chunk. A chunk that fails, times out, or gets
+    /// blocked salvages to its OWN raw text so the other chunks keep their
+    /// polish — a single bad chunk must not raw-fallback the whole dictation.
+    private struct ChunkOutcome: Sendable {
+        let text: String
+        let applied: Bool
+        let blocked: Bool
+        let failureDetail: String?
+        let model: String?
     }
 
+    /// L10: per-chunk budget for the polish call (including the one
+    /// translation retry). Hosted providers keep the snappy 5s-20s budget;
+    /// local/LAN models get a larger budget because first-token latency and
+    /// small-model reasoning can be much slower.
     static func polishTimeout(
         forCharacterCount count: Int,
         duration: TimeInterval?,
@@ -52,6 +57,27 @@ final class TranscriptPostProcessor {
         let base: UInt64 = 5
         let extra = UInt64(max(0, count - 400) / 200)
         return min(base + extra, 20)
+    }
+
+    /// Whole-step budget: the sum of per-chunk budgets after chunking. The
+    /// overlay countdown must use this same function — showing the unchunked
+    /// cap made the HUD hit 0 while a chunked polish was still legitimately
+    /// running.
+    static func totalPolishBudget(
+        forText text: String,
+        duration: TimeInterval?,
+        usesLocalBudget: Bool
+    ) -> UInt64 {
+        let chunks = splitIntoChunks(text)
+        let chunkDuration = duration.map { $0 / Double(chunks.count) }
+        return chunks.reduce(UInt64(0)) { total, chunk in
+            total
+                + polishTimeout(
+                    forCharacterCount: chunk.count,
+                    duration: chunkDuration,
+                    usesLocalBudget: usesLocalBudget
+                )
+        }
     }
 
     private let polisher: OpenAICompatiblePolisher
@@ -156,92 +182,185 @@ final class TranscriptPostProcessor {
         // restore medium-length quality with zero content loss.
         let chunks = Self.splitIntoChunks(transcript)
         let chunkDuration = duration.map { $0 / Double(chunks.count) }
-        let timeoutSeconds = chunks.reduce(UInt64(0)) { total, chunk in
-            total
-                + Self.polishTimeout(
-                    forCharacterCount: chunk.count,
-                    duration: chunkDuration,
-                    configuration: configuration
-                )
-        }
         if chunks.count > 1 {
             SapoLog.ai.info(
                 "AI polish chunked chars=\(transcript.count, privacy: .public) chunks=\(chunks.count, privacy: .public)"
             )
         }
 
-        do {
-            // Replacement values are canonical spellings too ("buen mouse" ->
-            // "BuenMouse"): once the deterministic correction pass has written
-            // them into the transcript, a translation must not undo them, so
-            // they anchor the fidelity guard alongside the keyterms.
-            let vocabularyTerms = keyterms + Array(mergedReplacements.values)
-            let guardedResponses = try await withTimeout(seconds: timeoutSeconds) {
-                var responses: [GuardedPolishResponse] = []
-                for chunk in chunks {
-                    let messages = TranscriptPolishPromptBuilder.makeMessages(
-                        rawText: chunk,
-                        personalContext: personalContext,
-                        outputLanguage: outputLanguage,
-                        keyterms: keyterms,
-                        replacements: mergedReplacements,
-                        recentDictations: recentDictations
+        // Replacement values are canonical spellings too ("buen mouse" ->
+        // "BuenMouse"): once the deterministic correction pass has written
+        // them into the transcript, a translation must not undo them, so
+        // they anchor the fidelity guard alongside the keyterms.
+        let vocabularyTerms = keyterms + Array(mergedReplacements.values)
+
+        func polishOne(_ chunk: String) async -> ChunkOutcome {
+            await polishChunk(
+                chunk,
+                chunkDuration: chunkDuration,
+                configuration: configuration,
+                personalContext: personalContext,
+                outputLanguage: outputLanguage,
+                keyterms: keyterms,
+                mergedReplacements: mergedReplacements,
+                recentDictations: recentDictations,
+                vocabularyTerms: vocabularyTerms
+            )
+        }
+
+        var outcomes: [ChunkOutcome] = []
+        if configuration.usesLocalTimeoutBudget || chunks.count == 1 {
+            // Local endpoints serve one request at a time (single GPU, shared
+            // prefix cache), so chunks run sequentially.
+            for chunk in chunks {
+                guard !Task.isCancelled else {
+                    outcomes.append(
+                        ChunkOutcome(
+                            text: chunk, applied: false, blocked: false,
+                            failureDetail: "polish cancelled", model: nil
+                        )
                     )
-                    let guarded = try await self.polishWithHardGuardRetries(
-                        messages: messages,
-                        rawText: chunk,
-                        vocabularyTerms: vocabularyTerms,
-                        outputLanguage: outputLanguage,
-                        timeout: TimeInterval(timeoutSeconds)
-                    )
-                    responses.append(guarded)
+                    continue
                 }
-                return responses
+                outcomes.append(await polishOne(chunk))
             }
+        } else {
+            // Hosted endpoints handle concurrent requests fine; running the
+            // chunks together collapses the latency of a long dictation from
+            // sum(chunks) to roughly max(chunk).
+            outcomes = await withTaskGroup(of: (Int, ChunkOutcome).self) { group in
+                for (index, chunk) in chunks.enumerated() {
+                    group.addTask {
+                        (index, await polishOne(chunk))
+                    }
+                }
+                var byIndex = [ChunkOutcome?](repeating: nil, count: chunks.count)
+                for await (index, outcome) in group {
+                    byIndex[index] = outcome
+                }
+                return byIndex.enumerated().map { indexed in
+                    indexed.element
+                        ?? ChunkOutcome(
+                            text: chunks[indexed.offset], applied: false, blocked: false,
+                            failureDetail: "polish cancelled", model: nil
+                        )
+                }
+            }
+        }
 
-            let model = guardedResponses.last?.response.modelIdentifier
-            let cleanedText = guardedResponses.map(\.cleanedText).joined(separator: "\n\n")
+        let anyApplied = outcomes.contains(where: \.applied)
+        let model = outcomes.compactMap(\.model).last ?? configuration.modelIdentifier
+
+        if anyApplied {
+            let finalText = outcomes.map(\.text).joined(separator: "\n\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard guardedResponses.allSatisfy({ !$0.cleanedText.isEmpty }) else {
-                return finish(
-                    finalText: transcript,
-                    status: .failed,
-                    model: model,
-                    mode: "automatic",
-                    error: "empty polished text"
+            let salvagedCount = outcomes.filter { !$0.applied }.count
+            if salvagedCount > 0 {
+                SapoLog.ai.warning(
+                    "AI polish salvaged chunks raw=\(salvagedCount, privacy: .public)/\(outcomes.count, privacy: .public)"
                 )
             }
-            guard !guardedResponses.contains(where: \.blockedInstructionResponse) else {
-                return finish(
-                    finalText: transcript,
-                    status: .rejectedFidelity,
-                    model: model,
-                    mode: "automatic",
-                    error: "AI polish answered or performed the transcript instead of polishing it"
-                )
-            }
-
             return finish(
-                finalText: cleanedText,
+                finalText: finalText,
                 status: .applied,
                 model: model,
-                mode: "automatic"
+                mode: "automatic",
+                error: salvagedCount > 0 ? "\(salvagedCount)/\(outcomes.count) chunks kept raw" : nil
+            )
+        }
+
+        if outcomes.contains(where: \.blocked) {
+            return finish(
+                finalText: transcript,
+                status: .rejectedFidelity,
+                model: model,
+                mode: "automatic",
+                error: "AI polish answered or performed the transcript instead of polishing it"
+            )
+        }
+
+        return finish(
+            finalText: transcript,
+            status: .failed,
+            model: model,
+            mode: "automatic",
+            error: outcomes.compactMap(\.failureDetail).first ?? "AI polish failed"
+        )
+    }
+
+    /// Polishes one chunk inside its own budget. Never throws: any failure
+    /// (timeout, provider error, blocked output, empty output) falls back to
+    /// the chunk's raw text so sibling chunks keep their polish.
+    private func polishChunk(
+        _ chunk: String,
+        chunkDuration: TimeInterval?,
+        configuration: PolishProviderConfiguration,
+        personalContext: String,
+        outputLanguage: TranscriptPolishOutputLanguage,
+        keyterms: [String],
+        mergedReplacements: [String: String],
+        recentDictations: [String],
+        vocabularyTerms: [String]
+    ) async -> ChunkOutcome {
+        let budget = Self.polishTimeout(
+            forCharacterCount: chunk.count,
+            duration: chunkDuration,
+            configuration: configuration
+        )
+        // Generous output cap: roughly 2x the tokens the chunk itself needs.
+        // Its real job is making finish_reason=="length" detectable instead of
+        // shipping a silently truncated polish.
+        let maxTokens = max(512, chunk.count * 2 / 3)
+
+        do {
+            let guarded = try await withTimeout(seconds: budget) {
+                let messages = TranscriptPolishPromptBuilder.makeMessages(
+                    rawText: chunk,
+                    personalContext: personalContext,
+                    outputLanguage: outputLanguage,
+                    keyterms: keyterms,
+                    replacements: mergedReplacements,
+                    recentDictations: recentDictations
+                )
+                return try await self.polishWithHardGuardRetries(
+                    messages: messages,
+                    rawText: chunk,
+                    vocabularyTerms: vocabularyTerms,
+                    outputLanguage: outputLanguage,
+                    timeout: TimeInterval(budget),
+                    maxTokens: maxTokens
+                )
+            }
+            if guarded.blockedInstructionResponse {
+                return ChunkOutcome(
+                    text: chunk, applied: false, blocked: true,
+                    failureDetail: nil, model: guarded.response.modelIdentifier
+                )
+            }
+            guard !guarded.cleanedText.isEmpty else {
+                return ChunkOutcome(
+                    text: chunk, applied: false, blocked: false,
+                    failureDetail: "empty polished text", model: guarded.response.modelIdentifier
+                )
+            }
+            return ChunkOutcome(
+                text: guarded.cleanedText, applied: true, blocked: false,
+                failureDetail: nil, model: guarded.response.modelIdentifier
+            )
+        } catch is CancellationError where !Task.isCancelled {
+            return ChunkOutcome(
+                text: chunk, applied: false, blocked: false,
+                failureDetail: "chunk timed out after \(budget)s", model: nil
             )
         } catch is CancellationError {
-            return finish(
-                finalText: transcript,
-                status: .failed,
-                model: configuration.modelIdentifier,
-                mode: "automatic",
-                error: "AI polish timed out after \(timeoutSeconds)s"
+            return ChunkOutcome(
+                text: chunk, applied: false, blocked: false,
+                failureDetail: "polish cancelled", model: nil
             )
         } catch {
-            return finish(
-                finalText: transcript,
-                status: .failed,
-                model: configuration.modelIdentifier,
-                mode: "automatic",
-                error: error.localizedDescription
+            return ChunkOutcome(
+                text: chunk, applied: false, blocked: false,
+                failureDetail: error.localizedDescription, model: nil
             )
         }
     }
@@ -339,18 +458,20 @@ final class TranscriptPostProcessor {
         rawText: String,
         vocabularyTerms: [String],
         outputLanguage: TranscriptPolishOutputLanguage,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        maxTokens: Int
     ) async throws -> GuardedPolishResponse {
         var attemptMessages = messages
-        var lastRejected: GuardedPolishResponse?
         var lastInstructionRejected: GuardedPolishResponse?
+        var attempt = 1
 
-        for attempt in 1...Self.maximumFidelityAttempts {
+        while true {
             let response = try await polishVerifyingTranslation(
                 messages: attemptMessages,
                 rawText: rawText,
                 outputLanguage: outputLanguage,
-                timeout: timeout
+                timeout: timeout,
+                maxTokens: maxTokens
             )
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: rawText)
             let guarded = GuardedPolishResponse(
@@ -362,8 +483,7 @@ final class TranscriptPostProcessor {
                 raw: rawText,
                 polished: cleaned,
                 vocabularyTerms: vocabularyTerms,
-                translationExpected: outputLanguage.requiresTranslation,
-                targetIsDenseScript: outputLanguage.usesDenseScript
+                translationExpected: outputLanguage.requiresTranslation
             )
             let instructionVerdict = PolishInstructionResponseGuard.evaluate(
                 raw: rawText,
@@ -378,15 +498,27 @@ final class TranscriptPostProcessor {
                 return guarded
             }
 
-            lastRejected = guarded
             if !instructionVerdict.isAcceptable {
                 lastInstructionRejected = guarded
             }
             SapoLog.ai.warning(
                 "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(fidelityVerdict.diagnosticSummary, privacy: .public) \(instructionVerdict.diagnosticSummary, privacy: .public)"
             )
-            guard attempt < Self.maximumFidelityAttempts else { break }
 
+            if attempt >= Self.maximumFidelityAttempts {
+                if let lastInstructionRejected {
+                    SapoLog.ai.warning("AI polish rejected after instruction-response guard retries")
+                    return GuardedPolishResponse(
+                        response: lastInstructionRejected.response,
+                        cleanedText: lastInstructionRejected.cleanedText,
+                        blockedInstructionResponse: true
+                    )
+                }
+                SapoLog.ai.warning("AI polish shipping last output after hard guard retry budget")
+                return guarded
+            }
+
+            attempt += 1
             let instruction =
                 instructionVerdict.retryInstruction ?? fidelityVerdict.retryInstruction ?? """
                     A previous polish attempt changed protected tokens. Regenerate the full polished text from the original transcript and preserve URLs, emails, vocabulary terms, and identifiers exactly. Return ONLY the final polished transcript.
@@ -396,32 +528,6 @@ final class TranscriptPostProcessor {
                 user: messages.user
             )
         }
-
-        if let lastInstructionRejected {
-            SapoLog.ai.warning("AI polish rejected after instruction-response guard retries")
-            return GuardedPolishResponse(
-                response: lastInstructionRejected.response,
-                cleanedText: lastInstructionRejected.cleanedText,
-                blockedInstructionResponse: true
-            )
-        }
-
-        if let lastRejected {
-            SapoLog.ai.warning("AI polish shipping last output after hard guard retry budget")
-            return lastRejected
-        }
-
-        let response = try await polishVerifyingTranslation(
-            messages: messages,
-            rawText: rawText,
-            outputLanguage: outputLanguage,
-            timeout: timeout
-        )
-        return GuardedPolishResponse(
-            response: response,
-            cleanedText: PolishOutputSanitizer.clean(response.text, rawText: rawText),
-            blockedInstructionResponse: false
-        )
     }
 
     /// Runs the polish call and, when an explicit output language is set,
@@ -433,9 +539,12 @@ final class TranscriptPostProcessor {
         messages: TranscriptPolishMessages,
         rawText: String,
         outputLanguage: TranscriptPolishOutputLanguage,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        maxTokens: Int
     ) async throws -> PolishResponse {
-        let first = try await polisher.polish(system: messages.system, user: messages.user, timeout: timeout)
+        let first = try await polisher.polish(
+            system: messages.system, user: messages.user, timeout: timeout, maxTokens: maxTokens
+        )
         let firstCleaned = PolishOutputSanitizer.clean(first.text, rawText: rawText)
 
         // 12 chars is enough for NLLanguageRecognizer to call the dominant
@@ -468,7 +577,9 @@ final class TranscriptPostProcessor {
                 """
 
         do {
-            let second = try await polisher.polish(system: retrySystem, user: messages.user, timeout: timeout)
+            let second = try await polisher.polish(
+                system: retrySystem, user: messages.user, timeout: timeout, maxTokens: maxTokens
+            )
             let secondCleaned = PolishOutputSanitizer.clean(second.text, rawText: rawText)
             let retryDetected = Self.dominantLanguageCode(of: secondCleaned) ?? "unknown"
             SapoLog.ai.info(
@@ -500,13 +611,16 @@ final class TranscriptPostProcessor {
     /// Polish runs for every non-empty dictation when enabled and configured —
     /// no silent duration/length gates (they read as "the AI didn't work";
     /// see brain/lessons/sapowhisper-skip-gates-vs-explicit-output-language).
+    /// Mirrors the exact gating of `process()` so the overlay countdown never
+    /// promises a polish that will be skipped (or vice versa).
     func willAttemptPolish(rawText: String) -> Bool {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        let enabled = UserDefaults.standard.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
-        guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline() else { return false }
-        return enabled && polisher.isConfigured
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled) else { return false }
+        guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults) else { return false }
+        return PolishProviderConfiguration.current() != nil
     }
 
     private func makeResult(

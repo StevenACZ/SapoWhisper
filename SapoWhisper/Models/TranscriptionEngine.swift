@@ -75,6 +75,8 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
     case tiny = "openai_whisper-tiny"
     case base = "openai_whisper-base"
     case small = "openai_whisper-small"
+    case largev3V20240930Quantized = "openai_whisper-large-v3-v20240930_626MB"
+    case largev3V20240930 = "openai_whisper-large-v3-v20240930"
     case largev3 = "openai_whisper-large-v3"
     case largev3Turbo = "openai_whisper-large-v3_turbo"
 
@@ -85,6 +87,8 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         case .tiny: return "Tiny"
         case .base: return "Base"
         case .small: return "Small"
+        case .largev3V20240930Quantized: return "Large V3 Turbo (Comprimido)"
+        case .largev3V20240930: return "Large V3 Turbo (Oficial)"
         case .largev3: return "Large V3"
         case .largev3Turbo: return "Large V3 Turbo"
         }
@@ -95,6 +99,8 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         case .tiny: return "76.6 MB"
         case .base: return "146.7 MB"
         case .small: return "486.5 MB"
+        case .largev3V20240930Quantized: return "626 MB"
+        case .largev3V20240930: return "1.5 GB"
         case .largev3: return "3.09 GB"
         case .largev3Turbo: return "3.2 GB"
         }
@@ -105,6 +111,8 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         case .tiny: return Int64(76.6 * 1024 * 1024)
         case .base: return Int64(146.7 * 1024 * 1024)
         case .small: return Int64(486.5 * 1024 * 1024)
+        case .largev3V20240930Quantized: return Int64(626 * 1024 * 1024)
+        case .largev3V20240930: return Int64(1.5 * 1024 * 1024 * 1024)
         case .largev3: return Int64(3.09 * 1024 * 1024 * 1024)
         case .largev3Turbo: return Int64(3.2 * 1024 * 1024 * 1024)
         }
@@ -115,6 +123,8 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         case .tiny: return "model.speed.very_fast".localized
         case .base: return "model.speed.fast".localized
         case .small: return "model.speed.moderate".localized
+        case .largev3V20240930Quantized: return "model.speed.fast".localized
+        case .largev3V20240930: return "model.speed.fast".localized
         case .largev3: return "model.speed.slow".localized
         case .largev3Turbo: return "model.speed.fast".localized
         }
@@ -125,13 +135,15 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         case .tiny: return 2
         case .base: return 3
         case .small: return 4
+        case .largev3V20240930Quantized: return 4
+        case .largev3V20240930: return 5
         case .largev3: return 5
         case .largev3Turbo: return 5
         }
     }
 
     var isRecommended: Bool {
-        self == .small || self == .largev3Turbo
+        self == .small || self == .largev3V20240930
     }
 
     var recommendedFor: String {
@@ -139,6 +151,8 @@ enum WhisperKitModel: String, CaseIterable, Identifiable {
         case .tiny: return "Pruebas rapidas"
         case .base: return "Uso diario basico"
         case .small: return "Mejor balance"
+        case .largev3V20240930Quantized: return "Turbo oficial comprimido"
+        case .largev3V20240930: return "Turbo oficial de OpenAI"
         case .largev3: return "Maxima precision"
         case .largev3Turbo: return "Precision + Velocidad"
         }

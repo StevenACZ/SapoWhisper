@@ -10,7 +10,7 @@ import SwiftUI
 struct TranscribingIndicator: View {
     var color: Color = .processing
 
-    @State private var animatingDots: [Bool] = [false, false, false]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let dotSize: CGFloat = 6
     private let spacing: CGFloat = 5
@@ -18,29 +18,29 @@ struct TranscribingIndicator: View {
     var body: some View {
         HStack(spacing: spacing) {
             ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(color)
-                    .frame(width: dotSize, height: dotSize)
-                    .scaleEffect(animatingDots[index] ? 1.3 : 0.8)
-                    .opacity(animatingDots[index] ? 1.0 : 0.4)
+                if reduceMotion {
+                    dot.opacity(0.7)
+                } else {
+                    // Shared phase clock: every dot cycles 0→1→2 on the same
+                    // 0.5 s beat and lights up on its own slot, so the pulse
+                    // travels across the row without per-dot delay state.
+                    dot
+                        .phaseAnimator([0, 1, 2]) { content, phase in
+                            content
+                                .scaleEffect(phase == index ? 1.3 : 0.8)
+                                .opacity(phase == index ? 1.0 : 0.4)
+                        } animation: { _ in
+                            .easeInOut(duration: 0.5)
+                        }
+                }
             }
-        }
-        .onAppear {
-            startAnimation()
         }
     }
 
-    private func startAnimation() {
-        for i in 0..<3 {
-            let delay = Double(i) * 0.2
-            withAnimation(
-                .easeInOut(duration: 0.5)
-                    .repeatForever(autoreverses: true)
-                    .delay(delay)
-            ) {
-                animatingDots[i] = true
-            }
-        }
+    private var dot: some View {
+        Circle()
+            .fill(color)
+            .frame(width: dotSize, height: dotSize)
     }
 }
 

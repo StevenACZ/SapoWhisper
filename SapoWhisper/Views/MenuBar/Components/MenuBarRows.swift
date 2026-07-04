@@ -5,6 +5,7 @@
 //  Shared row components used by the menu bar popover.
 //
 
+import Combine
 import SwiftUI
 
 struct HotkeyBadge: View {
@@ -47,6 +48,20 @@ struct RecordingTimer: View {
         let seconds = Int(duration) % 60
         let milliseconds = Int((duration.truncatingRemainder(dividingBy: 1)) * 10)
         return String(format: "%d:%02d.%d", minutes, seconds, milliseconds)
+    }
+}
+
+/// Hosts RecordingTimer behind its own duration subscription so the 10 Hz
+/// ticks re-render only this row instead of feeding the duration through the
+/// whole popover body.
+struct RecordingTimerRow: View {
+    let durationPublisher: Published<TimeInterval>.Publisher
+
+    @State private var duration: TimeInterval = 0
+
+    var body: some View {
+        RecordingTimer(duration: duration)
+            .onReceive(durationPublisher) { duration = $0 }
     }
 }
 

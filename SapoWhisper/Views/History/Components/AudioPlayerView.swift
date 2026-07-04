@@ -94,7 +94,7 @@ final class HistoryAudioPlayerController: ObservableObject {
 
     private func startProgressTimer() {
         stopProgressTimer()
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.tickProgress()
             }
@@ -154,6 +154,9 @@ struct AudioPlayerView: View {
                                     ? geo.size.width * (controller.currentTime / controller.duration) : 0,
                                 height: 5
                             )
+                            // Bridge the 0.1 s timer ticks so the fill glides
+                            // instead of stepping.
+                            .animation(Constants.Animation.progress, value: controller.currentTime)
                     }
                     .frame(height: geo.size.height)
                     .contentShape(Rectangle())

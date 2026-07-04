@@ -331,7 +331,7 @@ class WhisperKitTranscriber: ObservableObject {
             userFriendlyError = "No hay suficiente espacio en disco."
         }
 
-        errorMessage = "Error cargando modelo: \(userFriendlyError)"
+        errorMessage = "error.whisperkit.model_load".localized(userFriendlyError)
         SapoLog.recording.error(
             "WhisperKit load failed after \(maxRetries, privacy: .public) attempts: \(errorMsg, privacy: .public)"
         )
@@ -429,15 +429,26 @@ class WhisperKitTranscriber: ObservableObject {
                 // Configurar opciones de decodificacion
                 var options = DecodingOptions()
                 options.language = TranscriptionLanguageCatalog.whisperLanguageCode(for: language)
+                // Auto mode: `detectLanguage` defaults to `!usePrefillPrompt`
+                // (= false), and the prefill prompt falls back to <|en|> when
+                // language is nil — opt in so "auto" actually autodetects.
+                if options.language == nil {
+                    options.detectLanguage = true
+                }
 
                 // Whisper-style initial prompt: condition the decoder on the
                 // user's canonical vocabulary so keyterms come out spelled
-                // right on the first pass. WhisperKit trims to its max prompt
-                // length and strips special tokens internally.
+                // right on the first pass. WhisperKit trims an over-long
+                // prompt keeping the SUFFIX (~223 tokens), which would drop
+                // the user's keyterms leading the glossary — cap from the
+                // front instead.
                 let vocabularyPrompt = VocabularyManager.shared.initialPromptText()
                 if !vocabularyPrompt.isEmpty, let tokenizer = whisperKit.tokenizer {
-                    let promptTokens = tokenizer.encode(text: " " + vocabularyPrompt)
-                        .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                    let promptTokens = Array(
+                        tokenizer.encode(text: " " + vocabularyPrompt)
+                            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                            .prefix(220)
+                    )
                     if !promptTokens.isEmpty {
                         options.promptTokens = promptTokens
                         SapoLog.recording.info(
@@ -468,7 +479,7 @@ class WhisperKitTranscriber: ObservableObject {
                 return transcription
 
             } catch {
-                errorMessage = "Error en transcripcion: \(error.localizedDescription)"
+                errorMessage = "error.whisperkit.transcription".localized(error.localizedDescription)
                 SapoLog.recording.error(
                     "WhisperKit transcription failed error=\(error.localizedDescription, privacy: .public)"
                 )
@@ -787,9 +798,9 @@ enum WhisperKitError: LocalizedError {
         case .modelNotLoaded:
             return "No hay un modelo cargado"
         case .modelLoadFailed(let message):
-            return "Error cargando modelo: \(message)"
+            return "error.whisperkit.model_load".localized(message)
         case .transcriptionFailed(let message):
-            return "Error en transcripcion: \(message)"
+            return "error.whisperkit.transcription".localized(message)
         case .transcriptionInProgress:
             return "Ya hay una transcripcion en curso"
         }

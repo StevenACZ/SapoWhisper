@@ -214,7 +214,13 @@ class VocabularyManager: ObservableObject {
             }
     }
 
-    /// Returns keyterms shaped for engines that accept server-side recognition hints.
+    /// Returns keyterms shaped for engines that accept server-side recognition
+    /// hints. CANONICAL forms only — the same rule the Whisper initial prompt
+    /// follows: sending misheard variants ("Clauco", "hit pug") as hints
+    /// actively biases the engine toward the wrong spelling and burns the
+    /// provider's term budget (Deepgram caps at 100 terms; ElevenLabs bills a
+    /// 20s minimum past 100). Variants are recovered after the fact by the
+    /// deterministic correction pass and the AI polish prompt.
     func recognitionKeytermPayload(
         maxCount: Int,
         maxLength: Int,
@@ -223,32 +229,22 @@ class VocabularyManager: ObservableObject {
     ) -> (terms: [String], droppedCount: Int) {
         let candidates = recognitionCandidates(includeReplacementValues: includeReplacementValues)
         var seen = Set<String>()
-        var expandedTerms: [String] = []
+        var canonicalTerms: [String] = []
 
-        func appendUnique(_ term: String) {
-            let trimmed = Self.sanitizedRecognitionHint(term)
-            guard !trimmed.isEmpty else { return }
+        for candidate in candidates {
+            let trimmed = Self.sanitizedRecognitionHint(candidate)
+            guard !trimmed.isEmpty else { continue }
             let normalized = trimmed.lowercased()
-            guard !seen.contains(normalized) else { return }
+            guard !seen.contains(normalized) else { continue }
             seen.insert(normalized)
-            expandedTerms.append(trimmed)
+            canonicalTerms.append(trimmed)
         }
 
-        for candidate in candidates {
-            appendUnique(candidate)
-        }
-
-        for candidate in candidates {
-            for variant in Self.recognitionVariants(for: candidate) {
-                appendUnique(variant)
-            }
-        }
-
-        let validTerms = expandedTerms.filter { term in
+        let validTerms = canonicalTerms.filter { term in
             term.count <= maxLength && (maxWords.map { term.split(separator: " ").count <= $0 } ?? true)
         }
         let terms = Array(validTerms.prefix(maxCount))
-        return (terms, max(0, expandedTerms.count - terms.count))
+        return (terms, max(0, canonicalTerms.count - terms.count))
     }
 
     /// Whisper-style initial prompt for local STT engines (WhisperKit and the
@@ -383,8 +379,20 @@ class VocabularyManager: ObservableObject {
         return uniqueVariants(spokenVariants + condensedVariants)
     }
 
+    /// Single-word variants that are also everyday words. Applied
+    /// deterministically they rewrite legitimate speech ("a hit on Spotify" →
+    /// "a git on Spotify", "mi perro pug" → "mi perro push"), so they never
+    /// join the mechanical correction pass — the AI polish prompt still sees
+    /// them, where context judgment exists. Multi-word forms ("hit pug",
+    /// "deep comment") stay mechanical: the bigram is specific enough.
+    private static let contextOnlyCorrectionVariants: Set<String> = [
+        "hit", "pug", "comet", "cloud", "claw", "clawed", "clog", "slough",
+    ]
+
     private static func correctionVariants(for keyterm: String) -> [String] {
-        recognitionVariants(for: keyterm)
+        recognitionVariants(for: keyterm).filter {
+            !contextOnlyCorrectionVariants.contains($0.lowercased())
+        }
     }
 
     private static func replacingWholeTermVariants(_ variants: [String], with canonical: String, in transcript: String)
@@ -752,8 +760,12 @@ class VocabularyManager: ObservableObject {
             return NSRegularExpression.escapedPattern(for: token)
         }
 
+        // No trailing `\.?`: consuming a sentence-ending period made every
+        // correction at the end of a sentence eat the period ("Instala git.
+        // Luego…" → "Instala git Luego…"). The trailing lookahead already
+        // treats "." as a boundary, so the period survives outside the match.
         let characters = token.map { NSRegularExpression.escapedPattern(for: String($0)) }
-        return characters.joined(separator: #"[\s._-]*"#) + #"\.?"#
+        return characters.joined(separator: #"[\s._-]*"#)
     }
 
     private static func uniqueVariants(_ variants: [String]) -> [String] {

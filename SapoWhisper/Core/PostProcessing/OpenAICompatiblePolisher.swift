@@ -15,6 +15,7 @@ struct PolishResponse: Sendable {
 enum PolishProviderError: LocalizedError {
     case notConfigured
     case emptyResponse(finishReason: String?)
+    case truncatedResponse
     case httpError(statusCode: Int, endpoint: PolishEndpoint, message: String)
 
     var errorDescription: String? {
@@ -23,6 +24,8 @@ enum PolishProviderError: LocalizedError {
             return "ai.provider.error_not_configured".localized
         case .emptyResponse:
             return "ai.provider.error_empty".localized
+        case .truncatedResponse:
+            return "ai.provider.error_truncated".localized
         case .httpError(let statusCode, let endpoint, let message):
             let friendlyMessage = Self.friendlyHTTPMessage(
                 statusCode: statusCode,
@@ -104,11 +107,18 @@ final class OpenAICompatiblePolisher {
         PolishProviderConfiguration.hasUsableConfiguration()
     }
 
-    func polish(system: String, user: String, timeout: TimeInterval = 8) async throws -> PolishResponse {
+    func polish(
+        system: String,
+        user: String,
+        timeout: TimeInterval = 8,
+        maxTokens: Int? = nil
+    ) async throws -> PolishResponse {
         guard let configuration = PolishProviderConfiguration.current() else {
             throw PolishProviderError.notConfigured
         }
-        return try await send(system: system, user: user, timeout: timeout, configuration: configuration)
+        return try await send(
+            system: system, user: user, timeout: timeout, maxTokens: maxTokens, configuration: configuration
+        )
     }
 
     /// Round-trips a canned sentence to validate endpoint + key + model in one
@@ -129,14 +139,17 @@ final class OpenAICompatiblePolisher {
         system: String,
         user: String,
         timeout: TimeInterval,
+        maxTokens: Int? = nil,
         configuration: PolishProviderConfiguration,
-        includeTemperature: Bool = true
+        includeTemperature: Bool = true,
+        allowTruncationRetry: Bool = true
     ) async throws -> PolishResponse {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let request = try makeRequest(
             system: system,
             user: user,
             timeout: timeout,
+            maxTokens: maxTokens,
             configuration: configuration,
             includeTemperature: includeTemperature
         )
@@ -153,8 +166,10 @@ final class OpenAICompatiblePolisher {
                     system: system,
                     user: user,
                     timeout: timeout,
+                    maxTokens: maxTokens,
                     configuration: configuration,
-                    includeTemperature: false
+                    includeTemperature: false,
+                    allowTruncationRetry: allowTruncationRetry
                 )
             }
             throw PolishProviderError.httpError(
@@ -173,6 +188,27 @@ final class OpenAICompatiblePolisher {
             "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
         )
 
+        // A "length" finish means the output was cut mid-sentence; pasting it
+        // would ship a silently truncated polish. Retry once with a doubled
+        // cap, then let the caller fall back to the raw text.
+        if finishReason == "length" {
+            if allowTruncationRetry, let maxTokens {
+                SapoLog.ai.warning(
+                    "Polish response hit max_tokens cap=\(maxTokens, privacy: .public) — retrying with doubled cap"
+                )
+                return try await send(
+                    system: system,
+                    user: user,
+                    timeout: timeout,
+                    maxTokens: maxTokens * 2,
+                    configuration: configuration,
+                    includeTemperature: includeTemperature,
+                    allowTruncationRetry: false
+                )
+            }
+            throw PolishProviderError.truncatedResponse
+        }
+
         guard !text.isEmpty else {
             throw PolishProviderError.emptyResponse(finishReason: choice?.finishReason)
         }
@@ -184,6 +220,7 @@ final class OpenAICompatiblePolisher {
         system: String,
         user: String,
         timeout: TimeInterval,
+        maxTokens: Int?,
         configuration: PolishProviderConfiguration,
         includeTemperature: Bool
     ) throws -> URLRequest {

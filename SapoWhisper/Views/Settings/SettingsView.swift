@@ -8,6 +8,20 @@ import Foundation
 import SwiftUI
 import os
 
+/// The settings tabs stay mounted in a ZStack (opacity toggle), so a hidden
+/// tab never receives `onDisappear`. Live components (mic test meter) watch
+/// this instead to release hardware when their tab stops being selected.
+struct SettingsTabIsSelectedKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var settingsTabIsSelected: Bool {
+        get { self[SettingsTabIsSelectedKey.self] }
+        set { self[SettingsTabIsSelectedKey.self] = newValue }
+    }
+}
+
 /// Vista principal de configuración con tabs
 /// Se abre desde el botón "Configuración" en el menú
 struct SettingsView: View {
@@ -92,7 +106,7 @@ struct SettingsView: View {
                 HotkeySettingsTab()
             }
         }
-        .animation(Constants.Animation.easeOut, value: selectedTab)
+        .animation(Constants.Animation.reveal, value: selectedTab)
     }
 
     @ViewBuilder
@@ -102,6 +116,7 @@ struct SettingsView: View {
             .scaleEffect(selectedTab == tab ? 1 : 0.98)
             .allowsHitTesting(selectedTab == tab)
             .accessibilityHidden(selectedTab != tab)
+            .environment(\.settingsTabIsSelected, selectedTab == tab)
     }
 
     private func logTabRendered(_ tab: SettingsTab) {

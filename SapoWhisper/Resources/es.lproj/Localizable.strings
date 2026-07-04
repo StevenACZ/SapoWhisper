@@ -223,6 +223,9 @@
 "ai.polish.fidelity_max" = "Fidelidad al máximo";
 "ai.provider.error_not_configured" = "La mejora por IA no está configurada (faltan datos del proveedor).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
+"ai.provider.error_truncated" = "La respuesta de la IA se cortó antes de terminar.";
+"error.whisperkit.model_load" = "Error cargando modelo: %@";
+"error.whisperkit.transcription" = "Error en transcripción: %@";
 "ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
 "ai.provider.error_auth_openai" = "OpenAI rechazó la API key. Si pegaste una key de OpenRouter, cambia el proveedor a OpenRouter; si quieres OpenAI, pega una key de OpenAI.";
 "ai.provider.error_auth_openrouter" = "OpenRouter rechazó la API key. Revisa que la key sea de OpenRouter.";

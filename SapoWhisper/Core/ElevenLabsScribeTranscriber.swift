@@ -14,7 +14,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     @Published var isTranscribing: Bool = false
 
     /// Brand name surfaced in user-facing failures and logs.
-    private static let engineName = "ElevenLabs"
+    nonisolated private static let engineName = "ElevenLabs"
 
     /// ElevenLabs Scribe v2 batch keyterm biasing limits: up to 1000 terms,
     /// each ≤50 characters and ≤5 words.
@@ -37,11 +37,8 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
 
-        await MainActor.run { isTranscribing = true }
-        defer { Task { @MainActor in isTranscribing = false } }
-
-        // Batch Scribe accepts the WAV produced by the selected upload-quality profile.
-        let audioData = try Data(contentsOf: audioURL)
+        isTranscribing = true
+        defer { isTranscribing = false }
 
         guard let url = URL(string: "https://api.elevenlabs.io/v1/speech-to-text") else {
             throw TranscriptionFailure(
@@ -49,12 +46,6 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         }
 
         let boundary = "----SapoWhisperBoundary\(UUID().uuidString)"
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        // Scale the timeout to the clip length so long recordings are not aborted early.
-        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: audioData.count)
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
             maxCount: Self.maxKeyterms,
             maxLength: Self.maxKeytermLength,
@@ -62,22 +53,33 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             includeReplacementValues: true
         )
         let keyterms = keytermPayload.terms
-        let body = makeMultipartBody(
+
+        // Reading the WAV and copying it into the multipart body is heavy for
+        // long takes, so the payload is assembled off the main actor.
+        let payload = try await Self.makeUploadPayload(
+            audioURL: audioURL,
             boundary: boundary,
-            audioData: audioData,
-            language: language,
+            languageCode: scribeLanguageCode(for: language),
             keyterms: keyterms
         )
-        request.httpBody = body
 
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        // Scale the timeout to the clip length so long recordings are not aborted early.
+        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: payload.audioByteCount)
+        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.httpBody = payload.body
+
+        let audioByteCount = payload.audioByteCount
         let startedAt = CFAbsoluteTimeGetCurrent()
         SapoLog.recording.info(
-            "ElevenLabs Scribe batch started audioBytes=\(audioData.count, privacy: .public) bodyBytes=\(body.count, privacy: .public) keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public) timeout=\(Int(request.timeoutInterval), privacy: .public)s"
+            "ElevenLabs Scribe batch started audioBytes=\(audioByteCount, privacy: .public) bodyBytes=\(payload.body.count, privacy: .public) keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public) timeout=\(Int(request.timeoutInterval), privacy: .public)s"
         )
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "elevenlabs-batch-start",
             context:
-                "audioBytes=\(audioData.count) bodyBytes=\(body.count) keyterms=\(keyterms.count) keytermsDropped=\(keytermPayload.droppedCount)",
+                "audioBytes=\(audioByteCount) bodyBytes=\(payload.body.count) keyterms=\(keyterms.count) keytermsDropped=\(keytermPayload.droppedCount)",
             force: true
         )
         let data: Data
@@ -97,7 +99,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             PerformanceDiagnostics.logRuntimeSnapshot(
                 reason: "elevenlabs-batch-failed",
                 context:
-                    "elapsedMs=\(elapsedMs) status=\(httpResponse.statusCode) audioBytes=\(audioData.count) failure=\(failure.diagnosticCode)",
+                    "elapsedMs=\(elapsedMs) status=\(httpResponse.statusCode) audioBytes=\(audioByteCount) failure=\(failure.diagnosticCode)",
                 force: true
             )
             throw failure
@@ -109,7 +111,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             let transcript = json["text"] as? String
         else {
             SapoLog.recording.warning(
-                "ElevenLabs Scribe parse failure status=\(httpResponse.statusCode, privacy: .public) audioBytes=\(audioData.count, privacy: .public)"
+                "ElevenLabs Scribe parse failure status=\(httpResponse.statusCode, privacy: .public) audioBytes=\(audioByteCount, privacy: .public)"
             )
             throw TranscriptionFailure(
                 kind: .emptyTranscription, engine: Self.engineName,
@@ -129,12 +131,12 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         let requestID = httpResponse.value(forHTTPHeaderField: "request-id") ?? "n/a"
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.recording.info(
-            "ElevenLabs Scribe finished requestID=\(requestID, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(audioData.count, privacy: .public) chars=\(finalText.count, privacy: .public)"
+            "ElevenLabs Scribe finished requestID=\(requestID, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(audioByteCount, privacy: .public) chars=\(finalText.count, privacy: .public)"
         )
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "elevenlabs-batch-finished",
             context:
-                "requestID=\(requestID) elapsedMs=\(elapsedMs) audioBytes=\(audioData.count) responseBytes=\(data.count) chars=\(finalText.count)",
+                "requestID=\(requestID) elapsedMs=\(elapsedMs) audioBytes=\(audioByteCount) responseBytes=\(data.count) chars=\(finalText.count)",
             force: true
         )
 
@@ -143,7 +145,17 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     // MARK: - Multipart Body
 
-    private func makeMultipartBody(boundary: String, audioData: Data, language: String, keyterms: [String]) -> Data {
+    /// Reads the recorded WAV and assembles the multipart body off the main
+    /// actor; only Sendable values (URL, strings, Data) cross the boundary.
+    @concurrent
+    private static func makeUploadPayload(
+        audioURL: URL,
+        boundary: String,
+        languageCode: String?,
+        keyterms: [String]
+    ) async throws -> (body: Data, audioByteCount: Int) {
+        // Batch Scribe accepts the WAV produced by the selected upload-quality profile.
+        let audioData = try Data(contentsOf: audioURL)
         var body = Data()
 
         func appendField(_ name: String, _ value: String) {
@@ -155,8 +167,10 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         appendField("model_id", "scribe_v2")
         appendField("tag_audio_events", "false")
         appendField("timestamps_granularity", "none")
+        // Deterministic decoding for dictation (the endpoint accepts 0-2).
+        appendField("temperature", "0")
 
-        if let languageCode = scribeLanguageCode(for: language) {
+        if let languageCode {
             appendField("language_code", languageCode)
         }
 
@@ -171,7 +185,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         body.append("\r\n")
 
         body.append("--\(boundary)--\r\n")
-        return body
+        return (body, audioData.count)
     }
 
     // MARK: - Language Mapping
@@ -191,7 +205,7 @@ extension ElevenLabsScribeTranscriber: TranscriptionEngineSession {
 
 // MARK: - Data Helper
 
-extension Data {
+nonisolated extension Data {
     fileprivate mutating func append(_ string: String) {
         if let data = string.data(using: .utf8) {
             append(data)

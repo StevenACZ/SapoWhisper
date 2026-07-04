@@ -18,6 +18,7 @@ struct HistoryDetailView: View {
     let onDelete: () -> Void
 
     @State private var showCopied = false
+    @State private var copiedResetTask: Task<Void, Never>?
     @Environment(\.locale) private var locale
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
 
@@ -100,10 +101,12 @@ struct HistoryDetailView: View {
     private var actionBar: some View {
         HStack(spacing: 8) {
             Button(action: handleCopy) {
-                Label(
-                    showCopied ? "history.copied".localized : "history.copy".localized,
-                    systemImage: showCopied ? "checkmark" : "doc.on.doc"
-                )
+                Label {
+                    Text(showCopied ? "history.copied".localized : "history.copy".localized)
+                } icon: {
+                    Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                        .contentTransition(.symbolEffect(.replace))
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.sapoGreen)
@@ -159,9 +162,16 @@ struct HistoryDetailView: View {
 
     private func handleCopy() {
         onCopy()
-        showCopied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            showCopied = false
+        withAnimation(.smooth(duration: 0.3)) {
+            showCopied = true
+        }
+        copiedResetTask?.cancel()
+        copiedResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.smooth(duration: 0.3)) {
+                showCopied = false
+            }
         }
     }
 

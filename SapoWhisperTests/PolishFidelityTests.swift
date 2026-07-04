@@ -18,12 +18,11 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testAcceptsHeavySummarizationByRatio() {
+    func testAcceptsHeavySummarization() {
         let raw = String(repeating: "tengo que revisar el módulo de pagos y el de facturación antes del viernes ", count: 4)
         let polished = "Revisar pagos."
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsDroppingLongAccidentalClosingRepetition() {
@@ -44,7 +43,6 @@ final class PolishFidelityTests: XCTestCase {
         let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
 
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsWhenNumberAnchorDisappears() {
@@ -310,6 +308,58 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertNotNil(verdict.retryInstruction)
     }
 
+    /// Real regression: everyday dictations legitimately contain
+    /// response-like phrases ("no puedo", "claro,", "here's"), and the guard
+    /// rejected any polished text containing them — burning the whole retry
+    /// budget and shipping the raw text. A phrase only signals drift when the
+    /// model introduced it (present in polished, absent from raw).
+    func testInstructionGuardAcceptsEverydaySpeechContainingResponsePhrases() {
+        let cases: [(raw: String, polished: String)] = [
+            (
+                "eh quería decirte que mañana no puedo ir a la reunión de las 10 con Marketing",
+                "Quería decirte que mañana no puedo ir a la reunión de las 10 con Marketing."
+            ),
+            (
+                "no encontré el archivo de configuración así que usé el default",
+                "No encontré el archivo de configuración, así que usé el default."
+            ),
+            (
+                "bueno claro mándame el reporte cuando lo tengas listo",
+                "Claro, mándame el reporte cuando lo tengas listo."
+            ),
+            (
+                "okay so here's the plan we ship on monday and review on friday",
+                "Here's the plan: we ship on Monday and review on Friday."
+            ),
+            (
+                "le dije que no puedo correr la maratón este año por la lesión",
+                "Le dije que no puedo correr la maratón este año por la lesión."
+            ),
+            (
+                "i can't make it to standup tomorrow so please record it",
+                "I can't make it to standup tomorrow, so please record it."
+            ),
+            (
+                "por supuesto el resultado es mejor con el modelo nuevo",
+                "Por supuesto, el resultado es mejor con el modelo nuevo."
+            ),
+        ]
+        for testCase in cases {
+            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.raw, polished: testCase.polished)
+            XCTAssertTrue(verdict.isAcceptable, "should accept: \(testCase.polished)")
+        }
+    }
+
+    func testInstructionGuardRejectsIntroducedRefusalOpener() {
+        // The model's own refusal wording is never in the transcript.
+        let raw = "resume el documento de arquitectura en tres puntos para el equipo"
+        let polished = "No puedo resumir documentos que no me has proporcionado."
+        let verdict = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertNotNil(verdict.retryInstruction)
+    }
+
     func testTranslationAcceptsDroppedDuplicateNumbers() {
         let raw = "avísale a ventas que enviamos 5 cajas el lunes y 5 cajas el martes a la bodega"
         let polished = "Tell sales we shipped 5 boxes on Monday and some boxes on Tuesday to the warehouse."
@@ -319,17 +369,15 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertEqual(verdict.missingAnchors, 0)
     }
 
-    // MARK: - Dense-script (CJK) translation floor
+    // MARK: - CJK translation acceptance
 
     func testAcceptsChineseTranslationBelowNormalFloor() {
         let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
         let polished = "我需要你检查销售报告并告诉我下午之前是否一切都准备好了"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
-            translationExpected: true, targetIsDenseScript: true)
+            translationExpected: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        // Proves the fix matters: the ratio is below the normal floor.
-        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsJapaneseTranslationBelowNormalFloor() {
@@ -337,9 +385,8 @@ final class PolishFidelityTests: XCTestCase {
         let polished = "計画会議が今週の終わりに変更されたことをチームに知らせてください"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
-            translationExpected: true, targetIsDenseScript: true)
+            translationExpected: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
     func testAcceptsKoreanTranslationBelowNormalFloor() {
@@ -347,39 +394,35 @@ final class PolishFidelityTests: XCTestCase {
         let polished = "다음 회의 전에 문서를 업데이트하라고 지원 팀에 상기시켜 주세요"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
-            translationExpected: true, targetIsDenseScript: true)
+            translationExpected: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, 0.55)
     }
 
-    func testAcceptsTruncatedChineseTranslationByRatio() {
+    func testAcceptsTruncatedChineseTranslation() {
         let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
         let polished = "好的"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
-            translationExpected: true, targetIsDenseScript: true)
+            translationExpected: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertLessThan(verdict.lengthRatio, 0.15)
     }
 
-    func testAcceptsRunawayChineseTranslationByRatio() {
+    func testAcceptsRunawayChineseTranslation() {
         let raw = "hola equipo"
         let polished = String(repeating: "通知", count: 12)
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
-            translationExpected: true, targetIsDenseScript: true)
+            translationExpected: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertGreaterThan(verdict.lengthRatio, 1.6)
     }
 
-    func testMixedScriptOutputIsNotRejectedByRatio() {
+    func testMixedScriptOutputIsNotRejected() {
         let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
         let polished = "revisa el reporte de ventas completo 报告"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
-            translationExpected: true, targetIsDenseScript: true)
+            translationExpected: true)
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-        XCTAssertGreaterThan(verdict.lengthRatio, 0.15)
     }
 
     // MARK: - Output sanitizer

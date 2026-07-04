@@ -22,6 +22,7 @@ struct MenuBarView: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var needsEngineSetup: Bool {
         !onboardingComplete && !viewModel.isLoadingWhisperKit && !viewModel.isEngineReady(viewModel.currentEngine)
@@ -79,14 +80,21 @@ struct MenuBarView: View {
                     .frame(width: 44, height: 44)
 
                 if case .recording = viewModel.appState {
-                    Circle()
-                        .stroke(viewModel.appState.iconColor, lineWidth: 2)
-                        .frame(width: 44, height: 44)
-                        .scaleEffect(pulseAnimation ? 1.3 : 1.0)
-                        .opacity(pulseAnimation ? 0 : 1)
-                        .animation(.easeOut(duration: 1).repeatForever(autoreverses: false), value: pulseAnimation)
-                        .onAppear { pulseAnimation = true }
-                        .onDisappear { pulseAnimation = false }
+                    if reduceMotion {
+                        // Static ring instead of the expanding pulse.
+                        Circle()
+                            .stroke(viewModel.appState.iconColor.opacity(0.5), lineWidth: 2)
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Circle()
+                            .stroke(viewModel.appState.iconColor, lineWidth: 2)
+                            .frame(width: 44, height: 44)
+                            .scaleEffect(pulseAnimation ? 1.3 : 1.0)
+                            .opacity(pulseAnimation ? 0 : 1)
+                            .animation(.easeOut(duration: 1).repeatForever(autoreverses: false), value: pulseAnimation)
+                            .onAppear { pulseAnimation = true }
+                            .onDisappear { pulseAnimation = false }
+                    }
                 }
 
                 if let idleIcon = NSImage(named: "DockIconIdle") {
@@ -127,12 +135,12 @@ struct MenuBarView: View {
     private var recordingSection: some View {
         VStack(spacing: 16) {
             if case .recording = viewModel.appState {
-                RecordingTimer(duration: viewModel.recordingDuration)
+                RecordingTimerRow(durationPublisher: viewModel.$recordingDuration)
                     .transition(.scale.combined(with: .opacity))
             }
 
             Button(action: {
-                withAnimation(Constants.Animation.spring) {
+                withAnimation(Constants.Animation.morph) {
                     viewModel.toggleRecording()
                 }
             }) {
@@ -144,7 +152,8 @@ struct MenuBarView: View {
                     } else {
                         Image(systemName: buttonIcon)
                             .font(.system(size: 18, weight: .semibold))
-                            .symbolEffect(.bounce, value: viewModel.audioRecorder.isRecording)
+                            // Constant value under Reduce Motion: never bounces.
+                            .symbolEffect(.bounce, value: reduceMotion ? false : viewModel.audioRecorder.isRecording)
                     }
 
                     Text(buttonText)
@@ -176,7 +185,7 @@ struct MenuBarView: View {
             }
         }
         .padding()
-        .animation(.spring(response: 0.3), value: viewModel.appState)
+        .animation(Constants.Animation.morph, value: viewModel.appState)
     }
 
     private var buttonIcon: String {
