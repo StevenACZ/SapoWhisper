@@ -105,7 +105,7 @@
 "settings.microphone" = "Microphone";
 "settings.microphone_desc" = "Audio input device";
 "settings.pin_primary_mic" = "Primary microphone — keep it always";
-"settings.pin_primary_mic_desc_on" = "SapoWhisper keeps this mic as the system input. Connecting AirPods or headsets won't steal it, and recordings start instantly.";
+"settings.pin_primary_mic_desc_on" = "This mic stays fixed even when AirPods connect, and recordings start instantly.";
 "settings.pin_primary_mic_desc_off" = "The system may switch inputs when devices connect; Bluetooth mics can take a few seconds to start.";
 "settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";
