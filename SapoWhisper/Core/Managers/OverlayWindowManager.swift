@@ -409,9 +409,26 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Muestra el estado de completado con el texto final y las acciones de
-    /// re-polish. Hovering the pill pauses the auto-dismiss so the user can
-    /// read, copy, or re-polish; leaving re-arms a short countdown.
+    /// Compact "Copied" toast after a dictation lands: the text is already at
+    /// the caret (auto-paste) and on the clipboard, so the overlay only
+    /// confirms and collapses; the dock chip reopens the full transcript.
+    func showCopied(text: String, autoDismissAfter delay: TimeInterval = 2.0) {
+        lastCompletedText = text
+        updateState(.copied)
+
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            if case .copied = self.state {
+                self.hide()
+            }
+        }
+    }
+
+    /// Muestra el pill expandido con el texto final y las acciones de
+    /// re-polish — solo para flujos donde el usuario mira el overlay (dock
+    /// reopen, re-polish); un dictado normal usa `showCopied`. Hovering the
+    /// pill pauses the auto-dismiss so the user can read, copy, or re-polish;
+    /// leaving re-arms a short countdown.
     func showCompleted(text: String, autoDismissAfter delay: TimeInterval = 5.0) {
         lastCompletedText = text
         updateState(.completed(text: text))

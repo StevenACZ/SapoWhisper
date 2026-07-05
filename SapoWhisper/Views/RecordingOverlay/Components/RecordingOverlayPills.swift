@@ -191,6 +191,43 @@ struct AIPolishingPillView: View {
     }
 }
 
+/// Compact post-dictation toast: the text already landed at the caret, so
+/// this only confirms the copy with the success icon pop + glow and then
+/// collapses into the dock chip, which reopens the full transcript on demand.
+struct CopiedPillView: View {
+    @State private var iconScale: CGFloat = 0
+    @State private var glowFlash = 0
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.system(size: 16))
+                .foregroundColor(.sapoGreen)
+                .scaleEffect(iconScale)
+
+            Text("overlay.copied".localized)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.sapoGreen)
+        }
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
+            content.overlay(glowStroke(color: .sapoGreen, intensity: glow))
+        } keyframes: { _ in
+            KeyframeTrack {
+                LinearKeyframe(0.0, duration: 0.15)
+                CubicKeyframe(1.0, duration: 0.3)
+                LinearKeyframe(1.0, duration: 0.75)
+                CubicKeyframe(0.0, duration: 0.8)
+            }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
+                iconScale = 1.0
+            }
+            glowFlash += 1
+        }
+    }
+}
+
 struct CompletedPillView: View {
     let text: String
     var onRepolish: (() -> Void)?

@@ -2262,7 +2262,7 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         lastCompletedHistoryId = nil
         lastTranscription = finalText
         PasteManager.copyToClipboard(finalText)
-        overlayManager.showCompleted(text: finalText)
+        overlayManager.showCopied(text: finalText)
 
         if autoPasteEnabled {
             PasteManager.simulatePaste { perf?.markPasteDone() }

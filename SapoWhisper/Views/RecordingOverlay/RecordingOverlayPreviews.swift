@@ -48,6 +48,10 @@ private struct PillPreview<Content: View>: View {
     PillPreview { TranscribingPillView() }
 }
 
+#Preview("Copied") {
+    PillPreview { CopiedPillView() }
+}
+
 #Preview("Completed") {
     PillPreview { CompletedPillView(text: "Hola, esta es una transcripcion") }
 }

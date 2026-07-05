@@ -177,6 +177,9 @@ struct RecordingOverlayView: View {
         case .polishing(let timeoutSeconds):
             AIPolishingPillView(timeoutSeconds: timeoutSeconds)
 
+        case .copied:
+            CopiedPillView()
+
         case .completed(let text):
             CompletedPillView(
                 text: text,

@@ -17,6 +17,10 @@ enum RecordingOverlayState: Equatable {
     case paused(duration: TimeInterval)
     case transcribing
     case polishing(timeoutSeconds: UInt64)
+    /// Compact post-dictation toast: the text already landed at the caret
+    /// (auto-paste) and on the clipboard, so the overlay only confirms and
+    /// collapses; the dock chip reopens the full transcript on demand.
+    case copied
     case completed(text: String)
     case cancelled
     case error(message: String, isRetryable: Bool)
@@ -30,6 +34,7 @@ enum RecordingOverlayState: Equatable {
         case .paused: return "paused"
         case .transcribing: return "transcribing"
         case .polishing: return "polishing"
+        case .copied: return "copied"
         case .completed: return "completed"
         case .cancelled: return "cancelled"
         case .error: return "error"
@@ -58,6 +63,8 @@ enum RecordingOverlayState: Equatable {
             return "overlay.transcribing".localized
         case .polishing:
             return "overlay.ai_polishing".localized
+        case .copied:
+            return "overlay.copied".localized
         case .completed:
             return "overlay.completed".localized
         case .cancelled:
