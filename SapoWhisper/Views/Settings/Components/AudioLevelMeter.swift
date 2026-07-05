@@ -89,13 +89,17 @@ struct AudioBar: View {
 
 /// Vista completa del medidor con controles
 struct AudioLevelMeterView: View {
-    @StateObject private var monitor = AudioLevelMonitor.shared
+    /// Deliberately NOT observed here: the monitor publishes at ~47 Hz while
+    /// listening, so only the small leaf subviews below subscribe and the
+    /// panel chrome (toggle, slider, layout) stays out of that render loop.
+    private let monitor = AudioLevelMonitor.shared
     let deviceUID: String
 
     @State private var isEnabled = false
     @AppStorage(Constants.StorageKeys.audioGain) private var gain: Double = 1.0
     @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
         AudioUploadQuality.defaultValue.rawValue
+    @Environment(\.settingsTabIsSelected) private var tabIsSelected
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -108,8 +112,8 @@ struct AudioLevelMeterView: View {
 
                 Spacer()
 
-                if isEnabled && monitor.isActive {
-                    listeningBadge
+                if isEnabled {
+                    MicListeningBadge(monitor: monitor)
                 }
             }
 
@@ -117,20 +121,10 @@ struct AudioLevelMeterView: View {
             if isEnabled {
                 VStack(alignment: .leading, spacing: 10) {
                     // Error banner
-                    if monitor.hasError, let error = monitor.errorMessage {
-                        errorBanner(error)
-                    }
+                    MicMonitorErrorBanner(monitor: monitor)
 
                     // Level meter + percentage
-                    HStack(spacing: 8) {
-                        AudioLevelMeter(monitor: monitor)
-
-                        Text("\(Int(monitor.audioLevel * 100))%")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 35, alignment: .trailing)
-                            .contentTransition(.numericText())
-                    }
+                    MicLevelReadout(monitor: monitor)
 
                     // Gain control
                     gainSlider
@@ -139,12 +133,12 @@ struct AudioLevelMeterView: View {
                         .padding(.vertical, 2)
 
                     // Sample recording + playback
-                    sampleRecordingSection
+                    MicSampleRecordingSection(monitor: monitor)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isEnabled)
+        .animation(Constants.Animation.reveal, value: isEnabled)
         .onChange(of: isEnabled) { _, newValue in
             if newValue {
                 monitor.gain = Float(gain)
@@ -161,43 +155,20 @@ struct AudioLevelMeterView: View {
         .onChange(of: audioUploadQuality) { _, _ in
             _ = monitor.rebuildSentSample()
         }
+        .onChange(of: tabIsSelected) { _, selected in
+            // The always-alive settings tabs never fire onDisappear, so the
+            // mic stayed hot after switching tabs; turning the toggle off
+            // stops the monitor through the onChange above.
+            if !selected {
+                isEnabled = false
+            }
+        }
         .onDisappear {
             monitor.stopMonitoring()
         }
     }
 
     // MARK: - Subviews
-
-    private var listeningBadge: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 6, height: 6)
-                .shadow(color: .red.opacity(0.5), radius: 3)
-            Text("settings.listening".localized)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.red.opacity(0.08))
-        .clipShape(Capsule())
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .font(.caption)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.orange)
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
 
     private var gainSlider: some View {
         Slider(value: $gain, in: 1.0...40.0) {
@@ -213,8 +184,77 @@ struct AudioLevelMeterView: View {
             monitor.gain = Float(newValue)
         }
     }
+}
 
-    private var sampleRecordingSection: some View {
+// MARK: - Monitor-observing leaves
+
+/// Red "listening" chip; shown only while the engine actually runs.
+private struct MicListeningBadge: View {
+    @ObservedObject var monitor: AudioLevelMonitor
+
+    var body: some View {
+        if monitor.isActive {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: .red.opacity(0.5), radius: 3)
+                Text("settings.listening".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.red.opacity(0.08))
+            .clipShape(Capsule())
+        }
+    }
+}
+
+private struct MicMonitorErrorBanner: View {
+    @ObservedObject var monitor: AudioLevelMonitor
+
+    var body: some View {
+        if monitor.hasError, let error = monitor.errorMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.caption)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+}
+
+/// Level meter + live percentage — the only ~47 Hz render surface.
+private struct MicLevelReadout: View {
+    @ObservedObject var monitor: AudioLevelMonitor
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AudioLevelMeter(monitor: monitor)
+
+            Text("\(Int(monitor.audioLevel * 100))%")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 35, alignment: .trailing)
+        }
+    }
+}
+
+private struct MicSampleRecordingSection: View {
+    @ObservedObject var monitor: AudioLevelMonitor
+
+    @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
+        AudioUploadQuality.defaultValue.rawValue
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 if monitor.isRecordingSample {

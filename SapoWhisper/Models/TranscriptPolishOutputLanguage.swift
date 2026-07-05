@@ -55,18 +55,6 @@ enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
         self != .sameAsInput
     }
 
-    /// Dense, space-free scripts (CJK) pack far more meaning per character, so
-    /// a faithful translation into them is much shorter than the source. The
-    /// fidelity guard lowers its length-ratio floor only for these targets.
-    var usesDenseScript: Bool {
-        switch self {
-        case .chinese, .japanese, .korean:
-            return true
-        default:
-            return false
-        }
-    }
-
     /// English language name as written into the AI prompt; nil for
     /// same-as-input.
     var englishName: String? {
@@ -95,17 +83,6 @@ enum TranscriptPolishOutputLanguage: String, CaseIterable, Identifiable {
         case .korean: return "ko"
         case .vietnamese: return "vi"
         }
-    }
-
-    var promptInstruction: String {
-        guard let target else {
-            return """
-                Keep the output in the same dominant language as the raw transcript. If the transcript is mostly Spanish, write Spanish prose and keep English technical terms as-is. If it is mostly English, write English prose. Never switch to English just because these instructions or label examples are in English.
-                """
-        }
-        return """
-            Write the final text in \(target.englishName) — this overrides the language of the transcript. If the transcript is in another language, translate ALL of it into natural \(target.englishName) faithfully: same ideas, same order, same level of detail, nothing added and nothing dropped. Translating to comply is required and is not rephrasing. Keep code, commands, filenames, APIs, acronyms, product names, numbers, and user vocabulary exactly as spoken.
-            """
     }
 
     /// Mirrors `TranscriptionLanguageCatalog` flags and native names so the

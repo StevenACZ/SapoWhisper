@@ -3,28 +3,8 @@
 //  SapoWhisper
 //
 
-import Combine
 import Foundation
-
-enum AIPolishDetectedMode: String, Codable, Equatable {
-    case technical
-    case work
-    case finance
-    case natural
-
-    var promptName: String {
-        switch self {
-        case .technical:
-            return "technical"
-        case .work:
-            return "work"
-        case .finance:
-            return "finance"
-        case .natural:
-            return "natural"
-        }
-    }
-}
+import Observation
 
 enum AIPolishSuggestionStatus: String, Codable, Equatable {
     case pending
@@ -43,47 +23,12 @@ struct AIPolishCorrectionSuggestion: Codable, Equatable, Identifiable {
     var lastSeen: Date
 }
 
-struct AIPolishMemoryContext: Equatable {
-    let detectedMode: AIPolishDetectedMode
-    let acceptedCorrections: [AIPolishCorrectionSuggestion]
-
-    var promptBlock: String {
-        var lines: [String] = [
-            "<local_learning_memory>",
-            "Detected writing mode: \(detectedMode.promptName)",
-        ]
-
-        let accepted = acceptedCorrections.map { "\"\(sanitize($0.from))\" -> \"\(sanitize($0.to))\"" }
-        lines.append("Accepted corrections: \(accepted.isEmpty ? "none" : accepted.joined(separator: "; "))")
-
-        lines.append(
-            "For accepted corrections, the right side is the canonical wording. If the transcript contains the left side in the same domain, replace that phrase with the right side."
-        )
-        lines.append(
-            "Use this local memory only as correction context. Never create or recommend vocabulary/keyterms. Never inject a term when the transcript does not clearly point to it."
-        )
-        lines.append(
-            "Mode guidance: technical keeps commands/files/APIs exact; work uses readable message punctuation; finance preserves amounts, dates, tickers, and entities; natural keeps a conversational tone."
-        )
-        lines.append("</local_learning_memory>")
-        return lines.joined(separator: "\n")
-    }
-
-    private func sanitize(_ value: String) -> String {
-        value
-            .components(separatedBy: .newlines)
-            .joined(separator: " ")
-            .components(separatedBy: .controlCharacters)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-final class AIPolishMemoryManager: ObservableObject {
+@Observable
+final class AIPolishMemoryManager {
     static let shared = AIPolishMemoryManager()
 
-    @Published private(set) var pendingSuggestions: [AIPolishCorrectionSuggestion] = []
-    @Published private(set) var acceptedSuggestions: [AIPolishCorrectionSuggestion] = []
+    private(set) var pendingSuggestions: [AIPolishCorrectionSuggestion] = []
+    private(set) var acceptedSuggestions: [AIPolishCorrectionSuggestion] = []
 
     private let fileURL: URL
     private let lock = NSRecursiveLock()
@@ -103,25 +48,17 @@ final class AIPolishMemoryManager: ObservableObject {
         self.init(fileURL: appDir.appendingPathComponent("ai-polish-memory.json"))
     }
 
-    func contextPacket(
-        rawText: String,
-        correctedText: String,
-        keyterms: [String],
-        replacements: [String: String],
-        now: Date = Date()
-    ) -> AIPolishMemoryContext {
+    /// Accepted correction suggestions as heard→intended pairs, ready to merge
+    /// into the user's replacements for the polish dictionary section.
+    func acceptedReplacementPairs(limit: Int = 12) -> [String: String] {
         lock.lock()
         defer { lock.unlock() }
 
-        let detectedMode = Self.detectedMode(
-            in: [rawText, correctedText, keyterms.joined(separator: " "), replacements.values.joined(separator: " ")]
-                .joined(separator: " ")
-        )
-
-        return AIPolishMemoryContext(
-            detectedMode: detectedMode,
-            acceptedCorrections: suggestions(status: .accepted, limit: 12)
-        )
+        var pairs: [String: String] = [:]
+        for suggestion in suggestions(status: .accepted, limit: limit) {
+            pairs[suggestion.from] = suggestion.to
+        }
+        return pairs
     }
 
     func record(
@@ -133,6 +70,12 @@ final class AIPolishMemoryManager: ObservableObject {
         replacements: [String: String],
         now: Date = Date()
     ) {
+        // Suggestions only ever come from applied polishes; every other
+        // status has nothing to learn, and this runs before the paste — no
+        // reason to lock, prune, and rewrite the store JSON on each dictation
+        // (it used to fire even with AI polish disabled).
+        guard status == .applied else { return }
+
         let raw = observedRawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let corrected = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
         let final = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -143,7 +86,6 @@ final class AIPolishMemoryManager: ObservableObject {
 
         store.lastUpdated = now
         store.totalTranscripts += 1
-        store.modeCounts[Self.detectedMode(in: [raw, corrected, final].joined(separator: " ")).rawValue, default: 0] += 1
 
         recordCorrectionSuggestions(
             observedRawText: raw,
@@ -378,42 +320,6 @@ final class AIPolishMemoryManager: ObservableObject {
             .map { $0 }
     }
 
-    private static func detectedMode(in text: String) -> AIPolishDetectedMode {
-        let lower = text.lowercased()
-        if containsAny(
-            lower,
-            [
-                "git", "commit", "pull request", "api", "rest", "claude", "agents.md", "readme", "xcodebuild",
-                "swift", "npm", "pnpm", "docker", "kubernetes", "ssh", "json", ".env", ".gitignore",
-            ]
-        ) {
-            return .technical
-        }
-        if containsAny(
-            lower,
-            [
-                "acciones", "inversion", "inversión", "portfolio", "dividendo", "ticker", "factura", "presupuesto",
-                "cotizacion", "cotización", "impuesto", "revenue", "margin",
-            ]
-        ) {
-            return .finance
-        }
-        if containsAny(
-            lower,
-            [
-                "reunion", "reunión", "cliente", "slack", "correo", "email", "agenda", "equipo", "entrega",
-                "deadline", "prioridad",
-            ]
-        ) {
-            return .work
-        }
-        return .natural
-    }
-
-    private static func containsAny(_ text: String, _ needles: [String]) -> Bool {
-        needles.contains { text.contains($0) }
-    }
-
     private static func uniqueTerms(_ terms: [String]) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
@@ -449,6 +355,7 @@ final class AIPolishMemoryManager: ObservableObject {
             let sourceKey = normalizedKey(variant)
             guard
                 sourceKey != targetKey,
+                !isFragmentOfTarget(sourceKey: sourceKey, targetKey: targetKey),
                 !existingReplacementKeys.contains(sourceKey),
                 containsTerm(variant, in: rawText)
             else {
@@ -463,46 +370,26 @@ final class AIPolishMemoryManager: ObservableObject {
         return fuzzy
     }
 
+    /// A legitimate correction source is a DISTORTION of the target ("kit
+    /// push", "cloud code"), never a correctly-spelled fragment of it ("push",
+    /// "Code"). Fragment mappings applied as whole-word replacements would
+    /// rewrite normal prose — every plain "push" becoming "git push" — so they
+    /// are rejected before ever reaching the suggestions UI.
+    private static func isFragmentOfTarget(sourceKey: String, targetKey: String) -> Bool {
+        !sourceKey.isEmpty && targetKey.contains(sourceKey)
+    }
+
     private static func correctionSourceVariants(for target: String) -> [String] {
         var forms: [String] = []
-        forms.append(spokenForm(for: target))
-        forms.append(spokenSymbolForm(for: target, symbolWord: "dot"))
-        forms.append(spokenSymbolForm(for: target, symbolWord: "period"))
-        forms.append(spokenSymbolForm(for: target, symbolWord: "punto"))
+        forms.append(SpeechConfusionCatalog.spokenForm(for: target))
+        forms.append(SpeechConfusionCatalog.spokenSymbolForm(for: target, symbolWord: "dot"))
+        forms.append(SpeechConfusionCatalog.spokenSymbolForm(for: target, symbolWord: "period"))
+        forms.append(SpeechConfusionCatalog.spokenSymbolForm(for: target, symbolWord: "punto"))
         if !target.hasPrefix(".") {
-            forms.append(condensedSymbolForm(for: target))
+            forms.append(SpeechConfusionCatalog.condensedSymbolForm(for: target))
         }
 
-        appendReplacementVariants(
-            for: target,
-            replacing: "Claude",
-            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "Deepgram",
-            with: ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "ElevenLabs",
-            with: ["Eleven Labs", "11labs"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "Local AI Server",
-            with: ["localize server", "local ya server", "localia server"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "SapoWhisper",
-            with: ["Sapo Whisper", "Sapo Visper", "Sapa Whisper", "Zapo Whisper", "Sapowisper"],
-            to: &forms
-        )
+        SpeechConfusionCatalog.appendBrandVariants(for: target, to: &forms)
 
         switch normalizedKey(target) {
         case "claude md":
@@ -540,6 +427,7 @@ final class AIPolishMemoryManager: ObservableObject {
                 guard
                     sourceKey.count >= 4,
                     !sourceKey.contains(normalizedKey(target)),
+                    !isFragmentOfTarget(sourceKey: sourceKey, targetKey: normalizedKey(target)),
                     !commonCorrectionSourceWords.contains(sourceKey)
                 else {
                     continue
@@ -612,62 +500,8 @@ final class AIPolishMemoryManager: ObservableObject {
         normalizedText(text).lowercased()
     }
 
-    private static func spokenForm(for term: String) -> String {
-        let separated = term.replacingOccurrences(of: #"[-_.]+"#, with: " ", options: .regularExpression)
-        let characters = Array(separated)
-        guard characters.count > 1 else { return separated }
-
-        var result = ""
-        for index in characters.indices {
-            let character = characters[index]
-            if index > characters.startIndex {
-                let previous = characters[characters.index(before: index)]
-                let nextIndex = characters.index(after: index)
-                let next = nextIndex < characters.endIndex ? characters[nextIndex] : nil
-                if shouldInsertSpeechSpace(previous: previous, current: character, next: next) {
-                    result.append(" ")
-                }
-            }
-            result.append(character)
-        }
-
-        return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func spokenSymbolForm(for term: String, symbolWord: String) -> String {
-        term
-            .replacingOccurrences(of: ".", with: " \(symbolWord) ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func condensedSymbolForm(for term: String) -> String {
-        term.replacingOccurrences(of: #"[-_.\s]+"#, with: "", options: .regularExpression)
-    }
-
-    private static func appendReplacementVariants(
-        for term: String,
-        replacing needle: String,
-        with replacements: [String],
-        to forms: inout [String]
-    ) {
-        guard term.range(of: needle, options: [.caseInsensitive]) != nil else { return }
-        for replacement in replacements {
-            forms.append(term.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive]))
-        }
-    }
-
     private static func alphanumericTokens(in term: String) -> [String] {
-        term.split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
-
-    private static func shouldInsertSpeechSpace(previous: Character, current: Character, next: Character?) -> Bool {
-        guard current.isUppercase else { return false }
-        if previous.isLowercase || previous.isNumber { return true }
-        if previous.isUppercase, next?.isLowercase == true { return true }
-        return false
+        SpeechConfusionCatalog.alphanumericTokens(in: term)
     }
 
     private static func suggestionID(from: String, to: String) -> String {
@@ -741,7 +575,6 @@ final class AIPolishMemoryManager: ObservableObject {
         var version = 2
         var totalTranscripts = 0
         var lastUpdated: Date?
-        var modeCounts: [String: Int] = [:]
         var correctionSuggestions: [String: AIPolishCorrectionSuggestion] = [:]
     }
 

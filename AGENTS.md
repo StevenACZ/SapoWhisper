@@ -20,20 +20,31 @@ addresses, and machine-specific workflow details.
 - `TranscriptionPipeline`: shared transcribe -> polish -> paste -> persist control flow for stop paths; the ViewModel implements `TranscriptionPipelineHost`.
 - Strict concurrency is `complete` on app and test targets. Keep new code warning-free instead of widening unsafe isolation.
 - Engines: WhisperKit local, Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe batch/realtime, and Local AI Server batch STT through OpenAI-style endpoints.
-- Audio capture: batch WAV capture uses `AudioUploadQuality`; streaming engines keep fixed 16 kHz mono int16 for WebSocket compatibility.
+- Audio capture: one class, `AudioCaptureEngine`, serves every engine. `.batch` records a WAV at `AudioUploadQuality`, except whisper-family targets (WhisperKit, Local AI Server) on the STT-oriented qualities (ultra-fast, medium), which capture 16 kHz directly — whisper decodes at 16 kHz and a higher-rate capture only adds a second resample. `.streaming` keeps fixed 16 kHz mono int16 for WebSocket compatibility and emits PCM chunks (batch is streaming with a nil chunk handler). Do not reintroduce per-path capture classes.
+- Streaming engines (Flux, ElevenLabs realtime) are driven through `StreamingDictationSession` plus one shared start/stop/pause/abort/binding path in the ViewModel (`StreamingEngineContext`). Do not add per-engine copies of that flow.
+- Observation: `WhisperKitTranscriber` and the vocabulary/AI-memory/prompt-context managers are `@Observable` — views read them directly; do not reintroduce `@Published` mirrors in the ViewModel. High-frequency tickers (recording duration) stay OFF ObservableObject state: publish through a subject and subscribe locally in the one view that renders them.
 - History persists through SQLite and local audio storage. Use atomic history persistence helpers; do not split audio save and row save.
 - Vocabulary metrics are read-only from recent history rows; do not add tracking columns for them.
+- Speech-mishearing brand tables and spoken-form helpers live in `SpeechConfusionCatalog`, shared by `VocabularyManager` and `AIPolishMemoryManager`. Add new mishearing variants there — do not re-add per-manager copies (they drift).
+- WhisperKit on-disk model folders are matched per exact variant (`WhisperKitTranscriber.directoryName(_:matches:)`): "large-v3" is a substring of the turbo/dated variants, so plain `contains` matching cross-deletes sibling models.
 - Credentials live in Keychain with UserDefaults presence hints. Gate configuration checks on `KeychainStore.hasValue`, not by reading credential values.
 
 ## AI Polish
 
 - AI polish is optional and must never block dictation: provider failure, timeout, missing configuration, or empty output keeps the transcript usable.
 - Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
-- Keep prompts conservative: no invented details, preserve technical terms, and treat vocabulary as recognition context.
+- There is exactly ONE polish mode: a single adaptive prompt (no mode picker, no prompt profiles, no duration gates). It deletes filler and duplicated ideas, keeps every instruction/name/number, respects tone, and never converts prose into invented lists. Do not reintroduce per-mode prompts or skip gates — silent gates read as "the AI didn't work".
+- The prompt is dictionary-first: keyterms plus correction targets are canonical spellings that map mishearings, are never translated, and are never injected into text that does not mention them. Benchmark prompt changes case-by-case against real dictation history on the PRODUCTION model (OpenRouter `gpt-5.4-nano`) before shipping; never tune by feel.
+- Filler deletion is two-tier by evidence, not by vibe: pure fillers are always-delete, but dual-use words ("la verdad", "equis", "tal", "y ya") are contextual — real history shows they usually carry meaning ("la verdad es que…", "equis cosas"). Do not move dual-use words back into the always-delete list without a bench run proving it.
+- On endpoints that support structured outputs (OpenAI, OpenRouter) the polish uses a strict JSON schema with a leading `filler_scan` field — forcing the model to enumerate fillers before writing `polished` measurably cuts leftovers on long chunks. Groq/local/custom keep the plain-text contract, and a rejected structured request falls back to plain automatically. Never log or persist `filler_scan`.
+- Long transcripts are polished in sentence-boundary chunks (`TranscriptPostProcessor.splitIntoChunks`): past ~2k characters small models under-clean or summarize, and chunking restores medium-length quality. Keep the chunk seams on sentence boundaries. Chunks 2+ receive the RAW tail of their predecessor as continuity context (raw, not polished, so hosted chunks keep running in parallel).
+- Local STT engines (WhisperKit, Local AI Server) receive the vocabulary as a Whisper-style initial prompt via `VocabularyManager.initialPromptText()` — canonical forms only, never misheard variants.
 - Output language belongs to AI polish only; transcription language is recognition context, not translation.
-- The output-language picker is the source of truth for translation targets in every polish mode. Do not reintroduce per-prompt force-English state; translation profiles should read the shared target language and still allow "same as audio".
-- The hard-token guard is retry-only. It may ask the model to regenerate up to 3 total attempts when URLs, emails, vocabulary, or identifier-like tokens drift. Ratio, numbers, generic capitalization, and normal rewording must not raw-fallback an AI polish.
-- `AIPolishMemoryManager` stores only reviewable correction suggestions; only accepted corrections may feed future polish context.
+- The instruction-response guard's cross-language cue check must stay disabled when an explicit output language is set (`translationExpected`): faithful translations legitimately lose source-language cue words, and rejecting them ships the untranslated text.
+- The output-language picker (Settings + overlay translation chip) is the sole source of truth for translation targets. Do not reintroduce per-prompt force-English state.
+- The hard-token guard is retry-only. It may ask the model to regenerate up to 3 total attempts when URLs, emails, vocabulary, or identifier-like tokens drift. Ratio, numbers, generic capitalization, and normal rewording must not raw-fallback an AI polish. Numbers are deliberately NOT hard anchors: STT mangles spoken numbers with random separators ("0,63.40.64") and the polish must be free to repair them — number fidelity belongs to the prompt and the chunker (which never splits inside a number).
+- `PolishContentDiffGuard` is the lenient complement, also retry-only: it flags digit RUNS that vanish entirely (re-punctuation and stutter absorption pass) and raw sentences whose distinctive words are almost all missing from the output (a dropped passage). It shares the same retry budget and must never raw-fallback an otherwise good polish.
+- `AIPolishMemoryManager` stores only reviewable correction suggestions; accepted corrections merge into the replacements dictionary for future polish requests.
 
 ## Private Local Workflows
 
@@ -52,8 +63,18 @@ addresses, and machine-specific workflow details.
 
 ## Guardrails
 
+- The recording overlay window is a fixed-size transparent surface (`RecordingOverlayWindow.surfaceSize`); never resize it from content size. Content-driven window resizing during SwiftUI transition animations makes `NSHostingView` mutate the window frame inside the AppKit display cycle, which throws and crashes the app. Keep `hostingView.sizingOptions = []`, anchor content with alignment, and let transparent pixels pass clicks through.
+- Under that surface's ideal-size layout, multi-line `Text` needs a concrete width (`.frame(width:)` from real measurement), never `maxWidth:` — a max-width frame reports one line of height and the text overflows the pill and the window edge. Outside-click collapse compares against the measured content frame published by the overlay view, not `NSHostingView.hitTest` (the transparent margin reports hits).
+- Continuously animated pill subviews (equalizer bars, meters) must animate transforms (`scaleEffect`), not layout (`frame` sizes), and isolate themselves with `.drawingGroup()`. Otherwise SwiftUI flattens them into the pill's shared drawing layer and every animation frame re-renders that layer on the CPU — text glyphs included, whose CoreGraphics bitmap buffers accumulate ~1 MB/s of resident memory per recording session (reachable, so `leaks` reports zero).
+- An explicit AI polish output language must always run the polish step — polish has no skip gates of any kind, and silently skipping would ship the untranslated transcript.
 - Do not remove the WhisperKit/Deepgram/ElevenLabs/Local AI Server engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route changes.
+- Route every AVAudioEngine call that can assert (`inputNode`, `installTap`,
+  `prepare`/`start`) through `AudioEngineGuard`: AVFAudio throws uncatchable
+  Objective-C NSExceptions mid route transition, which killed the app before
+  the guard existed. Treat the guarded error as transient and retry.
+- Never use a zero-length read as the EOF signal on `AVAudioFile` — reading at
+  exact EOF throws; gate reads on `framePosition < length`.
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.
 - The history retranscribe/re-polish path must not drive live `appState` or overlay.
 - Hotkey registration should fall back to the default combo when registration fails, and re-arm `Esc` after mid-session re-registration.

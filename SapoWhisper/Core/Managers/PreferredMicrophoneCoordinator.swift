@@ -39,6 +39,7 @@ final class PreferredMicrophoneCoordinator {
         deviceManager.routeChanges
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
+                self?.announceConnectingIfDefaultMoved()
                 self?.scheduleReconciliation(announceFinalDevice: true)
             }
             .store(in: &cancellables)
@@ -46,10 +47,61 @@ final class PreferredMicrophoneCoordinator {
         scheduleReconciliation(announceFinalDevice: false)
     }
 
+    /// HUD phase 1: the system default input already moved to a new device
+    /// but the route is still settling — show "connecting" immediately so the
+    /// user sees the switch happening instead of a silent gap until "ready".
+    private func announceConnectingIfDefaultMoved() {
+        guard let currentDefaultID = deviceManager.getSystemDefaultInputDevice(),
+            currentDefaultID != lastResolvedInputDeviceID,
+            let deviceName = deviceManager.getDeviceName(for: currentDefaultID)
+        else { return }
+
+        deviceManager.publishDeviceChange(
+            DeviceChangeAnnouncement(
+                deviceName: deviceName,
+                transport: deviceManager.transportType(for: currentDefaultID),
+                phase: .connecting
+            )
+        )
+    }
+
     func applyUserSelection(uid: String) {
         userDefaults.set(uid, forKey: Constants.StorageKeys.selectedMicrophone)
         scheduleReconciliation(announceFinalDevice: false, delayOverride: 0)
         AudioInputPreflightManager.shared.preflightSoon(reason: "mic-selection")
+    }
+
+    /// Synchronous pre-capture sync: when an explicit mic is selected, make it
+    /// the system default input right now. A capture that opens a device that
+    /// is NOT the system default pays the full route setup every time — on
+    /// Bluetooth (AirPods) that is the whole 1–3 s A2DP→HFP handshake, because
+    /// macOS only keeps the link warm for the default input. Aligning both
+    /// (what the app shows = what System Settings shows) makes the fast path
+    /// the only path. Returns true when the default actually changed, so the
+    /// caller can respect the route settle window.
+    @discardableResult
+    func ensureSystemDefaultMatchesSelection() -> Bool {
+        guard isPrimaryMicPinned else { return false }
+        let preferredUID = selectedMicrophoneUID()
+        guard preferredUID != AudioDevice.systemDefault.uid else { return false }
+
+        if deviceManager.getDeviceID(for: preferredUID) == nil {
+            deviceManager.refreshDevices()
+        }
+        guard let preferredDeviceID = deviceManager.getDeviceID(for: preferredUID),
+            let currentDefaultID = deviceManager.getSystemDefaultInputDevice(),
+            currentDefaultID != preferredDeviceID
+        else { return false }
+
+        let changed = deviceManager.setSystemDefaultInputDevice(preferredDeviceID)
+        if changed {
+            lastResolvedInputDeviceID = preferredDeviceID
+            let deviceName = deviceManager.getDeviceName(for: preferredDeviceID) ?? preferredUID
+            SapoLog.audioRoute.info(
+                "System default input synced to selection device=\(deviceName, privacy: .public)"
+            )
+        }
+        return changed
     }
 
     private func scheduleReconciliation(
@@ -85,6 +137,22 @@ final class PreferredMicrophoneCoordinator {
         guard let preferredDeviceID = deviceManager.getDeviceID(for: preferredUID) else {
             SapoLog.audioRoute.warning("Preferred input missing, reverting to system default")
             userDefaults.set(AudioDevice.systemDefault.uid, forKey: Constants.StorageKeys.selectedMicrophone)
+            // HUD fallback phase: the mic the user chose is gone; make the
+            // silent revert visible so recordings landing on another device
+            // don't read as a bug.
+            if announceFinalDevice, let currentDefaultDeviceID,
+                let fallbackName = deviceManager.getDeviceName(for: currentDefaultDeviceID)
+            {
+                deviceManager.publishDeviceChange(
+                    DeviceChangeAnnouncement(
+                        deviceName: fallbackName,
+                        transport: deviceManager.transportType(for: currentDefaultDeviceID),
+                        phase: .fallback
+                    )
+                )
+                lastResolvedInputDeviceID = currentDefaultDeviceID
+                return
+            }
             updateResolvedInputDevice(
                 currentDefaultDeviceID,
                 announceFinalDevice: announceFinalDevice,
@@ -96,7 +164,7 @@ final class PreferredMicrophoneCoordinator {
         var finalDefaultDeviceID = currentDefaultDeviceID
         var restoredPreferredInput = false
 
-        if currentDefaultDeviceID != preferredDeviceID {
+        if currentDefaultDeviceID != preferredDeviceID, isPrimaryMicPinned {
             restoredPreferredInput = deviceManager.setSystemDefaultInputDevice(preferredDeviceID)
             finalDefaultDeviceID =
                 restoredPreferredInput
@@ -136,10 +204,23 @@ final class PreferredMicrophoneCoordinator {
         guard announceFinalDevice, let deviceID else { return }
         guard forceAnnouncement || deviceID != lastResolvedInputDeviceID else { return }
         guard let deviceName = deviceManager.getDeviceName(for: deviceID) else { return }
-        deviceManager.publishDetectedDeviceName(deviceName)
+        deviceManager.publishDeviceChange(
+            DeviceChangeAnnouncement(
+                deviceName: deviceName,
+                transport: deviceManager.transportType(for: deviceID),
+                phase: .ready
+            )
+        )
     }
 
     private func selectedMicrophoneUID() -> String {
         userDefaults.string(forKey: Constants.StorageKeys.selectedMicrophone) ?? AudioDevice.systemDefault.uid
+    }
+
+    /// "Primary microphone" pin (default ON): an explicit selection is imposed
+    /// as the system default input and restored after every device swap, so
+    /// connecting AirPods or a headset never steals the mic.
+    private var isPrimaryMicPinned: Bool {
+        (userDefaults.object(forKey: Constants.StorageKeys.pinPrimaryMicrophone) as? Bool) ?? true
     }
 }

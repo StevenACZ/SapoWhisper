@@ -41,17 +41,33 @@ nonisolated enum Constants {
 
     // MARK: - Animaciones
 
+    /// Semantic motion tokens shared across the app.
     enum Animation {
-        static let springResponse: Double = 0.3
-        static let springDamping: Double = 0.7
-        static let defaultDuration: Double = 0.2
+        /// Main HUD morph: active-pill swaps inside the overlay and other
+        /// state-driven layout springs.
+        static let morph: SwiftUI.Animation = .spring(duration: 0.35, bounce: 0.2)
 
-        static var spring: SwiftUI.Animation {
-            .spring(response: springResponse, dampingFraction: springDamping)
-        }
+        /// Detach/absorb spring for the droplet pill separating from the dock
+        /// chip: slightly bouncier than `morph` so the drop reads as physical.
+        static let droplet: SwiftUI.Animation = .spring(duration: 0.42, bounce: 0.3)
 
-        static var easeOut: SwiftUI.Animation {
-            .easeOut(duration: defaultDuration)
+        /// Conditional sections revealing/collapsing (settings cards, hints).
+        static let reveal: SwiftUI.Animation = .smooth(duration: 0.2)
+
+        /// Pop half of a one-shot scale bounce; call sites pair it with their
+        /// own calmer settle spring.
+        static let microBounce: SwiftUI.Animation = .spring(duration: 0.14, bounce: 0.6)
+
+        /// Rolling digits paired with `.contentTransition(.numericText())`.
+        static let tick: SwiftUI.Animation = .easeOut(duration: 0.2)
+
+        /// Continuous progress fills (audio players) bridging 0.1 s timer ticks.
+        static let progress: SwiftUI.Animation = .linear(duration: 0.1)
+
+        /// System Reduce Motion for non-View call sites (managers); views
+        /// should read `@Environment(\.accessibilityReduceMotion)` instead.
+        @MainActor static var reduceMotion: Bool {
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         }
     }
 
@@ -92,7 +108,6 @@ nonisolated enum Constants {
         static let soundVolume = "soundVolume"  // Volumen de 0.0 a 1.0
         static let appLanguage = "appLanguage"
         static let language = "language"
-        static let selectedModel = "selectedModel"
         static let onboardingComplete = "onboardingComplete"
         /// cdhash of the build that last wrote the keychain item, to re-own it after rebuilds
         static let keychainOwnerCodeHash = "keychainOwnerCodeHash"
@@ -104,6 +119,10 @@ nonisolated enum Constants {
         static let hotkeyModifiers = "hotkeyModifiers"
         static let hotkeyDoubleTapModifier = "hotkeyDoubleTapModifier"
         static let selectedMicrophone = "selectedMicrophone"
+        /// Pin the explicit mic selection as the system default input (defaults
+        /// to true): device swaps (AirPods connecting) never steal the mic, and
+        /// captures always open the already-warm default route.
+        static let pinPrimaryMicrophone = "pinPrimaryMicrophone"
 
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
@@ -115,9 +134,9 @@ nonisolated enum Constants {
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
-        static let aiPolishMode = "aiPolishMode"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
-        static let aiPolishMinimumDuration = "aiPolishMinimumDuration"
+        /// Last explicit translation target, restored by the overlay translation chip.
+        static let aiPolishQuickTranslationTarget = "aiPolishQuickTranslationTarget"
         static let aiPolishEndpoint = "aiPolishEndpoint"
         static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
         static let aiPolishModel = "aiPolishModel"
@@ -146,9 +165,6 @@ nonisolated enum Constants {
         // History retention (H6)
         static let historyAudioMaxMB = "historyAudioMaxMB"
         static let historyAutoDeleteDays = "historyAutoDeleteDays"  // 0 = never
-
-        // Launch at Login
-        static let launchAtLogin = "launchAtLogin"
 
         // Auto-Ducking
         static let autoDuckingEnabled = "autoDuckingEnabled"

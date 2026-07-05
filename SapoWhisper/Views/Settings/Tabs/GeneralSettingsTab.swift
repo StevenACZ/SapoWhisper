@@ -18,6 +18,7 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
         .rawValue
     @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.pinPrimaryMicrophone) private var pinPrimaryMicrophone = true
     @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
         AudioUploadQuality.defaultValue.rawValue
     @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
@@ -32,7 +33,6 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.overlayPosition) private var overlayPosition =
         OverlayPosition.bottom.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
@@ -100,12 +100,39 @@ struct GeneralSettingsTab: View {
                     }
                 }
 
+                if selectedMicrophone != AudioDevice.systemDefault.uid {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: $pinPrimaryMicrophone) {
+                            Text("settings.pin_primary_mic".localized)
+                                .font(.caption)
+                        }
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .onChange(of: pinPrimaryMicrophone) { _, pinned in
+                            if pinned {
+                                syncSystemDefaultInput(uid: selectedMicrophone)
+                            }
+                        }
+
+                        Text(
+                            (pinPrimaryMicrophone
+                                ? "settings.pin_primary_mic_desc_on"
+                                : "settings.pin_primary_mic_desc_off").localized
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
                 Divider()
 
                 audioUploadQualityPicker
 
                 AudioLevelMeterView(deviceUID: selectedMicrophone)
             }
+            .animation(Constants.Animation.reveal, value: selectedMicrophone)
         }
     }
 
@@ -181,11 +208,7 @@ struct GeneralSettingsTab: View {
     /// translation is off. Mirrors the effective target in TranscriptPostProcessor.
     private var aiTranslationTarget: TranscriptPolishOutputLanguage? {
         guard aiPolishEnabled else { return nil }
-        let selectedLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-        let language = PromptContextManager.effectiveOutputLanguage(
-            selected: selectedLanguage,
-            for: PromptContextManager.shared.promptProfile(for: aiPolishMode)
-        )
+        let language = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
         return language.requiresTranslation ? language : nil
     }
 
@@ -276,6 +299,7 @@ struct GeneralSettingsTab: View {
                         Slider(value: $soundVolume, in: 0.05...1.0, step: 0.05)
                             .tint(Constants.Colors.sapoGreen)
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
 
                     Button(action: {
                         SoundManager.shared.play(.success)
@@ -285,12 +309,14 @@ struct GeneralSettingsTab: View {
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(Constants.Colors.sapoGreen)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 Text("settings.play_sounds_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .animation(Constants.Animation.reveal, value: playSound)
         }
     }
 
@@ -323,12 +349,14 @@ struct GeneralSettingsTab: View {
                         Slider(value: $autoDuckingAmount, in: 0.1...1.0, step: 0.05)
                             .tint(Constants.Colors.sapoGreen)
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 Text("settings.auto_ducking_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            .animation(Constants.Animation.reveal, value: autoDuckingEnabled)
         }
     }
 
@@ -471,6 +499,18 @@ struct GeneralSettingsTab: View {
                 Text("settings.auto_paste_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+
+                Divider()
+
+                HStack(spacing: 12) {
+                    Text("menu.welcome_tour".localized)
+                    Spacer()
+                    Button("settings.welcome_tour_open".localized) {
+                        WelcomeWindowController.shared.show()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
         }
     }

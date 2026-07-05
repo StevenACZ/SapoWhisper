@@ -148,6 +148,7 @@ class HotkeyManager: ObservableObject {
         if cancelKeyActive {
             registerCancelKey()
         }
+
     }
 
     // MARK: - Watchdog (R2)

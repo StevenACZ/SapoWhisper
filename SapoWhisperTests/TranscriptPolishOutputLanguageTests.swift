@@ -24,19 +24,26 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         }
     }
 
-    /// Every explicit target must inject its English name into the prompt so
-    /// the polisher actually translates, and must mark the override explicit.
+    /// Every explicit target must inject its English name into the LIVE
+    /// prompt (the builder's language rule) so the polisher actually
+    /// translates — asserting on the production prompt, not on a copy.
     func testExplicitTargetsBuildTranslationInstruction() {
         for language in TranscriptPolishOutputLanguage.allCases where language != .sameAsInput {
             guard let englishName = language.englishName else {
                 XCTFail("\(language.rawValue) is missing an English name")
                 continue
             }
+            let messages = TranscriptPolishPromptBuilder.makeMessages(
+                rawText: "hola, ¿cómo estás?",
+                personalContext: "",
+                outputLanguage: language,
+                keyterms: [],
+                replacements: [:]
+            )
             XCTAssertTrue(
-                language.promptInstruction.contains("Write the final text in \(englishName)"),
+                messages.system.contains("Write the ENTIRE output in \(englishName)"),
                 "\(language.rawValue) prompt should target \(englishName)"
             )
-            XCTAssertTrue(language.promptInstruction.contains("translate ALL of it"))
         }
         XCTAssertNil(TranscriptPolishOutputLanguage.sameAsInput.englishName)
     }
@@ -49,34 +56,73 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         }
     }
 
-    func testTranslatePromptUsesSelectedOutputLanguageWithoutCoercion() {
-        let translatePrompt = PromptContextManager.defaultPrompts.first {
-            $0.id == TranscriptPolishMode.translateEnglish.rawValue
-        }
-        XCTAssertNotNil(translatePrompt)
+    /// With an explicit target the system prompt must demand a full
+    /// translation; with same-as-input it must pin the transcript language.
+    func testExplicitTargetBuildsFullTranslationRule() {
+        let translated = TranscriptPolishPromptBuilder.makeMessages(
+            rawText: "hola, ¿cómo estás?",
+            personalContext: "",
+            outputLanguage: .english,
+            keyterms: [],
+            replacements: [:]
+        )
+        XCTAssertTrue(translated.system.contains("Write the ENTIRE output in English"))
+        XCTAssertTrue(translated.system.contains("output language = English"))
 
-        let prompt = translatePrompt!
-        XCTAssertEqual(
-            PromptContextManager.effectiveOutputLanguage(selected: .sameAsInput, for: prompt),
-            .sameAsInput
+        let literal = TranscriptPolishPromptBuilder.makeMessages(
+            rawText: "hola, ¿cómo estás?",
+            personalContext: "",
+            outputLanguage: .sameAsInput,
+            keyterms: [],
+            replacements: [:]
         )
-        XCTAssertEqual(
-            PromptContextManager.effectiveOutputLanguage(selected: .german, for: prompt),
-            .german
-        )
+        XCTAssertTrue(literal.system.contains("same dominant language as the transcript"))
+        XCTAssertTrue(literal.system.contains("output language = same as transcript"))
     }
+
 }
 
 final class TranscriptPolishTimeoutTests: XCTestCase {
 
     /// Short dictations keep the snappy 5s budget; long transcripts scale up
-    /// so a hosted-provider round-trip fits, capped at 20s.
+    /// so a hosted-provider round-trip fits, capped at 20s (per chunk).
     func testHostedPolishTimeoutScalesWithTranscriptLength() {
-        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 0), 5)
-        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 400), 5)
-        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 1400), 10)
-        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 2814), 17)
-        XCTAssertEqual(TranscriptPostProcessor.polishTimeout(forCharacterCount: 100_000), 20)
+        func hostedTimeout(_ count: Int) -> UInt64 {
+            TranscriptPostProcessor.polishTimeout(
+                forCharacterCount: count, duration: nil, usesLocalBudget: false
+            )
+        }
+        XCTAssertEqual(hostedTimeout(0), 5)
+        XCTAssertEqual(hostedTimeout(400), 5)
+        XCTAssertEqual(hostedTimeout(1400), 10)
+        XCTAssertEqual(hostedTimeout(2814), 17)
+        XCTAssertEqual(hostedTimeout(100_000), 20)
+    }
+
+    /// The overlay countdown consumes this same total: for chunked
+    /// transcripts it must be the SUM of per-chunk budgets — showing the
+    /// single-call cap made the HUD hit 0 while the polish was still running.
+    func testTotalPolishBudgetSumsChunkBudgets() {
+        let text = String(repeating: "Una frase corta que termina bien. ", count: 200)
+        let chunks = TranscriptPostProcessor.splitIntoChunks(text)
+        XCTAssertGreaterThan(chunks.count, 1)
+
+        let expected = chunks.reduce(UInt64(0)) { total, chunk in
+            total
+                + TranscriptPostProcessor.polishTimeout(
+                    forCharacterCount: chunk.count, duration: nil, usesLocalBudget: false
+                )
+        }
+        let total = TranscriptPostProcessor.totalPolishBudget(
+            forText: text, duration: nil, usesLocalBudget: false
+        )
+        XCTAssertEqual(total, expected)
+        XCTAssertGreaterThan(
+            total,
+            TranscriptPostProcessor.polishTimeout(
+                forCharacterCount: text.count, duration: nil, usesLocalBudget: false
+            )
+        )
     }
 
     func testLocalPolishTimeoutUsesLargerBudget() {

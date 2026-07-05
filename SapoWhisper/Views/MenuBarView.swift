@@ -4,6 +4,7 @@
 //
 //
 
+import Combine
 import SwiftUI
 
 /// Vista principal del popup del menu bar - Diseño limpio y moderno
@@ -16,11 +17,13 @@ struct MenuBarView: View {
     var openHistoryAction: (() -> Void)?
     var openPermissionsAction: (() -> Void)?
     var openWelcomeAction: (() -> Void)?
+    var openAboutAction: (() -> Void)?
     var closeMenuBarAction: (() -> Void)?
     @AppStorage(Constants.StorageKeys.onboardingComplete) private var onboardingComplete = false
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var needsEngineSetup: Bool {
         !onboardingComplete && !viewModel.isLoadingWhisperKit && !viewModel.isEngineReady(viewModel.currentEngine)
@@ -59,13 +62,6 @@ struct MenuBarView: View {
 
             recordingSection
 
-            if !viewModel.lastTranscription.isEmpty {
-                MenuBarTranscriptionSection(transcription: viewModel.lastTranscription) {
-                    PasteManager.copyToClipboard(viewModel.lastTranscription)
-                    SoundManager.shared.play(.success)
-                }
-            }
-
             Divider()
                 .padding(.horizontal)
 
@@ -85,14 +81,21 @@ struct MenuBarView: View {
                     .frame(width: 44, height: 44)
 
                 if case .recording = viewModel.appState {
-                    Circle()
-                        .stroke(viewModel.appState.iconColor, lineWidth: 2)
-                        .frame(width: 44, height: 44)
-                        .scaleEffect(pulseAnimation ? 1.3 : 1.0)
-                        .opacity(pulseAnimation ? 0 : 1)
-                        .animation(.easeOut(duration: 1).repeatForever(autoreverses: false), value: pulseAnimation)
-                        .onAppear { pulseAnimation = true }
-                        .onDisappear { pulseAnimation = false }
+                    if reduceMotion {
+                        // Static ring instead of the expanding pulse.
+                        Circle()
+                            .stroke(viewModel.appState.iconColor.opacity(0.5), lineWidth: 2)
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Circle()
+                            .stroke(viewModel.appState.iconColor, lineWidth: 2)
+                            .frame(width: 44, height: 44)
+                            .scaleEffect(pulseAnimation ? 1.3 : 1.0)
+                            .opacity(pulseAnimation ? 0 : 1)
+                            .animation(.easeOut(duration: 1).repeatForever(autoreverses: false), value: pulseAnimation)
+                            .onAppear { pulseAnimation = true }
+                            .onDisappear { pulseAnimation = false }
+                    }
                 }
 
                 if let idleIcon = NSImage(named: "DockIconIdle") {
@@ -115,9 +118,17 @@ struct MenuBarView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
 
-                Text(viewModel.statusText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if case .recording = viewModel.appState {
+                    // The live seconds counter subscribes on its own so the
+                    // 10 Hz ticks never invalidate the whole popover.
+                    RecordingStatusCaption(
+                        durationPublisher: viewModel.recordingDurationSubject.eraseToAnyPublisher()
+                    )
+                } else {
+                    Text(viewModel.statusText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Spacer()
@@ -133,12 +144,12 @@ struct MenuBarView: View {
     private var recordingSection: some View {
         VStack(spacing: 16) {
             if case .recording = viewModel.appState {
-                RecordingTimer(duration: viewModel.recordingDuration)
+                RecordingTimerRow(durationPublisher: viewModel.recordingDurationSubject.eraseToAnyPublisher())
                     .transition(.scale.combined(with: .opacity))
             }
 
             Button(action: {
-                withAnimation(Constants.Animation.spring) {
+                withAnimation(Constants.Animation.morph) {
                     viewModel.toggleRecording()
                 }
             }) {
@@ -150,7 +161,8 @@ struct MenuBarView: View {
                     } else {
                         Image(systemName: buttonIcon)
                             .font(.system(size: 18, weight: .semibold))
-                            .symbolEffect(.bounce, value: viewModel.audioRecorder.isRecording)
+                            // Constant value under Reduce Motion: never bounces.
+                            .symbolEffect(.bounce, value: reduceMotion ? false : viewModel.audioRecorder.isRecording)
                     }
 
                     Text(buttonText)
@@ -182,7 +194,7 @@ struct MenuBarView: View {
             }
         }
         .padding()
-        .animation(.spring(response: 0.3), value: viewModel.appState)
+        .animation(Constants.Animation.morph, value: viewModel.appState)
     }
 
     private var buttonIcon: String {
@@ -252,19 +264,6 @@ struct MenuBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 0) {
-            SettingsRow(
-                icon: "doc.on.clipboard",
-                title: "menu.auto_paste".localized,
-                subtitle: "menu.auto_paste_sub".localized
-            ) {
-                Toggle("", isOn: $viewModel.autoPasteEnabled)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-            }
-
-            Divider()
-                .padding(.horizontal)
-
             ActionRow(
                 icon: "clock.arrow.circlepath",
                 title: "menu.history".localized,
@@ -288,11 +287,11 @@ struct MenuBarView: View {
                 .padding(.horizontal)
 
             ActionRow(
-                icon: "sparkles.rectangle.stack",
-                title: "menu.welcome_tour".localized,
+                icon: "info.circle",
+                title: "menu.about".localized,
                 subtitle: nil
             ) {
-                openWelcomeWindow()
+                openAboutWindow()
             }
 
             Divider()

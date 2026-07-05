@@ -48,14 +48,71 @@ private struct PillPreview<Content: View>: View {
     PillPreview { TranscribingPillView() }
 }
 
+#Preview("Copied") {
+    PillPreview { CopiedPillView() }
+}
+
 #Preview("Completed") {
     PillPreview { CompletedPillView(text: "Hola, esta es una transcripcion") }
+}
+
+#Preview("Completed - Long") {
+    PillPreview {
+        CompletedPillView(
+            text: String(repeating: "Esta es una transcripcion larga para probar el scroll del pill. ", count: 12)
+        )
+    }
+}
+
+#Preview("Cancelled") {
+    PillPreview { CancelledPillView() }
+}
+
+#Preview("Docked") {
+    PillPreview { DockedChipView(isExpanded: false, onTap: {}) }
 }
 
 #Preview("Error") {
     PillPreview { ErrorPillView(message: "No se pudo conectar", onRetry: {}) }
 }
 
-#Preview("Device Detected") {
-    PillPreview { DeviceDetectedPillView(deviceName: "MacBook Pro Microphone") }
+#Preview("Device Connecting") {
+    PillPreview {
+        DeviceChangePillView(
+            announcement: DeviceChangeAnnouncement(
+                deviceName: "AirPods Pro", transport: .bluetooth, phase: .connecting
+            )
+        )
+    }
+}
+
+#Preview("Device Ready") {
+    PillPreview {
+        DeviceChangePillView(
+            announcement: DeviceChangeAnnouncement(
+                deviceName: "MacBook Pro Microphone", transport: .builtIn, phase: .ready
+            )
+        )
+    }
+}
+
+#Preview("Device Fallback") {
+    PillPreview {
+        DeviceChangePillView(
+            announcement: DeviceChangeAnnouncement(
+                deviceName: "MacBook Pro Microphone", transport: .builtIn, phase: .fallback
+            )
+        )
+    }
+}
+
+#Preview("Recording Connecting") {
+    PillPreview {
+        RecordingPillView(
+            duration: 0,
+            onPause: {},
+            audioLevelPublisher: Just(Float(0)).eraseToAnyPublisher(),
+            connectingDeviceName: "AirPods Pro"
+        )
+    }
 }

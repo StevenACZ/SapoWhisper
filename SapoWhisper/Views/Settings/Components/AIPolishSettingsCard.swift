@@ -7,17 +7,13 @@ import SwiftUI
 import os
 
 /// AI polish settings: one OpenAI-compatible provider (OpenRouter by default),
-/// an API key stored in the Keychain, a model, and the polish behavior pickers.
-/// Paste a key, press Test, done — no cloud-project setup anywhere.
+/// an API key stored in the Keychain, a model, and the output language.
+/// Paste a key, press Test, done — the single adaptive prompt handles the
+/// rest, so there are no mode or duration pickers.
 struct AIPolishSettingsCard: View {
-    @ObservedObject private var promptContextManager = PromptContextManager.shared
-
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishMinimumDuration) private var aiPolishMinimumDuration =
-        TranscriptPolishMinimumDuration.defaultPolicy.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
     @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
 
@@ -51,40 +47,8 @@ struct AIPolishSettingsCard: View {
         )
     }
 
-    private var currentPrompt: PromptProfile {
-        promptContextManager.promptProfile(for: aiPolishMode)
-    }
-
-    private var currentPromptDisplayName: String {
-        displayName(for: currentPrompt)
-    }
-
-    private var selectedOutputLanguage: TranscriptPolishOutputLanguage {
-        TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-    }
-
     private var currentOutputLanguage: TranscriptPolishOutputLanguage {
-        PromptContextManager.effectiveOutputLanguage(
-            selected: selectedOutputLanguage,
-            for: currentPrompt
-        )
-    }
-
-    private var outputLanguageOptions: [TranscriptPolishOutputLanguage] {
-        return TranscriptPolishOutputLanguage.allCases
-    }
-
-    private var currentMinimumDuration: TranscriptPolishMinimumDuration {
-        TranscriptPolishMinimumDuration(rawValue: aiPolishMinimumDuration) ?? .defaultPolicy
-    }
-
-    private var activeSubtitle: String {
-        switch currentMinimumDuration {
-        case .always:
-            return "ai.polish.enable_active_always".localized
-        case .seconds20, .seconds30:
-            return "ai.polish.enable_active_after".localized(currentMinimumDuration.displayName)
-        }
+        TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
     }
 
     var body: some View {
@@ -92,7 +56,7 @@ struct AIPolishSettingsCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 AIPolishHeroToggle(
                     isOn: $aiPolishEnabled,
-                    activeSubtitle: activeSubtitle
+                    activeSubtitle: "ai.polish.enable_active_always".localized
                 )
 
                 // With the hero toggle off nothing below is in effect, so the
@@ -122,17 +86,8 @@ struct AIPolishSettingsCard: View {
 
                 Divider()
 
-                // The three behavior pickers share one row — they are small
-                // menus, stacking them only added scrolling. fixedSize makes
-                // the row take its ideal (tallest-tile) height so the
-                // maxHeight: .infinity tiles equalize instead of expanding.
-                HStack(alignment: .top, spacing: 8) {
-                    modePicker
-                    outputLanguagePicker
-                    minimumDurationPicker
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .opacity(aiPolishEnabled ? 1 : 0.62)
+                outputLanguageRow
+                    .opacity(aiPolishEnabled ? 1 : 0.62)
             }
             .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
         }
@@ -169,9 +124,6 @@ struct AIPolishSettingsCard: View {
             testState = .idle
         }
         .onChange(of: aiPolishOutputLanguage) { _, _ in
-            syncTranscriptionLanguageWithTranslation()
-        }
-        .onChange(of: aiPolishMode) { _, _ in
             syncTranscriptionLanguageWithTranslation()
         }
         .onChange(of: aiPolishEnabled) { _, _ in
@@ -229,75 +181,43 @@ struct AIPolishSettingsCard: View {
         }
     }
 
-    // MARK: - Behavior
+    // MARK: - Output language
 
-    private var modePicker: some View {
-        AIPolishSettingRow(
-            title: "ai.polish.mode".localized,
-            detail: "ai.polish.mode_desc".localized(currentPromptDisplayName)
-        ) {
-            Picker("ai.polish.mode".localized, selection: $aiPolishMode) {
-                ForEach(promptContextManager.prompts) { prompt in
-                    Text(displayName(for: prompt)).tag(prompt.id)
+    /// Single inline row: the picker already names the current value, so the
+    /// only extra copy is the translation note when a target is picked.
+    private var outputLanguageRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("ai.polish.output_language".localized)
+                    .font(.subheadline.weight(.semibold))
+
+                AIPolishFidelityBadge()
+
+                Spacer(minLength: 8)
+
+                Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
+                    ForEach(TranscriptPolishOutputLanguage.allCases) { language in
+                        Text(language.displayName).tag(language.rawValue)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!aiPolishEnabled)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!aiPolishEnabled)
-        }
-    }
 
-    private var outputLanguagePicker: some View {
-        AIPolishSettingRow(
-            title: "ai.polish.output_language".localized,
-            detail: currentOutputLanguage.requiresTranslation
-                ? "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName)
-                : "ai.polish.output_language_desc".localized(currentOutputLanguage.displayName)
-        ) {
-            Picker("ai.polish.output_language".localized, selection: $aiPolishOutputLanguage) {
-                ForEach(outputLanguageOptions) { language in
-                    Text(language.displayName).tag(language.rawValue)
-                }
+            if currentOutputLanguage.requiresTranslation {
+                Label(
+                    "ai.polish.output_language_translation_desc".localized(currentOutputLanguage.displayName),
+                    systemImage: "globe"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!aiPolishEnabled)
         }
-    }
-
-    private var minimumDurationPicker: some View {
-        let policy = TranscriptPolishMinimumDuration(rawValue: aiPolishMinimumDuration) ?? .defaultPolicy
-
-        return AIPolishSettingRow(
-            title: "ai.polish.minimum_duration".localized,
-            detail: policy.description
-        ) {
-            Picker("ai.polish.minimum_duration".localized, selection: $aiPolishMinimumDuration) {
-                ForEach(TranscriptPolishMinimumDuration.allCases) { policy in
-                    Text(policy.displayName).tag(policy.rawValue)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(!aiPolishEnabled)
-        } footer: {
-            AIPolishFidelityBadge()
-        }
-    }
-
-    private func displayName(for prompt: PromptProfile) -> String {
-        guard prompt.isTranslationProfile else { return prompt.trimmedName }
-        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
-            selected: selectedOutputLanguage,
-            for: prompt
-        )
-        guard outputLanguage.requiresTranslation else {
-            return "ai.mode.translate_english".localized
-        }
-        return "ai.mode.translate_target".localized(outputLanguage.shortDisplayName)
+        .animation(.smooth(duration: 0.22), value: currentOutputLanguage.requiresTranslation)
     }
 }
 

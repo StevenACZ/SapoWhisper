@@ -4,8 +4,8 @@ import UniformTypeIdentifiers
 import os
 
 struct VocabularySettingsCard: View {
-    @ObservedObject private var vocabularyManager = VocabularyManager.shared
-    @ObservedObject private var polishMemory = AIPolishMemoryManager.shared
+    private var vocabularyManager = VocabularyManager.shared
+    private var polishMemory = AIPolishMemoryManager.shared
     @StateObject private var metricsModel = VocabularyMetricsModel()
 
     /// Keywords and corrections live in separate segments so the tab shows

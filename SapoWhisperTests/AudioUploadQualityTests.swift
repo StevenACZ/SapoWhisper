@@ -48,6 +48,33 @@ nonisolated final class AudioUploadQualityTests: XCTestCase {
         XCTAssertEqual(AudioUploadQuality.ultraOriginal.audioFormat(matching: input48k).commonFormat, .pcmFormatFloat32)
     }
 
+    /// Whisper-family engines decode at 16 kHz: the STT-oriented qualities
+    /// capture 16 kHz directly (no double resample at medium), while the
+    /// fidelity-oriented ones keep the user's explicit choice, and non-whisper
+    /// engines are unaffected.
+    func testWhisperFamilyEnginesCaptureSixteenKilohertzDirectly() throws {
+        let input48k = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)
+        )
+
+        for engine in [TranscriptionEngine.whisperLocal, .localAIServer] {
+            let mediumFormat = AudioUploadQuality.medium.audioFormat(matching: input48k, for: engine)
+            XCTAssertEqual(mediumFormat.sampleRate, 16_000)
+            XCTAssertEqual(mediumFormat.commonFormat, .pcmFormatInt16)
+            XCTAssertEqual(AudioUploadQuality.ultraFast.audioFormat(matching: input48k, for: engine).sampleRate, 16_000)
+            XCTAssertEqual(AudioUploadQuality.high.audioFormat(matching: input48k, for: engine).sampleRate, 48_000)
+            XCTAssertEqual(
+                AudioUploadQuality.ultraOriginal.audioFormat(matching: input48k, for: engine).sampleRate, 48_000
+            )
+        }
+
+        XCTAssertEqual(AudioUploadQuality.medium.audioFormat(matching: input48k, for: .deepgram).sampleRate, 24_000)
+        XCTAssertEqual(
+            AudioUploadQuality.medium.audioFormat(matching: input48k, for: .elevenLabsScribe).sampleRate, 24_000
+        )
+        XCTAssertEqual(AudioUploadQuality.medium.audioFormat(matching: input48k, for: nil).sampleRate, 24_000)
+    }
+
     func testRealtimeReplayConvertsFloatWAVToPCM16Mono16k() throws {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("sapowhisper-replay-\(UUID().uuidString).wav")

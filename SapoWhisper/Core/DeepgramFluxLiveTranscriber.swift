@@ -14,13 +14,13 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     @Published private(set) var isPaused = false
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published private(set) var audioLevel: Float = 0
-    private(set) var lastCaptureResult: StreamingAudioCaptureResult?
+    private(set) var lastCaptureResult: AudioCaptureResult?
 
     /// A2: fired on the main thread when the local capture died mid-session
     /// and could not be recovered; the owner aborts preserving the WAV.
     var onCaptureInterrupted: ((String) -> Void)?
 
-    private let capture = StreamingAudioCapture()
+    private let capture = AudioCaptureEngine(mode: .streaming)
     private var cancellables = Set<AnyCancellable>()
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -90,7 +90,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         }
     }
 
-    func stop() async throws -> DeepgramFluxLiveResult {
+    func stop() async throws -> StreamingDictationResult {
         guard isStreaming || isStopping else {
             throw TranscriptionFailure(
                 kind: .unknown, engine: Self.engineName,
@@ -163,7 +163,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
         }
 
-        return DeepgramFluxLiveResult(
+        return StreamingDictationResult(
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
@@ -181,7 +181,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     /// Stops the local capture and tears down the socket without any network
     /// wait. Used on system sleep; the WAV is preserved for manual retry.
-    func abortPreservingAudio() -> StreamingAudioCaptureResult? {
+    func abortPreservingAudio() -> AudioCaptureResult? {
         let captureResult = capture.stopRecording(logSummary: false)
         cleanupWebSocket()
         lastCaptureResult = nil
@@ -330,9 +330,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func transcribeFullCaptureFallback(
-        _ captureResult: StreamingAudioCaptureResult,
+        _ captureResult: AudioCaptureResult,
         reason: String
-    ) async throws -> DeepgramFluxLiveResult {
+    ) async throws -> StreamingDictationResult {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await DeepgramBatchTranscriber().transcribe(
             audioURL: captureResult.audioURL,
@@ -351,7 +351,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             "Flux fallback transcript completed reason=\(reason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms characters=\(cleanedTranscript.count, privacy: .public) bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
         )
 
-        return DeepgramFluxLiveResult(
+        return StreamingDictationResult(
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
@@ -475,10 +475,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             return true
         }
 
-        let diagnostics = capture.makeCaptureDiagnostics(
-            fileURL: capture.recordingURL,
-            referenceTime: CFAbsoluteTimeGetCurrent()
-        )
+        let diagnostics = capture.currentCaptureDiagnostics()
         SapoLog.recording.warning(
             "Flux attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
         )
@@ -515,4 +512,12 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 extension DeepgramFluxLiveTranscriber: TranscriptionEngineSession {
     var isReady: Bool { isConfigured }
     var isBusy: Bool { isStreaming || isStopping }
+}
+
+// MARK: - StreamingDictationSession
+
+extension DeepgramFluxLiveTranscriber: StreamingDictationSession {
+    var isStreamingPublisher: AnyPublisher<Bool, Never> { $isStreaming.eraseToAnyPublisher() }
+    var recordingDurationPublisher: AnyPublisher<TimeInterval, Never> { $recordingDuration.eraseToAnyPublisher() }
+    var audioLevelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
 }

@@ -3,8 +3,8 @@
 //  SapoWhisper
 //
 
-import Combine
 import Foundation
+import Observation
 
 /// ElevenLabs keyterm biasing limits, shared by the request builders and the
 /// vocabulary UI so over-limit terms are surfaced instead of silently dropped.
@@ -24,12 +24,13 @@ enum DeepgramKeytermLimits {
 
 /// Manages keyterms and replacements for speech recognition engines.
 /// Persists to ~/Library/Application Support/SapoWhisper/vocabulary.json
-class VocabularyManager: ObservableObject {
+@Observable
+class VocabularyManager {
 
     static let shared = VocabularyManager()
 
-    @Published private(set) var keyterms: [String] = []
-    @Published private(set) var replacements: [String: String] = [:]
+    private(set) var keyterms: [String] = []
+    private(set) var replacements: [String: String] = [:]
 
     private let fileURL: URL
 
@@ -165,12 +166,32 @@ class VocabularyManager: ObservableObject {
 
     /// Returns replace query items for Deepgram batch REST requests
     func replaceQueryItems() -> [URLQueryItem] {
-        replacements.map { URLQueryItem(name: "replace", value: "\($0.key):\($0.value)") }
+        mechanicalReplacements.map { URLQueryItem(name: "replace", value: "\($0.key):\($0.value)") }
+    }
+
+    /// Replacement pairs safe for mechanical passes (the local regex pass and
+    /// Deepgram's server-side `replace`): re-applying the pair to its own
+    /// value must be a no-op. An expansion pair like "push" -> "git push"
+    /// fails that check — mechanically it turns an already-correct "git push"
+    /// into "git git push" — so only the AI polish dictionary (which reads
+    /// context) sees those pairs.
+    var mechanicalReplacements: [String: String] {
+        replacements.filter { Self.isMechanicallyStable(key: $0.key, value: $0.value) }
+    }
+
+    private static func isMechanicallyStable(key: String, value: String) -> Bool {
+        let pattern = replacementPattern(for: key)
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        let template = NSRegularExpression.escapedTemplate(for: value)
+        return regex.stringByReplacingMatches(in: value, options: [], range: range, withTemplate: template) == value
     }
 
     /// Applies saved replacements locally for engines that do not expose replace in their API surface.
     func applyingReplacements(to transcript: String) -> String {
-        replacements
+        mechanicalReplacements
             .sorted { $0.key.count > $1.key.count }
             .reduce(transcript) { current, replacement in
                 let pattern = Self.replacementPattern(for: replacement.key)
@@ -194,7 +215,13 @@ class VocabularyManager: ObservableObject {
             }
     }
 
-    /// Returns keyterms shaped for engines that accept server-side recognition hints.
+    /// Returns keyterms shaped for engines that accept server-side recognition
+    /// hints. CANONICAL forms only — the same rule the Whisper initial prompt
+    /// follows: sending misheard variants ("Clauco", "hit pug") as hints
+    /// actively biases the engine toward the wrong spelling and burns the
+    /// provider's term budget (Deepgram caps at 100 terms; ElevenLabs bills a
+    /// 20s minimum past 100). Variants are recovered after the fact by the
+    /// deterministic correction pass and the AI polish prompt.
     func recognitionKeytermPayload(
         maxCount: Int,
         maxLength: Int,
@@ -203,32 +230,51 @@ class VocabularyManager: ObservableObject {
     ) -> (terms: [String], droppedCount: Int) {
         let candidates = recognitionCandidates(includeReplacementValues: includeReplacementValues)
         var seen = Set<String>()
-        var expandedTerms: [String] = []
+        var canonicalTerms: [String] = []
 
-        func appendUnique(_ term: String) {
-            let trimmed = Self.sanitizedRecognitionHint(term)
-            guard !trimmed.isEmpty else { return }
+        for candidate in candidates {
+            let trimmed = Self.sanitizedRecognitionHint(candidate)
+            guard !trimmed.isEmpty else { continue }
             let normalized = trimmed.lowercased()
-            guard !seen.contains(normalized) else { return }
+            guard !seen.contains(normalized) else { continue }
             seen.insert(normalized)
-            expandedTerms.append(trimmed)
+            canonicalTerms.append(trimmed)
         }
 
-        for candidate in candidates {
-            appendUnique(candidate)
-        }
-
-        for candidate in candidates {
-            for variant in Self.recognitionVariants(for: candidate) {
-                appendUnique(variant)
-            }
-        }
-
-        let validTerms = expandedTerms.filter { term in
+        let validTerms = canonicalTerms.filter { term in
             term.count <= maxLength && (maxWords.map { term.split(separator: " ").count <= $0 } ?? true)
         }
         let terms = Array(validTerms.prefix(maxCount))
-        return (terms, max(0, expandedTerms.count - terms.count))
+        return (terms, max(0, canonicalTerms.count - terms.count))
+    }
+
+    /// Whisper-style initial prompt for local STT engines (WhisperKit and the
+    /// Local AI Server). Unlike the cloud keyterm payloads, this shows the
+    /// decoder only the CANONICAL spellings — feeding misheard variants here
+    /// would teach the model the wrong forms. Whisper conditions on roughly the
+    /// last 224 tokens, so the glossary is capped and keeps the user's own
+    /// keyterms first (they outrank replacement values on overflow).
+    func initialPromptText(maxLength: Int = 700) -> String {
+        var seen = Set<String>()
+        var terms: [String] = []
+        for candidate in recognitionCandidates(includeReplacementValues: true) {
+            let sanitized = Self.sanitizedRecognitionHint(candidate)
+            let key = sanitized.lowercased()
+            guard !sanitized.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            terms.append(sanitized)
+        }
+        guard !terms.isEmpty else { return "" }
+
+        let prefix = "Glossary: "
+        var body = ""
+        for term in terms {
+            let candidate = body.isEmpty ? term : "\(body), \(term)"
+            guard prefix.count + candidate.count + 1 <= maxLength else { break }
+            body = candidate
+        }
+        guard !body.isEmpty else { return "" }
+        return "\(prefix)\(body)."
     }
 
     /// Applies saved replacements and high-confidence vocabulary spelling corrections.
@@ -317,25 +363,38 @@ class VocabularyManager: ObservableObject {
             keyterm.hasPrefix(".")
             ? [
                 keyterm,
-                spokenSymbolForm(for: keyterm),
-                spokenPeriodSymbolForm(for: keyterm),
-                spokenPuntoSymbolForm(for: keyterm),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "dot"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "period"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "punto"),
             ]
             : [
                 keyterm,
-                spokenForm(for: keyterm),
-                spokenSymbolForm(for: keyterm),
-                spokenPeriodSymbolForm(for: keyterm),
-                spokenPuntoSymbolForm(for: keyterm),
+                SpeechConfusionCatalog.spokenForm(for: keyterm),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "dot"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "period"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "punto"),
             ]
         let spokenVariants = baseVariants + speechConfusionForms(for: keyterm)
 
-        let condensedVariants = keyterm.hasPrefix(".") ? [] : spokenVariants.map(condensedSymbolForm)
+        let condensedVariants =
+            keyterm.hasPrefix(".") ? [] : spokenVariants.map(SpeechConfusionCatalog.condensedSymbolForm)
         return uniqueVariants(spokenVariants + condensedVariants)
     }
 
+    /// Single-word variants that are also everyday words. Applied
+    /// deterministically they rewrite legitimate speech ("a hit on Spotify" →
+    /// "a git on Spotify", "mi perro pug" → "mi perro push"), so they never
+    /// join the mechanical correction pass — the AI polish prompt still sees
+    /// them, where context judgment exists. Multi-word forms ("hit pug",
+    /// "deep comment") stay mechanical: the bigram is specific enough.
+    private static let contextOnlyCorrectionVariants: Set<String> = [
+        "hit", "pug", "comet", "cloud", "claw", "clawed", "clog", "slough",
+    ]
+
     private static func correctionVariants(for keyterm: String) -> [String] {
-        recognitionVariants(for: keyterm)
+        recognitionVariants(for: keyterm).filter {
+            !contextOnlyCorrectionVariants.contains($0.lowercased())
+        }
     }
 
     private static func replacingWholeTermVariants(_ variants: [String], with canonical: String, in transcript: String)
@@ -355,28 +414,6 @@ class VocabularyManager: ObservableObject {
                 withTemplate: replacementTemplate
             )
         }
-    }
-
-    private static func spokenForm(for keyterm: String) -> String {
-        let separated = keyterm.replacingOccurrences(of: #"[-_.]+"#, with: " ", options: .regularExpression)
-        let characters = Array(separated)
-        guard characters.count > 1 else { return separated }
-
-        var result = ""
-        for index in characters.indices {
-            let character = characters[index]
-            if index > characters.startIndex {
-                let previous = characters[characters.index(before: index)]
-                let nextIndex = characters.index(after: index)
-                let next = nextIndex < characters.endIndex ? characters[nextIndex] : nil
-                if shouldInsertSpeechSpace(previous: previous, current: character, next: next) {
-                    result.append(" ")
-                }
-            }
-            result.append(character)
-        }
-
-        return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
     }
 
     private static func replacementPattern(for term: String) -> String {
@@ -402,77 +439,10 @@ class VocabularyManager: ObservableObject {
         return "(?<![A-Za-z0-9])\(body)(?![A-Za-z0-9])"
     }
 
-    private static func spokenSymbolForm(for keyterm: String) -> String {
-        keyterm
-            .replacingOccurrences(of: ".", with: " dot ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func spokenPeriodSymbolForm(for keyterm: String) -> String {
-        keyterm
-            .replacingOccurrences(of: ".", with: " period ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func spokenPuntoSymbolForm(for keyterm: String) -> String {
-        keyterm
-            .replacingOccurrences(of: ".", with: " punto ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func condensedSymbolForm(for keyterm: String) -> String {
-        keyterm.replacingOccurrences(of: #"[-_.\s]+"#, with: "", options: .regularExpression)
-    }
-
     private static func speechConfusionForms(for keyterm: String) -> [String] {
         var forms: [String] = []
 
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Claude",
-            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Deepgram",
-            with: ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "ElevenLabs",
-            with: ["Eleven Labs", "11labs"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Local AI Server",
-            with: ["localize server", "local ya server", "localia server"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "SapoWhisper",
-            with: [
-                "Sapo Whisper",
-                "Sapo Visper",
-                "SAP OVISPER",
-                "Sapa Whisper",
-                "SAPA Whisper",
-                "SAP Awhisper",
-                "Zap o Whisper",
-                "Zapo Whisper",
-                "Sapowisper",
-            ],
-            to: &forms
-        )
+        SpeechConfusionCatalog.appendBrandVariants(for: keyterm, to: &forms)
         if keyterm.lowercased() == "claude.md" {
             forms.append(contentsOf: ["claud mendy", "claude mendy", "cod md"])
         }
@@ -577,7 +547,7 @@ class VocabularyManager: ObservableObject {
             forms.append("Vue three")
         }
         if lowercasedKeyterm == "git" || lowercasedKeyterm.hasPrefix("git ") {
-            appendReplacementVariants(
+            SpeechConfusionCatalog.appendReplacementVariants(
                 for: keyterm,
                 replacing: "git",
                 with: ["hit"],
@@ -585,7 +555,7 @@ class VocabularyManager: ObservableObject {
             )
         }
         if lowercasedKeyterm == "push" || lowercasedKeyterm.contains(" push") {
-            appendReplacementVariants(
+            SpeechConfusionCatalog.appendReplacementVariants(
                 for: keyterm,
                 replacing: "push",
                 with: ["pug"],
@@ -610,50 +580,8 @@ class VocabularyManager: ObservableObject {
         if lowercasedKeyterm == "pull request" {
             forms.append("pool request")
         }
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Hetzner",
-            with: ["Etzner", "Etsner", "Edsner", "Hedsner", "Headsnare", "Head snare", "HeadServe", "HeadServer"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Jellyfin",
-            with: ["Jellifin", "Gelifin", "Jellyfine", "JellyFight", "JellyFy"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "PostgreSQL",
-            with: ["PostgresUL", "Postgres SQL"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Cloudflare",
-            with: ["ClavFlare", "CloudFair"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "WireGuard",
-            with: ["YFWAR", "YF WAR", "WifeWare"],
-            to: &forms
-        )
 
         return forms
-    }
-
-    private static func appendReplacementVariants(
-        for keyterm: String,
-        replacing needle: String,
-        with replacements: [String],
-        to forms: inout [String]
-    ) {
-        guard keyterm.range(of: needle, options: [.caseInsensitive]) != nil else { return }
-        for replacement in replacements {
-            forms.append(keyterm.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive]))
-        }
     }
 
     private static func sanitizedRecognitionHint(_ term: String) -> String {
@@ -664,13 +592,6 @@ class VocabularyManager: ObservableObject {
         )
         .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func shouldInsertSpeechSpace(previous: Character, current: Character, next: Character?) -> Bool {
-        guard current.isUppercase else { return false }
-        if previous.isLowercase || previous.isNumber { return true }
-        if previous.isUppercase, next?.isLowercase == true { return true }
-        return false
     }
 
     private static func wholeTermPattern(for term: String) -> String {
@@ -691,7 +612,7 @@ class VocabularyManager: ObservableObject {
     }
 
     private static func alphanumericTokens(in term: String) -> [String] {
-        term.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        SpeechConfusionCatalog.alphanumericTokens(in: term)
     }
 
     private static func normalizedRecognitionKey(_ term: String) -> String {
@@ -703,8 +624,12 @@ class VocabularyManager: ObservableObject {
             return NSRegularExpression.escapedPattern(for: token)
         }
 
+        // No trailing `\.?`: consuming a sentence-ending period made every
+        // correction at the end of a sentence eat the period ("Instala git.
+        // Luego…" → "Instala git Luego…"). The trailing lookahead already
+        // treats "." as a boundary, so the period survives outside the match.
         let characters = token.map { NSRegularExpression.escapedPattern(for: String($0)) }
-        return characters.joined(separator: #"[\s._-]*"#) + #"\.?"#
+        return characters.joined(separator: #"[\s._-]*"#)
     }
 
     private static func uniqueVariants(_ variants: [String]) -> [String] {

@@ -61,6 +61,19 @@ nonisolated enum AudioUploadQuality: String, CaseIterable, Identifiable, Codable
         )!
     }
 
+    /// Batch capture format for a concrete target engine. Whisper-family
+    /// engines decode at 16 kHz mono, so for the STT-oriented qualities
+    /// (ultraFast, medium) the capture goes straight to 16 kHz instead of
+    /// recording 24 kHz only for the model to resample again. High and
+    /// ultraOriginal keep the user's explicit fidelity choice — history WAVs
+    /// can be retranscribed later with a cloud engine.
+    func audioFormat(matching inputFormat: AVAudioFormat, for engine: TranscriptionEngine?) -> AVAudioFormat {
+        if engine?.isWhisperFamily == true, self == .ultraFast || self == .medium {
+            return AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
+        }
+        return audioFormat(matching: inputFormat)
+    }
+
     private var commonFormat: AVAudioCommonFormat {
         switch self {
         case .ultraFast, .medium, .high:

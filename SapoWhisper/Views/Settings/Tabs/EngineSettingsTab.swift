@@ -14,7 +14,6 @@ struct EngineSettingsTab: View {
     @AppStorage(Constants.StorageKeys.localAIServerModel) private var selectedLocalAIServerModel =
         LocalAIServerConfiguration.defaultModel
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishMode = TranscriptPolishMode.automatic.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
@@ -117,11 +116,7 @@ struct EngineSettingsTab: View {
     /// What the AI polish step does to the language of the final text:
     /// translates to an explicit target, or keeps the spoken language.
     private var aiSummaryValue: String {
-        let selectedOutputLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
-        let outputLanguage = PromptContextManager.effectiveOutputLanguage(
-            selected: selectedOutputLanguage,
-            for: PromptContextManager.shared.promptProfile(for: aiPolishMode)
-        )
+        let outputLanguage = TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
         guard outputLanguage.requiresTranslation else {
             return "config.engine_summary_ai_active".localized
         }

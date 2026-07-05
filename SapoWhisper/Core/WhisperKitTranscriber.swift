@@ -15,8 +15,13 @@ import os
 #endif
 
 /// Maneja la transcripcion de audio usando WhisperKit (100% local)
+///
+/// `@Observable` (not ObservableObject): SwiftUI tracks the individual
+/// properties each view reads, so the 60 Hz `loadingProgress` ticks during a
+/// model download re-render only the progress UI instead of every observer.
 @MainActor
-class WhisperKitTranscriber: ObservableObject {
+@Observable
+class WhisperKitTranscriber {
 
     // MARK: - Loading State Enum
 
@@ -29,18 +34,36 @@ class WhisperKitTranscriber: ObservableObject {
         case error = "Error"
     }
 
-    // MARK: - Published Properties
+    // MARK: - Observable State
 
-    @Published var isModelLoaded = false
-    @Published var isLoading = false
-    @Published var isTranscribing = false
-    @Published var progress: Double = 0
-    @Published var loadingProgress: Double = 0
-    @Published var loadingMessage: String = ""
-    @Published var loadingState: LoadingState = .idle
-    @Published var lastTranscription: String = ""
-    @Published var errorMessage: String?
-    @Published var currentModelName: String?
+    /// Logic hooks for the owning ViewModel — replace the old Combine sinks;
+    /// fired on the main actor only when the flag actually flips.
+    @ObservationIgnored var onLoadingChanged: ((Bool) -> Void)?
+    @ObservationIgnored var onModelLoadedChanged: ((Bool) -> Void)?
+    @ObservationIgnored var onTranscribingChanged: ((Bool) -> Void)?
+
+    var isModelLoaded = false {
+        didSet {
+            if oldValue != isModelLoaded { onModelLoadedChanged?(isModelLoaded) }
+        }
+    }
+    var isLoading = false {
+        didSet {
+            if oldValue != isLoading { onLoadingChanged?(isLoading) }
+        }
+    }
+    var isTranscribing = false {
+        didSet {
+            if oldValue != isTranscribing { onTranscribingChanged?(isTranscribing) }
+        }
+    }
+    var progress: Double = 0
+    var loadingProgress: Double = 0
+    var loadingMessage: String = ""
+    var loadingState: LoadingState = .idle
+    var lastTranscription: String = ""
+    var errorMessage: String?
+    var currentModelName: String?
 
     // MARK: - Private Properties
 
@@ -331,7 +354,7 @@ class WhisperKitTranscriber: ObservableObject {
             userFriendlyError = "No hay suficiente espacio en disco."
         }
 
-        errorMessage = "Error cargando modelo: \(userFriendlyError)"
+        errorMessage = "error.whisperkit.model_load".localized(userFriendlyError)
         SapoLog.recording.error(
             "WhisperKit load failed after \(maxRetries, privacy: .public) attempts: \(errorMsg, privacy: .public)"
         )
@@ -429,6 +452,33 @@ class WhisperKitTranscriber: ObservableObject {
                 // Configurar opciones de decodificacion
                 var options = DecodingOptions()
                 options.language = TranscriptionLanguageCatalog.whisperLanguageCode(for: language)
+                // Auto mode: `detectLanguage` defaults to `!usePrefillPrompt`
+                // (= false), and the prefill prompt falls back to <|en|> when
+                // language is nil — opt in so "auto" actually autodetects.
+                if options.language == nil {
+                    options.detectLanguage = true
+                }
+
+                // Whisper-style initial prompt: condition the decoder on the
+                // user's canonical vocabulary so keyterms come out spelled
+                // right on the first pass. WhisperKit trims an over-long
+                // prompt keeping the SUFFIX (~223 tokens), which would drop
+                // the user's keyterms leading the glossary — cap from the
+                // front instead.
+                let vocabularyPrompt = VocabularyManager.shared.initialPromptText()
+                if !vocabularyPrompt.isEmpty, let tokenizer = whisperKit.tokenizer {
+                    let promptTokens = Array(
+                        tokenizer.encode(text: " " + vocabularyPrompt)
+                            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                            .prefix(220)
+                    )
+                    if !promptTokens.isEmpty {
+                        options.promptTokens = promptTokens
+                        SapoLog.recording.info(
+                            "WhisperKit vocabulary prompt attached tokens=\(promptTokens.count, privacy: .public)"
+                        )
+                    }
+                }
 
                 progress = 0.3
 
@@ -452,7 +502,7 @@ class WhisperKitTranscriber: ObservableObject {
                 return transcription
 
             } catch {
-                errorMessage = "Error en transcripcion: \(error.localizedDescription)"
+                errorMessage = "error.whisperkit.transcription".localized(error.localizedDescription)
                 SapoLog.recording.error(
                     "WhisperKit transcription failed error=\(error.localizedDescription, privacy: .public)"
                 )
@@ -482,7 +532,7 @@ class WhisperKitTranscriber: ObservableObject {
     // MARK: - Model Storage Management
 
     /// Set de modelos que sabemos que estan descargados
-    @Published var downloadedModels: Set<WhisperKitModel> = []
+    var downloadedModels: Set<WhisperKitModel> = []
 
     /// Obtiene los posibles directorios donde WhisperKit guarda los modelos
     private var possibleModelDirectories: [URL] {
@@ -512,6 +562,26 @@ class WhisperKitTranscriber: ObservableObject {
         return dirs
     }
 
+    /// Nombre corto de la variante dentro del rawValue (ej: "large-v3").
+    static func modelKeyword(_ model: WhisperKitModel) -> String {
+        model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
+    }
+
+    /// Un directorio pertenece a `model` solo si, entre todas las variantes
+    /// cuyo keyword aparece en el nombre, la suya es la mas larga: "large-v3"
+    /// es substring de "large-v3-v20240930" y de "large-v3_turbo", asi que un
+    /// `contains` simple cruzaba variantes (borrar Large V3 arrastraba los
+    /// folders turbo, y un turbo descargado marcaba Large V3 como descargado).
+    static func directoryName(_ name: String, matches model: WhisperKitModel) -> Bool {
+        let lowered = name.lowercased()
+        let keyword = modelKeyword(model)
+        guard lowered.contains("whisper"), lowered.contains(keyword) else { return false }
+        return !WhisperKitModel.allCases.contains { other in
+            let otherKeyword = modelKeyword(other)
+            return otherKeyword.count > keyword.count && lowered.contains(otherKeyword)
+        }
+    }
+
     /// Verifica si un modelo esta descargado localmente
     func isModelDownloaded(_ model: WhisperKitModel) -> Bool {
         // Primero revisar el cache
@@ -526,24 +596,15 @@ class WhisperKitTranscriber: ObservableObject {
         }
 
         // Buscar en todos los directorios posibles
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-
         for modelsDir in possibleModelDirectories {
             guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
 
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
 
-                for url in contents {
-                    let name = url.lastPathComponent.lowercased()
-
-                    // Estrategia de coincidencia flexible
-                    let matches = name.contains("whisper") && name.contains(modelName)
-
-                    if matches {
-                        downloadedModels.insert(model)
-                        return true
-                    }
+                for url in contents where Self.directoryName(url.lastPathComponent, matches: model) {
+                    downloadedModels.insert(model)
+                    return true
                 }
             } catch {
                 continue
@@ -610,15 +671,10 @@ class WhisperKitTranscriber: ObservableObject {
         }
 
         // 2. Intentar busqueda flexible si el exacto falla (por si la estructura es distinta)
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-
         do {
             let contents = try FileManager.default.contentsOfDirectory(at: repoURL, includingPropertiesForKeys: nil)
-            for url in contents {
-                let name = url.lastPathComponent.lowercased()
-                if name.contains("whisper") && name.contains(modelName) {
-                    return directorySize(at: url)
-                }
+            for url in contents where Self.directoryName(url.lastPathComponent, matches: model) {
+                return directorySize(at: url)
             }
         } catch { return nil }
 
@@ -665,12 +721,8 @@ class WhisperKitTranscriber: ObservableObject {
             unloadModel()
         }
 
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-        // Buscamos algo que coincida con "whisperkit" y el nombre del modelo (ej: "small")
-        // Los folders de HF son tipo: models--argmaxinc--whisperkit-coreml-openai-whisper-small
-
         SapoLog.recording.info(
-            "WhisperKit delete model=\(model.rawValue, privacy: .public) keyword=\(modelName, privacy: .public)"
+            "WhisperKit delete model=\(model.rawValue, privacy: .public) keyword=\(Self.modelKeyword(model), privacy: .public)"
         )
 
         var foundAndDeleted = false
@@ -685,25 +737,17 @@ class WhisperKitTranscriber: ObservableObject {
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
 
-                for url in contents {
-                    let name = url.lastPathComponent.lowercased()
-
-                    // La coincidencia debe ser mas flexible
-                    // Si contiene "models--" y ("whisper" + modelName)
-                    let matches = name.contains("whisper") && name.contains(modelName)
-
-                    if matches {
-                        do {
-                            try FileManager.default.removeItem(at: url)
-                            SapoLog.recording.info(
-                                "WhisperKit deleted file=\(url.lastPathComponent, privacy: .public)"
-                            )
-                            foundAndDeleted = true
-                        } catch {
-                            SapoLog.recording.error(
-                                "WhisperKit delete failed file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                            )
-                        }
+                for url in contents where Self.directoryName(url.lastPathComponent, matches: model) {
+                    do {
+                        try FileManager.default.removeItem(at: url)
+                        SapoLog.recording.info(
+                            "WhisperKit deleted file=\(url.lastPathComponent, privacy: .public)"
+                        )
+                        foundAndDeleted = true
+                    } catch {
+                        SapoLog.recording.error(
+                            "WhisperKit delete failed file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                        )
                     }
                 }
             } catch {
@@ -767,15 +811,15 @@ enum WhisperKitError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAvailable:
-            return "WhisperKit no esta disponible. Agrega el package en Xcode."
+            return "error.whisperkit.not_available".localized
         case .modelNotLoaded:
-            return "No hay un modelo cargado"
+            return "error.whisperkit.model_not_loaded".localized
         case .modelLoadFailed(let message):
-            return "Error cargando modelo: \(message)"
+            return "error.whisperkit.model_load".localized(message)
         case .transcriptionFailed(let message):
-            return "Error en transcripcion: \(message)"
+            return "error.whisperkit.transcription".localized(message)
         case .transcriptionInProgress:
-            return "Ya hay una transcripcion en curso"
+            return "error.whisperkit.in_progress".localized
         }
     }
 }

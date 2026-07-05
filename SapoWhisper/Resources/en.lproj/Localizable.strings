@@ -1,12 +1,9 @@
 /* General */
 "app_name" = "SapoWhisper";
-"version" = "Version %@";
 "made_by" = "Built with care for macOS";
-"about.open_source" = "Open-source project prepared for public sharing.";
 "close" = "Close";
 "cancel" = "Cancel";
 "quit" = "Quit SapoWhisper";
-"about" = "About";
 
 /* Menu Bar */
 "menu.ready" = "Ready to record";
@@ -17,11 +14,9 @@
 "menu.start_recording" = "Start Recording";
 "menu.stop_recording" = "Stop Recording";
 "menu.configure_details" = "Configure voice recognition";
-"menu.last_transcription" = "Last transcription";
-"menu.auto_paste" = "Auto-paste text";
-"menu.auto_paste_sub" = "Pastes automatically when finished";
 "menu.settings" = "Settings";
 "menu.history" = "History";
+"menu.about" = "About SapoWhisper";
 
 /* History */
 "history.title" = "History";
@@ -66,18 +61,12 @@
 "history.delete_confirm" = "Delete transcription?";
 "history.delete_confirm_message" = "This action cannot be undone. Saved audio will also be deleted.";
 "history.no_results" = "No results";
-"history.details" = "Details";
-"history.actions" = "Actions";
-"history.engine" = "Engine";
 "history.language" = "Language";
 "history.duration" = "Duration";
 "history.words" = "Words";
 "history.audio" = "Audio";
 "history.audio_saved" = "Saved";
 "history.audio_none" = "Not saved";
-"history.status" = "Status";
-"history.status_completed" = "Completed";
-"history.status_failed" = "Failed";
 "history.play" = "Play";
 "history.pause" = "Pause";
 "history.filter_all" = "All";
@@ -86,7 +75,6 @@
 "history.filter_local_ai" = "Local AI";
 "history.filter_elevenlabs" = "ElevenLabs";
 "history.filter_other" = "Other engines";
-"history.final_text" = "Final text";
 "history.original_text" = "Original text";
 "history.ai_polish" = "AI polish";
 "history.ai_polish_action" = "Polish with AI";
@@ -101,40 +89,25 @@
 "common.ok" = "OK";
 
 /* Settings */
-"settings.general" = "General";
 "settings.hotkeys" = "Hotkeys";
-"settings.about" = "About";
-"settings.audio" = "Audio";
 "settings.microphone" = "Microphone";
 "settings.microphone_desc" = "Audio input device";
+"settings.pin_primary_mic" = "Primary microphone — keep it always";
+"settings.pin_primary_mic_desc_on" = "This mic stays fixed even when AirPods connect, and recordings start instantly.";
+"settings.pin_primary_mic_desc_off" = "The system may switch inputs when devices connect; Bluetooth mics can take a few seconds to start.";
 "settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";
-"settings.input_language_desc" = "The language you will speak";
 "settings.flux_hint_unsupported" = "Deepgram Flux has no hint for this language — auto-detect will be used.";
 "settings.ai_translation_active" = "AI polish: the final text is translated into %@.";
 "settings.ai_translation_language_pinned" = "The AI translates into %@, but a pinned language makes the engine recognize only that spoken language. Use Auto to dictate in any language.";
 "settings.behavior" = "Behavior";
 "settings.auto_paste" = "Auto-paste";
 "settings.auto_paste_desc" = "Text will be pasted at cursor position";
-"settings.feedback_sounds" = "Feedback Sounds";
-"settings.feedback_sounds_desc" = "Play sounds when recording and transcribing";
 "settings.launch_at_login" = "Launch at Login";
-"settings.launch_at_login_desc" = "Open SapoWhisper automatically when your Mac starts";
-"settings.hotkey_global" = "Global Hotkey";
-"settings.current_hotkey" = "Current Hotkey";
-"settings.current_hotkey_desc" = "Press to record/stop from any app";
-"settings.change_hotkey" = "Change Hotkey";
 "settings.permissions" = "Permissions";
-"settings.permissions_title" = "Accessibility Permissions";
-"settings.permissions_desc" = "For the hotkey to work in all apps, SapoWhisper needs Accessibility permissions.";
-"settings.open_preferences" = "Open System Preferences";
-"settings.view_github" = "View on GitHub";
 
 /* Model Download / Config View */
-"config.title" = "Voice Configuration";
-"config.subtitle" = "SapoWhisper uses Apple Speech, WhisperKit, or Google Cloud to transcribe your audio.";
 "config.tab_settings" = "Settings";
-"config.tab_info" = "Info";
 "config.engine" = "Transcription Engine";
 "config.engine_summary" = "Current Setup";
 "config.engine_summary_engine" = "Engine";
@@ -145,7 +118,6 @@
 "config.engine_summary_ai_active" = "Active";
 "config.engine_summary_ai_translate" = "→ %@";
 "config.whisper_model" = "Whisper Model";
-"config.downloading" = "Downloading";
 "config.space_used" = "Space used: %@";
 "config.whisper_vocabulary_hint" = "Vocabulary hints are not supported by the local Whisper model; your replacements still apply after transcription.";
 "config.models_download_auto" = "Models are downloaded automatically the first time";
@@ -154,18 +126,14 @@
 "config.unload_minutes" = "%@ min";
 "config.hotkey_instruction" = "Click and press your key combination (min 2 keys)";
 "config.app_language" = "App Language";
-"config.app_language_desc" = "User interface language";
 
-/* Info Tab */
-"info.privacy_title" = "Privacy";
-"info.privacy.whisper" = "Audio is processed 100% on your Mac using WhisperKit. Nothing leaves your device.";
-"info.privacy.deepgram" = "Nova-3 or Flux Live cloud transcription. Requires an API key.";
-"info.privacy.local_ai" = "Audio is sent only to the LAN server you configure. Optional API key support is available for protected servers.";
-"info.privacy.elevenlabs" = "Scribe v2 (batch or realtime) cloud transcription. Requires an API key.";
-"info.privacy.ai_polish" = "Optional. Sends the transcript to your configured AI provider (OpenRouter by default) to clean it up without changing your words.";
+/* About window */
 "about.version_copy_help" = "Click to copy the version";
-"info.permissions_title" = "Required Permissions";
-"info.permissions_body" = "• Microphone: To capture your voice\n• Accessibility: For global hotkey support and auto-paste";
+"about.chip_dictation" = "Global dictation";
+"about.chip_ai" = "AI polish";
+"about.chip_private" = "Private by design";
+"about.github" = "GitHub";
+"about.report_issue" = "Report an issue";
 
 /* Languages */
 "lang.spanish" = "Spanish";
@@ -173,17 +141,10 @@
 "lang.auto" = "Auto";
 
 /* Common */
-"status.ready" = "Ready";
-"status.active" = "Active";
-"status.configuring" = "Configuring...";
 "status.error" = "Error: %@";
 "status.no_model" = "Download a model first";
 "status.recording_generic" = "Recording...";
 "config.subtitle_info" = "Speech-to-Text with WhisperKit, Local AI Server, Deepgram, ElevenLabs, and AI Polish";
-"app.description" = "Speech-to-Text local and cloud";
-"config.coming_soon" = "Coming Soon";
-"config.whisper_coming_soon_desc" = "In a future version you will be able to download Whisper models for 100% local transcription without internet connection.";
-"menu.copy_clipboard" = "Copy to clipboard";
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
@@ -193,21 +154,9 @@
 "ai.polish.title" = "AI Polish";
 "ai.polish.enable" = "Improve text with AI";
 "ai.polish.enable_subtitle" = "Polish longer transcripts with AI.";
-"ai.polish.enable_active" = "Active — AI refines longer transcripts.";
-"ai.polish.enable_active_after" = "Active — runs after %@ of speech.";
 "ai.polish.enable_active_always" = "Active — runs on every eligible transcript.";
-"ai.polish.mode" = "Mode";
-"ai.polish.mode_desc" = "Uses %@ to organize and clean the text before copying it.";
 "ai.polish.output_language" = "Output language";
-"ai.polish.output_language_desc" = "Generates the text in %@.";
 "ai.polish.output_language_translation_desc" = "Speak any language — the AI translates the final text into %@.";
-"ai.polish.minimum_duration" = "Run after";
-"ai.polish.minimum_duration.always" = "Always";
-"ai.polish.minimum_duration.20" = "20 seconds";
-"ai.polish.minimum_duration.30" = "30 seconds";
-"ai.polish.minimum_duration_desc.always" = "Runs on any transcript that is not trivially short.";
-"ai.polish.minimum_duration_desc.20" = "Skips polish for recordings under 20 seconds.";
-"ai.polish.minimum_duration_desc.30" = "Skips polish for recordings under 30 seconds.";
 "ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability. If obvious tokens like links or saved terms drift, SapoWhisper asks the AI to retry before applying the result.";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
@@ -238,6 +187,12 @@
 "ai.polish.fidelity_max" = "Fidelity at max";
 "ai.provider.error_not_configured" = "AI polish is not configured (missing provider details).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
+"ai.provider.error_truncated" = "The AI response was cut off before finishing.";
+"error.whisperkit.model_load" = "Error loading model: %@";
+"error.whisperkit.transcription" = "Transcription error: %@";
+"error.whisperkit.not_available" = "WhisperKit is not available. Add the package in Xcode.";
+"error.whisperkit.model_not_loaded" = "No model is loaded";
+"error.whisperkit.in_progress" = "A transcription is already in progress";
 "ai.provider.error_http" = "AI provider error (%@): %@";
 "ai.provider.error_auth_openai" = "OpenAI rejected the API key. If you pasted an OpenRouter key, switch the provider to OpenRouter; if you want OpenAI, paste an OpenAI key.";
 "ai.provider.error_auth_openrouter" = "OpenRouter rejected the API key. Check that the key belongs to OpenRouter.";
@@ -250,12 +205,10 @@
 "ai.provider.error_network_local" = "Could not connect to %@. Check that the server is running and that the base URL ends in /v1.";
 "ai.provider.error_network_hosted" = "Could not connect to %@. Check your internet connection and try again.";
 "ai.provider.error_network_timeout" = "%@ took too long to respond. Check the server or try again.";
-"ai.google_change_json" = "Change JSON";
 "ai.mode.automatic" = "Automatic";
 "ai.mode.ai" = "AI Mode";
 "ai.mode.work" = "Work";
 "ai.mode.translate_english" = "Translate";
-"ai.mode.translate_target" = "Translate to %@";
 "ai.output_language.same" = "Same as audio";
 "ai.status.none" = "Not applied";
 "ai.status.applied" = "Applied";
@@ -284,7 +237,6 @@
 "tab.prompts" = "Prompts";
 "tab.prompts_short" = "Prompts";
 "tab.hotkey" = "Hotkey";
-"tab.about" = "About";
 
 /* Hotkey Settings */
 "settings.hotkey_activation_mode" = "Activation mode";
@@ -362,16 +314,13 @@
 "permissions.card.ready" = "Ready";
 "permissions.activate" = "Enable";
 "permissions.settings.row_hint" = "SapoWhisper takes you to the right panel and refreshes the status when you come back.";
-"settings.permissions_guided_footer" = "You can open the guided onboarding for each permission and watch the live status update when you return from System Settings.";
 "settings.permissions_guided_desc" = "Accessibility is still key for auto-paste and for the smoothest flow from any app. If you want to review all permissions together, open the guided onboarding.";
 "settings.permissions_all_active" = "All permissions active";
 "settings.permissions_all_active_desc" = "Microphone, speech recognition, and accessibility are ready.";
 "settings.permissions_all_active_badge" = "%d active";
-"settings.permissions_all_active_footer" = "Open the details only if you want to review each permission or reopen guided onboarding.";
 "settings.test_microphone" = "Test microphone";
 "settings.gain" = "Gain";
 "settings.listening" = "Listening...";
-"settings.gain_desc" = "Adjust audio amplification (doesn't affect system volume)";
 "settings.record_sample" = "Record sample";
 "settings.stop_sample" = "Stop";
 "settings.sample_original" = "Original";
@@ -394,14 +343,20 @@
 "overlay.ai_polishing" = "Improving with AI...";
 "overlay.completed" = "Done!";
 "overlay.copied" = "Copied";
+"overlay.edit_mode" = "Voice edit";
 "overlay.device_ready" = "Ready to record";
+"overlay.device_connecting" = "Connecting…";
+"overlay.device_fallback" = "Preferred mic unavailable — using this one";
+"overlay.mic_connecting" = "Connecting %@…";
+"overlay.mic_generic" = "microphone";
+"overlay.resume_previous" = "Include previous dictation";
+"overlay.resume_chip" = "+%@";
 
 /* Sound Settings */
 "settings.sounds" = "Sounds";
 "settings.play_sounds" = "Play sounds";
 "settings.play_sounds_desc" = "Feedback sounds when recording and transcribing";
 "settings.sound_volume" = "Sound volume";
-"settings.sound_volume_desc" = "Adjust volume independent of system";
 "settings.test_sound" = "Test sound";
 
 /* Deepgram Engine */
@@ -462,7 +417,6 @@
 "config.add" = "Add";
 "settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections. Keywords are manual; AI only suggests automatic corrections.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
-"settings.vocabulary.empty" = "No results";
 "settings.vocabulary.export" = "Export";
 "settings.vocabulary.import" = "Import";
 "settings.vocabulary.export_panel_message" = "Save your vocabulary as JSON.";
@@ -503,36 +457,19 @@
 "config.delete_term_accessibility" = "Delete term";
 
 /* Prompts & Context */
-"prompts.title" = "Prompts and context";
-"prompts.project_prompts" = "Project or destination prompts";
-"prompts.project_prompts_desc" = "Create editable modes for Codex, Claude Code, Slack, issues, or any dictation workflow.";
-"prompts.add_prompt" = "Add prompt";
-"prompts.name" = "Name";
-"prompts.description" = "Description";
-"prompts.instruction_hint" = "This instruction is sent to the AI together with personal context, vocabulary, and the raw transcript.";
-"prompts.duplicate_prompt" = "Duplicate";
-"prompts.prompt_duplicated" = "Prompt duplicated.";
-"prompts.base_rules_note" = "Every mode inherits the fidelity-first base rules: never paraphrase, never add facts. Your instruction runs on top of them.";
-"prompts.translation_target" = "Translation target";
-"prompts.translation_target_hint" = "Translate the final transcript to %@.";
-"prompts.translation_target_same_hint" = "Keep the final transcript in the audio language.";
-"prompts.translate_target_desc" = "Translates the final transcript to %@.";
-"prompts.translate_same_desc" = "Keeps the final transcript in the audio language.";
+"prompts.personal_context" = "Personal context";
+"prompts.personal_context_desc" = "Tell the AI who you are and which tools you use, so it recognizes your technical terms.";
+"prompts.personal_context_hint" = "Sent with every polish request together with your vocabulary. Keep it short.";
 "prompts.preview_polish" = "Preview polish";
-"prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how this mode cleans it.";
+"prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how the polish cleans it.";
 "prompts.preview_run" = "Polish sample";
 "prompts.preview_raw" = "Raw";
 "prompts.preview_polished" = "Polished";
 "prompts.preview_needs_provider" = "Configure the AI provider above to run a preview.";
 "prompts.preview_sample" = "um so basically I wanted to confirm that tomorrow I will push the fix to the feature login branch and then run npm run build";
 "prompts.save_prompt" = "Save";
-"prompts.delete_prompt" = "Delete";
-"prompts.prompt_saved" = "Prompt saved.";
-"prompts.prompt_deleted" = "Prompt deleted.";
+"prompts.prompt_saved" = "Saved";
 "prompts.unsaved_changes" = "Unsaved changes";
-"prompts.delete_confirm_title" = "Delete “%@”?";
-"prompts.delete_confirm_message" = "This prompt will be removed permanently.";
-"prompts.delete_confirm_action" = "Delete";
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrate settings";
@@ -635,3 +572,12 @@
 "menu.setup_pending_subtitle" = "Your transcription engine is not ready yet";
 "menu.offline_hint" = "Offline — the cloud engine is unavailable. It resumes when you reconnect.";
 "menu.offline_polish_hint" = "AI polish paused offline; local transcription still works.";
+
+/* Overlay actions + audio recovery */
+"overlay.lang_auto" = "Auto";
+"overlay.copied_again" = "Copied again";
+"overlay.copy" = "Copy";
+"overlay.close" = "Close";
+"overlay.cancelled_saved" = "Cancelled — audio saved to History";
+"settings.welcome_tour_open" = "Open";
+"overlay.dock_last" = "Last transcription";

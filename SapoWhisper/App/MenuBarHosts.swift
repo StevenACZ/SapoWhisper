@@ -14,6 +14,7 @@ struct MenuBarPopoverHost: View {
     let openHistory: () -> Void
     let openPermissions: () -> Void
     let openWelcome: () -> Void
+    let openAbout: () -> Void
     let closePopover: () -> Void
 
     var body: some View {
@@ -24,6 +25,7 @@ struct MenuBarPopoverHost: View {
             openHistoryAction: openHistory,
             openPermissionsAction: openPermissions,
             openWelcomeAction: openWelcome,
+            openAboutAction: openAbout,
             closeMenuBarAction: closePopover
         )
         .environment(\.locale, localizationManager.locale)
@@ -50,6 +52,16 @@ struct HistoryWindowHost: View {
 
     var body: some View {
         HistoryView(viewModel: viewModel)
+            .environment(\.locale, localizationManager.locale)
+            .id(localizationManager.language)
+    }
+}
+
+struct AboutWindowHost: View {
+    @ObservedObject private var localizationManager = LocalizationManager.shared
+
+    var body: some View {
+        AboutView()
             .environment(\.locale, localizationManager.locale)
             .id(localizationManager.language)
     }

@@ -41,6 +41,11 @@ extension MenuBarView {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
+    func openAboutWindow() {
+        closeMenuBar()
+        openAboutAction?()
+    }
+
     func closeMenuBar() {
         if let closeMenuBarAction {
             closeMenuBarAction()

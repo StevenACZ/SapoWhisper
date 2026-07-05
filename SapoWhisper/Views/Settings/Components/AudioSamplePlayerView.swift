@@ -47,6 +47,9 @@ struct AudioSamplePlayerView: View {
                         Capsule()
                             .fill(Color.sapoGreen)
                             .frame(width: duration > 0 ? geo.size.width * (currentTime / duration) : 0, height: 3)
+                            // Bridge the 0.1 s timer ticks so the fill glides
+                            // instead of stepping.
+                            .animation(Constants.Animation.progress, value: currentTime)
                     }
                     .frame(height: geo.size.height)
                     .contentShape(Rectangle())

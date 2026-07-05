@@ -46,16 +46,24 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
         TranscriptAIStatus(rawValue: aiStatus) ?? .none
     }
 
-    /// UI-only: resolves against localized mode names and the prompt store.
+    /// UI-only. Modes were removed (single adaptive polish); the map keeps
+    /// old history rows readable.
     @MainActor var aiModeDisplayName: String? {
         guard let aiMode, !aiMode.isEmpty else { return nil }
-        if let mode = TranscriptPolishMode(rawValue: aiMode) {
-            return mode.displayName
+        switch aiMode {
+        case "automatic":
+            return "ai.mode.automatic".localized
+        case "ai":
+            return "ai.mode.ai".localized
+        case "work":
+            return "ai.mode.work".localized
+        case "translate_english":
+            return "ai.mode.translate_english".localized
+        case "voice_edit", "clipboard_edit":
+            return "overlay.edit_mode".localized
+        default:
+            return aiMode
         }
-        if let prompt = PromptContextManager.shared.prompts.first(where: { $0.id == aiMode }) {
-            return prompt.trimmedName
-        }
-        return aiMode
     }
 
     var hasRawTranscript: Bool {

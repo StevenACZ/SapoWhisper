@@ -5,6 +5,7 @@
 //  Shared row components used by the menu bar popover.
 //
 
+import Combine
 import SwiftUI
 
 struct HotkeyBadge: View {
@@ -50,42 +51,33 @@ struct RecordingTimer: View {
     }
 }
 
-struct SettingsRow<Content: View>: View {
-    let icon: String
-    let title: String
-    let subtitle: String?
-    let content: () -> Content
+/// Hosts RecordingTimer behind its own duration subscription so the 10 Hz
+/// ticks re-render only this row instead of feeding the duration through the
+/// whole popover body.
+struct RecordingTimerRow: View {
+    let durationPublisher: AnyPublisher<TimeInterval, Never>
 
-    init(icon: String, title: String, subtitle: String? = nil, @ViewBuilder content: @escaping () -> Content) {
-        self.icon = icon
-        self.title = title
-        self.subtitle = subtitle
-        self.content = content
-    }
+    @State private var duration: TimeInterval = 0
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .frame(width: 20)
+        RecordingTimer(duration: duration)
+            .onReceive(durationPublisher) { duration = $0 }
+    }
+}
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.subheadline)
+/// Live "Recording... Ns" caption behind its own subscription, for the same
+/// reason as RecordingTimerRow: the caption is the only header element that
+/// needs the 10 Hz duration ticks.
+struct RecordingStatusCaption: View {
+    let durationPublisher: AnyPublisher<TimeInterval, Never>
 
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
+    @State private var duration: TimeInterval = 0
 
-            Spacer()
-            content()
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+    var body: some View {
+        Text("menu.recording".localized(String(Int(duration))))
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .onReceive(durationPublisher) { duration = $0 }
     }
 }
 

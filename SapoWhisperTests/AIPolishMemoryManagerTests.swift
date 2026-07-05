@@ -31,26 +31,16 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             now: now
         )
 
-        let context = manager.contextPacket(
-            rawText: "haz deep commit",
-            correctedText: "haz git commit",
-            keyterms: ["git commit", "CLAUDE.md", "REST API"],
-            replacements: [:],
-            now: now
-        )
         let snapshot = manager.snapshot()
         let suggestions = snapshot.suggestions
 
-        XCTAssertEqual(context.detectedMode, .technical)
         XCTAssertTrue(snapshot.terms.isEmpty)
-        XCTAssertFalse(context.promptBlock.contains("Top terms"))
-        XCTAssertFalse(context.promptBlock.contains("Candidate corrections"))
         XCTAssertTrue(suggestions.contains { $0.from == "deep commit" && $0.to == "git commit" })
         XCTAssertTrue(suggestions.contains { $0.from == "cloud md" && $0.to == "CLAUDE.md" })
         XCTAssertTrue(suggestions.contains { $0.from == "ali test" && $0.to == "REST API" })
     }
 
-    func testAcceptedAndRejectedSuggestionsAffectPromptContext() throws {
+    func testAcceptedAndRejectedSuggestionsAffectReplacementPairs() throws {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
 
@@ -71,18 +61,10 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertEqual(manager.acceptSuggestion(id: gitSuggestion.id)?.status, .accepted)
         XCTAssertEqual(manager.rejectSuggestion(id: claudeSuggestion.id)?.status, .rejected)
 
-        let context = manager.contextPacket(
-            rawText: "haz deep comment",
-            correctedText: "haz git commit",
-            keyterms: ["git commit", "Claude Code"],
-            replacements: [:],
-            now: now
-        )
+        let pairs = manager.acceptedReplacementPairs()
 
-        XCTAssertTrue(context.acceptedCorrections.contains { $0.from == "deep comment" })
-        XCTAssertTrue(context.promptBlock.contains("\"deep comment\" -> \"git commit\""))
-        XCTAssertFalse(context.promptBlock.contains("\"cloud code\" -> \"Claude Code\""))
-        XCTAssertFalse(context.promptBlock.contains("Candidate corrections"))
+        XCTAssertEqual(pairs["deep comment"], "git commit")
+        XCTAssertNil(pairs["cloud code"])
     }
 
     func testRecordsDynamicDomainSuggestionsFromAcceptedPolish() {
@@ -104,6 +86,29 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertTrue(suggestions.contains { $0.from == "ditgram" && $0.to == "Deepgram" })
     }
 
+    /// A correctly-spelled fragment of a term ("push", "Code") must never be
+    /// proposed as a correction source: applied as a whole-word replacement it
+    /// would rewrite normal prose (every plain "push" becoming "git push").
+    /// Only distortions of the full term qualify.
+    func testFragmentSourcesNeverBecomeSuggestions() {
+        let manager = makeManager()
+        let now = Date(timeIntervalSince1970: 1_771_430_400)
+
+        manager.record(
+            observedRawText: "haz push a la rama y abre Code para revisar",
+            correctedText: "haz push a la rama y abre Code para revisar",
+            finalText: "Haz git push a la rama y abre Claude Code para revisar.",
+            status: .applied,
+            keyterms: ["git push", "Claude Code"],
+            replacements: [:],
+            now: now
+        )
+
+        let suggestions = manager.snapshot().suggestions
+        XCTAssertFalse(suggestions.contains { $0.from.lowercased() == "push" })
+        XCTAssertFalse(suggestions.contains { $0.from.lowercased() == "code" })
+    }
+
     func testDynamicSuggestionsAvoidAmbiguousShortNearMatches() {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
@@ -121,7 +126,7 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         XCTAssertFalse(manager.snapshot().suggestions.contains { $0.to == "Codex" })
     }
 
-    func testPromptBuilderIncludesAcceptedCorrectionsOnlyInLocalMemoryContext() throws {
+    func testPromptBuilderIncludesAcceptedCorrectionsAsMishearings() throws {
         let manager = makeManager()
         let now = Date(timeIntervalSince1970: 1_771_430_400)
         for index in 0..<30 {
@@ -140,38 +145,21 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         )
         manager.acceptSuggestion(id: suggestion.id)
 
-        let context = manager.contextPacket(
-            rawText: "revisa cloud md",
-            correctedText: "revisa CLAUDE.md",
-            keyterms: ["CLAUDE.md", "git commit"],
-            replacements: [:],
-            now: now
-        )
-        let profile = PromptProfile(
-            id: "automatic",
-            name: "Clean-up",
-            details: "test",
-            instruction: "Keep it literal."
-        )
+        // The processor merges accepted pairs into the replacements dict
+        // before calling the builder — mirror that here.
         let messages = TranscriptPolishPromptBuilder.makeMessages(
             rawText: "revisa cloud md",
-            promptProfile: profile,
             personalContext: "",
             outputLanguage: .sameAsInput,
             keyterms: ["CLAUDE.md", "git commit"],
-            replacements: [:],
-            memoryContext: context
+            replacements: manager.acceptedReplacementPairs()
         )
 
-        XCTAssertLessThan(context.promptBlock.count, 1_800)
-        XCTAssertTrue(messages.system.contains("<local_learning_memory>"))
-        XCTAssertTrue(messages.system.contains("Detected writing mode: technical"))
-        XCTAssertTrue(messages.system.contains("Accepted corrections"))
-        XCTAssertTrue(messages.system.contains("\"deep commit\" -> \"git commit\""))
+        XCTAssertTrue(messages.system.contains("Known mishearings (heard => intended)"))
+        XCTAssertTrue(messages.system.contains("\"deep commit\" => \"git commit\""))
         XCTAssertFalse(messages.system.contains("Candidate corrections"))
         XCTAssertFalse(messages.system.contains("Top terms"))
-        XCTAssertFalse(messages.system.contains("\"cloud md\" -> \"CLAUDE.md\""))
-        XCTAssertTrue(messages.system.contains("right side is the canonical wording"))
+        XCTAssertFalse(messages.system.contains("\"cloud md\" => \"CLAUDE.md\""))
         XCTAssertTrue(messages.user.contains("revisa cloud md"))
         XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptStartDelimiter))
         XCTAssertTrue(messages.user.contains(TranscriptPolishPromptBuilder.transcriptEndDelimiter))
@@ -192,18 +180,9 @@ final class AIPolishMemoryManagerTests: XCTestCase {
         )
 
         let snapshot = manager.snapshot()
-        let context = manager.contextPacket(
-            rawText: "la IA debe revisar agents md",
-            correctedText: "la IA debe revisar AGENTS.md",
-            keyterms: ["AGENTS.md"],
-            replacements: [:],
-            now: now
-        )
 
         XCTAssertTrue(snapshot.terms.isEmpty)
-        XCTAssertFalse(context.promptBlock.contains("Top terms"))
-        XCTAssertFalse(context.promptBlock.contains("AGENTS.md"))
-        XCTAssertFalse(context.promptBlock.contains(".md"))
+        XCTAssertTrue(manager.acceptedReplacementPairs().isEmpty)
     }
 
     func testFailedPolishDoesNotLearnKeytermsOrCorrections() {
@@ -220,13 +199,6 @@ final class AIPolishMemoryManagerTests: XCTestCase {
             now: now
         )
 
-        _ = manager.contextPacket(
-            rawText: "actualizaste legends.md",
-            correctedText: "actualizaste legends.md",
-            keyterms: ["AGENTS.md", "Claude Code"],
-            replacements: [:],
-            now: now
-        )
         let snapshot = manager.snapshot()
 
         XCTAssertTrue(snapshot.terms.isEmpty)

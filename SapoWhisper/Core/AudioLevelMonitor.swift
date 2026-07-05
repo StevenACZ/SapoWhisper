@@ -81,7 +81,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     // the file mid-write). sampleTapFormat is set before the tap starts.
     private nonisolated(unsafe) var sampleFile: AVAudioFile?
     private nonisolated(unsafe) var sampleTapFormat: AVAudioFormat?
-    private nonisolated(unsafe) var sampleStateLock = os_unfair_lock()
+    private nonisolated let sampleStateLock = OSAllocatedUnfairLock()
     private var sampleRecordingTimer: Timer?
     private var sampleStartTime: Date?
 
@@ -112,7 +112,9 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         selectedDeviceUID = deviceUID
 
         do {
-            let inputNode = audioEngine.inputNode
+            // AudioEngineGuard: device switches mid-setup raise uncatchable
+            // NSExceptions inside AVFAudio; route them into this catch.
+            let inputNode = try AudioEngineGuard.inputNode(of: audioEngine, operation: "monitor-input-node")
             let hwFormat = try bindMonitorDevice(to: inputNode)
 
             // Use hardware format to avoid stale cache after device switch
@@ -125,11 +127,12 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
             sampleTapFormat = tapFormat
 
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
+            try AudioEngineGuard.installTap(
+                on: inputNode, bufferSize: 1024, format: tapFormat, operation: "monitor-install-tap"
+            ) { [weak self] buffer, _ in
                 self?.processBuffer(buffer)
             }
-            audioEngine.prepare()
-            try audioEngine.start()
+            try AudioEngineGuard.prepareAndStart(audioEngine, operation: "monitor-engine-start")
             MicrophonePermission.noteAudioInputGranted()
             self.audioEngine = audioEngine
             isMonitoring = true
@@ -338,10 +341,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
         do {
             let file = try AVAudioFile(forWriting: rawURL, settings: tapFormat.settings)
-            os_unfair_lock_lock(&sampleStateLock)
+            sampleStateLock.lock()
             sampleFile = file
             sampleWriteActive = true
-            os_unfair_lock_unlock(&sampleStateLock)
+            sampleStateLock.unlock()
             rawSampleURL = rawURL
             isRecordingSample = true
             sampleStartTime = Date()
@@ -367,10 +370,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     func stopSampleRecording() {
         guard isRecordingSample else { return }
 
-        os_unfair_lock_lock(&sampleStateLock)
+        sampleStateLock.lock()
         sampleWriteActive = false
         sampleFile = nil
-        os_unfair_lock_unlock(&sampleStateLock)
+        sampleStateLock.unlock()
         sampleRecordingTimer?.invalidate()
         sampleRecordingTimer = nil
         isRecordingSample = false
@@ -410,10 +413,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     /// Clears recorded sample files
     func clearSampleRecording() {
-        os_unfair_lock_lock(&sampleStateLock)
+        sampleStateLock.lock()
         sampleWriteActive = false
         sampleFile = nil
-        os_unfair_lock_unlock(&sampleStateLock)
+        sampleStateLock.unlock()
         sampleRecordingTimer?.invalidate()
         sampleRecordingTimer = nil
         isRecordingSample = false
@@ -454,6 +457,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
         let outputFormat = quality.audioFormat(matching: inputFile.processingFormat)
         guard let converter = AVAudioConverter(from: inputFile.processingFormat, to: outputFormat) else { return false }
+        // Mastering-grade sample rate conversion, matching the recorder paths:
+        // the sent sample must sound like what the engines actually receive.
+        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
 
         guard
             let outputFile = try? AVAudioFile(
@@ -527,8 +534,8 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     /// write is acceptable; when no sample is recording the lock is uncontended
     /// and released immediately (correctness over realtime purity for Settings).
     private nonisolated func writeSampleBuffer(_ buffer: AVAudioPCMBuffer) {
-        os_unfair_lock_lock(&sampleStateLock)
-        defer { os_unfair_lock_unlock(&sampleStateLock) }
+        sampleStateLock.lock()
+        defer { sampleStateLock.unlock() }
         guard sampleWriteActive, let sampleFile else { return }
         do {
             if tapGain != 1.0, let gained = bufferWithGain(buffer) {

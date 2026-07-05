@@ -5,57 +5,6 @@
 
 import SwiftUI
 
-/// Titled control tile used by the AI polish behavior pickers. Rendered as a
-/// soft card so the three pickers read as one row of equal options; pair with
-/// `.fixedSize(horizontal: false, vertical: true)` on the containing HStack
-/// so every tile stretches to the tallest one. The optional footer anchors to
-/// the bottom of the tile, filling space tiles with short detail text leave.
-struct AIPolishSettingRow<Control: View, Footer: View>: View {
-    let title: String
-    let detail: String
-    @ViewBuilder let control: () -> Control
-    @ViewBuilder let footer: () -> Footer
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.4)
-
-            control()
-                .foregroundStyle(.primary)
-
-            Text(detail)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 0)
-
-            footer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.secondary.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1)
-        )
-    }
-}
-
-extension AIPolishSettingRow where Footer == EmptyView {
-    init(title: String, detail: String, @ViewBuilder control: @escaping () -> Control) {
-        self.init(title: title, detail: detail, control: control, footer: { EmptyView() })
-    }
-}
-
 /// Compact "fidelity at max" badge; the full explanation lives in its tooltip.
 struct AIPolishFidelityBadge: View {
     var body: some View {

@@ -8,6 +8,20 @@ import Foundation
 import SwiftUI
 import os
 
+/// The settings tabs stay mounted in a ZStack (opacity toggle), so a hidden
+/// tab never receives `onDisappear`. Live components (mic test meter) watch
+/// this instead to release hardware when their tab stops being selected.
+struct SettingsTabIsSelectedKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var settingsTabIsSelected: Bool {
+        get { self[SettingsTabIsSelectedKey.self] }
+        set { self[SettingsTabIsSelectedKey.self] = newValue }
+    }
+}
+
 /// Vista principal de configuración con tabs
 /// Se abre desde el botón "Configuración" en el menú
 struct SettingsView: View {
@@ -91,18 +105,18 @@ struct SettingsView: View {
             tabContent(for: .hotkey) {
                 HotkeySettingsTab()
             }
-            tabContent(for: .about) {
-                AboutSettingsTab()
-            }
         }
+        .animation(Constants.Animation.reveal, value: selectedTab)
     }
 
     @ViewBuilder
     private func tabContent<Content: View>(for tab: SettingsTab, @ViewBuilder content: () -> Content) -> some View {
         content()
             .opacity(selectedTab == tab ? 1 : 0)
+            .scaleEffect(selectedTab == tab ? 1 : 0.98)
             .allowsHitTesting(selectedTab == tab)
             .accessibilityHidden(selectedTab != tab)
+            .environment(\.settingsTabIsSelected, selectedTab == tab)
     }
 
     private func logTabRendered(_ tab: SettingsTab) {
@@ -127,7 +141,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case vocabulary
     case prompts
     case hotkey
-    case about
 
     var id: String { rawValue }
 
@@ -143,8 +156,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             return "tab.prompts".localized
         case .hotkey:
             return "tab.hotkey".localized
-        case .about:
-            return "tab.about".localized
         }
     }
 
