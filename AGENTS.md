@@ -20,7 +20,7 @@ addresses, and machine-specific workflow details.
 - `TranscriptionPipeline`: shared transcribe -> polish -> paste -> persist control flow for stop paths; the ViewModel implements `TranscriptionPipelineHost`.
 - Strict concurrency is `complete` on app and test targets. Keep new code warning-free instead of widening unsafe isolation.
 - Engines: WhisperKit local, Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe batch/realtime, and Local AI Server batch STT through OpenAI-style endpoints.
-- Audio capture: batch WAV capture uses `AudioUploadQuality`; streaming engines keep fixed 16 kHz mono int16 for WebSocket compatibility.
+- Audio capture: one class, `AudioCaptureEngine`, serves every engine. `.batch` records a WAV at `AudioUploadQuality`; `.streaming` keeps fixed 16 kHz mono int16 for WebSocket compatibility and emits PCM chunks (batch is streaming with a nil chunk handler). Do not reintroduce per-path capture classes.
 - History persists through SQLite and local audio storage. Use atomic history persistence helpers; do not split audio save and row save.
 - Vocabulary metrics are read-only from recent history rows; do not add tracking columns for them.
 - Credentials live in Keychain with UserDefaults presence hints. Gate configuration checks on `KeychainStore.hasValue`, not by reading credential values.

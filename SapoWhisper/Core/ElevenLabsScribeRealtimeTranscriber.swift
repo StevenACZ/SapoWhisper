@@ -407,13 +407,13 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     @Published private(set) var recordingDuration: TimeInterval = 0
     @Published private(set) var audioLevel: Float = 0
 
-    private(set) var lastCaptureResult: StreamingAudioCaptureResult?
+    private(set) var lastCaptureResult: AudioCaptureResult?
 
     /// A2: fired on the main thread when the local capture died mid-session
     /// and could not be recovered; the owner aborts preserving the WAV.
     var onCaptureInterrupted: ((String) -> Void)?
 
-    private let capture = StreamingAudioCapture()
+    private let capture = AudioCaptureEngine(mode: .streaming)
     private let audioSender = ElevenLabsRealtimeAudioSender()
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -619,7 +619,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     /// reads the same Keychain API key and already applies vocabulary
     /// corrections and the empty-transcript guard.
     private func transcribeFullCaptureFallback(
-        _ captureResult: StreamingAudioCaptureResult,
+        _ captureResult: AudioCaptureResult,
         reason: String
     ) async throws -> ElevenLabsScribeRealtimeResult {
         let startedAt = CFAbsoluteTimeGetCurrent()
@@ -736,7 +736,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
     /// Stops the local capture and tears down the socket without any network
     /// wait. Used on system sleep; the WAV is preserved for manual retry.
-    func abortPreservingAudio() -> StreamingAudioCaptureResult? {
+    func abortPreservingAudio() -> AudioCaptureResult? {
         let captureResult = capture.stopRecording(logSummary: false)
         cleanupWebSocket()
         lastCaptureResult = nil
@@ -894,10 +894,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             return true
         }
 
-        let diagnostics = capture.makeCaptureDiagnostics(
-            fileURL: capture.recordingURL,
-            referenceTime: CFAbsoluteTimeGetCurrent()
-        )
+        let diagnostics = capture.currentCaptureDiagnostics()
         SapoLog.recording.warning(
             "ElevenLabs realtime attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
         )

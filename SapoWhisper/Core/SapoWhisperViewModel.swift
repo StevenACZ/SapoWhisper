@@ -75,7 +75,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     // MARK: - Managers
 
-    let audioRecorder = AudioRecorder()
+    let audioRecorder = AudioCaptureEngine(mode: .batch)
     let whisperKitTranscriber = WhisperKitTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
@@ -1192,7 +1192,7 @@ class SapoWhisperViewModel: ObservableObject {
         Task { @MainActor in
             // All engines: stop recording, get audio file, transcribe.
             // The finalize runs on the audio queue so the MainActor stays free.
-            let stoppedURL = await audioRecorder.stopRecordingAsync()
+            let stoppedURL = await audioRecorder.stopRecordingAsync()?.audioURL
             captureCoordinator.endActiveCapture()
 
             guard let audioURL = stoppedURL else {
@@ -2152,8 +2152,8 @@ class SapoWhisperViewModel: ObservableObject {
             }
         } else if audioRecorder.isRecording {
             let duration = recordingDuration
-            if let url = audioRecorder.stopRecording(logSummary: false) {
-                interrupted = (url, duration)
+            if let result = audioRecorder.stopRecording(logSummary: false) {
+                interrupted = (result.audioURL, duration)
             }
         } else {
             return (false, false)

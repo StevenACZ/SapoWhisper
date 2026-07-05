@@ -1,5 +1,5 @@
 //
-//  StreamingAudioCapture+Diagnostics.swift
+//  AudioCaptureEngine+Diagnostics.swift
 //  SapoWhisper
 //
 
@@ -7,41 +7,30 @@ import AVFoundation
 import Foundation
 import os
 
-nonisolated extension StreamingAudioCapture {
+nonisolated extension AudioCaptureEngine {
     func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
-        setCaptureActive(false)
         deviceSentinel.end()
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        engine?.reset()
+        if let engine {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            engine.reset()
+        }
+
         audioWriteQueue.sync {}
         audioFile = nil
         audioEngine = nil
         converter = nil
         converterOutputFormat = nil
         chunkHandler = nil
-        if let url = recordingURL ?? self.recordingURL {
-            ActiveRecordingMarker.clear(url)
+
+        let cleanupURL = self.recordingURL ?? recordingURL
+        self.recordingURL = nil
+        if let cleanupURL {
+            ActiveRecordingMarker.clear(cleanupURL)
             if deleteTemporaryFile {
-                deleteRecording(at: url)
+                deleteRecording(at: cleanupURL)
             }
         }
-        self.recordingURL = nil
-    }
-
-    func deleteRecording(at url: URL) {
-        try? FileManager.default.removeItem(at: url)
-    }
-
-    func resetPublishedState() {
-        recordingDuration = 0
-        startTime = nil
-        accumulatedDuration = 0
-        audioLevel = 0
-        smoothedAudioLevel = 0
-        startRecordingTime = 0
-        firstInputBufferLogged = false
-        resetLastInputBufferTime()
     }
 
     func resetCaptureDiagnostics(deviceUID: String) {
@@ -59,9 +48,8 @@ nonisolated extension StreamingAudioCapture {
         captureStateLock.lock()
         let previousInputTime = lastInputBufferTime
         // Publish the timestamp under the lock (read before this point for the
-        // gap). The tap thread used to write it bare in processAudioBuffer; the
-        // health probe / diagnostics read it off another queue, so the write must
-        // go through captureStateLock — same fix as AudioRecorder.
+        // gap). The health probe / diagnostics read it off another queue, so
+        // the write must go through captureStateLock.
         lastInputBufferTime = timestamp
         inputBufferCount += 1
         let count = inputBufferCount
@@ -100,19 +88,6 @@ nonisolated extension StreamingAudioCapture {
         let count = emittedChunkCount
         captureStateLock.unlock()
         return count
-    }
-
-    func setCaptureActive(_ active: Bool) {
-        captureStateLock.lock()
-        captureActive = active
-        captureStateLock.unlock()
-    }
-
-    func isCaptureActiveFlag() -> Bool {
-        captureStateLock.lock()
-        let active = captureActive
-        captureStateLock.unlock()
-        return active
     }
 
     func setCaptureDeviceUID(_ uid: String) {
@@ -172,8 +147,11 @@ nonisolated extension StreamingAudioCapture {
         guard !firstInputBufferLogged else { return }
         firstInputBufferLogged = true
         let elapsedMs = Int((inputTime - startRecordingTime) * 1000)
+        let captureDeviceUID = currentCaptureDeviceUID()
+        let effectiveDevice =
+            captureDeviceUID == AudioDevice.systemDefault.uid ? "system-default" : captureDeviceUID
         SapoLog.recording.info(
-            "Flux first input buffer in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public)"
+            "\(self.mode.logLabel, privacy: .public) first input buffer in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public) sampleRate=\(Int(buffer.format.sampleRate), privacy: .public) input=\(effectiveDevice, privacy: .public)"
         )
     }
 }
