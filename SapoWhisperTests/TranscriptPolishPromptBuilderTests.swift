@@ -48,17 +48,59 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
         XCTAssertTrue(system.contains("\"cloud code\" => \"Claude Code\""))
     }
 
-    /// The single adaptive contract: two-tier filler deletion, sacred numbers,
-    /// and never inventing lists — the rules validated on the 2026-07-02 bench.
+    /// The single adaptive contract: pure-filler deletion, repetition merging,
+    /// dual-use words kept when meaningful, sacred numbers, and never
+    /// inventing lists — the v6 rules validated on the 2026-07-04 bench
+    /// against the production model (gpt-5.4-nano).
     func testAdaptiveContractRulesArePresent() {
         let system = makeSystem()
 
         XCTAssertTrue(system.contains("ALWAYS delete"))
         XCTAssertTrue(system.contains("como se dice"))
-        XCTAssertTrue(system.contains("Delete only when they carry no meaning"))
+        XCTAssertTrue(system.contains("MERGE repetition"))
+        XCTAssertTrue(system.contains("Dual-use words — delete only the filler use"))
         XCTAssertTrue(system.contains("Numbers are sacred"))
         XCTAssertTrue(system.contains("NEVER turn speech into bullet lists"))
         XCTAssertFalse(system.contains("Mode —"))
+    }
+
+    /// "la verdad" and "equis" moved OUT of the always-delete list on the
+    /// 2026-07-04 recalibration: real history shows they usually carry
+    /// meaning ("la verdad es que…", "equis cosas"). The dictionary example
+    /// must also exist in same-language form, not only as ES→EN.
+    func testDualUseRecalibrationAndSameLanguageDictionaryExample() {
+        let system = makeSystem()
+
+        guard let alwaysRule = system.components(separatedBy: "\n").first(where: { $0.contains("ALWAYS delete") })
+        else {
+            return XCTFail("ALWAYS delete rule missing")
+        }
+        XCTAssertFalse(alwaysRule.contains("la verdad"))
+        XCTAssertFalse(alwaysRule.contains("equis"))
+        XCTAssertTrue(system.contains("la verdad es que ya funciona"))
+        XCTAssertTrue(system.contains("Output (same language, dictionary has PeekOCR, BuenMouse, CHANGELOG)"))
+        XCTAssertTrue(system.contains("Output (English, dictionary has PeekOCR, BuenMouse, CHANGELOG)"))
+    }
+
+    /// Chunks 2+ of a long dictation carry the raw tail of their predecessor
+    /// strictly as continuity context.
+    func testPreviousChunkTailRenderedAsContextBlock() {
+        let messages = TranscriptPolishPromptBuilder.makeMessages(
+            rawText: "hola equipo",
+            personalContext: "",
+            outputLanguage: .sameAsInput,
+            keyterms: [],
+            replacements: [:],
+            previousChunkTail: "así terminaba el\nchunk anterior"
+        )
+
+        XCTAssertTrue(messages.system.contains("<transcript_continues_from>"))
+        XCTAssertTrue(messages.system.contains("…así terminaba el chunk anterior"))
+        XCTAssertTrue(messages.system.contains("never repeat it in your output"))
+    }
+
+    func testNoPreviousChunkTailOmitsBlock() {
+        XCTAssertFalse(makeSystem().contains("<transcript_continues_from>"))
     }
 
     func testEmptyVocabularyMarksDictionaryAsSkippable() {

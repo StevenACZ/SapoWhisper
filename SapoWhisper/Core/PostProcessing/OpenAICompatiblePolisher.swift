@@ -96,6 +96,13 @@ enum PolishProviderError: LocalizedError {
 
 /// Thin client for any `chat/completions`-compatible endpoint (OpenRouter,
 /// OpenAI, Groq, Ollama, LM Studio). One request shape, no provider SDKs.
+///
+/// On endpoints that support structured outputs the polish call uses a strict
+/// JSON schema with a leading `filler_scan` field: forcing the model to
+/// enumerate the fillers it found before writing `polished` measurably cuts
+/// leftover fillers on long chunks (benched against gpt-5.4-nano on real
+/// history, 2026-07-04) and removes the preamble/code-fence failure modes.
+/// A rejected structured request falls back to the plain-text contract.
 final class OpenAICompatiblePolisher {
     private let session: URLSession
 
@@ -107,6 +114,40 @@ final class OpenAICompatiblePolisher {
         PolishProviderConfiguration.hasUsableConfiguration()
     }
 
+    /// Extra output budget for the `filler_scan` field and JSON overhead so
+    /// structured mode never eats into the polished text's token budget.
+    private static let structuredOutputTokenHeadroom = 192
+
+    private static let structuredScanNote = """
+
+
+        Return a JSON object. First fill `filler_scan`: list every filler occurrence you found while scanning the whole transcript. Then fill `polished` with the final cleaned text — every filler you listed must be gone from it.
+        """
+
+    private static let structuredResponseFormat: [String: Any] = [
+        "type": "json_schema",
+        "json_schema": [
+            "name": "polish",
+            "strict": true,
+            "schema": [
+                "type": "object",
+                "properties": [
+                    "filler_scan": [
+                        "type": "string",
+                        "description":
+                            "Comma-separated list of every filler occurrence you found in the transcript (e.g. 'eh x3, como se dice x2, digamos x1'). Scan the WHOLE transcript before writing the polished text. Count 'como se dice' every single time, including when it introduces a term ('eso es como se dice el happy path' → 'eso es el happy path') — it is always filler.",
+                    ],
+                    "polished": [
+                        "type": "string",
+                        "description": "The final cleaned text, and nothing else.",
+                    ],
+                ],
+                "required": ["filler_scan", "polished"],
+                "additionalProperties": false,
+            ],
+        ],
+    ]
+
     func polish(
         system: String,
         user: String,
@@ -117,7 +158,12 @@ final class OpenAICompatiblePolisher {
             throw PolishProviderError.notConfigured
         }
         return try await send(
-            system: system, user: user, timeout: timeout, maxTokens: maxTokens, configuration: configuration
+            system: system,
+            user: user,
+            timeout: timeout,
+            maxTokens: maxTokens,
+            configuration: configuration,
+            structured: configuration.endpoint.supportsStructuredOutputs
         )
     }
 
@@ -141,16 +187,18 @@ final class OpenAICompatiblePolisher {
         timeout: TimeInterval,
         maxTokens: Int? = nil,
         configuration: PolishProviderConfiguration,
+        structured: Bool = false,
         includeTemperature: Bool = true,
         allowTruncationRetry: Bool = true
     ) async throws -> PolishResponse {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let request = try makeRequest(
-            system: system,
+            system: structured ? system + Self.structuredScanNote : system,
             user: user,
             timeout: timeout,
-            maxTokens: maxTokens,
+            maxTokens: maxTokens.map { structured ? $0 + Self.structuredOutputTokenHeadroom : $0 },
             configuration: configuration,
+            structured: structured,
             includeTemperature: includeTemperature
         )
 
@@ -158,9 +206,28 @@ final class OpenAICompatiblePolisher {
 
         guard http.statusCode == 200 else {
             let message = Self.parseErrorMessage(from: data)
+            let lowercasedMessage = message.lowercased()
+            // Some models/providers reject json_schema; drop to the plain-text
+            // contract so the polish still ships.
+            if http.statusCode == 400, structured,
+                lowercasedMessage.contains("response_format") || lowercasedMessage.contains("schema")
+                    || lowercasedMessage.contains("json")
+            {
+                SapoLog.ai.info("Polish provider rejected structured output — retrying plain")
+                return try await send(
+                    system: system,
+                    user: user,
+                    timeout: timeout,
+                    maxTokens: maxTokens,
+                    configuration: configuration,
+                    structured: false,
+                    includeTemperature: includeTemperature,
+                    allowTruncationRetry: allowTruncationRetry
+                )
+            }
             // Reasoning-tier models on some providers reject sampling params;
             // retry once without temperature so "paste a key" still works.
-            if http.statusCode == 400, includeTemperature, message.lowercased().contains("temperature") {
+            if http.statusCode == 400, includeTemperature, lowercasedMessage.contains("temperature") {
                 SapoLog.ai.info("Polish provider rejected temperature — retrying without it")
                 return try await send(
                     system: system,
@@ -168,6 +235,7 @@ final class OpenAICompatiblePolisher {
                     timeout: timeout,
                     maxTokens: maxTokens,
                     configuration: configuration,
+                    structured: structured,
                     includeTemperature: false,
                     allowTruncationRetry: allowTruncationRetry
                 )
@@ -181,11 +249,12 @@ final class OpenAICompatiblePolisher {
 
         let body = try JSONDecoder().decode(ChatCompletionsResponse.self, from: data)
         let choice = body.choices?.first
-        let text = (choice?.message?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = (choice?.message?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = structured ? Self.extractStructuredPolished(from: content) : content
         let finishReason = choice?.finishReason ?? "none"
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.ai.info(
-            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
+            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
         )
 
         // A "length" finish means the output was cut mid-sentence; pasting it
@@ -202,6 +271,7 @@ final class OpenAICompatiblePolisher {
                     timeout: timeout,
                     maxTokens: maxTokens * 2,
                     configuration: configuration,
+                    structured: structured,
                     includeTemperature: includeTemperature,
                     allowTruncationRetry: false
                 )
@@ -216,12 +286,25 @@ final class OpenAICompatiblePolisher {
         return PolishResponse(text: text, modelIdentifier: configuration.modelIdentifier)
     }
 
+    /// Pulls `polished` out of a structured response body. A model that
+    /// ignored the schema (some OpenRouter fallback routes) returns plain
+    /// text; keep it as-is and let the sanitizer handle any wrapper noise.
+    private static func extractStructuredPolished(from content: String) -> String {
+        guard let data = content.data(using: .utf8),
+            let payload = try? JSONDecoder().decode(StructuredPolishPayload.self, from: data)
+        else {
+            return content
+        }
+        return payload.polished.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func makeRequest(
         system: String,
         user: String,
         timeout: TimeInterval,
         maxTokens: Int?,
         configuration: PolishProviderConfiguration,
+        structured: Bool,
         includeTemperature: Bool
     ) throws -> URLRequest {
         let url = configuration.baseURL.appendingPathComponent("chat/completions")
@@ -243,8 +326,14 @@ final class OpenAICompatiblePolisher {
                 ["role": "user", "content": user],
             ],
         ]
+        if structured {
+            body["response_format"] = Self.structuredResponseFormat
+        }
         if includeTemperature {
             body["temperature"] = 0.1
+        }
+        if let maxTokens {
+            body["max_tokens"] = maxTokens
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
@@ -279,6 +368,17 @@ private struct ChatChoice: Decodable {
 
 private struct ChatMessage: Decodable {
     let content: String?
+}
+
+/// Content payload of a structured polish response. `filler_scan` is decoded
+/// only to tolerate its presence; it may contain transcript tokens and must
+/// never be logged or persisted.
+private struct StructuredPolishPayload: Decodable {
+    let polished: String
+
+    private enum CodingKeys: String, CodingKey {
+        case polished
+    }
 }
 
 private struct ChatCompletionsErrorEnvelope: Decodable {

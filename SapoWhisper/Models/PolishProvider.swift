@@ -113,6 +113,14 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         self != .custom && self != .localServer
     }
 
+    /// OpenAI and OpenRouter reliably honor `response_format: json_schema`
+    /// (strict). Groq/local/custom servers vary by model, so they keep the
+    /// plain-text contract; the polisher also falls back to plain text if a
+    /// structured request is rejected.
+    nonisolated var supportsStructuredOutputs: Bool {
+        self == .openAI || self == .openRouter
+    }
+
     var apiKeychainKey: KeychainStore.Key {
         switch self {
         case .openRouter:

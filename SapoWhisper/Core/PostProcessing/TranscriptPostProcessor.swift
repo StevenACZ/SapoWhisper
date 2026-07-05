@@ -194,9 +194,14 @@ final class TranscriptPostProcessor {
         // they anchor the fidelity guard alongside the keyterms.
         let vocabularyTerms = keyterms + Array(mergedReplacements.values)
 
-        func polishOne(_ chunk: String) async -> ChunkOutcome {
+        // Chunks 2+ see the raw tail of their predecessor: the tail comes from
+        // the raw text (not the polished result), so hosted chunks still run
+        // in parallel while keeping topic and sentence continuity at seams.
+        func polishOne(_ index: Int, _ chunk: String) async -> ChunkOutcome {
             await polishChunk(
                 chunk,
+                previousChunkTail: index > 0
+                    ? String(chunks[index - 1].suffix(Self.previousChunkTailCharacters)) : "",
                 chunkDuration: chunkDuration,
                 configuration: configuration,
                 personalContext: personalContext,
@@ -212,7 +217,7 @@ final class TranscriptPostProcessor {
         if configuration.usesLocalTimeoutBudget || chunks.count == 1 {
             // Local endpoints serve one request at a time (single GPU, shared
             // prefix cache), so chunks run sequentially.
-            for chunk in chunks {
+            for (index, chunk) in chunks.enumerated() {
                 guard !Task.isCancelled else {
                     outcomes.append(
                         ChunkOutcome(
@@ -222,7 +227,7 @@ final class TranscriptPostProcessor {
                     )
                     continue
                 }
-                outcomes.append(await polishOne(chunk))
+                outcomes.append(await polishOne(index, chunk))
             }
         } else {
             // Hosted endpoints handle concurrent requests fine; running the
@@ -231,7 +236,7 @@ final class TranscriptPostProcessor {
             outcomes = await withTaskGroup(of: (Int, ChunkOutcome).self) { group in
                 for (index, chunk) in chunks.enumerated() {
                     group.addTask {
-                        (index, await polishOne(chunk))
+                        (index, await polishOne(index, chunk))
                     }
                 }
                 var byIndex = [ChunkOutcome?](repeating: nil, count: chunks.count)
@@ -293,6 +298,7 @@ final class TranscriptPostProcessor {
     /// the chunk's raw text so sibling chunks keep their polish.
     private func polishChunk(
         _ chunk: String,
+        previousChunkTail: String,
         chunkDuration: TimeInterval?,
         configuration: PolishProviderConfiguration,
         personalContext: String,
@@ -320,7 +326,8 @@ final class TranscriptPostProcessor {
                     outputLanguage: outputLanguage,
                     keyterms: keyterms,
                     replacements: mergedReplacements,
-                    recentDictations: recentDictations
+                    recentDictations: recentDictations,
+                    previousChunkTail: previousChunkTail
                 )
                 return try await self.polishWithHardGuardRetries(
                     messages: messages,
@@ -376,6 +383,9 @@ final class TranscriptPostProcessor {
     /// A tail chunk shorter than this polishes badly alone (no surrounding
     /// context), so it merges back into its neighbor.
     static let chunkTailMergeCharacters = 300
+    /// Raw tail of the previous chunk passed as continuity context to chunks
+    /// 2+ (benched at 250 chars against gpt-5.4-nano, 2026-07-04).
+    static let previousChunkTailCharacters = 250
 
     /// Splits at sentence enders (. ! ? …) that close a word — a period inside
     /// "24.7", "10.000", ".env", or "CLAUDE.md" is not a boundary — grouping
@@ -490,8 +500,16 @@ final class TranscriptPostProcessor {
                 polished: cleaned,
                 translationExpected: outputLanguage.requiresTranslation
             )
+            let contentDiffVerdict = PolishContentDiffGuard.evaluate(
+                raw: rawText,
+                polished: cleaned,
+                translationExpected: outputLanguage.requiresTranslation
+            )
 
-            guard !fidelityVerdict.isAcceptable || !instructionVerdict.isAcceptable else {
+            guard
+                !fidelityVerdict.isAcceptable || !instructionVerdict.isAcceptable
+                    || !contentDiffVerdict.isAcceptable
+            else {
                 if attempt > 1 {
                     SapoLog.ai.info("AI polish hard guard recovered attempt=\(attempt, privacy: .public)")
                 }
@@ -502,7 +520,7 @@ final class TranscriptPostProcessor {
                 lastInstructionRejected = guarded
             }
             SapoLog.ai.warning(
-                "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(fidelityVerdict.diagnosticSummary, privacy: .public) \(instructionVerdict.diagnosticSummary, privacy: .public)"
+                "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(fidelityVerdict.diagnosticSummary, privacy: .public) \(instructionVerdict.diagnosticSummary, privacy: .public) \(contentDiffVerdict.diagnosticSummary, privacy: .public)"
             )
 
             if attempt >= Self.maximumFidelityAttempts {
@@ -520,7 +538,8 @@ final class TranscriptPostProcessor {
 
             attempt += 1
             let instruction =
-                instructionVerdict.retryInstruction ?? fidelityVerdict.retryInstruction ?? """
+                instructionVerdict.retryInstruction ?? fidelityVerdict.retryInstruction
+                ?? contentDiffVerdict.retryInstruction ?? """
                     A previous polish attempt changed protected tokens. Regenerate the full polished text from the original transcript and preserve URLs, emails, vocabulary terms, and identifiers exactly. Return ONLY the final polished transcript.
                     """
             attemptMessages = TranscriptPolishMessages(
