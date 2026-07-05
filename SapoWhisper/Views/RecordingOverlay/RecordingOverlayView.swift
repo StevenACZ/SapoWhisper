@@ -162,7 +162,8 @@ struct RecordingOverlayView: View {
                 connectingDeviceName: manager.micConnectingName,
                 resumeOffer: manager.resumeOffer,
                 onResumeToggle: { manager.toggleResumeOffer() },
-                onTranslationToggled: { manager.onQuickTranslationToggled?($0) }
+                onTranslationToggled: { manager.onQuickTranslationToggled?($0) },
+                compactModeActive: PolishMode.compactIsActive()
             )
 
         case .paused(let duration):
@@ -174,11 +175,11 @@ struct RecordingOverlayView: View {
         case .transcribing:
             TranscribingPillView()
 
-        case .polishing(let timeoutSeconds):
-            AIPolishingPillView(timeoutSeconds: timeoutSeconds)
+        case .polishing(let timeoutSeconds, let compact):
+            AIPolishingPillView(timeoutSeconds: timeoutSeconds, compact: compact)
 
-        case .copied:
-            CopiedPillView()
+        case .copied(let outcome):
+            CopiedPillView(outcome: outcome)
 
         case .completed(let text):
             CompletedPillView(

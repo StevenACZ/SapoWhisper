@@ -12,6 +12,7 @@ import os
 /// rest, so there are no mode or duration pickers.
 struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishModeValue = PolishMode.default.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
@@ -53,6 +54,10 @@ struct AIPolishSettingsCard: View {
         TranscriptPolishOutputLanguage(rawValue: aiPolishOutputLanguage) ?? .sameAsInput
     }
 
+    private var currentMode: PolishMode {
+        PolishMode(rawValue: aiPolishModeValue) ?? .default
+    }
+
     var body: some View {
         SettingsCard(icon: "sparkles", title: "ai.polish.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
@@ -85,6 +90,11 @@ struct AIPolishSettingsCard: View {
                         .font(.caption)
                         .foregroundStyle(Color.sapoError)
                 }
+
+                Divider()
+
+                modeRow
+                    .opacity(aiPolishEnabled ? 1 : 0.62)
 
                 Divider()
 
@@ -186,6 +196,66 @@ struct AIPolishSettingsCard: View {
         DispatchQueue.main.async {
             isLoadingProviderFields = false
         }
+    }
+
+    // MARK: - Polish mode
+
+    /// Normal cleans the dictation; Compact rewrites it as the shortest
+    /// faithful text. Each option carries its own hover help, and the caption
+    /// always describes the selected mode.
+    private var modeRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("ai.polish.mode".localized)
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 4) {
+                    ForEach(PolishMode.allCases) { mode in
+                        Button {
+                            aiPolishModeValue = mode.rawValue
+                        } label: {
+                            HStack(spacing: 4) {
+                                if mode == .compact {
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                        .font(.system(size: 9, weight: .bold))
+                                }
+                                Text(mode.displayName)
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .foregroundColor(currentMode == mode ? .white : .primary)
+                            .background(
+                                Capsule().fill(
+                                    currentMode == mode
+                                        ? (mode == .compact ? Color.compactMode : Color.aiPolish)
+                                        : Color.primary.opacity(0.08)
+                                )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help(mode.helpText)
+                        .disabled(!aiPolishEnabled)
+                    }
+                }
+            }
+
+            Text(currentMode.helpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if currentMode == .compact {
+                Label("ai.polish.mode_compact_hint".localized, systemImage: "lightbulb")
+                    .font(.caption)
+                    .foregroundStyle(Color.compactMode)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.smooth(duration: 0.22), value: currentMode)
     }
 
     // MARK: - Output language

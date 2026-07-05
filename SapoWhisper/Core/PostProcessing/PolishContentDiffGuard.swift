@@ -39,14 +39,19 @@ enum PolishContentDiffGuard {
 
     /// `translationExpected` skips the content-cluster check — words
     /// legitimately change language — while digit runs must survive any
-    /// translation.
+    /// translation. `compactionExpected` (compact polish mode) also skips the
+    /// cluster check: dropping whole rambling passages is the mode's job, but
+    /// digits must still survive compression.
     static func evaluate(
         raw: String,
         polished: String,
-        translationExpected: Bool = false
+        translationExpected: Bool = false,
+        compactionExpected: Bool = false
     ) -> PolishContentDiffVerdict {
         let lostRuns = lostDigitRuns(raw: raw, polished: polished)
-        let dropped = translationExpected ? [] : droppedClusters(raw: raw, polished: polished)
+        let dropped =
+            translationExpected || compactionExpected
+            ? [] : droppedClusters(raw: raw, polished: polished)
         return PolishContentDiffVerdict(
             isAcceptable: lostRuns.isEmpty && dropped.isEmpty,
             lostDigitRuns: lostRuns.count,

@@ -162,6 +162,12 @@
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad. Si se alteran tokens obvios como links o términos guardados, SapoWhisper le pide a la IA que reintente antes de aplicar el resultado.";
+"ai.polish.mode" = "Estilo de mejora";
+"ai.polish.mode_normal" = "Normal";
+"ai.polish.mode_normal_help" = "Limpia muletillas, repeticiones y errores del dictado manteniendo todas tus frases, tono y orden.";
+"ai.polish.mode_compact" = "Compacto";
+"ai.polish.mode_compact_help" = "Extrae las ideas principales y secundarias con todas tus instrucciones, números y nombres, y reescribe el dictado en el texto más corto posible (típicamente 70–90% menos). Ideal para hablarle a una IA gastando menos tokens.";
+"ai.polish.mode_compact_hint" = "Recomendado para Compacto: OpenRouter · qwen/qwen3.5-flash-02-23 con razonamiento desactivado (el mejor balance fidelidad/velocidad/precio en pruebas reales).";
 "ai.polish.reasoning" = "Razonamiento del modelo";
 "ai.polish.reasoning_desc" = "Cuánto puede pensar un modelo razonador antes de escribir. Apagado es lo más rápido — pulir un dictado no necesita cadena de pensamiento. Los modelos sin razonamiento lo ignoran.";
 "ai.polish.reasoning_automatic" = "Auto (según el modelo)";
@@ -352,6 +358,9 @@
 "overlay.paused" = "En pausa";
 "overlay.transcribing" = "Transcribiendo...";
 "overlay.ai_polishing" = "Mejorando con IA...";
+"overlay.ai_compacting" = "Compactando...";
+"overlay.compact_chip" = "Compacto";
+"overlay.copied_raw" = "IA no aplicada — texto crudo";
 "overlay.completed" = "¡Listo!";
 "overlay.copied" = "Copiado";
 "overlay.edit_mode" = "Edición por voz";

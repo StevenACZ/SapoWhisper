@@ -19,7 +19,7 @@ protocol TranscriptionPipelineHost: AnyObject {
     func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64)
 
     func postProcessTranscript(_ rawText: String, source: String, duration: TimeInterval?) async -> TranscriptAIResult
-    func deliverTranscription(_ finalText: String, perf: DictationPerfTimeline?)
+    func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?)
     func presentTranscriptionFailure(_ failure: TranscriptionFailure)
 
     func persistCompletedDictation(
@@ -109,7 +109,7 @@ final class TranscriptionPipeline {
             guard ensureSessionCurrent(request, audioURL: output.audioURL) else { return }
 
             host.clearActiveTranscriptionSession()
-            host.deliverTranscription(aiResult.finalText, perf: request.perf)
+            host.deliverTranscription(aiResult, perf: request.perf)
             host.persistCompletedDictation(
                 audioURL: output.audioURL,
                 engine: request.engine,

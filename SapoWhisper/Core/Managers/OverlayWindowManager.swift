@@ -433,12 +433,15 @@ class OverlayWindowManager: ObservableObject {
     /// Compact "Copied" toast after a dictation lands: the text is already at
     /// the caret (auto-paste) and on the clipboard, so the overlay only
     /// confirms and collapses; the dock chip reopens the full transcript.
-    func showCopied(text: String, autoDismissAfter delay: TimeInterval = 2.0) {
+    func showCopied(text: String, outcome: CopiedOutcome = .standard, autoDismissAfter delay: TimeInterval = 2.0) {
         lastCompletedText = text
-        updateState(.copied)
+        updateState(.copied(outcome: outcome))
 
+        // The raw-fallback notice carries real information ("nothing was
+        // polished") — hold it longer than the plain confirmation.
+        let dismissAfter = outcome == .aiSkipped ? max(delay, 3.5) : delay
         Task {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
             if case .copied = self.state {
                 self.hide()
             }

@@ -1287,7 +1287,7 @@ class SapoWhisperViewModel: ObservableObject {
                     duration: duration
                 )
 
-                deliverTranscription(aiResult.finalText, perf: nil)
+                deliverTranscription(aiResult, perf: nil)
 
                 // Update history entry in place; the retry may run on a
                 // different engine than the failed attempt.
@@ -1752,7 +1752,8 @@ class SapoWhisperViewModel: ObservableObject {
                             forText: rawText,
                             duration: duration,
                             usesLocalBudget: usesLocalPolishBudget
-                        )
+                        ),
+                        compact: PolishMode.current() == .compact
                     )
                 )
             }
@@ -1809,7 +1810,8 @@ class SapoWhisperViewModel: ObservableObject {
                     forText: rawText,
                     duration: duration,
                     usesLocalBudget: usesLocalPolishBudget
-                )
+                ),
+                compact: PolishMode.current() == .compact
             )
         )
 
@@ -2119,12 +2121,16 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
 
     /// Final delivery of a successful dictation: clipboard, overlay, paste,
     /// idle state, and the success sound. Shared by the pipeline and retry.
-    func deliverTranscription(_ finalText: String, perf: DictationPerfTimeline?) {
+    /// The AI result shapes the toast: compact shows the trim ratio, and a
+    /// polish that shipped raw (guard rejection / provider failure) says so
+    /// with the error sound instead of silently passing as polished.
+    func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?) {
+        let finalText = aiResult.finalText
         dictationGeneration &+= 1
         lastCompletedHistoryId = nil
         lastTranscription = finalText
         PasteManager.copyToClipboard(finalText)
-        overlayManager.showCopied(text: finalText)
+        overlayManager.showCopied(text: finalText, outcome: Self.copiedOutcome(for: aiResult))
 
         if autoPasteEnabled {
             PasteManager.simulatePaste { perf?.markPasteDone() }
@@ -2134,7 +2140,20 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
 
         appState = .idle
         if playSoundEnabled {
-            SoundManager.shared.play(.success)
+            SoundManager.shared.play(Self.copiedOutcome(for: aiResult) == .aiSkipped ? .error : .success)
+        }
+    }
+
+    private static func copiedOutcome(for aiResult: TranscriptAIResult) -> CopiedOutcome {
+        switch aiResult.status {
+        case .applied where aiResult.mode == PolishMode.compact.historyModeIdentifier:
+            let rawCount = max(aiResult.rawText.count, 1)
+            let reduced = max(0, rawCount - aiResult.finalText.count)
+            return .compacted(percentReduced: Int((Double(reduced) / Double(rawCount) * 100).rounded()))
+        case .failed, .rejectedFidelity:
+            return .aiSkipped
+        case .applied, .none, .skippedShort, .skippedDuration:
+            return .standard
         }
     }
 

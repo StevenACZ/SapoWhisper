@@ -162,6 +162,12 @@
 "ai.polish.output_language" = "Output language";
 "ai.polish.output_language_translation_desc" = "Speak any language — the AI translates the final text into %@.";
 "ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability. If obvious tokens like links or saved terms drift, SapoWhisper asks the AI to retry before applying the result.";
+"ai.polish.mode" = "Polish style";
+"ai.polish.mode_normal" = "Normal";
+"ai.polish.mode_normal_help" = "Cleans fillers, repetition, and dictation mistakes while keeping every sentence, your tone, and your order.";
+"ai.polish.mode_compact" = "Compact";
+"ai.polish.mode_compact_help" = "Extracts the main and secondary ideas with all your instructions, numbers, and names, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter). Ideal for talking to an AI while spending fewer tokens.";
+"ai.polish.mode_compact_hint" = "Recommended for Compact: OpenRouter · qwen/qwen3.5-flash-02-23 with reasoning off (best fidelity/speed/price balance in real-history tests).";
 "ai.polish.reasoning" = "Model reasoning";
 "ai.polish.reasoning_desc" = "How much a reasoning model may think before writing. Off is fastest — a polish needs no chain of thought. Models without reasoning support ignore this.";
 "ai.polish.reasoning_automatic" = "Auto (model default)";
@@ -352,6 +358,9 @@
 "overlay.paused" = "Paused";
 "overlay.transcribing" = "Transcribing...";
 "overlay.ai_polishing" = "Improving with AI...";
+"overlay.ai_compacting" = "Compacting...";
+"overlay.compact_chip" = "Compact";
+"overlay.copied_raw" = "AI not applied — raw text";
 "overlay.completed" = "Done!";
 "overlay.copied" = "Copied";
 "overlay.edit_mode" = "Voice edit";

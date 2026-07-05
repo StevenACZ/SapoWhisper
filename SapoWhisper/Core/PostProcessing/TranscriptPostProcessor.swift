@@ -173,6 +173,7 @@ final class TranscriptPostProcessor {
         }
 
         let outputLanguage = Self.configuredOutputLanguage(defaults: defaults)
+        let polishMode = PolishMode.current(defaults: defaults)
 
         // Accepted correction suggestions are canonical pairs too: they join
         // the user's replacements so polish and translation preserve them.
@@ -185,8 +186,11 @@ final class TranscriptPostProcessor {
         // Long transcripts overwhelm small-model attention: past ~2k chars the
         // model either under-cleans or starts summarizing (benchmarked on real
         // history against Qwen 3.5 4B/9B, 2026-07-02). Sentence-boundary chunks
-        // restore medium-length quality with zero content loss.
-        let chunks = Self.splitIntoChunks(transcript)
+        // restore medium-length quality with zero content loss. Compact mode
+        // is the exception: merging repeated ideas needs the global view, so
+        // the whole transcript goes in one call (benched to 8.8k chars,
+        // 2026-07-05).
+        let chunks = polishMode == .compact ? [transcript] : Self.splitIntoChunks(transcript)
         let chunkDuration = duration.map { $0 / Double(chunks.count) }
         if chunks.count > 1 {
             SapoLog.ai.info(
@@ -208,6 +212,7 @@ final class TranscriptPostProcessor {
                 chunk,
                 previousChunkTail: index > 0
                     ? String(chunks[index - 1].suffix(Self.previousChunkTailCharacters)) : "",
+                mode: polishMode,
                 chunkDuration: chunkDuration,
                 configuration: configuration,
                 personalContext: personalContext,
@@ -278,7 +283,7 @@ final class TranscriptPostProcessor {
                 finalText: finalText,
                 status: .applied,
                 model: model,
-                mode: "automatic",
+                mode: polishMode.historyModeIdentifier,
                 error: salvagedCount > 0 ? "\(salvagedCount)/\(outcomes.count) chunks kept raw" : nil
             )
         }
@@ -288,7 +293,7 @@ final class TranscriptPostProcessor {
                 finalText: transcript,
                 status: .rejectedFidelity,
                 model: model,
-                mode: "automatic",
+                mode: polishMode.historyModeIdentifier,
                 error: "AI polish answered or performed the transcript instead of polishing it"
             )
         }
@@ -297,7 +302,7 @@ final class TranscriptPostProcessor {
             finalText: transcript,
             status: .failed,
             model: model,
-            mode: "automatic",
+            mode: polishMode.historyModeIdentifier,
             error: outcomes.compactMap(\.failureDetail).first ?? "AI polish failed"
         )
     }
@@ -308,6 +313,7 @@ final class TranscriptPostProcessor {
     private func polishChunk(
         _ chunk: String,
         previousChunkTail: String,
+        mode: PolishMode,
         chunkDuration: TimeInterval?,
         configuration: PolishProviderConfiguration,
         personalContext: String,
@@ -329,18 +335,29 @@ final class TranscriptPostProcessor {
 
         do {
             let guarded = try await withTimeout(seconds: budget) {
-                let messages = TranscriptPolishPromptBuilder.makeMessages(
-                    rawText: chunk,
-                    personalContext: personalContext,
-                    outputLanguage: outputLanguage,
-                    keyterms: keyterms,
-                    replacements: mergedReplacements,
-                    recentDictations: recentDictations,
-                    previousChunkTail: previousChunkTail
-                )
+                let messages =
+                    mode == .compact
+                    ? TranscriptPolishPromptBuilder.makeCompactMessages(
+                        rawText: chunk,
+                        personalContext: personalContext,
+                        outputLanguage: outputLanguage,
+                        keyterms: keyterms,
+                        replacements: mergedReplacements,
+                        recentDictations: recentDictations
+                    )
+                    : TranscriptPolishPromptBuilder.makeMessages(
+                        rawText: chunk,
+                        personalContext: personalContext,
+                        outputLanguage: outputLanguage,
+                        keyterms: keyterms,
+                        replacements: mergedReplacements,
+                        recentDictations: recentDictations,
+                        previousChunkTail: previousChunkTail
+                    )
                 return try await self.polishWithHardGuardRetries(
                     messages: messages,
                     rawText: chunk,
+                    mode: mode,
                     vocabularyTerms: vocabularyTerms,
                     outputLanguage: outputLanguage,
                     timeout: TimeInterval(budget),
@@ -476,6 +493,7 @@ final class TranscriptPostProcessor {
     private func polishWithHardGuardRetries(
         messages: TranscriptPolishMessages,
         rawText: String,
+        mode: PolishMode,
         vocabularyTerms: [String],
         outputLanguage: TranscriptPolishOutputLanguage,
         timeout: TimeInterval,
@@ -490,6 +508,7 @@ final class TranscriptPostProcessor {
             let response = try await polishVerifyingTranslation(
                 messages: attemptMessages,
                 rawText: rawText,
+                mode: mode,
                 outputLanguage: outputLanguage,
                 timeout: timeout,
                 maxTokens: maxTokens,
@@ -515,12 +534,18 @@ final class TranscriptPostProcessor {
             let contentDiffVerdict = PolishContentDiffGuard.evaluate(
                 raw: rawText,
                 polished: cleaned,
-                translationExpected: outputLanguage.requiresTranslation
+                translationExpected: outputLanguage.requiresTranslation,
+                compactionExpected: mode == .compact
             )
+            // Compact collapse (bench 2026-07-05): a model can fill the scan
+            // and leave the compact text empty. Near-empty output on a long
+            // transcript is never a valid compaction — retry it.
+            let compactCollapsed =
+                mode == .compact && cleaned.count < max(20, rawText.count / 100)
 
             guard
                 !fidelityVerdict.isAcceptable || !instructionVerdict.isAcceptable
-                    || !contentDiffVerdict.isAcceptable
+                    || !contentDiffVerdict.isAcceptable || compactCollapsed
             else {
                 if attempt > 1 {
                     SapoLog.ai.info("AI polish hard guard recovered attempt=\(attempt, privacy: .public)")
@@ -549,11 +574,17 @@ final class TranscriptPostProcessor {
             }
 
             attempt += 1
+            if compactCollapsed {
+                SapoLog.ai.warning("AI compact polish near-empty output — retrying")
+            }
             let instruction =
                 instructionVerdict.retryInstruction ?? fidelityVerdict.retryInstruction
-                ?? contentDiffVerdict.retryInstruction ?? """
+                ?? contentDiffVerdict.retryInstruction
+                ?? (compactCollapsed
+                    ? "A previous attempt returned an empty or near-empty compact text. Write the FULL compact text: every instruction, decision, question, number, name, path and URL from the transcript must appear in it."
+                    : """
                     A previous polish attempt changed protected tokens. Regenerate the full polished text from the original transcript and preserve URLs, emails, vocabulary terms, and identifiers exactly. Return ONLY the final polished transcript.
-                    """
+                    """)
             attemptMessages = TranscriptPolishMessages(
                 system: messages.system + "\n\n\(instruction)",
                 user: messages.user
@@ -569,14 +600,16 @@ final class TranscriptPostProcessor {
     private func polishVerifyingTranslation(
         messages: TranscriptPolishMessages,
         rawText: String,
+        mode: PolishMode,
         outputLanguage: TranscriptPolishOutputLanguage,
         timeout: TimeInterval,
         maxTokens: Int,
         configuration: PolishProviderConfiguration
     ) async throws -> PolishResponse {
+        let contract: OpenAICompatiblePolisher.StructuredContract = mode == .compact ? .compact : .polish
         let first = try await polisher.polish(
             system: messages.system, user: messages.user, timeout: timeout, maxTokens: maxTokens,
-            configuration: configuration
+            configuration: configuration, contract: contract
         )
         let firstCleaned = PolishOutputSanitizer.clean(first.text, rawText: rawText)
 
@@ -612,7 +645,7 @@ final class TranscriptPostProcessor {
         do {
             let second = try await polisher.polish(
                 system: retrySystem, user: messages.user, timeout: timeout, maxTokens: maxTokens,
-                configuration: configuration
+                configuration: configuration, contract: contract
             )
             let secondCleaned = PolishOutputSanitizer.clean(second.text, rawText: rawText)
             let retryDetected = Self.dominantLanguageCode(of: secondCleaned) ?? "unknown"

@@ -7,6 +7,18 @@
 
 import Foundation
 
+/// What the post-dictation "Copied" toast should confirm beyond the copy
+/// itself: a compact polish shows how much was trimmed, and a polish that
+/// shipped the raw transcript (guard rejection / provider failure) says so
+/// instead of silently looking like a normal dictation.
+enum CopiedOutcome: Equatable {
+    case standard
+    /// Compact mode applied; percent of the raw text removed (e.g. 82).
+    case compacted(percentReduced: Int)
+    /// AI polish was enabled but the pasted text is the raw transcript.
+    case aiSkipped
+}
+
 /// Estados posibles de la ventana de overlay durante grabacion/transcripcion
 enum RecordingOverlayState: Equatable {
     case hidden
@@ -16,11 +28,11 @@ enum RecordingOverlayState: Equatable {
     case recording(duration: TimeInterval)
     case paused(duration: TimeInterval)
     case transcribing
-    case polishing(timeoutSeconds: UInt64)
+    case polishing(timeoutSeconds: UInt64, compact: Bool)
     /// Compact post-dictation toast: the text already landed at the caret
     /// (auto-paste) and on the clipboard, so the overlay only confirms and
     /// collapses; the dock chip reopens the full transcript on demand.
-    case copied
+    case copied(outcome: CopiedOutcome)
     case completed(text: String)
     case cancelled
     case error(message: String, isRetryable: Bool)
@@ -61,10 +73,10 @@ enum RecordingOverlayState: Equatable {
             return "overlay.paused".localized
         case .transcribing:
             return "overlay.transcribing".localized
-        case .polishing:
-            return "overlay.ai_polishing".localized
-        case .copied:
-            return "overlay.copied".localized
+        case .polishing(_, let compact):
+            return (compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized
+        case .copied(let outcome):
+            return (outcome == .aiSkipped ? "overlay.copied_raw" : "overlay.copied").localized
         case .completed:
             return "overlay.completed".localized
         case .cancelled:

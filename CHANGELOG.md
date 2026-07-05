@@ -6,6 +6,16 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Compact polish mode** — Settings → AI Polish gains a "Polish style" selector: Normal (today's clean-up) or Compact. Compact extracts the main and secondary ideas plus every instruction, number, name, path, and URL, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter) — ideal for dictating to AI assistants while spending far fewer tokens. Works in any language, runs the whole transcript in one pass so repeated ideas merge globally, and was validated case-by-case against real dictation history on six cloud models and three local MLX models before shipping; the selector recommends the best-performing model.
+- **Compact mode is visible end to end** — while compact is active the recording pill shows a purple meter and a "Compact" chip, the polish phase says "Compacting…", and the post-dictation toast shows how much the text shrank (e.g. −82%).
+- **Raw-fallback notice** — when AI polish is enabled but the pasted text shipped raw (provider failure or the fidelity guard rejected the output), the post-dictation toast now says "AI not applied — raw text" with a warning tone and the error sound, instead of silently looking like a normal dictation.
+
+### Changed
+
+- The polish content guard is mode-aware: in Compact it allows whole rambling passages to be dropped (that is the mode's job) while still protecting every number, and a near-empty compact result is retried automatically before anything ships.
+
 ## [2.7.0] - 2026-07-05
 
 ### Added
