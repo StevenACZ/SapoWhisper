@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-04
+
 ### Added
 
 - **Translation chip while recording** — the recording pill shows a translation chip that toggles the output language between "same as audio" and the last explicit target. The selection is sticky across dictations.
@@ -16,8 +18,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Recent dictation context** — AI polish now sees the user's last few dictations (30-minute window, tightly capped) as disambiguation context, so consecutive short dictations keep their shared topic and terminology instead of losing the thread between recordings.
 - **Settings tab transitions** — switching tabs in Settings now cross-fades with a subtle scale instead of flipping instantly.
 - **Personal context editor** — Settings → Prompts now edits the personal context block (who you are, which tools you use) that disambiguates technical terms in every polish request.
-
-### Changed
+- **Official large-v3 turbo WhisperKit model** — the v20240930 turbo variant joins the model list and becomes the default: large-v3 class accuracy at a fraction of the transcription time.
+- **Reduce Motion support** — the app respects the system Reduce Motion setting across overlay bounces, glows, the connecting wave, and Settings reveals; they collapse to instant changes.
+- **Structured polish outputs** — on OpenAI/OpenRouter the polish request uses a strict JSON schema with a leading filler scan, so the model enumerates filler before writing the final text and cleaning stays consistent; providers without schema support fall back to plain text automatically.
 
 - **Simplified menu bar popover** — the menu now holds the essentials: status header, record/stop, History, Settings, About, and Quit. The pickers, last transcription, auto-paste toggle, and welcome tour left the menu; auto-paste and the tour live in Settings → General, and language switching stays in the overlay chip and Settings.
 - **One adaptive polish mode** — the AI mode picker (Clean-up, AI Assistant, Work Message, Translate) and custom prompt profiles were removed. A single benchmarked prompt now deletes filler and duplicated ideas in any language, keeps every instruction, name, and number, respects the user's tone, and shapes the output as the same kind of text the user spoke — no configuration needed. Validated case-by-case against real dictation history on local Qwen 3.5 4B and 9B before shipping.
@@ -31,6 +34,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Unified audio capture engine** — the twin batch recorder and streaming capture classes merged into one `AudioCaptureEngine` (batch is streaming with no chunk emission), removing ~800 duplicated lines. Both paths now share the strongest machinery: setup cancellation guards, mid-capture device recovery, and input-gap diagnostics. Streaming engines also inherit the graceful fallback — if the selected microphone disappears right at start, capture falls back to the system default instead of failing the take.
 - **Unified dictation flow across engines** — the batch recorder, Deepgram Flux, and ElevenLabs realtime dictations now share one start/stop/pause/abort/binding implementation behind a common streaming-session protocol, removing the three hand-kept per-engine copies in the ViewModel. Per-engine behavior (diagnostics labels, history names, failure languages) is preserved through a small per-engine context.
 - **Less UI work while recording and loading models** — the 10 Hz recording timer no longer invalidates every window observing the app state (Settings tabs included); only the visible timer rows subscribe to it. The WhisperKit transcriber and the vocabulary, AI-correction-memory, and personal-context stores migrated to Swift Observation, so views re-render only for the properties they actually read — model-download progress ticks stop repainting unrelated UI.
+- **Sharper polish prompt (v6)** — dual-use words ("la verdad", "equis", "tal") are only deleted when they carry no meaning, repeated ideas are merged instead of kept twice, and every chunk after the first sees the tail of the previous raw text, so multi-chunk dictations keep their thread. Every prompt change is benchmarked case-by-case against the production model before shipping.
+- **Failed polish chunks degrade gracefully** — a chunk that fails, times out, or gets blocked falls back to its own raw text instead of discarding every polished sibling, and hosted providers polish chunks concurrently, so long dictations finish faster and never ship fully raw because one chunk hiccupped.
+- **WhisperKit detects the spoken language automatically** — auto mode no longer prefills English, so Spanish dictations on local models come out in Spanish without touching settings.
+- **Whisper-family engines record at 16 kHz directly** — on the STT-oriented quality profiles, capture for WhisperKit and the Local AI Server writes 16 kHz straight from the tap instead of resampling twice; the high-fidelity profiles keep the user's choice for re-transcribable history WAVs.
+- **More responsive recording meter** — the equalizer now tracks voice onsets almost immediately (fast-attack smoothing through the whole level chain) while keeping a readable decay, so words and sharp sounds land on the meter the moment they happen.
+- **Cleaner capture gain** — the gain slider applies to the float signal with a soft-knee limiter before conversion, so high gain compresses peaks smoothly instead of hard-clipping into distortion.
 
 ### Fixed
 
@@ -45,6 +54,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Result pill no longer clips at the bottom of the screen** — under the overlay's ideal-size layout, the transcript reported one line of height and then drew all its real lines, pushing the chips and the dock chip past the fixed window edge (short dictations looked bottom-stuck and cut off). The pill now measures the text for real: short results hug their exact height (single lines keep the pill slim), and only genuinely long transcripts (~10+ lines) use the fixed scrollable viewport — so the pill never shows a mostly empty scroll area either.
 - **Translation no longer fails on longer dictations** — the answered-the-request guard compared per-language request cues between the raw text and the polished text, so a faithful Spanish-to-English translation that turned "genera" into "generates" (matching no English cue) was rejected on every retry and the untranslated text shipped. With an explicit output language the cross-language cue check is skipped; direct answer/refusal detection still applies.
 - **Clicking outside the result now closes it reliably** — the outside-click check trusted AppKit hit-testing over the overlay's fixed 640×440 surface, which reported hits on the transparent margin, so only clicks far outside the whole surface collapsed the pill. The collapse now compares against the measured frame of the visible pill and chip, so clicking anywhere else — right next to the pill included — closes it immediately.
+- **Recording no longer burns CPU and memory on the meter** — the equalizer animated bar heights through the pill's shared drawing layer, so every level tick re-rendered the whole pill on the CPU (text included) for the entire recording and resident memory grew by roughly a megabyte per second of recording without returning. The bars now animate as transforms in an isolated layer; recording-time CPU dropped and memory stays flat between dictations.
+- **Deleting a WhisperKit model no longer touches its siblings** — model folders were matched by plain substring, so removing large-v3 could also delete the turbo and dated variants and show phantom download states; folders now match their exact variant.
+- **Everyday speech no longer exhausts polish retries** — the anti-hallucination guard flagged phrasing the user actually said (only phrasing the model introduced counts now), so normal dictations stopped burning the retry budget and shipping raw; `max_tokens` also reaches the request body now, and a truncated response retries once with a doubled cap instead of pasting cut text.
+- **WhisperKit error messages localized** — the remaining hardcoded engine errors now show in the app language (EN/ES).
 
 ## [2.5.1] - 2026-06-27
 
