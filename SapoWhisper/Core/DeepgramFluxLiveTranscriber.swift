@@ -90,7 +90,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         }
     }
 
-    func stop() async throws -> DeepgramFluxLiveResult {
+    func stop() async throws -> StreamingDictationResult {
         guard isStreaming || isStopping else {
             throw TranscriptionFailure(
                 kind: .unknown, engine: Self.engineName,
@@ -163,7 +163,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
         }
 
-        return DeepgramFluxLiveResult(
+        return StreamingDictationResult(
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
@@ -332,7 +332,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private func transcribeFullCaptureFallback(
         _ captureResult: AudioCaptureResult,
         reason: String
-    ) async throws -> DeepgramFluxLiveResult {
+    ) async throws -> StreamingDictationResult {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await DeepgramBatchTranscriber().transcribe(
             audioURL: captureResult.audioURL,
@@ -351,7 +351,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             "Flux fallback transcript completed reason=\(reason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms characters=\(cleanedTranscript.count, privacy: .public) bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
         )
 
-        return DeepgramFluxLiveResult(
+        return StreamingDictationResult(
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
@@ -512,4 +512,12 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 extension DeepgramFluxLiveTranscriber: TranscriptionEngineSession {
     var isReady: Bool { isConfigured }
     var isBusy: Bool { isStreaming || isStopping }
+}
+
+// MARK: - StreamingDictationSession
+
+extension DeepgramFluxLiveTranscriber: StreamingDictationSession {
+    var isStreamingPublisher: AnyPublisher<Bool, Never> { $isStreaming.eraseToAnyPublisher() }
+    var recordingDurationPublisher: AnyPublisher<TimeInterval, Never> { $recordingDuration.eraseToAnyPublisher() }
+    var audioLevelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
 }

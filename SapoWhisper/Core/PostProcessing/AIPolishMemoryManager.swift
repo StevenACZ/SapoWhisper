@@ -3,8 +3,8 @@
 //  SapoWhisper
 //
 
-import Combine
 import Foundation
+import Observation
 
 enum AIPolishSuggestionStatus: String, Codable, Equatable {
     case pending
@@ -23,11 +23,12 @@ struct AIPolishCorrectionSuggestion: Codable, Equatable, Identifiable {
     var lastSeen: Date
 }
 
-final class AIPolishMemoryManager: ObservableObject {
+@Observable
+final class AIPolishMemoryManager {
     static let shared = AIPolishMemoryManager()
 
-    @Published private(set) var pendingSuggestions: [AIPolishCorrectionSuggestion] = []
-    @Published private(set) var acceptedSuggestions: [AIPolishCorrectionSuggestion] = []
+    private(set) var pendingSuggestions: [AIPolishCorrectionSuggestion] = []
+    private(set) var acceptedSuggestions: [AIPolishCorrectionSuggestion] = []
 
     private let fileURL: URL
     private let lock = NSRecursiveLock()

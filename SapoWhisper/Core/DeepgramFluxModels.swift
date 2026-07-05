@@ -5,14 +5,6 @@
 
 import Foundation
 
-struct DeepgramFluxLiveResult {
-    let transcript: String
-    let audioURL: URL
-    let duration: TimeInterval
-    let language: String
-    let diagnostics: RecordingCaptureDiagnostics
-}
-
 struct DeepgramFluxTranscriptAccumulator {
     private var turns: [Int: String] = [:]
     private var fragments: [String] = []

@@ -3,8 +3,8 @@
 //  SapoWhisper
 //
 
-import Combine
 import Foundation
+import Observation
 
 struct PersonalPromptContext: Codable, Equatable {
     var details: String
@@ -20,10 +20,11 @@ struct PersonalPromptContext: Codable, Equatable {
 /// who they are and which tools they use, so the model disambiguates technical
 /// terms. Mode/prompt profiles were removed — the polish prompt is a single
 /// adaptive contract (see TranscriptPolishPromptBuilder).
-final class PromptContextManager: ObservableObject {
+@Observable
+final class PromptContextManager {
     static let shared = PromptContextManager()
 
-    @Published private(set) var personalContext: PersonalPromptContext = .empty
+    private(set) var personalContext: PersonalPromptContext = .empty
 
     private let fileURL: URL
 

@@ -4,6 +4,7 @@
 //
 //
 
+import Combine
 import SwiftUI
 
 /// Vista principal del popup del menu bar - Diseño limpio y moderno
@@ -117,9 +118,17 @@ struct MenuBarView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
 
-                Text(viewModel.statusText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if case .recording = viewModel.appState {
+                    // The live seconds counter subscribes on its own so the
+                    // 10 Hz ticks never invalidate the whole popover.
+                    RecordingStatusCaption(
+                        durationPublisher: viewModel.recordingDurationSubject.eraseToAnyPublisher()
+                    )
+                } else {
+                    Text(viewModel.statusText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
 
             Spacer()
@@ -135,7 +144,7 @@ struct MenuBarView: View {
     private var recordingSection: some View {
         VStack(spacing: 16) {
             if case .recording = viewModel.appState {
-                RecordingTimerRow(durationPublisher: viewModel.$recordingDuration)
+                RecordingTimerRow(durationPublisher: viewModel.recordingDurationSubject.eraseToAnyPublisher())
                     .transition(.scale.combined(with: .opacity))
             }
 

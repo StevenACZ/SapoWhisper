@@ -9,7 +9,7 @@ import SwiftUI
 /// user's tools and terms) plus the live polish preview. Prompt profiles were
 /// removed — the polish prompt is a single adaptive contract.
 struct PromptContextSettingsCard: View {
-    @ObservedObject private var promptManager = PromptContextManager.shared
+    private var promptManager = PromptContextManager.shared
 
     @State private var draftContext = ""
     @State private var isPreviewPolishExpanded = false

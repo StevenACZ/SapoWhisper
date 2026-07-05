@@ -9,14 +9,6 @@ import Combine
 import Foundation
 import os
 
-struct ElevenLabsScribeRealtimeResult {
-    let transcript: String
-    let audioURL: URL
-    let duration: TimeInterval
-    let language: String
-    let diagnostics: RecordingCaptureDiagnostics
-}
-
 struct ElevenLabsRealtimeAudioSenderStats {
     let enqueuedChunks: Int
     let sentMessages: Int
@@ -486,7 +478,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
     }
 
-    func stop() async throws -> ElevenLabsScribeRealtimeResult {
+    func stop() async throws -> StreamingDictationResult {
         guard isStreaming || isStopping else {
             throw TranscriptionFailure(
                 kind: .unknown, engine: Self.engineName,
@@ -603,7 +595,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             return try await transcribeFullCaptureFallback(captureResult, reason: "empty_realtime_transcript")
         }
 
-        return ElevenLabsScribeRealtimeResult(
+        return StreamingDictationResult(
             transcript: cleanedTranscript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
@@ -621,7 +613,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private func transcribeFullCaptureFallback(
         _ captureResult: AudioCaptureResult,
         reason: String
-    ) async throws -> ElevenLabsScribeRealtimeResult {
+    ) async throws -> StreamingDictationResult {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await ElevenLabsScribeTranscriber().transcribe(
             audioURL: captureResult.audioURL,
@@ -633,7 +625,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             "ElevenLabs realtime fallback transcript completed reason=\(reason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(transcript.count, privacy: .public) bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
         )
 
-        return ElevenLabsScribeRealtimeResult(
+        return StreamingDictationResult(
             transcript: transcript,
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
@@ -1209,4 +1201,12 @@ nonisolated extension ElevenLabsRealtimeAudioSenderStats {
 extension ElevenLabsScribeRealtimeTranscriber: TranscriptionEngineSession {
     var isReady: Bool { isConfigured }
     var isBusy: Bool { isStreaming || isStopping }
+}
+
+// MARK: - StreamingDictationSession
+
+extension ElevenLabsScribeRealtimeTranscriber: StreamingDictationSession {
+    var isStreamingPublisher: AnyPublisher<Bool, Never> { $isStreaming.eraseToAnyPublisher() }
+    var recordingDurationPublisher: AnyPublisher<TimeInterval, Never> { $recordingDuration.eraseToAnyPublisher() }
+    var audioLevelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
 }

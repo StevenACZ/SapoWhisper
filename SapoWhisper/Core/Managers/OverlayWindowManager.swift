@@ -359,11 +359,23 @@ class OverlayWindowManager: ObservableObject {
         }
 
         updateDisplayedSecond(for: newState)
+        let leavingDock = state.stateCategory == "docked"
+
+        // A fresh presentation (leaving the dock, or appearing from hidden)
+        // opens on the screen the user is working on — the mouse screen. The
+        // permanent dock chip keeps the window visible forever, so show()
+        // (the historical repositioning point) no longer runs between
+        // dictations and the overlay would otherwise stay stuck on the
+        // launch screen in multi-monitor setups. Mid-flow pill swaps never
+        // reposition: the session stays where it started.
+        if leavingDock || !state.isVisible {
+            overlayWindow?.applyConfiguredPosition(verbose: true)
+        }
+
         if state.isVisible {
             // Leaving the dock plays the bouncier droplet detach; swaps
             // between active pills morph with the calmer spring while the
             // pill view sequences the content crossfade on top of it.
-            let leavingDock = state.stateCategory == "docked"
             withAnimation(motionAnimation(leavingDock ? Constants.Animation.droplet : Constants.Animation.morph)) {
                 state = newState
             }
@@ -373,8 +385,13 @@ class OverlayWindowManager: ObservableObject {
             state = newState
         }
         syncOutsideClickMonitors()
-        if case .recording = newState {
-        } else {
+        switch newState {
+        case .recording, .paused:
+            // Pause is part of the same dictation session: clearing the
+            // resume-previous chip here made a pause/resume lose the offer
+            // for the rest of the session.
+            break
+        default:
             showsNoSpeechHint = false
             setMicConnecting(deviceName: nil)
             resumeOffer = nil

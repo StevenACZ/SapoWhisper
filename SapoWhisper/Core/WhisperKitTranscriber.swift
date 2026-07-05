@@ -15,8 +15,13 @@ import os
 #endif
 
 /// Maneja la transcripcion de audio usando WhisperKit (100% local)
+///
+/// `@Observable` (not ObservableObject): SwiftUI tracks the individual
+/// properties each view reads, so the 60 Hz `loadingProgress` ticks during a
+/// model download re-render only the progress UI instead of every observer.
 @MainActor
-class WhisperKitTranscriber: ObservableObject {
+@Observable
+class WhisperKitTranscriber {
 
     // MARK: - Loading State Enum
 
@@ -29,18 +34,36 @@ class WhisperKitTranscriber: ObservableObject {
         case error = "Error"
     }
 
-    // MARK: - Published Properties
+    // MARK: - Observable State
 
-    @Published var isModelLoaded = false
-    @Published var isLoading = false
-    @Published var isTranscribing = false
-    @Published var progress: Double = 0
-    @Published var loadingProgress: Double = 0
-    @Published var loadingMessage: String = ""
-    @Published var loadingState: LoadingState = .idle
-    @Published var lastTranscription: String = ""
-    @Published var errorMessage: String?
-    @Published var currentModelName: String?
+    /// Logic hooks for the owning ViewModel — replace the old Combine sinks;
+    /// fired on the main actor only when the flag actually flips.
+    @ObservationIgnored var onLoadingChanged: ((Bool) -> Void)?
+    @ObservationIgnored var onModelLoadedChanged: ((Bool) -> Void)?
+    @ObservationIgnored var onTranscribingChanged: ((Bool) -> Void)?
+
+    var isModelLoaded = false {
+        didSet {
+            if oldValue != isModelLoaded { onModelLoadedChanged?(isModelLoaded) }
+        }
+    }
+    var isLoading = false {
+        didSet {
+            if oldValue != isLoading { onLoadingChanged?(isLoading) }
+        }
+    }
+    var isTranscribing = false {
+        didSet {
+            if oldValue != isTranscribing { onTranscribingChanged?(isTranscribing) }
+        }
+    }
+    var progress: Double = 0
+    var loadingProgress: Double = 0
+    var loadingMessage: String = ""
+    var loadingState: LoadingState = .idle
+    var lastTranscription: String = ""
+    var errorMessage: String?
+    var currentModelName: String?
 
     // MARK: - Private Properties
 
@@ -509,7 +532,7 @@ class WhisperKitTranscriber: ObservableObject {
     // MARK: - Model Storage Management
 
     /// Set de modelos que sabemos que estan descargados
-    @Published var downloadedModels: Set<WhisperKitModel> = []
+    var downloadedModels: Set<WhisperKitModel> = []
 
     /// Obtiene los posibles directorios donde WhisperKit guarda los modelos
     private var possibleModelDirectories: [URL] {

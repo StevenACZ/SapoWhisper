@@ -21,6 +21,8 @@ addresses, and machine-specific workflow details.
 - Strict concurrency is `complete` on app and test targets. Keep new code warning-free instead of widening unsafe isolation.
 - Engines: WhisperKit local, Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe batch/realtime, and Local AI Server batch STT through OpenAI-style endpoints.
 - Audio capture: one class, `AudioCaptureEngine`, serves every engine. `.batch` records a WAV at `AudioUploadQuality`; `.streaming` keeps fixed 16 kHz mono int16 for WebSocket compatibility and emits PCM chunks (batch is streaming with a nil chunk handler). Do not reintroduce per-path capture classes.
+- Streaming engines (Flux, ElevenLabs realtime) are driven through `StreamingDictationSession` plus one shared start/stop/pause/abort/binding path in the ViewModel (`StreamingEngineContext`). Do not add per-engine copies of that flow.
+- Observation: `WhisperKitTranscriber` and the vocabulary/AI-memory/prompt-context managers are `@Observable` — views read them directly; do not reintroduce `@Published` mirrors in the ViewModel. High-frequency tickers (recording duration) stay OFF ObservableObject state: publish through a subject and subscribe locally in the one view that renders them.
 - History persists through SQLite and local audio storage. Use atomic history persistence helpers; do not split audio save and row save.
 - Vocabulary metrics are read-only from recent history rows; do not add tracking columns for them.
 - Credentials live in Keychain with UserDefaults presence hints. Gate configuration checks on `KeychainStore.hasValue`, not by reading credential values.

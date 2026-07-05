@@ -76,7 +76,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func bindStatusImage() {
-        Publishers.CombineLatest(viewModel.$appState, viewModel.$isLoadingWhisperKit)
+        Publishers.CombineLatest(viewModel.$appState, viewModel.isLoadingWhisperKitSubject)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
                 self?.statusItem?.button?.image = self?.currentStatusImage()
@@ -95,7 +95,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             .map { _ in "last-transcription" }
             .eraseToAnyPublisher()
 
-        let loadingRefreshes = viewModel.$isLoadingWhisperKit
+        let loadingRefreshes = viewModel.isLoadingWhisperKitSubject
             .dropFirst()
             .removeDuplicates()
             .map { _ in "whisper-loading" }

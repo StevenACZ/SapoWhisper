@@ -3,8 +3,8 @@
 //  SapoWhisper
 //
 
-import Combine
 import Foundation
+import Observation
 
 /// ElevenLabs keyterm biasing limits, shared by the request builders and the
 /// vocabulary UI so over-limit terms are surfaced instead of silently dropped.
@@ -24,12 +24,13 @@ enum DeepgramKeytermLimits {
 
 /// Manages keyterms and replacements for speech recognition engines.
 /// Persists to ~/Library/Application Support/SapoWhisper/vocabulary.json
-class VocabularyManager: ObservableObject {
+@Observable
+class VocabularyManager {
 
     static let shared = VocabularyManager()
 
-    @Published private(set) var keyterms: [String] = []
-    @Published private(set) var replacements: [String: String] = [:]
+    private(set) var keyterms: [String] = []
+    private(set) var replacements: [String: String] = [:]
 
     private let fileURL: URL
 
