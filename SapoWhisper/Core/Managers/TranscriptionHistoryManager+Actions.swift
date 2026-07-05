@@ -26,6 +26,7 @@ nonisolated extension TranscriptionHistoryManager {
 
         // Pinned rows survive the DELETE: sweep only audio that lost its row.
         audioStorage.deleteOrphanedAudioFiles(referencedPaths: referencedAudioPaths())
+        deleteOrphanedPolishVersions()
 
         notifyDidChange()
         return deleted
@@ -48,6 +49,7 @@ nonisolated extension TranscriptionHistoryManager {
         for path in paths {
             audioStorage.deleteAudioFile(at: path)
         }
+        deleteOrphanedPolishVersions()
 
         notifyDidChange()
         return deleted
@@ -102,6 +104,7 @@ nonisolated extension TranscriptionHistoryManager {
         if let audioPath {
             audioStorage.deleteAudioFile(at: audioPath)
         }
+        deleteOrphanedPolishVersions()
 
         notifyDidChange()
     }

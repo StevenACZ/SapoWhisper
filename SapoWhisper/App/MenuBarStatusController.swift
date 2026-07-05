@@ -29,6 +29,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var popoverOpenCount = 0
     private var settingsOpenCount = 0
     private var historyOpenCount = 0
+    private var historyFocusObserver: NSObjectProtocol?
 
     init(viewModel: SapoWhisperViewModel) {
         self.viewModel = viewModel
@@ -39,6 +40,15 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         setupStatusItem()
         setupPopover()
         bindStatusImage()
+        // The overlay result pill lives outside any SwiftUI window scene, so
+        // it requests the History window through this notification.
+        historyFocusObserver = NotificationCenter.default.addObserver(
+            forName: HistoryFocusRequest.notification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.openHistoryWindow()
+            }
+        }
     }
 
     func closePopover() {

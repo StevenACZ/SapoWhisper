@@ -143,6 +143,63 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
     }
 }
 
+/// Global reasoning budget for the polish request. Reasoning models (Mercury,
+/// GPT-5.x, Grok, Qwen thinking) spend output tokens thinking before they
+/// write, which both slows the polish and eats the `max_tokens` cap sized for
+/// the polished text. Off is the default: a dictation polish needs no chain of
+/// thought. Providers that reject the parameter get one retry without it, and
+/// non-reasoning models ignore it, so any effort value is safe on any model.
+enum PolishReasoningEffort: String, CaseIterable, Identifiable {
+    case automatic
+    case off
+    case low
+    case medium
+    case high
+
+    static let `default`: PolishReasoningEffort = .off
+
+    var id: String { rawValue }
+
+    /// Wire value shared by OpenRouter (`reasoning.effort`) and the plain
+    /// OpenAI/Groq `reasoning_effort` parameter. `automatic` sends nothing.
+    var wireValue: String? {
+        switch self {
+        case .automatic:
+            return nil
+        case .off:
+            return "none"
+        case .low, .medium, .high:
+            return rawValue
+        }
+    }
+
+    /// True when the request explicitly asks the model to reason, so the
+    /// output token cap must reserve room for the reasoning tokens.
+    var reservesReasoningTokens: Bool {
+        self == .low || self == .medium || self == .high
+    }
+
+    nonisolated var displayName: String {
+        "ai.polish.reasoning_\(rawValue)".localized
+    }
+
+    static func current(defaults: UserDefaults = .standard) -> PolishReasoningEffort {
+        let stored = defaults.string(forKey: Constants.StorageKeys.aiPolishReasoningEffort)
+        return stored.flatMap(PolishReasoningEffort.init(rawValue:)) ?? .default
+    }
+}
+
+/// One selectable "polish with…" target: an endpoint the user has configured
+/// plus one of the models they have used on it. Drives the model menu on the
+/// history "Improve with AI" button.
+nonisolated struct PolishModelOption: Identifiable, Hashable {
+    let endpoint: PolishEndpoint
+    let model: String
+
+    var id: String { "\(endpoint.rawValue)/\(model)" }
+    var displayName: String { "\(endpoint.displayName) · \(model)" }
+}
+
 /// Resolved polish provider settings (endpoint + model + key), read from
 /// UserDefaults and the Keychain at request time.
 struct PolishProviderConfiguration {
@@ -161,8 +218,23 @@ struct PolishProviderConfiguration {
     }
 
     static func current(defaults: UserDefaults = .standard) -> PolishProviderConfiguration? {
-        let endpoint = currentEndpoint(defaults: defaults)
-        let model = storedModel(for: endpoint, defaults: defaults)
+        configuration(
+            for: currentEndpoint(defaults: defaults),
+            model: nil,
+            defaults: defaults
+        )
+    }
+
+    /// Resolves a usable configuration for an explicit endpoint/model pair —
+    /// the history "polish with…" menu re-polishes with any configured
+    /// provider without touching the global selection. `model: nil` uses the
+    /// endpoint's stored model (the `current()` path).
+    static func configuration(
+        for endpoint: PolishEndpoint,
+        model: String?,
+        defaults: UserDefaults = .standard
+    ) -> PolishProviderConfiguration? {
+        let model = model ?? storedModel(for: endpoint, defaults: defaults)
         let baseURLInput = storedBaseURLInput(for: endpoint, defaults: defaults)
         let apiKey = apiKey(for: endpoint, allowLegacyFallback: true)
 
@@ -230,6 +302,53 @@ struct PolishProviderConfiguration {
             return false
         }
         return scheme == "https" || scheme == "http"
+    }
+
+    // MARK: - Recent models
+
+    /// Models that actually completed a polish on each endpoint, newest first.
+    /// Recorded at use time (never while typing in Settings, which would fill
+    /// the list with partial names); the history "polish with…" menu reads it
+    /// so a model stays offered after the user moves the endpoint to another.
+    static func recentModels(for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) -> [String] {
+        defaults.stringArray(forKey: recentModelsStorageKey(for: endpoint)) ?? []
+    }
+
+    static func recordRecentModel(_ model: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var models = recentModels(for: endpoint, defaults: defaults).filter { $0 != trimmed }
+        models.insert(trimmed, at: 0)
+        defaults.set(Array(models.prefix(8)), forKey: recentModelsStorageKey(for: endpoint))
+    }
+
+    /// Every endpoint/model pair the user can re-polish with right now: each
+    /// configured endpoint contributes its current model plus its recents.
+    /// Gates on key-presence hints only — building a menu must never trigger
+    /// a keychain consent prompt.
+    static func availableModelOptions(defaults: UserDefaults = .standard) -> [PolishModelOption] {
+        let current = currentEndpoint(defaults: defaults)
+        let endpoints = [current] + PolishEndpoint.allCases.filter { $0 != current }
+
+        var options: [PolishModelOption] = []
+        for endpoint in endpoints {
+            let stored = storedModel(for: endpoint, defaults: defaults)
+            let apiKey = hasAPIKeyHint(for: endpoint) ? "stored" : ""
+            let baseURL = storedBaseURLInput(for: endpoint, defaults: defaults)
+            var models: [String] = []
+            for model in [stored] + recentModels(for: endpoint, defaults: defaults) {
+                guard !models.contains(model),
+                    isUsable(endpoint: endpoint, model: model, customBaseURL: baseURL, apiKey: apiKey)
+                else { continue }
+                models.append(model)
+            }
+            options.append(contentsOf: models.map { PolishModelOption(endpoint: endpoint, model: $0) })
+        }
+        return options
+    }
+
+    private static func recentModelsStorageKey(for endpoint: PolishEndpoint) -> String {
+        Constants.StorageKeys.aiPolishEndpointRecentModelsPrefix + endpoint.rawValue
     }
 
     static func storedModel(

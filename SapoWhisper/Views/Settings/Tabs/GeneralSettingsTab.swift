@@ -102,12 +102,15 @@ struct GeneralSettingsTab: View {
 
                 if selectedMicrophone != AudioDevice.systemDefault.uid {
                     VStack(alignment: .leading, spacing: 4) {
-                        Toggle(isOn: $pinPrimaryMicrophone) {
+                        HStack(spacing: 12) {
                             Text("settings.pin_primary_mic".localized)
                                 .font(.caption)
+                            Spacer()
+                            Toggle("", isOn: $pinPrimaryMicrophone)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
                         }
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
                         .onChange(of: pinPrimaryMicrophone) { _, pinned in
                             if pinned {
                                 syncSystemDefaultInput(uid: selectedMicrophone)

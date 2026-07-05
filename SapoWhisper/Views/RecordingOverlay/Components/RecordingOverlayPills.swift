@@ -231,6 +231,7 @@ struct CopiedPillView: View {
 struct CompletedPillView: View {
     let text: String
     var onRepolish: (() -> Void)?
+    var onOpenHistory: (() -> Void)?
     var onClose: (() -> Void)?
 
     @State private var iconScale: CGFloat = 0
@@ -315,6 +316,20 @@ struct CompletedPillView: View {
                 // the new target without re-pasting.
                 if aiPolishEnabled, !text.isEmpty {
                     OverlayTranslationChip(onTranslationToggled: { _ in onRepolish?() })
+                }
+
+                if onOpenHistory != nil {
+                    Button {
+                        onOpenHistory?()
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .frame(width: 22, height: 22)
+                            .background(Circle().fill(Color.primary.opacity(0.1)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("overlay.open_history".localized)
                 }
 
                 Button {

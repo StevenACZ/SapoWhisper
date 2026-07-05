@@ -15,6 +15,8 @@ struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishReasoningEffort) private var reasoningEffortValue =
+        PolishReasoningEffort.default.rawValue
     @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
 
     @State private var model = PolishEndpoint.default.defaultModel
@@ -87,6 +89,11 @@ struct AIPolishSettingsCard: View {
                 Divider()
 
                 outputLanguageRow
+                    .opacity(aiPolishEnabled ? 1 : 0.62)
+
+                Divider()
+
+                reasoningEffortRow
                     .opacity(aiPolishEnabled ? 1 : 0.62)
             }
             .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
@@ -218,6 +225,37 @@ struct AIPolishSettingsCard: View {
             }
         }
         .animation(.smooth(duration: 0.22), value: currentOutputLanguage.requiresTranslation)
+    }
+
+    // MARK: - Reasoning effort
+
+    /// Global reasoning budget applied to every polish request regardless of
+    /// endpoint or model. Off by default: reasoning models otherwise think
+    /// away the output token budget (and the latency budget) of a polish.
+    private var reasoningEffortRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("ai.polish.reasoning".localized)
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer(minLength: 8)
+
+                Picker("ai.polish.reasoning".localized, selection: $reasoningEffortValue) {
+                    ForEach(PolishReasoningEffort.allCases) { effort in
+                        Text(effort.displayName).tag(effort.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!aiPolishEnabled)
+            }
+
+            Text("ai.polish.reasoning_desc".localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

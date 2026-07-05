@@ -167,9 +167,39 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
 
         guard stepStatement(stmt, operation: "save") else { return -1 }
         let rowID = sqlite3_last_insert_rowid(db)
+        if aiStatus == TranscriptAIStatus.applied.rawValue {
+            insertPolishVersion(entryId: rowID, model: aiModel, text: text)
+        }
         enforceAudioStorageLimit()
         notifyDidChange()
         return rowID
+    }
+
+    /// Appends one row to the entry's polish trail. Called from every write
+    /// path that lands an applied polish, so the trail and the ai_* columns
+    /// can never drift apart.
+    func insertPolishVersion(entryId: Int64, model: String?, text: String) {
+        guard !text.isEmpty else { return }
+        let sql = "INSERT INTO polish_versions (entry_id, created_at, model, text) VALUES (?, ?, ?, ?);"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_int64(stmt, 1, entryId)
+        bindText(stmt, 2, Self.isoFormatter.string(from: Date()))
+        if let model {
+            bindText(stmt, 3, model)
+        } else {
+            sqlite3_bind_null(stmt, 3)
+        }
+        bindText(stmt, 4, text)
+        stepStatement(stmt, operation: "insertPolishVersion")
+    }
+
+    /// polish_versions has no FK cascade (the table arrived after the schema
+    /// settled); every delete path sweeps rows whose entry is gone.
+    func deleteOrphanedPolishVersions() {
+        let sql = "DELETE FROM polish_versions WHERE entry_id NOT IN (SELECT id FROM transcriptions);"
+        sqlite3_exec(db, sql, nil, nil, nil)
     }
 
     /// Atomically copies the source audio into history storage and inserts its
@@ -292,6 +322,9 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         }
         sqlite3_bind_int64(stmt, 7, id)
         stepStatement(stmt, operation: "updateAIProcessing")
+        if aiStatus == .applied {
+            insertPolishVersion(entryId: id, model: aiModel, text: finalText)
+        }
         notifyDidChange()
     }
 
@@ -343,6 +376,9 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         }
         sqlite3_bind_int64(stmt, 8, id)
         stepStatement(stmt, operation: "updateRetranscription")
+        if aiStatus == .applied {
+            insertPolishVersion(entryId: id, model: aiModel, text: finalText)
+        }
         notifyDidChange()
     }
 }

@@ -66,6 +66,10 @@ class OverlayWindowManager: ObservableObject {
     /// last dictation with the freshly stored language default.
     var onRepolishRequested: (() -> Void)?
 
+    /// Result pill "open in History": jump straight to the entry that was
+    /// just dictated.
+    var onOpenHistoryRequested: (() -> Void)?
+
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?

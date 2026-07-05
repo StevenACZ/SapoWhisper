@@ -184,6 +184,7 @@ struct RecordingOverlayView: View {
             CompletedPillView(
                 text: text,
                 onRepolish: { manager.onRepolishRequested?() },
+                onOpenHistory: { manager.onOpenHistoryRequested?() },
                 onClose: { manager.hide() }
             )
             .onHover { hovering in

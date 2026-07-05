@@ -117,10 +117,28 @@ struct HistoryView: View {
             } message: {
                 Text(actionNoticeMessage)
             }
-            .onAppear(perform: { loadEntries() })
+            .onAppear {
+                loadEntries()
+                consumePendingFocusRequest()
+            }
             .onDisappear {
                 searchTask?.cancel()
             }
+            // Window already open when the overlay pill asks for an entry.
+            .onReceive(NotificationCenter.default.publisher(for: HistoryFocusRequest.notification)) { _ in
+                loadEntries()
+                consumePendingFocusRequest()
+            }
+    }
+
+    /// Selects the entry the overlay pill asked for (set before this window
+    /// was opened or brought forward).
+    private func consumePendingFocusRequest() {
+        guard let entryId = HistoryFocusRequest.pendingEntryID else { return }
+        HistoryFocusRequest.pendingEntryID = nil
+        if let match = entries.first(where: { $0.id == entryId }) {
+            selectedEntry = match
+        }
     }
 
     private var layout: some View {
@@ -150,7 +168,7 @@ struct HistoryView: View {
                         entry: entry,
                         isAIPolishing: aiPolishingEntryID == entry.id,
                         onCopy: { PasteManager.copyToClipboard(entry.text) },
-                        onPolishWithAI: { handlePolishWithAI(entry) },
+                        onPolishWithAI: { option in handlePolishWithAI(entry, option: option) },
                         onRetranscribe: { handleRetranscribe(entry) },
                         onDownloadAudio: { handleDownloadAudio(entry) },
                         onTogglePin: { handleTogglePin(entry) },
@@ -308,11 +326,11 @@ struct HistoryView: View {
         }
     }
 
-    private func handlePolishWithAI(_ entry: HistoryEntry) {
+    private func handlePolishWithAI(_ entry: HistoryEntry, option: PolishModelOption?) {
         aiPolishingEntryID = entry.id
 
         Task {
-            let result = await viewModel.polishHistoryEntry(entry)
+            let result = await viewModel.polishHistoryEntry(entry, with: option)
 
             await MainActor.run {
                 aiPolishingEntryID = nil

@@ -11,7 +11,9 @@ struct HistoryDetailView: View {
     let entry: HistoryEntry
     var isAIPolishing = false
     let onCopy: () -> Void
-    let onPolishWithAI: () -> Void
+    /// nil polishes with the globally configured provider; an option polishes
+    /// with that explicit endpoint/model (menu selection).
+    let onPolishWithAI: (PolishModelOption?) -> Void
     let onRetranscribe: () -> Void
     let onDownloadAudio: () -> Void
     let onTogglePin: () -> Void
@@ -19,6 +21,7 @@ struct HistoryDetailView: View {
 
     @State private var showCopied = false
     @State private var copiedResetTask: Task<Void, Never>?
+    @State private var polishVersions: [PolishVersion] = []
     @Environment(\.locale) private var locale
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
 
@@ -48,6 +51,7 @@ struct HistoryDetailView: View {
                 } else {
                     transcriptSection
                     originalTextSection
+                    polishVersionsSection
                 }
 
                 if entry.audioFileExists, let path = entry.audioPath {
@@ -62,6 +66,11 @@ struct HistoryDetailView: View {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Keyed on the whole entry (not just the id): a re-polish rewrites the
+        // row in place, and the trail must refresh with it.
+        .task(id: entry) {
+            polishVersions = TranscriptionHistoryManager.shared.polishVersions(for: entry.id)
+        }
     }
 
     // MARK: - Header
@@ -114,18 +123,7 @@ struct HistoryDetailView: View {
             .disabled(isFailed || entry.text.isEmpty)
 
             if canPolish {
-                Button(action: onPolishWithAI) {
-                    Label(
-                        isAIPolishing
-                            ? "history.ai_polishing".localized
-                            : "history.ai_polish_action".localized,
-                        systemImage: "wand.and.stars"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .fixedSize()
-                .disabled(isAIPolishing || !aiPolishEnabled)
-                .help(aiPolishEnabled ? "" : "history.ai_polish_disabled_hint".localized)
+                polishMenu
             }
 
             Spacer(minLength: 12)
@@ -158,6 +156,59 @@ struct HistoryDetailView: View {
             )
         }
         .controlSize(.regular)
+    }
+
+    /// Every polish target the user has configured: current model plus the
+    /// recents of each endpoint with a usable setup. The list is rebuilt on
+    /// each body pass from UserDefaults hints only (no keychain reads).
+    private var polishModelOptions: [PolishModelOption] {
+        PolishProviderConfiguration.availableModelOptions()
+    }
+
+    /// "Improve with AI" opens the model picker; re-polishing always starts
+    /// from the raw transcript, so trying several models is non-destructive.
+    @ViewBuilder
+    private var polishMenu: some View {
+        let options = polishModelOptions
+        if options.isEmpty {
+            // Nothing configured beyond the global provider: keep the plain
+            // one-click button.
+            Button {
+                onPolishWithAI(nil)
+            } label: {
+                polishMenuLabel
+            }
+            .buttonStyle(.bordered)
+            .fixedSize()
+            .disabled(isAIPolishing || !aiPolishEnabled)
+            .help(aiPolishEnabled ? "" : "history.ai_polish_disabled_hint".localized)
+        } else {
+            Menu {
+                Section("history.ai_polish_choose_model".localized) {
+                    ForEach(options) { option in
+                        Button(option.displayName) {
+                            onPolishWithAI(option)
+                        }
+                    }
+                }
+            } label: {
+                polishMenuLabel
+            }
+            .menuStyle(.button)
+            .buttonStyle(.bordered)
+            .fixedSize()
+            .disabled(isAIPolishing || !aiPolishEnabled)
+            .help(aiPolishEnabled ? "" : "history.ai_polish_disabled_hint".localized)
+        }
+    }
+
+    private var polishMenuLabel: some View {
+        Label(
+            isAIPolishing
+                ? "history.ai_polishing".localized
+                : "history.ai_polish_action".localized,
+            systemImage: "wand.and.stars"
+        )
     }
 
     private func handleCopy() {
@@ -288,6 +339,38 @@ struct HistoryDetailView: View {
         }
     }
 
+    /// Full regeneration trail, newest first. Shown once the entry has at
+    /// least one applied polish; the newest version is what the transcript
+    /// above already shows, so it is tagged as current instead of repeated
+    /// silently.
+    @ViewBuilder
+    private var polishVersionsSection: some View {
+        if !polishVersions.isEmpty {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(Array(polishVersions.enumerated()), id: \.element.id) { index, version in
+                        PolishVersionRow(
+                            version: version,
+                            number: polishVersions.count - index,
+                            isCurrent: index == 0
+                        )
+                        if index < polishVersions.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.top, 10)
+            } label: {
+                Label(
+                    "history.polish_versions".localized(polishVersions.count),
+                    systemImage: "clock.arrow.circlepath"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     // MARK: - Failed
 
     private var failedCard: some View {
@@ -387,6 +470,81 @@ struct HistoryDetailView: View {
 
 // MARK: - Subcomponents
 
+/// One applied polish in the entry's regeneration trail: version number,
+/// model, time, and the full text (selectable + one-click copy).
+private struct PolishVersionRow: View {
+    let version: PolishVersion
+    let number: Int
+    let isCurrent: Bool
+
+    @State private var showCopied = false
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("v\(number)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(isCurrent ? Color.sapoGreen : Color.secondary)
+
+                if let model = version.model, !model.isEmpty {
+                    Text(model)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text(formattedTime)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                if isCurrent {
+                    Text("history.polish_version_current".localized)
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.sapoGreen.opacity(0.14), in: Capsule())
+                        .foregroundStyle(Color.sapoGreen)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    PasteManager.copyToClipboard(version.text)
+                    showCopied = true
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.5))
+                        showCopied = false
+                    }
+                } label: {
+                    Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                        .contentTransition(.symbolEffect(.replace))
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("history.copy".localized)
+            }
+
+            Text(version.text)
+                .font(.callout)
+                .lineSpacing(5)
+                .foregroundStyle(isCurrent ? .primary : .secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var formattedTime: String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return formatter.string(from: version.createdAt)
+    }
+}
+
 private struct HeaderChip: View {
     let text: String
     var dotColor: Color?
@@ -484,7 +642,7 @@ struct HistoryEmptyDetailView: View {
     HistoryDetailView(
         entry: HistoryEntry.mockData[0],
         onCopy: {},
-        onPolishWithAI: {},
+        onPolishWithAI: { _ in },
         onRetranscribe: {},
         onDownloadAudio: {},
         onTogglePin: {},
@@ -497,7 +655,7 @@ struct HistoryEmptyDetailView: View {
     HistoryDetailView(
         entry: HistoryEntry.mockData[3],
         onCopy: {},
-        onPolishWithAI: {},
+        onPolishWithAI: { _ in },
         onRetranscribe: {},
         onDownloadAudio: {},
         onTogglePin: {},

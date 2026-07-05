@@ -118,6 +118,11 @@ final class OpenAICompatiblePolisher {
     /// structured mode never eats into the polished text's token budget.
     private static let structuredOutputTokenHeadroom = 192
 
+    /// Extra output budget when reasoning is explicitly requested: reasoning
+    /// tokens count against `max_tokens` on every provider, so a cap sized for
+    /// the polished text alone would truncate the answer mid-thought.
+    private static let reasoningTokenHeadroom = 4096
+
     private static let structuredScanNote = """
 
 
@@ -152,9 +157,10 @@ final class OpenAICompatiblePolisher {
         system: String,
         user: String,
         timeout: TimeInterval = 8,
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        configuration: PolishProviderConfiguration? = nil
     ) async throws -> PolishResponse {
-        guard let configuration = PolishProviderConfiguration.current() else {
+        guard let configuration = configuration ?? PolishProviderConfiguration.current() else {
             throw PolishProviderError.notConfigured
         }
         return try await send(
@@ -189,17 +195,26 @@ final class OpenAICompatiblePolisher {
         configuration: PolishProviderConfiguration,
         structured: Bool = false,
         includeTemperature: Bool = true,
+        includeReasoning: Bool = true,
         allowTruncationRetry: Bool = true
     ) async throws -> PolishResponse {
         let startedAt = CFAbsoluteTimeGetCurrent()
+        let reasoningEffort: PolishReasoningEffort = includeReasoning ? .current() : .automatic
         let request = try makeRequest(
             system: structured ? system + Self.structuredScanNote : system,
             user: user,
             timeout: timeout,
-            maxTokens: maxTokens.map { structured ? $0 + Self.structuredOutputTokenHeadroom : $0 },
+            maxTokens: maxTokens.map { base in
+                var budget = structured ? base + Self.structuredOutputTokenHeadroom : base
+                if reasoningEffort.reservesReasoningTokens {
+                    budget += Self.reasoningTokenHeadroom
+                }
+                return budget
+            },
             configuration: configuration,
             structured: structured,
-            includeTemperature: includeTemperature
+            includeTemperature: includeTemperature,
+            reasoningEffort: reasoningEffort
         )
 
         let (data, http) = try await TransientRequestRetry.data(for: request, session: session, engine: "AIPolish")
@@ -222,6 +237,7 @@ final class OpenAICompatiblePolisher {
                     configuration: configuration,
                     structured: false,
                     includeTemperature: includeTemperature,
+                    includeReasoning: includeReasoning,
                     allowTruncationRetry: allowTruncationRetry
                 )
             }
@@ -237,6 +253,26 @@ final class OpenAICompatiblePolisher {
                     configuration: configuration,
                     structured: structured,
                     includeTemperature: false,
+                    includeReasoning: includeReasoning,
+                    allowTruncationRetry: allowTruncationRetry
+                )
+            }
+            // Not every provider/model accepts reasoning control (Groq and
+            // local servers vary per model); drop it so the polish still ships
+            // with the model's default behavior.
+            if http.statusCode == 400, includeReasoning, reasoningEffort != .automatic,
+                lowercasedMessage.contains("reasoning")
+            {
+                SapoLog.ai.info("Polish provider rejected reasoning effort — retrying without it")
+                return try await send(
+                    system: system,
+                    user: user,
+                    timeout: timeout,
+                    maxTokens: maxTokens,
+                    configuration: configuration,
+                    structured: structured,
+                    includeTemperature: includeTemperature,
+                    includeReasoning: false,
                     allowTruncationRetry: allowTruncationRetry
                 )
             }
@@ -254,7 +290,7 @@ final class OpenAICompatiblePolisher {
         let finishReason = choice?.finishReason ?? "none"
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.ai.info(
-            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
+            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) reasoning=\(reasoningEffort.rawValue, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
         )
 
         // A "length" finish means the output was cut mid-sentence; pasting it
@@ -273,6 +309,7 @@ final class OpenAICompatiblePolisher {
                     configuration: configuration,
                     structured: structured,
                     includeTemperature: includeTemperature,
+                    includeReasoning: includeReasoning,
                     allowTruncationRetry: false
                 )
             }
@@ -305,7 +342,8 @@ final class OpenAICompatiblePolisher {
         maxTokens: Int?,
         configuration: PolishProviderConfiguration,
         structured: Bool,
-        includeTemperature: Bool
+        includeTemperature: Bool,
+        reasoningEffort: PolishReasoningEffort
     ) throws -> URLRequest {
         let url = configuration.baseURL.appendingPathComponent("chat/completions")
         var request = URLRequest(url: url)
@@ -334,6 +372,17 @@ final class OpenAICompatiblePolisher {
         }
         if let maxTokens {
             body["max_tokens"] = maxTokens
+        }
+        if let effort = reasoningEffort.wireValue {
+            switch configuration.endpoint {
+            case .openRouter:
+                // OpenRouter's normalized reasoning config; exclude keeps the
+                // reasoning text out of the response body. Non-reasoning
+                // models ignore the whole object.
+                body["reasoning"] = ["effort": effort, "exclude": true]
+            case .openAI, .groq, .localServer, .custom:
+                body["reasoning_effort"] = effort
+            }
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request

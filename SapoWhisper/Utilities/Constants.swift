@@ -140,8 +140,10 @@ nonisolated enum Constants {
         static let aiPolishEndpoint = "aiPolishEndpoint"
         static let aiPolishCustomBaseURL = "aiPolishCustomBaseURL"
         static let aiPolishModel = "aiPolishModel"
+        static let aiPolishReasoningEffort = "aiPolishReasoningEffort"
         static let aiPolishEndpointModelPrefix = "aiPolishModel."
         static let aiPolishEndpointBaseURLPrefix = "aiPolishBaseURL."
+        static let aiPolishEndpointRecentModelsPrefix = "aiPolishRecentModels."
 
         // Deepgram
         /// Legacy plaintext location, kept only so the launch migration can
