@@ -103,18 +103,22 @@ struct AudioLevelMeterView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Toggle + live status
-            HStack {
-                Toggle("settings.test_microphone".localized, isOn: $isEnabled)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .tint(Constants.Colors.sapoGreen)
+            // Toggle + live status; the switch hugs the card's trailing edge
+            // like every other settings switch.
+            HStack(spacing: 12) {
+                Text("settings.test_microphone".localized)
 
                 Spacer()
 
                 if isEnabled {
                     MicListeningBadge(monitor: monitor)
                 }
+
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .tint(Constants.Colors.sapoGreen)
             }
 
             // Expanded mic test panel

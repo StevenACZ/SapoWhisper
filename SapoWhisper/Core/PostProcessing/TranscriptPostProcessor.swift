@@ -101,9 +101,12 @@ final class TranscriptPostProcessor {
         self.recentDictationsProvider = recentDictationsProvider
     }
 
+    /// `provider` overrides the global endpoint/model for this one run (the
+    /// history "polish with…" menu); nil uses the configured provider.
     func process(
         rawText: String,
-        duration: TimeInterval? = nil
+        duration: TimeInterval? = nil,
+        provider: PolishProviderConfiguration? = nil
     ) async -> TranscriptAIResult {
         let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
         defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
@@ -154,12 +157,15 @@ final class TranscriptPostProcessor {
             return finish(finalText: transcript, status: .none)
         }
 
-        guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults) else {
+        let pausedOffline =
+            provider.map { $0.requiresInternet && NetworkReachability.shared.isOffline }
+            ?? PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults)
+        guard !pausedOffline else {
             SapoLog.ai.info("AI polish skipped reason=offline-hosted-provider")
             return finish(finalText: transcript, status: .none)
         }
 
-        guard let configuration = PolishProviderConfiguration.current() else {
+        guard let configuration = provider ?? PolishProviderConfiguration.current() else {
             // Enabled but no usable provider: dictation must never block on
             // polish, so the raw transcript ships untouched.
             SapoLog.ai.info("AI polish skipped reason=not-configured")
@@ -257,6 +263,9 @@ final class TranscriptPostProcessor {
         let model = outcomes.compactMap(\.model).last ?? configuration.modelIdentifier
 
         if anyApplied {
+            // A model that just delivered a polish is worth re-offering in the
+            // history "polish with…" menu even after the user moves on.
+            PolishProviderConfiguration.recordRecentModel(configuration.model, for: configuration.endpoint)
             let finalText = outcomes.map(\.text).joined(separator: "\n\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let salvagedCount = outcomes.filter { !$0.applied }.count
@@ -335,7 +344,8 @@ final class TranscriptPostProcessor {
                     vocabularyTerms: vocabularyTerms,
                     outputLanguage: outputLanguage,
                     timeout: TimeInterval(budget),
-                    maxTokens: maxTokens
+                    maxTokens: maxTokens,
+                    configuration: configuration
                 )
             }
             if guarded.blockedInstructionResponse {
@@ -469,7 +479,8 @@ final class TranscriptPostProcessor {
         vocabularyTerms: [String],
         outputLanguage: TranscriptPolishOutputLanguage,
         timeout: TimeInterval,
-        maxTokens: Int
+        maxTokens: Int,
+        configuration: PolishProviderConfiguration
     ) async throws -> GuardedPolishResponse {
         var attemptMessages = messages
         var lastInstructionRejected: GuardedPolishResponse?
@@ -481,7 +492,8 @@ final class TranscriptPostProcessor {
                 rawText: rawText,
                 outputLanguage: outputLanguage,
                 timeout: timeout,
-                maxTokens: maxTokens
+                maxTokens: maxTokens,
+                configuration: configuration
             )
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: rawText)
             let guarded = GuardedPolishResponse(
@@ -559,10 +571,12 @@ final class TranscriptPostProcessor {
         rawText: String,
         outputLanguage: TranscriptPolishOutputLanguage,
         timeout: TimeInterval,
-        maxTokens: Int
+        maxTokens: Int,
+        configuration: PolishProviderConfiguration
     ) async throws -> PolishResponse {
         let first = try await polisher.polish(
-            system: messages.system, user: messages.user, timeout: timeout, maxTokens: maxTokens
+            system: messages.system, user: messages.user, timeout: timeout, maxTokens: maxTokens,
+            configuration: configuration
         )
         let firstCleaned = PolishOutputSanitizer.clean(first.text, rawText: rawText)
 
@@ -597,7 +611,8 @@ final class TranscriptPostProcessor {
 
         do {
             let second = try await polisher.polish(
-                system: retrySystem, user: messages.user, timeout: timeout, maxTokens: maxTokens
+                system: retrySystem, user: messages.user, timeout: timeout, maxTokens: maxTokens,
+                configuration: configuration
             )
             let secondCleaned = PolishOutputSanitizer.clean(second.text, rawText: rawText)
             let retryDetected = Self.dominantLanguageCode(of: secondCleaned) ?? "unknown"

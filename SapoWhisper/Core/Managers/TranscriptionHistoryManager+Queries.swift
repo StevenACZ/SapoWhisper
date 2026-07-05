@@ -24,6 +24,36 @@ nonisolated extension TranscriptionHistoryManager {
         return sqlite3_column_double(stmt, 0)
     }
 
+    /// Polish trail of one entry, newest first.
+    func polishVersions(for entryId: Int64) -> [PolishVersion] {
+        let sql = """
+            SELECT id, created_at, model, text FROM polish_versions
+            WHERE entry_id = ? ORDER BY created_at DESC, id DESC;
+            """
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        sqlite3_bind_int64(stmt, 1, entryId)
+
+        var versions: [PolishVersion] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let createdCString = sqlite3_column_text(stmt, 1),
+                let textCString = sqlite3_column_text(stmt, 3)
+            else { continue }
+            let model = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+            versions.append(
+                PolishVersion(
+                    id: sqlite3_column_int64(stmt, 0),
+                    entryId: entryId,
+                    createdAt: Self.isoFormatter.date(from: String(cString: createdCString)) ?? Date(),
+                    model: model,
+                    text: String(cString: textCString)
+                )
+            )
+        }
+        return versions
+    }
+
     func fetchEntries(
         searchText: String = "",
         engineFilter: EngineFilter = .all,

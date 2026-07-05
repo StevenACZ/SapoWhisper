@@ -31,7 +31,45 @@ final class HistoryScaleTests: XCTestCase {
     // MARK: - H8: schema versioning
 
     func testFreshDatabaseMigratesToCurrentSchemaVersion() {
-        XCTAssertEqual(manager.schemaVersion(), 3)
+        XCTAssertEqual(manager.schemaVersion(), 4)
+    }
+
+    // MARK: - Polish version trail
+
+    func testPolishVersionTrailRecordsEachAppliedPolish() {
+        let id = manager.save(
+            engine: "Local AI Server", language: "es", duration: 5, text: "primera versión pulida",
+            rawText: "primera version cruda", aiStatus: TranscriptAIStatus.applied.rawValue,
+            aiModel: "openrouter/openai/gpt-5.4-nano"
+        )
+
+        manager.updateAIProcessing(
+            id: id, finalText: "segunda versión pulida", rawText: "primera version cruda",
+            aiStatus: .applied, aiModel: "openrouter/inception/mercury-2", aiMode: "automatic", aiError: nil
+        )
+        // A failed re-polish must not append to the trail.
+        manager.updateAIProcessing(
+            id: id, finalText: "primera version cruda", rawText: "primera version cruda",
+            aiStatus: .failed, aiModel: "openrouter/inception/mercury-2", aiMode: "automatic", aiError: "boom"
+        )
+
+        let versions = manager.polishVersions(for: id)
+        XCTAssertEqual(versions.count, 2)
+        XCTAssertEqual(versions.first?.text, "segunda versión pulida")
+        XCTAssertEqual(versions.first?.model, "openrouter/inception/mercury-2")
+        XCTAssertEqual(versions.last?.text, "primera versión pulida")
+        XCTAssertEqual(versions.last?.model, "openrouter/openai/gpt-5.4-nano")
+    }
+
+    func testDeletingEntryRemovesItsPolishVersions() {
+        let id = manager.save(
+            engine: "WhisperKit", language: "es", duration: 4, text: "texto pulido",
+            rawText: "texto crudo", aiStatus: TranscriptAIStatus.applied.rawValue, aiModel: "openai/gpt-5.4-nano"
+        )
+        XCTAssertEqual(manager.polishVersions(for: id).count, 1)
+
+        manager.delete(id: id)
+        XCTAssertTrue(manager.polishVersions(for: id).isEmpty)
     }
 
     // MARK: - H7: failure code

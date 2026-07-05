@@ -80,6 +80,10 @@
 "history.ai_polish_action" = "Polish with AI";
 "history.ai_polishing" = "Polishing...";
 "history.ai_polish_disabled_hint" = "Enable “Improve text with AI” in the Prompts tab to use this action.";
+"history.ai_polish_choose_model" = "Polish with";
+"history.ai_polish_provider_unavailable" = "That model's provider is not usable right now — check its API key and model in Settings.";
+"history.polish_versions" = "Polish history (%d)";
+"history.polish_version_current" = "Current";
 "history.ai_polish_missing_text" = "No text is available to polish with AI.";
 "history.ai_polish_notice_title" = "AI polish not applied";
 "history.ai_polish_rejected_notice" = "The polish was discarded because it drifted from your original words (fidelity protection). Your transcript was kept as-is.";
@@ -158,6 +162,13 @@
 "ai.polish.output_language" = "Output language";
 "ai.polish.output_language_translation_desc" = "Speak any language — the AI translates the final text into %@.";
 "ai.polish.desc" = "Fixes likely mistakes, removes fillers, and improves readability. If obvious tokens like links or saved terms drift, SapoWhisper asks the AI to retry before applying the result.";
+"ai.polish.reasoning" = "Model reasoning";
+"ai.polish.reasoning_desc" = "How much a reasoning model may think before writing. Off is fastest — a polish needs no chain of thought. Models without reasoning support ignore this.";
+"ai.polish.reasoning_automatic" = "Auto (model default)";
+"ai.polish.reasoning_off" = "Off";
+"ai.polish.reasoning_low" = "Low";
+"ai.polish.reasoning_medium" = "Medium";
+"ai.polish.reasoning_high" = "High";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Local Server";
@@ -577,6 +588,7 @@
 "overlay.lang_auto" = "Auto";
 "overlay.copied_again" = "Copied again";
 "overlay.copy" = "Copy";
+"overlay.open_history" = "Open in History";
 "overlay.close" = "Close";
 "overlay.cancelled_saved" = "Cancelled — audio saved to History";
 "settings.welcome_tour_open" = "Open";

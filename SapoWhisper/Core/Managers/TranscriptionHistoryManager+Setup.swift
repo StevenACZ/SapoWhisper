@@ -70,6 +70,12 @@ nonisolated extension TranscriptionHistoryManager {
                 version = setSchemaVersion(3) ? 3 : version
             }
         }
+
+        if version == 3 {
+            if createPolishVersionsTable(backfill: true) {
+                version = setSchemaVersion(4) ? 4 : version
+            }
+        }
     }
 
     func schemaVersion() -> Int32 {
@@ -131,6 +137,46 @@ nonisolated extension TranscriptionHistoryManager {
             let message = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
             SapoLog.recording.error(
                 "failure=History/backfillSearchIndex detail=\(message, privacy: .public)"
+            )
+            return false
+        }
+        return true
+    }
+
+    /// Every applied polish of an entry, oldest first. The row's ai_* columns
+    /// keep only the latest polish; this table preserves the full regeneration
+    /// trail so re-polishing never destroys a previous result.
+    private func createPolishVersionsTable(backfill: Bool) -> Bool {
+        let createSQL = """
+            CREATE TABLE IF NOT EXISTS polish_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                model TEXT,
+                text TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_polish_versions_entry ON polish_versions(entry_id, created_at);
+            """
+        if sqlite3_exec(db, createSQL, nil, nil, nil) != SQLITE_OK {
+            let message = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
+            SapoLog.recording.error(
+                "failure=History/createPolishVersions detail=\(message, privacy: .public)"
+            )
+            return false
+        }
+
+        guard backfill else { return true }
+        // Existing rows only know their latest applied polish; seed it as the
+        // first version so old entries show a trail too.
+        let backfillSQL = """
+            INSERT INTO polish_versions(entry_id, created_at, model, text)
+            SELECT id, timestamp, ai_model, transcription FROM transcriptions
+            WHERE ai_status = 'applied' AND transcription != '';
+            """
+        if sqlite3_exec(db, backfillSQL, nil, nil, nil) != SQLITE_OK {
+            let message = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
+            SapoLog.recording.error(
+                "failure=History/backfillPolishVersions detail=\(message, privacy: .public)"
             )
             return false
         }

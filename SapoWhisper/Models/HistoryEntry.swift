@@ -96,6 +96,27 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
     }
 }
 
+/// Cross-window "open History focused on this entry" request. The overlay
+/// pill posts it; MenuBarStatusController opens the window; HistoryView
+/// consumes the pending id on appear (fresh window) or on the notification
+/// (window already open). A plain notification alone misses the fresh-window
+/// case — the view subscribes after the post.
+@MainActor
+enum HistoryFocusRequest {
+    static let notification = Notification.Name("SapoWhisper.openHistoryEntry")
+    static var pendingEntryID: Int64?
+}
+
+/// One applied polish of a history entry. The trail keeps every regeneration;
+/// the newest version is what the entry's `text` currently shows.
+nonisolated struct PolishVersion: Identifiable, Hashable {
+    let id: Int64
+    let entryId: Int64
+    let createdAt: Date
+    let model: String?
+    let text: String
+}
+
 // MARK: - Date Grouping
 
 enum DateGroup: String, CaseIterable {

@@ -338,6 +338,21 @@ class SapoWhisperViewModel: ObservableObject {
             self.resumeMergeRequested = isActive
             SapoLog.recording.info("Resume-previous merge toggled active=\(isActive, privacy: .public)")
         }
+        overlayManager.onOpenHistoryRequested = { [weak self] in
+            Task { @MainActor in
+                self?.openHistoryForLastTranscription()
+            }
+        }
+    }
+
+    /// Result pill → History window focused on the entry that was just
+    /// dictated. The pill collapses first so the overlay never floats over
+    /// the opening window.
+    private func openHistoryForLastTranscription() {
+        HistoryFocusRequest.pendingEntryID = lastCompletedHistoryId
+        overlayManager.hide()
+        NotificationCenter.default.post(name: HistoryFocusRequest.notification, object: nil)
+        SapoLog.overlay.info("Open history from result pill entryId=\(self.lastCompletedHistoryId ?? -1, privacy: .public)")
     }
 
     /// Mirrors the Settings behavior: engines never translate, so the moment
@@ -1351,7 +1366,12 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    func polishHistoryEntry(_ entry: HistoryEntry) async -> HistoryRetranscriptionResult {
+    /// `option` re-polishes with an explicit endpoint/model from the history
+    /// menu; nil uses the globally configured provider.
+    func polishHistoryEntry(
+        _ entry: HistoryEntry,
+        with option: PolishModelOption? = nil
+    ) async -> HistoryRetranscriptionResult {
         let sourceText = (entry.hasRawTranscript ? entry.rawText : entry.text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -1362,7 +1382,27 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
 
-        let aiResult = await transcriptPostProcessor.process(rawText: sourceText, duration: entry.duration)
+        var provider: PolishProviderConfiguration?
+        if let option {
+            // The option was built from key-presence hints; resolving it here
+            // reads the real key. A revoked key or emptied model falls out as
+            // a normal error instead of silently polishing with the default.
+            guard
+                let configuration = PolishProviderConfiguration.configuration(
+                    for: option.endpoint, model: option.model
+                )
+            else {
+                return HistoryRetranscriptionResult(
+                    entryId: entry.id,
+                    errorMessage: "history.ai_polish_provider_unavailable".localized
+                )
+            }
+            provider = configuration
+        }
+
+        let aiResult = await transcriptPostProcessor.process(
+            rawText: sourceText, duration: entry.duration, provider: provider
+        )
         logAIResult(aiResult, source: "history-polish")
         historyManager.updateAIProcessing(
             id: entry.id,

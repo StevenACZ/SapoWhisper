@@ -6,6 +6,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-07-05
+
+### Added
+
+- **Reasoning effort control** — Settings → AI Polish now has a global "Model reasoning" picker (Auto, Off, Low, Medium, High) applied to every polish request on any endpoint. Off is the default: reasoning models (Mercury, GPT-5.x, Grok, Qwen thinking) otherwise spend the polish's output token budget thinking and the response arrives truncated. Explicit reasoning levels reserve extra output tokens for the thinking pass, providers that reject the parameter get one automatic retry without it, and non-reasoning models ignore it.
+- **Polish with any configured model** — the History "Polish with AI" button now opens a model menu: every configured endpoint offers its current model plus the models that recently completed a polish on it, so a transcript can be re-polished with GPT, Mercury, the local server, etc. side by side without touching the global provider selection. Re-polishing always starts from the raw transcript.
+- **Polish history per entry** — every applied polish is preserved as a version (model, time, full text) instead of being overwritten. The History detail shows the trail under "Polish history": the raw transcript, each regeneration, and the current text, each with one-click copy. Existing entries keep their latest polish as the first version.
+- **Open in History from the result pill** — the completed-dictation pill has a new button that jumps straight to that dictation in the History window, already selected.
+
+### Fixed
+
+- The "Primary microphone" and "Test microphone" switches in Settings → General now sit flush against the card's right edge like every other switch in the window.
+
 ## [2.6.0] - 2026-07-04
 
 ### Added

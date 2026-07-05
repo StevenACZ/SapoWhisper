@@ -80,6 +80,10 @@
 "history.ai_polish_action" = "Mejorar con IA";
 "history.ai_polishing" = "Mejorando...";
 "history.ai_polish_disabled_hint" = "Activa «Mejorar texto con IA» en la pestaña Prompts para usar esta acción.";
+"history.ai_polish_choose_model" = "Mejorar con";
+"history.ai_polish_provider_unavailable" = "El proveedor de ese modelo no está disponible ahora — revisa su API key y modelo en Ajustes.";
+"history.polish_versions" = "Historial de pulidos (%d)";
+"history.polish_version_current" = "Actual";
 "history.ai_polish_missing_text" = "No hay texto disponible para mejorar con IA.";
 "history.ai_polish_notice_title" = "Mejora con IA no aplicada";
 "history.ai_polish_rejected_notice" = "La mejora se descartó porque se alejó de tu texto original (protección de fidelidad). Se mantiene tu transcripción tal cual.";
@@ -158,6 +162,13 @@
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad. Si se alteran tokens obvios como links o términos guardados, SapoWhisper le pide a la IA que reintente antes de aplicar el resultado.";
+"ai.polish.reasoning" = "Razonamiento del modelo";
+"ai.polish.reasoning_desc" = "Cuánto puede pensar un modelo razonador antes de escribir. Apagado es lo más rápido — pulir un dictado no necesita cadena de pensamiento. Los modelos sin razonamiento lo ignoran.";
+"ai.polish.reasoning_automatic" = "Auto (según el modelo)";
+"ai.polish.reasoning_off" = "Apagado";
+"ai.polish.reasoning_low" = "Bajo";
+"ai.polish.reasoning_medium" = "Medio";
+"ai.polish.reasoning_high" = "Alto";
 "ai.provider.section" = "Proveedor";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Servidor local";
@@ -577,6 +588,7 @@
 "overlay.lang_auto" = "Auto";
 "overlay.copied_again" = "Copiado otra vez";
 "overlay.copy" = "Copiar";
+"overlay.open_history" = "Abrir en Historial";
 "overlay.close" = "Cerrar";
 "overlay.cancelled_saved" = "Cancelado — audio guardado en Historial";
 "settings.welcome_tour_open" = "Abrir";
