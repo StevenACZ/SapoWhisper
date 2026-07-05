@@ -363,20 +363,21 @@ class VocabularyManager {
             keyterm.hasPrefix(".")
             ? [
                 keyterm,
-                spokenSymbolForm(for: keyterm),
-                spokenPeriodSymbolForm(for: keyterm),
-                spokenPuntoSymbolForm(for: keyterm),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "dot"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "period"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "punto"),
             ]
             : [
                 keyterm,
-                spokenForm(for: keyterm),
-                spokenSymbolForm(for: keyterm),
-                spokenPeriodSymbolForm(for: keyterm),
-                spokenPuntoSymbolForm(for: keyterm),
+                SpeechConfusionCatalog.spokenForm(for: keyterm),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "dot"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "period"),
+                SpeechConfusionCatalog.spokenSymbolForm(for: keyterm, symbolWord: "punto"),
             ]
         let spokenVariants = baseVariants + speechConfusionForms(for: keyterm)
 
-        let condensedVariants = keyterm.hasPrefix(".") ? [] : spokenVariants.map(condensedSymbolForm)
+        let condensedVariants =
+            keyterm.hasPrefix(".") ? [] : spokenVariants.map(SpeechConfusionCatalog.condensedSymbolForm)
         return uniqueVariants(spokenVariants + condensedVariants)
     }
 
@@ -415,28 +416,6 @@ class VocabularyManager {
         }
     }
 
-    private static func spokenForm(for keyterm: String) -> String {
-        let separated = keyterm.replacingOccurrences(of: #"[-_.]+"#, with: " ", options: .regularExpression)
-        let characters = Array(separated)
-        guard characters.count > 1 else { return separated }
-
-        var result = ""
-        for index in characters.indices {
-            let character = characters[index]
-            if index > characters.startIndex {
-                let previous = characters[characters.index(before: index)]
-                let nextIndex = characters.index(after: index)
-                let next = nextIndex < characters.endIndex ? characters[nextIndex] : nil
-                if shouldInsertSpeechSpace(previous: previous, current: character, next: next) {
-                    result.append(" ")
-                }
-            }
-            result.append(character)
-        }
-
-        return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
     private static func replacementPattern(for term: String) -> String {
         guard term.contains(where: { ".-_".contains($0) }) else {
             let escaped = NSRegularExpression.escapedPattern(for: term)
@@ -460,77 +439,10 @@ class VocabularyManager {
         return "(?<![A-Za-z0-9])\(body)(?![A-Za-z0-9])"
     }
 
-    private static func spokenSymbolForm(for keyterm: String) -> String {
-        keyterm
-            .replacingOccurrences(of: ".", with: " dot ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func spokenPeriodSymbolForm(for keyterm: String) -> String {
-        keyterm
-            .replacingOccurrences(of: ".", with: " period ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func spokenPuntoSymbolForm(for keyterm: String) -> String {
-        keyterm
-            .replacingOccurrences(of: ".", with: " punto ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func condensedSymbolForm(for keyterm: String) -> String {
-        keyterm.replacingOccurrences(of: #"[-_.\s]+"#, with: "", options: .regularExpression)
-    }
-
     private static func speechConfusionForms(for keyterm: String) -> [String] {
         var forms: [String] = []
 
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Claude",
-            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Deepgram",
-            with: ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "ElevenLabs",
-            with: ["Eleven Labs", "11labs"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Local AI Server",
-            with: ["localize server", "local ya server", "localia server"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "SapoWhisper",
-            with: [
-                "Sapo Whisper",
-                "Sapo Visper",
-                "SAP OVISPER",
-                "Sapa Whisper",
-                "SAPA Whisper",
-                "SAP Awhisper",
-                "Zap o Whisper",
-                "Zapo Whisper",
-                "Sapowisper",
-            ],
-            to: &forms
-        )
+        SpeechConfusionCatalog.appendBrandVariants(for: keyterm, to: &forms)
         if keyterm.lowercased() == "claude.md" {
             forms.append(contentsOf: ["claud mendy", "claude mendy", "cod md"])
         }
@@ -635,7 +547,7 @@ class VocabularyManager {
             forms.append("Vue three")
         }
         if lowercasedKeyterm == "git" || lowercasedKeyterm.hasPrefix("git ") {
-            appendReplacementVariants(
+            SpeechConfusionCatalog.appendReplacementVariants(
                 for: keyterm,
                 replacing: "git",
                 with: ["hit"],
@@ -643,7 +555,7 @@ class VocabularyManager {
             )
         }
         if lowercasedKeyterm == "push" || lowercasedKeyterm.contains(" push") {
-            appendReplacementVariants(
+            SpeechConfusionCatalog.appendReplacementVariants(
                 for: keyterm,
                 replacing: "push",
                 with: ["pug"],
@@ -668,50 +580,8 @@ class VocabularyManager {
         if lowercasedKeyterm == "pull request" {
             forms.append("pool request")
         }
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Hetzner",
-            with: ["Etzner", "Etsner", "Edsner", "Hedsner", "Headsnare", "Head snare", "HeadServe", "HeadServer"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Jellyfin",
-            with: ["Jellifin", "Gelifin", "Jellyfine", "JellyFight", "JellyFy"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "PostgreSQL",
-            with: ["PostgresUL", "Postgres SQL"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "Cloudflare",
-            with: ["ClavFlare", "CloudFair"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: keyterm,
-            replacing: "WireGuard",
-            with: ["YFWAR", "YF WAR", "WifeWare"],
-            to: &forms
-        )
 
         return forms
-    }
-
-    private static func appendReplacementVariants(
-        for keyterm: String,
-        replacing needle: String,
-        with replacements: [String],
-        to forms: inout [String]
-    ) {
-        guard keyterm.range(of: needle, options: [.caseInsensitive]) != nil else { return }
-        for replacement in replacements {
-            forms.append(keyterm.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive]))
-        }
     }
 
     private static func sanitizedRecognitionHint(_ term: String) -> String {
@@ -722,13 +592,6 @@ class VocabularyManager {
         )
         .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func shouldInsertSpeechSpace(previous: Character, current: Character, next: Character?) -> Bool {
-        guard current.isUppercase else { return false }
-        if previous.isLowercase || previous.isNumber { return true }
-        if previous.isUppercase, next?.isLowercase == true { return true }
-        return false
     }
 
     private static func wholeTermPattern(for term: String) -> String {
@@ -749,7 +612,7 @@ class VocabularyManager {
     }
 
     private static func alphanumericTokens(in term: String) -> [String] {
-        term.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        SpeechConfusionCatalog.alphanumericTokens(in: term)
     }
 
     private static func normalizedRecognitionKey(_ term: String) -> String {

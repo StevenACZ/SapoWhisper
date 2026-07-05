@@ -20,11 +20,13 @@ addresses, and machine-specific workflow details.
 - `TranscriptionPipeline`: shared transcribe -> polish -> paste -> persist control flow for stop paths; the ViewModel implements `TranscriptionPipelineHost`.
 - Strict concurrency is `complete` on app and test targets. Keep new code warning-free instead of widening unsafe isolation.
 - Engines: WhisperKit local, Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe batch/realtime, and Local AI Server batch STT through OpenAI-style endpoints.
-- Audio capture: one class, `AudioCaptureEngine`, serves every engine. `.batch` records a WAV at `AudioUploadQuality`; `.streaming` keeps fixed 16 kHz mono int16 for WebSocket compatibility and emits PCM chunks (batch is streaming with a nil chunk handler). Do not reintroduce per-path capture classes.
+- Audio capture: one class, `AudioCaptureEngine`, serves every engine. `.batch` records a WAV at `AudioUploadQuality`, except whisper-family targets (WhisperKit, Local AI Server) on the STT-oriented qualities (ultra-fast, medium), which capture 16 kHz directly — whisper decodes at 16 kHz and a higher-rate capture only adds a second resample. `.streaming` keeps fixed 16 kHz mono int16 for WebSocket compatibility and emits PCM chunks (batch is streaming with a nil chunk handler). Do not reintroduce per-path capture classes.
 - Streaming engines (Flux, ElevenLabs realtime) are driven through `StreamingDictationSession` plus one shared start/stop/pause/abort/binding path in the ViewModel (`StreamingEngineContext`). Do not add per-engine copies of that flow.
 - Observation: `WhisperKitTranscriber` and the vocabulary/AI-memory/prompt-context managers are `@Observable` — views read them directly; do not reintroduce `@Published` mirrors in the ViewModel. High-frequency tickers (recording duration) stay OFF ObservableObject state: publish through a subject and subscribe locally in the one view that renders them.
 - History persists through SQLite and local audio storage. Use atomic history persistence helpers; do not split audio save and row save.
 - Vocabulary metrics are read-only from recent history rows; do not add tracking columns for them.
+- Speech-mishearing brand tables and spoken-form helpers live in `SpeechConfusionCatalog`, shared by `VocabularyManager` and `AIPolishMemoryManager`. Add new mishearing variants there — do not re-add per-manager copies (they drift).
+- WhisperKit on-disk model folders are matched per exact variant (`WhisperKitTranscriber.directoryName(_:matches:)`): "large-v3" is a substring of the turbo/dated variants, so plain `contains` matching cross-deletes sibling models.
 - Credentials live in Keychain with UserDefaults presence hints. Gate configuration checks on `KeychainStore.hasValue`, not by reading credential values.
 
 ## AI Polish

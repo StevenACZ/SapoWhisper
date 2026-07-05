@@ -1,11 +1,9 @@
 /* General */
 "app_name" = "SapoWhisper";
-"version" = "Versión %@";
 "made_by" = "Creado con cuidado para macOS";
 "close" = "Cerrar";
 "cancel" = "Cancelar";
 "quit" = "Salir de SapoWhisper";
-"about" = "Acerca de";
 
 /* Menu Bar */
 "menu.ready" = "Listo para grabar";
@@ -63,18 +61,12 @@
 "history.delete_confirm" = "¿Eliminar transcripción?";
 "history.delete_confirm_message" = "Esta acción no se puede deshacer. También se eliminará el audio guardado.";
 "history.no_results" = "Sin resultados";
-"history.details" = "Detalles";
-"history.actions" = "Acciones";
-"history.engine" = "Motor";
 "history.language" = "Idioma";
 "history.duration" = "Duración";
 "history.words" = "Palabras";
 "history.audio" = "Audio";
 "history.audio_saved" = "Guardado";
 "history.audio_none" = "No guardado";
-"history.status" = "Estado";
-"history.status_completed" = "Completado";
-"history.status_failed" = "Fallido";
 "history.play" = "Reproducir";
 "history.pause" = "Pausar";
 "history.filter_all" = "Todos";
@@ -83,7 +75,6 @@
 "history.filter_local_ai" = "IA local";
 "history.filter_elevenlabs" = "ElevenLabs";
 "history.filter_other" = "Otros motores";
-"history.final_text" = "Texto final";
 "history.original_text" = "Texto original";
 "history.ai_polish" = "Mejora IA";
 "history.ai_polish_action" = "Mejorar con IA";
@@ -98,10 +89,7 @@
 "common.ok" = "OK";
 
 /* Settings */
-"settings.general" = "General";
 "settings.hotkeys" = "Atajos";
-"settings.about" = "Acerca de";
-"settings.audio" = "Audio";
 "settings.microphone" = "Micrófono";
 "settings.microphone_desc" = "Dispositivo de entrada de audio";
 "settings.pin_primary_mic" = "Micrófono principal — mantenerlo siempre";
@@ -109,32 +97,17 @@
 "settings.pin_primary_mic_desc_off" = "El sistema puede cambiar la entrada al conectar dispositivos; los micrófonos Bluetooth pueden tardar unos segundos en arrancar.";
 "settings.language_header" = "Idioma";
 "settings.input_language" = "Idioma de transcripción";
-"settings.input_language_desc" = "El idioma que usarás para hablar";
 "settings.flux_hint_unsupported" = "Deepgram Flux no tiene hint para este idioma — se usará detección automática.";
 "settings.ai_translation_active" = "Mejora por IA: el texto final se traduce a %@.";
 "settings.ai_translation_language_pinned" = "La IA traduce a %@, pero con un idioma fijado el motor solo reconoce ese idioma al hablar. Usa Auto para dictar en cualquier idioma.";
 "settings.behavior" = "Comportamiento";
 "settings.auto_paste" = "Pegar automáticamente";
 "settings.auto_paste_desc" = "El texto se pegará donde tengas el cursor";
-"settings.feedback_sounds" = "Sonidos de feedback";
-"settings.feedback_sounds_desc" = "Reproduce sonidos al grabar y transcribir";
 "settings.launch_at_login" = "Iniciar al encender";
-"settings.launch_at_login_desc" = "Abre SapoWhisper automáticamente al iniciar tu Mac";
-"settings.hotkey_global" = "Atajo de Teclado Global";
-"settings.current_hotkey" = "Atajo actual";
-"settings.current_hotkey_desc" = "Presiona para grabar/detener desde cualquier app";
-"settings.change_hotkey" = "Cambiar Atajo";
 "settings.permissions" = "Permisos";
-"settings.permissions_title" = "Permisos de Accesibilidad";
-"settings.permissions_desc" = "Para que el atajo funcione en todas las aplicaciones, SapoWhisper necesita permisos de Accesibilidad.";
-"settings.open_preferences" = "Abrir Preferencias del Sistema";
-"settings.view_github" = "Ver en GitHub";
 
 /* Model Download / Config View */
-"config.title" = "Configuración de Voz";
-"config.subtitle" = "SapoWhisper usa Apple Speech, WhisperKit o Google Cloud para transcribir tu audio.";
 "config.tab_settings" = "Ajustes";
-"config.tab_info" = "Info";
 "config.engine" = "Motor de Transcripción";
 "config.engine_summary" = "Configuración actual";
 "config.engine_summary_engine" = "Motor";
@@ -145,7 +118,6 @@
 "config.engine_summary_ai_active" = "Activa";
 "config.engine_summary_ai_translate" = "→ %@";
 "config.whisper_model" = "Modelo de Whisper";
-"config.downloading" = "Descargando";
 "config.space_used" = "Espacio usado: %@";
 "config.whisper_vocabulary_hint" = "Los hints de vocabulario no son compatibles con el modelo local de Whisper; tus reemplazos se siguen aplicando tras la transcripción.";
 "config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
@@ -154,7 +126,6 @@
 "config.unload_minutes" = "%@ min";
 "config.hotkey_instruction" = "Haz clic y presiona tu combinación de teclas (mínimo 2 teclas)";
 "config.app_language" = "Idioma de la App";
-"config.app_language_desc" = "Idioma de la interfaz de usuario";
 
 /* About window */
 "about.version_copy_help" = "Clic para copiar la versión";
@@ -170,16 +141,10 @@
 "lang.auto" = "Auto";
 
 /* Common */
-"status.ready" = "Listo";
-"status.active" = "Activo";
-"status.configuring" = "Configurando...";
 "status.error" = "Error: %@";
 "status.no_model" = "Descarga un modelo primero";
 "status.recording_generic" = "Grabando...";
 "config.subtitle_info" = "Speech-to-Text con WhisperKit, servidor IA local, Deepgram, ElevenLabs y Mejora por IA";
-"app.description" = "Speech-to-Text local y en la nube";
-"config.coming_soon" = "Próximamente";
-"config.whisper_coming_soon_desc" = "En una próxima versión podrás descargar modelos de Whisper para transcripción 100% local sin conexión a internet.";
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% privado, sin internet. Procesa todo en tu Mac.";
@@ -189,7 +154,6 @@
 "ai.polish.title" = "Mejora por IA";
 "ai.polish.enable" = "Mejorar texto con IA";
 "ai.polish.enable_subtitle" = "Refina dictados largos con IA.";
-"ai.polish.enable_active" = "Activo — la IA refina dictados largos.";
 "ai.polish.enable_active_always" = "Activo — se aplica a cada transcript elegible.";
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
@@ -226,6 +190,9 @@
 "ai.provider.error_truncated" = "La respuesta de la IA se cortó antes de terminar.";
 "error.whisperkit.model_load" = "Error cargando modelo: %@";
 "error.whisperkit.transcription" = "Error en transcripción: %@";
+"error.whisperkit.not_available" = "WhisperKit no está disponible. Agrega el package en Xcode.";
+"error.whisperkit.model_not_loaded" = "No hay un modelo cargado";
+"error.whisperkit.in_progress" = "Ya hay una transcripción en curso";
 "ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
 "ai.provider.error_auth_openai" = "OpenAI rechazó la API key. Si pegaste una key de OpenRouter, cambia el proveedor a OpenRouter; si quieres OpenAI, pega una key de OpenAI.";
 "ai.provider.error_auth_openrouter" = "OpenRouter rechazó la API key. Revisa que la key sea de OpenRouter.";
@@ -238,7 +205,6 @@
 "ai.provider.error_network_local" = "No pude conectar con %@. Revisa que el servidor esté encendido y que la URL base termine en /v1.";
 "ai.provider.error_network_hosted" = "No pude conectar con %@. Revisa tu conexión e inténtalo de nuevo.";
 "ai.provider.error_network_timeout" = "%@ tardó demasiado en responder. Revisa el servidor o prueba otra vez.";
-"ai.google_change_json" = "Cambiar JSON";
 "ai.mode.automatic" = "Automático";
 "ai.mode.ai" = "Modo IA";
 "ai.mode.work" = "Trabajo";
@@ -348,16 +314,13 @@
 "permissions.card.ready" = "Listo";
 "permissions.activate" = "Activar";
 "permissions.settings.row_hint" = "SapoWhisper te lleva al panel correcto y refresca el estado al volver.";
-"settings.permissions_guided_footer" = "Puedes abrir el onboarding guiado para cada permiso y ver el estado en vivo mientras vuelves desde Ajustes del Sistema.";
 "settings.permissions_guided_desc" = "Accesibilidad sigue siendo clave para auto-pegar y para un flujo cómodo desde cualquier app. Si quieres ver todos los permisos juntos, abre el onboarding guiado.";
 "settings.permissions_all_active" = "Todos los permisos activos";
 "settings.permissions_all_active_desc" = "Micrófono, reconocimiento de voz y accesibilidad listos.";
 "settings.permissions_all_active_badge" = "%d activos";
-"settings.permissions_all_active_footer" = "Abre el detalle solo si quieres revisar cada permiso o reabrir el onboarding guiado.";
 "settings.test_microphone" = "Probar micrófono";
 "settings.gain" = "Ganancia";
 "settings.listening" = "Escuchando...";
-"settings.gain_desc" = "Ajusta la amplificación del audio (no afecta el volumen del sistema)";
 "settings.record_sample" = "Grabar muestra";
 "settings.stop_sample" = "Detener";
 "settings.sample_original" = "Original";
@@ -394,7 +357,6 @@
 "settings.play_sounds" = "Reproducir sonidos";
 "settings.play_sounds_desc" = "Sonidos de feedback al grabar y transcribir";
 "settings.sound_volume" = "Volumen de sonidos";
-"settings.sound_volume_desc" = "Ajusta el volumen independiente del sistema";
 "settings.test_sound" = "Probar sonido";
 
 /* Deepgram Engine */
@@ -455,7 +417,6 @@
 "config.add" = "Agregar";
 "settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes. Las palabras clave son manuales; la IA solo sugiere correcciones automaticas.";
 "settings.vocabulary.search" = "Buscar vocabulario o correcciones";
-"settings.vocabulary.empty" = "No hay resultados";
 "settings.vocabulary.export" = "Exportar";
 "settings.vocabulary.import" = "Importar";
 "settings.vocabulary.export_panel_message" = "Guarda tu vocabulario como JSON.";

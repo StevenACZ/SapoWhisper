@@ -381,44 +381,15 @@ final class AIPolishMemoryManager {
 
     private static func correctionSourceVariants(for target: String) -> [String] {
         var forms: [String] = []
-        forms.append(spokenForm(for: target))
-        forms.append(spokenSymbolForm(for: target, symbolWord: "dot"))
-        forms.append(spokenSymbolForm(for: target, symbolWord: "period"))
-        forms.append(spokenSymbolForm(for: target, symbolWord: "punto"))
+        forms.append(SpeechConfusionCatalog.spokenForm(for: target))
+        forms.append(SpeechConfusionCatalog.spokenSymbolForm(for: target, symbolWord: "dot"))
+        forms.append(SpeechConfusionCatalog.spokenSymbolForm(for: target, symbolWord: "period"))
+        forms.append(SpeechConfusionCatalog.spokenSymbolForm(for: target, symbolWord: "punto"))
         if !target.hasPrefix(".") {
-            forms.append(condensedSymbolForm(for: target))
+            forms.append(SpeechConfusionCatalog.condensedSymbolForm(for: target))
         }
 
-        appendReplacementVariants(
-            for: target,
-            replacing: "Claude",
-            with: ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "Deepgram",
-            with: ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "ElevenLabs",
-            with: ["Eleven Labs", "11labs"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "Local AI Server",
-            with: ["localize server", "local ya server", "localia server"],
-            to: &forms
-        )
-        appendReplacementVariants(
-            for: target,
-            replacing: "SapoWhisper",
-            with: ["Sapo Whisper", "Sapo Visper", "Sapa Whisper", "Zapo Whisper", "Sapowisper"],
-            to: &forms
-        )
+        SpeechConfusionCatalog.appendBrandVariants(for: target, to: &forms)
 
         switch normalizedKey(target) {
         case "claude md":
@@ -529,62 +500,8 @@ final class AIPolishMemoryManager {
         normalizedText(text).lowercased()
     }
 
-    private static func spokenForm(for term: String) -> String {
-        let separated = term.replacingOccurrences(of: #"[-_.]+"#, with: " ", options: .regularExpression)
-        let characters = Array(separated)
-        guard characters.count > 1 else { return separated }
-
-        var result = ""
-        for index in characters.indices {
-            let character = characters[index]
-            if index > characters.startIndex {
-                let previous = characters[characters.index(before: index)]
-                let nextIndex = characters.index(after: index)
-                let next = nextIndex < characters.endIndex ? characters[nextIndex] : nil
-                if shouldInsertSpeechSpace(previous: previous, current: character, next: next) {
-                    result.append(" ")
-                }
-            }
-            result.append(character)
-        }
-
-        return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-    }
-
-    private static func spokenSymbolForm(for term: String, symbolWord: String) -> String {
-        term
-            .replacingOccurrences(of: ".", with: " \(symbolWord) ")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func condensedSymbolForm(for term: String) -> String {
-        term.replacingOccurrences(of: #"[-_.\s]+"#, with: "", options: .regularExpression)
-    }
-
-    private static func appendReplacementVariants(
-        for term: String,
-        replacing needle: String,
-        with replacements: [String],
-        to forms: inout [String]
-    ) {
-        guard term.range(of: needle, options: [.caseInsensitive]) != nil else { return }
-        for replacement in replacements {
-            forms.append(term.replacingOccurrences(of: needle, with: replacement, options: [.caseInsensitive]))
-        }
-    }
-
     private static func alphanumericTokens(in term: String) -> [String] {
-        term.split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
-
-    private static func shouldInsertSpeechSpace(previous: Character, current: Character, next: Character?) -> Bool {
-        guard current.isUppercase else { return false }
-        if previous.isLowercase || previous.isNumber { return true }
-        if previous.isUppercase, next?.isLowercase == true { return true }
-        return false
+        SpeechConfusionCatalog.alphanumericTokens(in: term)
     }
 
     private static func suggestionID(from: String, to: String) -> String {

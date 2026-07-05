@@ -562,6 +562,26 @@ class WhisperKitTranscriber {
         return dirs
     }
 
+    /// Nombre corto de la variante dentro del rawValue (ej: "large-v3").
+    static func modelKeyword(_ model: WhisperKitModel) -> String {
+        model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
+    }
+
+    /// Un directorio pertenece a `model` solo si, entre todas las variantes
+    /// cuyo keyword aparece en el nombre, la suya es la mas larga: "large-v3"
+    /// es substring de "large-v3-v20240930" y de "large-v3_turbo", asi que un
+    /// `contains` simple cruzaba variantes (borrar Large V3 arrastraba los
+    /// folders turbo, y un turbo descargado marcaba Large V3 como descargado).
+    static func directoryName(_ name: String, matches model: WhisperKitModel) -> Bool {
+        let lowered = name.lowercased()
+        let keyword = modelKeyword(model)
+        guard lowered.contains("whisper"), lowered.contains(keyword) else { return false }
+        return !WhisperKitModel.allCases.contains { other in
+            let otherKeyword = modelKeyword(other)
+            return otherKeyword.count > keyword.count && lowered.contains(otherKeyword)
+        }
+    }
+
     /// Verifica si un modelo esta descargado localmente
     func isModelDownloaded(_ model: WhisperKitModel) -> Bool {
         // Primero revisar el cache
@@ -576,24 +596,15 @@ class WhisperKitTranscriber {
         }
 
         // Buscar en todos los directorios posibles
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-
         for modelsDir in possibleModelDirectories {
             guard FileManager.default.fileExists(atPath: modelsDir.path) else { continue }
 
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
 
-                for url in contents {
-                    let name = url.lastPathComponent.lowercased()
-
-                    // Estrategia de coincidencia flexible
-                    let matches = name.contains("whisper") && name.contains(modelName)
-
-                    if matches {
-                        downloadedModels.insert(model)
-                        return true
-                    }
+                for url in contents where Self.directoryName(url.lastPathComponent, matches: model) {
+                    downloadedModels.insert(model)
+                    return true
                 }
             } catch {
                 continue
@@ -660,15 +671,10 @@ class WhisperKitTranscriber {
         }
 
         // 2. Intentar busqueda flexible si el exacto falla (por si la estructura es distinta)
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-
         do {
             let contents = try FileManager.default.contentsOfDirectory(at: repoURL, includingPropertiesForKeys: nil)
-            for url in contents {
-                let name = url.lastPathComponent.lowercased()
-                if name.contains("whisper") && name.contains(modelName) {
-                    return directorySize(at: url)
-                }
+            for url in contents where Self.directoryName(url.lastPathComponent, matches: model) {
+                return directorySize(at: url)
             }
         } catch { return nil }
 
@@ -715,12 +721,8 @@ class WhisperKitTranscriber {
             unloadModel()
         }
 
-        let modelName = model.rawValue.replacingOccurrences(of: "openai_whisper-", with: "").lowercased()
-        // Buscamos algo que coincida con "whisperkit" y el nombre del modelo (ej: "small")
-        // Los folders de HF son tipo: models--argmaxinc--whisperkit-coreml-openai-whisper-small
-
         SapoLog.recording.info(
-            "WhisperKit delete model=\(model.rawValue, privacy: .public) keyword=\(modelName, privacy: .public)"
+            "WhisperKit delete model=\(model.rawValue, privacy: .public) keyword=\(Self.modelKeyword(model), privacy: .public)"
         )
 
         var foundAndDeleted = false
@@ -735,25 +737,17 @@ class WhisperKitTranscriber {
             do {
                 let contents = try FileManager.default.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)
 
-                for url in contents {
-                    let name = url.lastPathComponent.lowercased()
-
-                    // La coincidencia debe ser mas flexible
-                    // Si contiene "models--" y ("whisper" + modelName)
-                    let matches = name.contains("whisper") && name.contains(modelName)
-
-                    if matches {
-                        do {
-                            try FileManager.default.removeItem(at: url)
-                            SapoLog.recording.info(
-                                "WhisperKit deleted file=\(url.lastPathComponent, privacy: .public)"
-                            )
-                            foundAndDeleted = true
-                        } catch {
-                            SapoLog.recording.error(
-                                "WhisperKit delete failed file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                            )
-                        }
+                for url in contents where Self.directoryName(url.lastPathComponent, matches: model) {
+                    do {
+                        try FileManager.default.removeItem(at: url)
+                        SapoLog.recording.info(
+                            "WhisperKit deleted file=\(url.lastPathComponent, privacy: .public)"
+                        )
+                        foundAndDeleted = true
+                    } catch {
+                        SapoLog.recording.error(
+                            "WhisperKit delete failed file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                        )
                     }
                 }
             } catch {
@@ -817,15 +811,15 @@ enum WhisperKitError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAvailable:
-            return "WhisperKit no esta disponible. Agrega el package en Xcode."
+            return "error.whisperkit.not_available".localized
         case .modelNotLoaded:
-            return "No hay un modelo cargado"
+            return "error.whisperkit.model_not_loaded".localized
         case .modelLoadFailed(let message):
             return "error.whisperkit.model_load".localized(message)
         case .transcriptionFailed(let message):
             return "error.whisperkit.transcription".localized(message)
         case .transcriptionInProgress:
-            return "Ya hay una transcripcion en curso"
+            return "error.whisperkit.in_progress".localized
         }
     }
 }

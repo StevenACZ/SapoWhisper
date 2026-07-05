@@ -1560,7 +1560,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard !Task.isCancelled else { return false }
 
-        try await audioRecorder.startRecording()
+        try await audioRecorder.startRecording(targetEngine: currentEngine)
         let receivedInput = await audioRecorder.waitForFirstInputBuffer(timeout: firstInputTimeout)
         if receivedInput {
             return true

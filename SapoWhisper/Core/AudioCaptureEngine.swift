@@ -179,7 +179,9 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
     /// Inicia la grabación de audio. Toda la configuración del HAL de Core Audio se ejecuta
     /// en `audioSetupQueue` para no bloquear el hilo principal durante transiciones de dispositivo.
-    func startRecording(onPCMChunk: PCMChunkHandler? = nil) async throws {
+    /// `targetEngine` (solo batch) permite capturar directo a 16 kHz para los
+    /// engines whisper-family en vez de resamplear dos veces.
+    func startRecording(targetEngine: TranscriptionEngine? = nil, onPCMChunk: PCMChunkHandler? = nil) async throws {
         assert(onPCMChunk == nil || mode == .streaming, "chunk emission is a streaming-mode capability")
 
         // Snapshot configuration on the calling thread before dispatching to background
@@ -259,7 +261,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                     let outputFormat: AVAudioFormat
                     switch self.mode {
                     case .batch:
-                        outputFormat = uploadQuality.audioFormat(matching: tapFormat)
+                        outputFormat = uploadQuality.audioFormat(matching: tapFormat, for: targetEngine)
                         SapoLog.recording.info(
                             "Recorder upload quality=\(uploadQuality.rawValue, privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public) format=\(String(describing: outputFormat.commonFormat), privacy: .public)"
                         )

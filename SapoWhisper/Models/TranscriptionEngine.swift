@@ -68,6 +68,18 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
     var isRecommended: Bool {
         self == .elevenLabsScribe
     }
+
+    /// Engines whose decoder consumes 16 kHz mono natively (Whisper running
+    /// locally via WhisperKit or on the Local AI Server). Capturing above
+    /// 16 kHz for them only adds a second resample before decoding.
+    var isWhisperFamily: Bool {
+        switch self {
+        case .whisperLocal, .localAIServer:
+            return true
+        case .deepgram, .elevenLabsScribe:
+            return false
+        }
+    }
 }
 
 /// Modelos de WhisperKit optimizados para Apple Silicon
