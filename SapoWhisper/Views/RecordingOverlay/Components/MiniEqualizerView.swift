@@ -54,11 +54,25 @@ struct MiniEqualizerView: View {
             let levels = isConnecting ? connectingLevels(at: context.date) : barLevels
             HStack(spacing: barSpacing) {
                 ForEach(0..<barCount, id: \.self) { index in
+                    // Fixed frame + y-scale instead of animating the frame
+                    // height: every 100 ms level tick used to run a window-wide
+                    // layout pass per animation frame (and redraw the pill's
+                    // text glyphs, which share the drawing layer) — ~13% of a
+                    // core for the whole recording. A transform animates in
+                    // Core Animation without touching layout.
                     Capsule()
                         .fill(Color.recording.opacity(barOpacity(levels, index)))
-                        .frame(width: barWidth, height: barHeight(levels, index))
+                        .frame(width: barWidth, height: maxHeight)
+                        .scaleEffect(x: 1, y: barScale(levels, index), anchor: .center)
                 }
             }
+            // Isolate the animating bars into their own Metal-backed layer.
+            // Without this, SwiftUI flattens the bars into the pill's shared
+            // drawing layer, and the per-tick fill/scale animations force a
+            // CPU re-render of that whole layer every frame — including the
+            // pill's text glyphs, whose CoreGraphics bitmap buffers also
+            // accumulate (~1 MB/s resident growth per recording session).
+            .drawingGroup()
             .animation(isConnecting ? .easeInOut(duration: 0.12) : nil, value: levels)
         }
         .frame(height: maxHeight)
@@ -102,7 +116,10 @@ struct MiniEqualizerView: View {
         let banded = min(1, max(0, (rawLevel - silenceFloor) / (speechCeiling - silenceFloor)))
         let shaped = banded > 0 ? CGFloat(pow(Double(banded), 0.85)) : 0
 
-        let attack: CGFloat = 0.6
+        // Attack near 1 so a word onset or a sharp sound lands on the very
+        // next tick (levels only arrive ~10x/s); the slow release keeps the
+        // decay readable.
+        let attack: CGFloat = 0.85
         let release: CGFloat = 0.25
         let blend = shaped > envelope ? attack : release
         var nextEnvelope = envelope + (shaped - envelope) * blend
@@ -125,6 +142,10 @@ struct MiniEqualizerView: View {
         withAnimation(.easeOut(duration: 0.09)) {
             barLevels = levels
         }
+    }
+
+    private func barScale(_ levels: [CGFloat], _ index: Int) -> CGFloat {
+        barHeight(levels, index) / maxHeight
     }
 
     private func barHeight(_ levels: [CGFloat], _ index: Int) -> CGFloat {

@@ -178,7 +178,15 @@ nonisolated extension AudioCaptureEngine {
         let avgPower = 20 * log10(max(rms, 0.0001))
         let normalized = max(0, min(1, (avgPower + 60) / 60))
 
-        smoothedAudioLevel = (smoothedAudioLevel * 0.7) + (normalized * 0.3)
+        // Asymmetric smoothing: rises track the voice almost immediately
+        // (buffers arrive ~10x/s, so a symmetric 0.3 blend swallowed word
+        // onsets and sharp sounds), while falls keep the slower blend so the
+        // meter decays instead of flickering.
+        if normalized > smoothedAudioLevel {
+            smoothedAudioLevel = (smoothedAudioLevel * 0.25) + (normalized * 0.75)
+        } else {
+            smoothedAudioLevel = (smoothedAudioLevel * 0.7) + (normalized * 0.3)
+        }
 
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastAudioLevelPublishTime >= 0.05 else { return }
