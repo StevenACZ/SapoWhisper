@@ -93,6 +93,10 @@ struct ResumePreviousChip: View {
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
             }
+            // The pill morph animates through widths below ideal; without a
+            // fixed size the duration label wraps mid-animation ("+0:0" / "3")
+            // and can stay wrapped. The pill's Spacer absorbs pressure instead.
+            .fixedSize()
             .foregroundColor(offer.isActive ? .white : .primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
