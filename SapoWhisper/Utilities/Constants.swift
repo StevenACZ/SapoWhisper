@@ -30,6 +30,7 @@ nonisolated enum Constants {
         static let recording = Color(red: 0.957, green: 0.263, blue: 0.212)  // #F44336
         static let processing = Color(red: 1.0, green: 0.757, blue: 0.027)  // #FFC107
         static let aiPolish = Color(red: 0.173, green: 0.557, blue: 0.859)  // #2C8EDB
+        static let compactMode = Color(red: 0.608, green: 0.349, blue: 0.816)  // #9B59D0
         static let error = Color(red: 1.0, green: 0.596, blue: 0.0)  // #FF9800
         static let disabled = Color(red: 0.620, green: 0.620, blue: 0.620)  // #9E9E9E
 
@@ -126,14 +127,17 @@ nonisolated enum Constants {
 
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
-        static let whisperKitModel = "whisperKitModel"
+        static let mlxWhisperModel = "mlxWhisperModel"
         /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
-        static let whisperKitUnloadAfterMinutes = "whisperKitUnloadAfterMinutes"
+        static let mlxWhisperUnloadAfterMinutes = "mlxWhisperUnloadAfterMinutes"
         static let localAIServerBaseURL = "localAIServerBaseURL"
         static let localAIServerModel = "localAIServerModel"
 
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
+        static let aiPolishMode = "aiPolishMode"
+        /// Minimum live-dictation seconds before AI polish runs (0 = always).
+        static let aiPolishMinDuration = "aiPolishMinDuration"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
         /// Last explicit translation target, restored by the overlay translation chip.
         static let aiPolishQuickTranslationTarget = "aiPolishQuickTranslationTarget"
@@ -183,6 +187,7 @@ extension Color {
     static let recording = Constants.Colors.recording
     static let processing = Constants.Colors.processing
     static let aiPolish = Constants.Colors.aiPolish
+    static let compactMode = Constants.Colors.compactMode
     static let sapoError = Constants.Colors.error
     static let disabled = Constants.Colors.disabled
 }

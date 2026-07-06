@@ -121,10 +121,9 @@
 "config.engine_summary_ai" = "Mejora IA";
 "config.engine_summary_ai_active" = "Activa";
 "config.engine_summary_ai_translate" = "→ %@";
-"config.whisper_model" = "Modelo de Whisper";
 "config.space_used" = "Espacio usado: %@";
-"config.whisper_vocabulary_hint" = "Los hints de vocabulario no son compatibles con el modelo local de Whisper; tus reemplazos se siguen aplicando tras la transcripción.";
 "config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
+"config.mlx_vocabulary_hint" = "Tu vocabulario guía al modelo local mientras transcribe, así tus términos salen bien escritos.";
 "config.unload_after_idle" = "Liberar modelo tras inactividad";
 "config.unload_never" = "Mantener cargado";
 "config.unload_minutes" = "%@ min";
@@ -148,10 +147,10 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Descarga un modelo primero";
 "status.recording_generic" = "Grabando...";
-"config.subtitle_info" = "Speech-to-Text con WhisperKit, servidor IA local, Deepgram, ElevenLabs y Mejora por IA";
+"config.subtitle_info" = "Speech-to-Text con Whisper (Local), servidor IA local, Deepgram, ElevenLabs y Mejora por IA";
 
 /* Engine Descriptions */
-"engine.whisper.description" = "100% privado, sin internet. Procesa todo en tu Mac.";
+"engine.mlx_whisper.description" = "El motor local más rápido en Apple Silicon (MLX). 100% privado, sin internet.";
 "engine.local_ai_server.description" = "Servidor NVIDIA local por LAN. Tu Mac graba; el servidor GPU transcribe.";
 
 /* AI Polish */
@@ -162,6 +161,16 @@
 "ai.polish.output_language" = "Idioma de salida";
 "ai.polish.output_language_translation_desc" = "Habla en cualquier idioma — la IA traduce el texto final a %@.";
 "ai.polish.desc" = "Corrige errores probables, quita muletillas y mejora la legibilidad. Si se alteran tokens obvios como links o términos guardados, SapoWhisper le pide a la IA que reintente antes de aplicar el resultado.";
+"ai.polish.mode" = "Estilo de mejora";
+"ai.polish.mode_normal" = "Normal";
+"ai.polish.mode_normal_help" = "Limpia muletillas, repeticiones y errores del dictado manteniendo todas tus frases, tono y orden.";
+"ai.polish.mode_compact" = "Compacto";
+"ai.polish.mode_compact_help" = "Extrae las ideas principales y secundarias con todas tus instrucciones, números y nombres, y reescribe el dictado en el texto más corto posible (típicamente 70–90% menos). Ideal para hablarle a una IA gastando menos tokens.";
+"ai.polish.mode_compact_hint" = "Recomendado para Compacto: OpenRouter · qwen/qwen3.5-flash-02-23 con razonamiento desactivado (el mejor balance fidelidad/velocidad/precio en pruebas reales).";
+"ai.polish.min_duration" = "Activar desde";
+"ai.polish.min_duration_desc" = "Dictados más cortos se pegan tal cual, sin IA — un audio de 5 segundos no necesita pulido. Aplica a Normal y Compacto; mejorar desde el historial siempre funciona.";
+"ai.polish.min_duration_always" = "Siempre";
+"ai.polish.min_duration_from" = "Desde %@ s";
 "ai.polish.reasoning" = "Razonamiento del modelo";
 "ai.polish.reasoning_desc" = "Cuánto puede pensar un modelo razonador antes de escribir. Apagado es lo más rápido — pulir un dictado no necesita cadena de pensamiento. Los modelos sin razonamiento lo ignoran.";
 "ai.polish.reasoning_automatic" = "Auto (según el modelo)";
@@ -199,11 +208,15 @@
 "ai.provider.error_not_configured" = "La mejora por IA no está configurada (faltan datos del proveedor).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
 "ai.provider.error_truncated" = "La respuesta de la IA se cortó antes de terminar.";
-"error.whisperkit.model_load" = "Error cargando modelo: %@";
-"error.whisperkit.transcription" = "Error en transcripción: %@";
-"error.whisperkit.not_available" = "WhisperKit no está disponible. Agrega el package en Xcode.";
-"error.whisperkit.model_not_loaded" = "No hay un modelo cargado";
-"error.whisperkit.in_progress" = "Ya hay una transcripción en curso";
+"error.mlx.model_load" = "Error cargando modelo MLX: %@";
+"error.mlx.transcription" = "Error de transcripción MLX: %@";
+"error.mlx.model_not_loaded" = "No hay modelo MLX cargado";
+"error.mlx.in_progress" = "Ya hay una transcripción en curso";
+"config.mlx_model" = "Modelo MLX";
+"mlx.state.downloading" = "Descargando %@...";
+"mlx.state.downloading_percent" = "Descargando %@... %@%%";
+"mlx.state.loading" = "Cargando %@ en memoria...";
+"mlx.state.ready" = "Modelo listo ✓";
 "ai.provider.error_http" = "Error del proveedor de IA (%@): %@";
 "ai.provider.error_auth_openai" = "OpenAI rechazó la API key. Si pegaste una key de OpenRouter, cambia el proveedor a OpenRouter; si quieres OpenAI, pega una key de OpenAI.";
 "ai.provider.error_auth_openrouter" = "OpenRouter rechazó la API key. Revisa que la key sea de OpenRouter.";
@@ -230,15 +243,20 @@
 
 /* Badges & Labels */
 "badge.recommended" = "Recomendado";
-"badge.balance" = "Balance";
-"badge.pro" = "Pro";
 
 /* Model Speeds */
 "model.speed.very_fast" = "Muy rápido";
 "model.speed.fast" = "Rápido";
 "model.speed.moderate" = "Moderado";
-"model.speed.slow" = "Lento";
 "model.delete_tooltip" = "Borrar modelo para liberar espacio";
+"model.download_tooltip" = "Descargar modelo";
+"model.pause_tooltip" = "Pausar descarga";
+"model.resume_tooltip" = "Reanudar descarga";
+"model.cancel_tooltip" = "Cancelar descarga y borrar archivos parciales";
+"model.retry_tooltip" = "Reintentar descarga";
+"model.paused_label" = "En pausa";
+"model.download_failed" = "Descarga fallida: %@";
+"badge.recommended" = "Recomendado";
 
 /* Settings Tabs */
 "tab.general" = "General";
@@ -352,6 +370,9 @@
 "overlay.paused" = "En pausa";
 "overlay.transcribing" = "Transcribiendo...";
 "overlay.ai_polishing" = "Mejorando con IA...";
+"overlay.ai_compacting" = "Compactando...";
+"overlay.compact_chip" = "Compacto";
+"overlay.copied_raw" = "IA no aplicada — texto crudo";
 "overlay.completed" = "¡Listo!";
 "overlay.copied" = "Copiado";
 "overlay.edit_mode" = "Edición por voz";
@@ -472,12 +493,12 @@
 "prompts.personal_context_desc" = "Cuéntale a la IA quién eres y qué herramientas usas, para que reconozca tus términos técnicos.";
 "prompts.personal_context_hint" = "Se envía con cada mejora junto a tu vocabulario. Mantenlo corto.";
 "prompts.preview_polish" = "Probar el polish";
-"prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia el pulido.";
+"prompts.preview_polish_desc" = "Ejecuta el proveedor real con un dictado de ejemplo — ideal para comparar al cambiar de modelo o entre Normal y Compacto.";
 "prompts.preview_run" = "Pulir ejemplo";
 "prompts.preview_raw" = "Original";
 "prompts.preview_polished" = "Pulido";
 "prompts.preview_needs_provider" = "Configura el proveedor de IA arriba para ejecutar una prueba.";
-"prompts.preview_sample" = "eh bueno quería confirmarte que mañana subo el fix a la rama feature login y luego corro npm run build";
+"prompts.preview_sample" = "eh bueno básicamente te quería comentar que ya revisé lo del bug del login o sea el problema era que el token expiraba a los 30 minutos entonces lo que hice fue subir el fix a la rama feature login y corrí las pruebas y todo pasó bien así que creo que mañana lo podemos mergear si te parece y bueno también avísale a Andrea que el deploy quedaría para el viernes como a las 3 de la tarde";
 "prompts.save_prompt" = "Guardar";
 "prompts.prompt_saved" = "Guardado";
 "prompts.unsaved_changes" = "Cambios sin guardar";

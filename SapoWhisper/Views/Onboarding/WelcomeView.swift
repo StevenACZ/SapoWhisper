@@ -433,10 +433,10 @@ private struct WelcomeEngineStep: View {
                 VStack(spacing: 10) {
                     WelcomeWhisperCard(
                         viewModel: viewModel,
-                        isSelected: selectedCard == .whisperLocal,
+                        isSelected: selectedCard == .mlxWhisper,
                         selectionNamespace: selectionNamespace
                     ) {
-                        select(.whisperLocal)
+                        select(.mlxWhisper)
                     }
 
                     WelcomeLocalAIServerCard(
@@ -551,29 +551,39 @@ private struct WelcomeWhisperCard: View {
     let selectionNamespace: Namespace.ID
     let onSelect: () -> Void
 
-    private let offeredModels: [WhisperKitModel] = [.base, .small]
+    /// Onboarding shortlist: the balanced tier and the recommended turbo.
+    /// The full four-tier catalog lives in Settings.
+    private let offeredModels: [MLXWhisperModel] = [.small, .largeV3Turbo]
+
+    private var isReady: Bool {
+        viewModel.isEngineReady(.mlxWhisper)
+    }
+
+    private var isLoading: Bool {
+        viewModel.mlxWhisperTranscriber.isLoading
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: onSelect) {
                 WelcomeEngineCardHeader(
-                    engine: .whisperLocal,
+                    engine: .mlxWhisper,
                     tagline: "welcome.whisper_tagline".localized,
-                    isReady: viewModel.isWhisperKitReady
+                    isReady: isReady
                 )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            if isSelected && !viewModel.isWhisperKitReady {
-                if viewModel.isLoadingWhisperKit {
+            if isSelected && !isReady {
+                if isLoading {
                     HStack(spacing: 12) {
-                        ProgressRing(progress: viewModel.whisperKitLoadingProgress)
+                        ProgressRing(progress: viewModel.mlxWhisperTranscriber.loadingProgress)
                             .frame(width: 30, height: 30)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("welcome.whisper_downloading".localized)
                                 .font(.caption.weight(.semibold))
-                            Text(viewModel.whisperKitLoadingMessage)
+                            Text(viewModel.mlxWhisperTranscriber.loadingMessage)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -593,8 +603,15 @@ private struct WelcomeWhisperCard: View {
                                     startDownload(model)
                                 } label: {
                                     VStack(spacing: 2) {
-                                        Text(model.displayName)
-                                            .font(.caption.weight(.semibold))
+                                        HStack(spacing: 4) {
+                                            Text(model.displayName)
+                                                .font(.caption.weight(.semibold))
+                                            if model.isRecommended {
+                                                Image(systemName: "star.fill")
+                                                    .font(.system(size: 8))
+                                                    .foregroundStyle(Color.sapoGreen)
+                                            }
+                                        }
                                         Text(model.fileSize)
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
@@ -611,12 +628,14 @@ private struct WelcomeWhisperCard: View {
             }
         }
         .modifier(WelcomeEngineCardChrome(isSelected: isSelected, selectionNamespace: selectionNamespace))
-        .animation(.smooth(duration: 0.25), value: viewModel.isLoadingWhisperKit)
+        .animation(.smooth(duration: 0.25), value: isLoading)
     }
 
-    private func startDownload(_ model: WhisperKitModel) {
-        viewModel.selectedWhisperModel = model.rawValue
-        viewModel.setEngine(.whisperLocal)
+    private func startDownload(_ model: MLXWhisperModel) {
+        // setEngine no longer auto-downloads; the explicit model pick does
+        // (setMLXWhisperModel downloads + loads when the engine is local).
+        viewModel.setEngine(.mlxWhisper)
+        viewModel.setMLXWhisperModel(model)
     }
 }
 

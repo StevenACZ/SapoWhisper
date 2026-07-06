@@ -4,9 +4,9 @@ import SwiftUI
 struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.mlxWhisper.rawValue
     @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
-    @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel) private var selectedMLXModel = MLXWhisperModel.largeV3Turbo.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
         DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
@@ -19,7 +19,7 @@ struct EngineSettingsTab: View {
     @State private var isSelectedEngineSettingsExpanded = false
 
     private var currentEngine: TranscriptionEngine {
-        TranscriptionEngine(rawValue: selectedEngine) ?? .whisperLocal
+        TranscriptionEngine(rawValue: selectedEngine) ?? .mlxWhisper
     }
 
     var body: some View {
@@ -44,9 +44,9 @@ struct EngineSettingsTab: View {
                     EngineOptionRow(
                         engine: engine,
                         isSelected: currentEngine == engine,
-                        isLoading: engine == .whisperLocal && viewModel.isLoadingWhisperKit,
-                        loadingProgress: viewModel.whisperKitLoadingProgress,
-                        loadingMessage: viewModel.whisperKitLoadingMessage,
+                        isLoading: engine == .mlxWhisper && viewModel.mlxWhisperTranscriber.isLoading,
+                        loadingProgress: viewModel.mlxWhisperTranscriber.loadingProgress,
+                        loadingMessage: viewModel.mlxWhisperTranscriber.loadingMessage,
                         hasDetails: engine.hasInlineSettings,
                         isExpanded: $isSelectedEngineSettingsExpanded
                     ) {
@@ -70,8 +70,8 @@ struct EngineSettingsTab: View {
     @ViewBuilder
     private func selectedEngineSettings(for engine: TranscriptionEngine) -> some View {
         switch engine {
-        case .whisperLocal:
-            WhisperKitSettingsCard(viewModel: viewModel, isEmbedded: true)
+        case .mlxWhisper:
+            LocalModelsCard(viewModel: viewModel, isEmbedded: true)
         case .localAIServer:
             LocalAIServerSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .deepgram:
@@ -158,9 +158,11 @@ struct EngineSettingsTab: View {
 
     private var modeSummary: (icon: String, label: String, value: String) {
         switch currentEngine {
-        case .whisperLocal:
-            let model = WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
-            return ("memorychip", "config.engine_summary_model".localized, model.displayName)
+        case .mlxWhisper:
+            // No fallback tier: after deleting the selected model there is
+            // genuinely no selection until the user picks again.
+            let model = MLXWhisperModel(rawValue: selectedMLXModel)
+            return ("memorychip", "config.engine_summary_model".localized, model?.displayName ?? "—")
         case .localAIServer:
             let model = selectedLocalAIServerModel.trimmingCharacters(in: .whitespacesAndNewlines)
             return (

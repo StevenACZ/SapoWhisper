@@ -225,23 +225,23 @@ extension TranscriptionFailure {
         if let recordingError = error as? RecordingError {
             return fromRecording(recordingError, engine: engine)
         }
-        if let whisperKitError = error as? WhisperKitError {
-            switch whisperKitError {
-            case .notAvailable, .modelNotLoaded:
+        if let mlxError = error as? MLXWhisperError {
+            switch mlxError {
+            case .modelNotLoaded:
                 return TranscriptionFailure(
                     kind: .notConfigured, engine: engine,
-                    technicalDetail: "WhisperKitError.\(whisperKitError)",
-                    messageOverride: whisperKitError.errorDescription)
+                    technicalDetail: "MLXWhisperError.modelNotLoaded",
+                    messageOverride: mlxError.errorDescription)
             case .transcriptionInProgress:
                 return TranscriptionFailure(
                     kind: .unknown, engine: engine,
-                    technicalDetail: "WhisperKitError.transcriptionInProgress",
-                    messageOverride: whisperKitError.errorDescription)
+                    technicalDetail: "MLXWhisperError.transcriptionInProgress",
+                    messageOverride: mlxError.errorDescription)
             case .modelLoadFailed, .transcriptionFailed:
                 return TranscriptionFailure(
                     kind: .unknown, engine: engine,
-                    technicalDetail: "WhisperKitError",
-                    messageOverride: whisperKitError.errorDescription)
+                    technicalDetail: "MLXWhisperError",
+                    messageOverride: mlxError.errorDescription)
             }
         }
 

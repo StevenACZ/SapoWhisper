@@ -35,7 +35,7 @@ struct HistoryView: View {
     @State private var showDeleteConfirmation = false
     @State private var searchTask: Task<Void, Never>?
     @State private var retranscribeEntry: HistoryEntry?
-    @State private var selectedRetranscribeEngine: TranscriptionEngine = .whisperLocal
+    @State private var selectedRetranscribeEngine: TranscriptionEngine = .mlxWhisper
     @State private var isRetranscribing = false
     @State private var aiPolishingEntryID: Int64?
     @State private var showErrorAlert = false

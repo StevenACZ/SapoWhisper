@@ -21,6 +21,9 @@ struct MiniEqualizerView: View {
     /// arrive; a gentle travelling wave shows the meter is alive and waiting
     /// instead of a dead flat line.
     var isConnecting: Bool = false
+    /// Recording red by default; compact mode recolors the meter so the user
+    /// knows from the first second which polish mode this dictation gets.
+    var barColor: Color = .recording
 
     @State private var envelope: CGFloat = 0
     @State private var barLevels: [CGFloat] = []
@@ -61,7 +64,7 @@ struct MiniEqualizerView: View {
                     // core for the whole recording. A transform animates in
                     // Core Animation without touching layout.
                     Capsule()
-                        .fill(Color.recording.opacity(barOpacity(levels, index)))
+                        .fill(barColor.opacity(barOpacity(levels, index)))
                         .frame(width: barWidth, height: maxHeight)
                         .scaleEffect(x: 1, y: barScale(levels, index), anchor: .center)
                 }

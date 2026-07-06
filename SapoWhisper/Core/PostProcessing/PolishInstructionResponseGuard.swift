@@ -33,10 +33,19 @@ enum PolishInstructionResponseGuard {
     /// language-bound pattern would read as "introduced". The cue-preservation
     /// check stays off for the same reason ("genera" → "generates" matches no
     /// EN pattern).
+    ///
+    /// `compactionExpected` disables ONLY the cue-preservation check: a
+    /// compact rewrite legitimately turns imperative cues into requirement
+    /// phrasing ("elimina el motor" → "Eliminar el motor"), so demanding the
+    /// literal cue words rejected every good compaction 3/3 attempts and
+    /// shipped raw (2026-07-05). The introduced-phrase checks stay on — a
+    /// model that answers instead of compacting still writes its own
+    /// refusal/answer wording.
     static func evaluate(
         raw: String,
         polished: String,
-        translationExpected: Bool = false
+        translationExpected: Bool = false,
+        compactionExpected: Bool = false
     ) -> PolishInstructionResponseVerdict {
         let rawNormalized = normalize(raw)
         let polishedNormalized = normalize(polished)
@@ -81,6 +90,8 @@ enum PolishInstructionResponseGuard {
         ), !polishedPreservesRequestCue {
             return rejected()
         }
+
+        guard !compactionExpected else { return acceptable() }
 
         let rawHasAssistantDirectedCue = containsAnyPattern(assistantDirectedCuePatterns, in: rawNormalized)
         if rawHasAssistantDirectedCue, !polishedPreservesRequestCue {

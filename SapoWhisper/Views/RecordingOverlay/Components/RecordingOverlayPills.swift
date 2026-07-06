@@ -19,6 +19,8 @@ struct RecordingPillView: View {
     var resumeOffer: OverlayWindowManager.ResumeOffer? = nil
     var onResumeToggle: (() -> Void)?
     var onTranslationToggled: ((Bool) -> Void)?
+    /// Compact polish mode is active for this dictation: purple meter + chip.
+    var compactModeActive: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -27,7 +29,8 @@ struct RecordingPillView: View {
             MiniEqualizerView(
                 audioLevelPublisher: audioLevelPublisher,
                 barCount: 11,
-                isConnecting: connectingDeviceName != nil
+                isConnecting: connectingDeviceName != nil,
+                barColor: compactModeActive ? .compactMode : .recording
             )
 
             if let connectingDeviceName {
@@ -52,13 +55,22 @@ struct RecordingPillView: View {
                     .transition(.opacity)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 6)
 
             if let resumeOffer {
                 ResumePreviousChip(offer: resumeOffer, onTap: { onResumeToggle?() })
             }
 
-            OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
+            // Compact + language chips read as one tight control cluster; the
+            // default HStack spacing left them looking scattered.
+            HStack(spacing: 5) {
+                if compactModeActive {
+                    CompactModeChip()
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+
+                OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
+            }
 
             Button(action: onPause) {
                 Image(systemName: "pause.fill")
@@ -74,6 +86,10 @@ struct RecordingPillView: View {
         .frame(minWidth: 250)
         // No local animation for the connecting swap: the manager's spring
         // transaction drives it (same pattern as `showsNoSpeechHint`).
+        // The chip appears mid-recording when the minimum-duration threshold
+        // is crossed (duration ticks swap state without animation), so its
+        // pop is driven locally.
+        .animation(.smooth(duration: 0.25), value: compactModeActive)
     }
 }
 
@@ -159,8 +175,30 @@ struct TranscribingPillView: View {
     }
 }
 
+/// Static "Compacto" badge on the recording pill while compact mode is on.
+struct CompactModeChip: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: 9, weight: .bold))
+            Text("overlay.compact_chip".localized)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        // The pill lays out at ideal size inside a fixed surface; without a
+        // hard horizontal size the chip label wraps ("Compac/t") when
+        // siblings compete for width.
+        .fixedSize()
+        .foregroundColor(.compactMode)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.compactMode.opacity(0.16)))
+    }
+}
+
 struct AIPolishingPillView: View {
     let timeoutSeconds: UInt64
+    var compact: Bool = false
 
     @State private var startedAt = Date()
 
@@ -168,9 +206,9 @@ struct AIPolishingPillView: View {
         HStack(spacing: 10) {
             FloatingSapoIcon(state: .polishing, size: 32)
             PillDivider()
-            TranscribingIndicator(color: .aiPolish)
+            TranscribingIndicator(color: compact ? .compactMode : .aiPolish)
 
-            Text("overlay.ai_polishing".localized)
+            Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
 
@@ -195,22 +233,46 @@ struct AIPolishingPillView: View {
 /// this only confirms the copy with the success icon pop + glow and then
 /// collapses into the dock chip, which reopens the full transcript on demand.
 struct CopiedPillView: View {
+    var outcome: CopiedOutcome = .standard
+
     @State private var iconScale: CGFloat = 0
     @State private var glowFlash = 0
 
+    private var accent: Color {
+        outcome == .aiSkipped ? .sapoError : .sapoGreen
+    }
+
+    private var icon: String {
+        outcome == .aiSkipped ? "exclamationmark.triangle.fill" : "doc.on.clipboard.fill"
+    }
+
+    private var label: String {
+        (outcome == .aiSkipped ? "overlay.copied_raw" : "overlay.copied").localized
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc.on.clipboard.fill")
+            Image(systemName: icon)
                 .font(.system(size: 16))
-                .foregroundColor(.sapoGreen)
+                .foregroundColor(accent)
                 .scaleEffect(iconScale)
 
-            Text("overlay.copied".localized)
+            Text(label)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.sapoGreen)
+                .foregroundColor(accent)
+
+            if case .compacted(let percentReduced) = outcome, percentReduced > 0 {
+                Text("−\(percentReduced)%")
+                    .font(.system(size: 12, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(.compactMode)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.compactMode.opacity(0.16)))
+            }
         }
         .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
-            content.overlay(glowStroke(color: .sapoGreen, intensity: glow))
+            content.overlay(glowStroke(color: accent, intensity: glow))
         } keyframes: { _ in
             KeyframeTrack {
                 LinearKeyframe(0.0, duration: 0.15)

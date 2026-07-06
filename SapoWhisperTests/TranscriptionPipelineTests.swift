@@ -58,8 +58,8 @@ final class TranscriptionPipelineTests: XCTestCase {
             )
         }
 
-        func deliverTranscription(_ finalText: String, perf: DictationPerfTimeline?) {
-            deliveredTexts.append(finalText)
+        func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?) {
+            deliveredTexts.append(aiResult.finalText)
         }
 
         func presentTranscriptionFailure(_ failure: TranscriptionFailure) {

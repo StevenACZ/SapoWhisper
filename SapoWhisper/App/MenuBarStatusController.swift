@@ -86,7 +86,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func bindStatusImage() {
-        Publishers.CombineLatest(viewModel.$appState, viewModel.isLoadingWhisperKitSubject)
+        Publishers.CombineLatest(viewModel.$appState, viewModel.isLoadingLocalModelSubject)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
                 self?.statusItem?.button?.image = self?.currentStatusImage()
@@ -105,7 +105,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             .map { _ in "last-transcription" }
             .eraseToAnyPublisher()
 
-        let loadingRefreshes = viewModel.isLoadingWhisperKitSubject
+        let loadingRefreshes = viewModel.isLoadingLocalModelSubject
             .dropFirst()
             .removeDuplicates()
             .map { _ in "whisper-loading" }
@@ -261,7 +261,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private func currentStatusImage() -> NSImage {
         MenuBarIconImageProvider.image(
             for: viewModel.appState,
-            isLoadingWhisperKit: viewModel.isLoadingWhisperKit
+            isLoadingLocalModel: viewModel.isLoadingLocalModel
         )
     }
 
@@ -368,6 +368,10 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let hostingController = NSHostingController(rootView: AboutWindowHost())
         window.contentViewController = hostingController
         window.setContentSize(hostingController.view.fittingSize)
+        // Size is now fixed; drop the content-driven window sizing options so
+        // the hosting view cannot re-enter the update-constraints pass (the
+        // macOS 26 _postWindowNeedsUpdateConstraints hard crash).
+        hostingController.sizingOptions = []
         return NSWindowController(window: window)
     }
 
@@ -393,10 +397,15 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.delegate = secureInputReleaseDelegate
-        window.contentViewController = NSHostingController(rootView: rootView)
+        let hostingController = NSHostingController(rootView: rootView)
+        // The window frame is the single source of truth for size. Default
+        // sizing options also let the hosting view drive window min/max from
+        // inside AppKit's update-constraints pass; when the SwiftUI graph
+        // invalidates mid-pass, macOS 26 throws in
+        // _postWindowNeedsUpdateConstraints — a hard crash (2026-07-05).
+        hostingController.sizingOptions = []
+        window.contentViewController = hostingController
         window.contentView?.wantsLayer = true
-        // NSHostingController shrinks the window to the view's minimum once
-        // assigned; restore the size this window was asked to open at.
         window.setContentSize(size)
 
         if resizable {

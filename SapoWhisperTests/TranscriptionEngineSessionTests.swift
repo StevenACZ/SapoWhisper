@@ -107,11 +107,11 @@ final class TranscriptionEngineSessionTests: XCTestCase {
 
     // MARK: - Conformance mapping (deterministic engine)
 
-    /// WhisperKit is the one engine whose readiness/busy inputs are plain
-    /// `@Published var`s, so its conformance can be pinned end to end without
+    /// MLX is the one engine whose readiness/busy inputs are plain
+    /// mutable vars, so its conformance can be pinned end to end without
     /// the keychain / `private(set)` constraints of the cloud engines.
-    func testWhisperKitSessionMapsModelLoadedAndTranscribing() {
-        let transcriber = WhisperKitTranscriber()
+    func testMLXSessionMapsModelLoadedAndTranscribing() {
+        let transcriber = MLXWhisperTranscriber()
         XCTAssertFalse(transcriber.isReady, "no model loaded yet")
         XCTAssertFalse(transcriber.isBusy)
 
@@ -130,7 +130,7 @@ final class TranscriptionEngineSessionTests: XCTestCase {
     /// the `busy` array — this does, by object identity. It touches no keychain
     /// and no `private(set)` live state, only composition. The engine is forced
     /// to a cloud value first so the ViewModel's init does not kick off a
-    /// WhisperKit model load.
+    /// local model load.
     func testEngineSessionsMapEachEngineToItsConcreteTranscribers() {
         let defaults = UserDefaults.standard
         let key = Constants.StorageKeys.transcriptionEngine
@@ -146,10 +146,10 @@ final class TranscriptionEngineSessionTests: XCTestCase {
 
         let viewModel = SapoWhisperViewModel()
 
-        let whisper = viewModel.engineSessions(for: .whisperLocal)
-        XCTAssertTrue(whisper.readiness === viewModel.whisperKitTranscriber)
+        let whisper = viewModel.engineSessions(for: .mlxWhisper)
+        XCTAssertTrue(whisper.readiness === viewModel.mlxWhisperTranscriber)
         XCTAssertEqual(whisper.busy.count, 1)
-        XCTAssertTrue(whisper.busy.contains { $0 === viewModel.whisperKitTranscriber })
+        XCTAssertTrue(whisper.busy.contains { $0 === viewModel.mlxWhisperTranscriber })
 
         let deepgram = viewModel.engineSessions(for: .deepgram)
         XCTAssertTrue(deepgram.readiness === viewModel.deepgramTranscriber)

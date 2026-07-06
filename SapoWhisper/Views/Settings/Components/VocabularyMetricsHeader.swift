@@ -12,12 +12,12 @@ struct VocabularyMetricsHeader: View {
     let termCount: Int
 
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var engineValue =
-        TranscriptionEngine.whisperLocal.rawValue
+        TranscriptionEngine.mlxWhisper.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var elevenLabsModeValue =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
 
     private var engine: TranscriptionEngine {
-        TranscriptionEngine(rawValue: engineValue) ?? .whisperLocal
+        TranscriptionEngine(rawValue: engineValue) ?? .mlxWhisper
     }
 
     private var elevenLabsMode: ElevenLabsTranscriptionMode {

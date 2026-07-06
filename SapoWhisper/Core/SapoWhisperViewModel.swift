@@ -54,17 +54,17 @@ class SapoWhisperViewModel: ObservableObject {
     // No more @Published mirrors: SwiftUI tracks the transcriber property a
     // view actually reads, so 60 Hz load-progress ticks stop invalidating
     // every ViewModel observer.
-    var isLoadingWhisperKit: Bool { whisperKitTranscriber.isLoading }
-    var whisperKitLoadingProgress: Double { whisperKitTranscriber.loadingProgress }
-    var whisperKitLoadingMessage: String { whisperKitTranscriber.loadingMessage }
+    /// The local MLX model downloading/loading — drives the menu bar
+    /// loading badge.
+    var isLoadingLocalModel: Bool { mlxWhisperTranscriber.isLoading }
     /// Combine bridge for AppKit-side consumers (MenuBarStatusController)
     /// that need a publisher now that the transcriber has none.
-    let isLoadingWhisperKitSubject = CurrentValueSubject<Bool, Never>(false)
+    let isLoadingLocalModelSubject = CurrentValueSubject<Bool, Never>(false)
 
     // MARK: - AppStorage Properties
 
     /// New installs auto-detect the spoken language; every current engine
-    /// (WhisperKit, Local AI Server, Deepgram, ElevenLabs) supports detection natively.
+    /// (MLX Whisper, Local AI Server, Deepgram, ElevenLabs) supports detection natively.
     @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
     @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
@@ -77,11 +77,10 @@ class SapoWhisperViewModel: ObservableObject {
     /// Same key the Settings toggle writes; before this the menu toggle drove
     /// a non-persisted @Published and the Settings toggle changed nothing.
     @AppStorage(Constants.StorageKeys.autoPaste) var autoPasteEnabled = true
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.whisperLocal.rawValue
-    // Default: the official large-v3 turbo — a whole WER class above `small`
-    // for Spanish + technical terms at low latency on Apple Silicon.
-    @AppStorage(Constants.StorageKeys.whisperKitModel) var selectedWhisperModel: String =
-        WhisperKitModel.largev3V20240930.rawValue
+    // Default engine on Mac: local MLX Whisper (Steven's decision 2026-07-05).
+    @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.mlxWhisper.rawValue
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel) var selectedMLXWhisperModel: String =
+        MLXWhisperModel.largeV3Turbo.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
@@ -91,7 +90,7 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Managers
 
     let audioRecorder = AudioCaptureEngine(mode: .batch)
-    let whisperKitTranscriber = WhisperKitTranscriber()
+    let mlxWhisperTranscriber = MLXWhisperTranscriber()
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
@@ -203,11 +202,13 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Computed Properties
 
     var currentEngine: TranscriptionEngine {
-        TranscriptionEngine(rawValue: selectedEngine) ?? .whisperLocal
+        TranscriptionEngine(rawValue: selectedEngine) ?? .mlxWhisper
     }
 
-    var currentWhisperKitModel: WhisperKitModel {
-        WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
+    /// nil = no local model selected (the selection clears when its model is
+    /// deleted); nothing downloads or loads again until an explicit pick.
+    var currentMLXWhisperModel: MLXWhisperModel? {
+        MLXWhisperModel(rawValue: selectedMLXWhisperModel)
     }
 
     var currentDeepgramMode: DeepgramTranscriptionMode {
@@ -230,17 +231,13 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.isRecording || deepgramFluxTranscriber.isStreaming || elevenLabsRealtimeTranscriber.isStreaming
     }
 
-    var isWhisperKitReady: Bool {
-        whisperKitTranscriber.isModelLoaded
-    }
-
     /// The concrete transcriber(s) backing one logical engine. Single source
     /// of truth for "which sessions make up this engine"; readiness/busy are
     /// derived from it uniformly, replacing the per-query `switch currentEngine`.
     func engineSessions(for engine: TranscriptionEngine) -> EngineSessions {
         switch engine {
-        case .whisperLocal:
-            return EngineSessions(readiness: whisperKitTranscriber, busy: [whisperKitTranscriber])
+        case .mlxWhisper:
+            return EngineSessions(readiness: mlxWhisperTranscriber, busy: [mlxWhisperTranscriber])
         case .localAIServer:
             return EngineSessions(readiness: localAIServerTranscriber, busy: [localAIServerTranscriber])
         case .deepgram:
@@ -300,10 +297,13 @@ class SapoWhisperViewModel: ObservableObject {
             self?.handleCaptureDeviceFailure(reason: reason)
         }
 
-        // Cargar modelo automaticamente si el motor es WhisperLocal
-        if currentEngine == .whisperLocal {
+        // Cargar modelo automaticamente si el motor es local y el modelo ya
+        // esta en disco — una descarga solo la inicia una accion explicita.
+        if currentEngine == .mlxWhisper, let model = currentMLXWhisperModel,
+            mlxWhisperTranscriber.isModelDownloaded(model)
+        {
             Task {
-                await loadWhisperKitModel()
+                await loadMLXWhisperModel()
             }
         }
 
@@ -407,34 +407,41 @@ class SapoWhisperViewModel: ObservableObject {
         bindStreamingSession(deepgramFluxTranscriber, engine: .deepgram)
         bindStreamingSession(elevenLabsRealtimeTranscriber, engine: .elevenLabsScribe)
 
-        // Observar estado de transcripcion (WhisperKit) — callback hooks on
-        // the @Observable transcriber replace the old Combine sinks.
-        whisperKitTranscriber.onTranscribingChanged = { [weak self] isTranscribing in
+        // Hooks del motor MLX (transcripcion, carga, modelo listo) — callback
+        // hooks on the @Observable transcriber replace the old Combine sinks.
+        mlxWhisperTranscriber.onTranscribingChanged = { [weak self] isTranscribing in
             guard let self, !self.isReprocessingHistory else { return }
             if isTranscribing {
                 self.appState = .processing
             }
         }
-
-        // Observar carga de WhisperKit (estado propio + icono del Dock)
-        whisperKitTranscriber.onLoadingChanged = { [weak self] isLoading in
+        mlxWhisperTranscriber.onLoadingChanged = { [weak self] isLoading in
             guard let self else { return }
-            self.isLoadingWhisperKitSubject.send(isLoading)
-            if self.currentEngine == .whisperLocal {
+            self.isLoadingLocalModelSubject.send(isLoading)
+            if self.currentEngine == .mlxWhisper {
                 DockIconManager.shared.updateIcon(for: self.appState, isModelLoading: isLoading)
             }
         }
-
-        // Observar cuando el modelo esta listo (WhisperKit)
-        whisperKitTranscriber.onModelLoadedChanged = { [weak self] isLoaded in
+        mlxWhisperTranscriber.onModelLoadedChanged = { [weak self] isLoaded in
             guard let self else { return }
-            guard self.currentEngine == .whisperLocal, isLoaded else { return }
+            guard self.currentEngine == .mlxWhisper, isLoaded else { return }
             // An on-demand reload can finish mid-recording — only leave the
             // "no model" state so it never clobbers .recording/.processing/
-            // .polishing (mirrors the guard in loadWhisperKitModel()).
+            // .polishing (mirrors the guard in loadMLXWhisperModel()).
             if case .noModel = self.appState {
                 self.appState = .idle
             }
+        }
+        // A standalone Settings download that finishes for the ACTIVE
+        // selection loads it right away, so dictation is ready without a
+        // second tap. (loadModel de-dupes if a selection load already awaits
+        // the same snapshot.)
+        mlxWhisperTranscriber.onDownloadCompleted = { [weak self] model in
+            guard let self, self.currentEngine == .mlxWhisper,
+                model == self.currentMLXWhisperModel,
+                !self.mlxWhisperTranscriber.isModelLoaded
+            else { return }
+            Task { await self.loadMLXWhisperModel() }
         }
 
         // Observar estado de transcripcion (ElevenLabs Scribe)
@@ -452,7 +459,7 @@ class SapoWhisperViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 // Actualizar icono del Dock usando el manager
-                DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingWhisperKit ?? false)
+                DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingLocalModel ?? false)
                 // Auto-Ducking: reducir/restaurar volumen del sistema
                 AutoDuckingManager.shared.handleStateChange(state)
                 // Esc cancela el dictado solo mientras hay sesión activa
@@ -630,34 +637,49 @@ class SapoWhisperViewModel: ObservableObject {
         appState = isEngineReady(currentEngine) ? .idle : .noModel
     }
 
-    // MARK: - WhisperKit Methods
+    // MARK: - MLX Whisper Methods
 
-    /// Carga el modelo de WhisperKit seleccionado
-    func loadWhisperKitModel() async {
+    /// Carga el modelo MLX seleccionado (descarga si hace falta).
+    func loadMLXWhisperModel() async {
+        guard let model = currentMLXWhisperModel else { return }
         do {
-            try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: selectedLanguage)
+            try await mlxWhisperTranscriber.loadModel(model)
             // R4: an on-demand reload can finish mid-recording — only leave
             // the "no model" state, never clobber an active session state.
             if case .noModel = appState {
                 appState = .idle
             }
+        } catch is CancellationError {
+            return
         } catch {
             let errorMsg = error.localizedDescription
-            SapoLog.recording.error("WhisperKit load failed error=\(errorMsg, privacy: .public)")
+            SapoLog.recording.error("MLX load failed error=\(errorMsg, privacy: .public)")
             // Mid-recording reload failures surface at stop time through the
             // normal transcription failure path; do not clobber the session.
             guard activeRecordingSessionID == nil else { return }
-            let displayMessage = "error.whisperkit.model_load".localized(errorMsg)
-            appState = .error(ErrorState(message: displayMessage))
+            appState = .error(ErrorState(message: errorMsg))
 
             // Show the error briefly, then return to noModel for retry — but
             // only while THIS error is still showing; a newer, different
             // error inside the window must not be clobbered.
             Task {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if case .error(let state) = self.appState, state.message == displayMessage {
+                if case .error(let state) = self.appState, state.message == errorMsg {
                     self.checkInitialState()
                 }
+            }
+        }
+    }
+
+    /// Cambia el modelo del motor MLX
+    func setMLXWhisperModel(_ model: MLXWhisperModel) {
+        selectedMLXWhisperModel = model.rawValue
+
+        // Si el motor actual es MLX, recargar el modelo
+        if currentEngine == .mlxWhisper {
+            mlxWhisperTranscriber.unloadModel()
+            Task {
+                await loadMLXWhisperModel()
             }
         }
     }
@@ -667,29 +689,35 @@ class SapoWhisperViewModel: ObservableObject {
         let previousEngine = currentEngine
         selectedEngine = engine.rawValue
 
-        if previousEngine == .whisperLocal && engine != .whisperLocal {
-            whisperKitTranscriber.unloadModel()
+        if previousEngine == .mlxWhisper && engine != .mlxWhisper {
+            mlxWhisperTranscriber.unloadModel()
         }
 
         checkInitialState()
 
-        // Si cambia a WhisperKit y no hay modelo cargado, intentar cargarlo
-        if engine == .whisperLocal && !whisperKitTranscriber.isModelLoaded {
+        // Volver al motor local solo recarga un modelo ya descargado — el
+        // cambio de motor nunca inicia una descarga por si solo.
+        if engine == .mlxWhisper && !mlxWhisperTranscriber.isModelLoaded,
+            let model = currentMLXWhisperModel,
+            mlxWhisperTranscriber.isModelDownloaded(model)
+        {
             Task {
-                await loadWhisperKitModel()
+                await loadMLXWhisperModel()
             }
         }
     }
 
-    /// Cambia el modelo de WhisperKit
-    func setWhisperKitModel(_ model: WhisperKitModel) {
-        selectedWhisperModel = model.rawValue
-
-        // Si el motor actual es WhisperKit, recargar el modelo
-        if currentEngine == .whisperLocal {
-            whisperKitTranscriber.unloadModel()
-            Task {
-                await loadWhisperKitModel()
+    /// Borra un modelo local del disco; si era el seleccionado, limpia la
+    /// seleccion para que volver al motor local no lo re-descargue solo.
+    func deleteMLXWhisperModel(_ model: MLXWhisperModel) {
+        let wasSelected = currentMLXWhisperModel == model
+        mlxWhisperTranscriber.deleteDownloadedModel(model)
+        if wasSelected {
+            selectedMLXWhisperModel = ""
+            // Never clobber an active session state; a mid-dictation failure
+            // surfaces through the normal transcription failure path.
+            if currentEngine == .mlxWhisper, activeRecordingSessionID == nil {
+                checkInitialState()
             }
         }
     }
@@ -848,9 +876,9 @@ class SapoWhisperViewModel: ObservableObject {
         // R4: a model unloaded after idle reloads on demand — recording starts
         // immediately and the transcription awaits the reload at stop time.
         let canReloadOnDemand =
-            engine == .whisperLocal
-            && whisperKitTranscriber.downloadedModels.contains(currentWhisperKitModel)
-            && !whisperKitTranscriber.isTranscribing
+            engine == .mlxWhisper
+            && currentMLXWhisperModel.map { mlxWhisperTranscriber.downloadedModels.contains($0) } == true
+            && !mlxWhisperTranscriber.isTranscribing
 
         guard isReady || canReloadOnDemand else {
             activeRecordingSessionID = nil
@@ -860,8 +888,8 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         if !isReady {
-            SapoLog.recording.info("WhisperKit reloading on demand after idle unload")
-            Task { await self.loadWhisperKitModel() }
+            SapoLog.recording.info("Local model reloading on demand after idle unload")
+            Task { await self.loadMLXWhisperModel() }
         }
 
         // R7: offline fast-fail before opening the mic — cloud engines would
@@ -1287,7 +1315,7 @@ class SapoWhisperViewModel: ObservableObject {
                     duration: duration
                 )
 
-                deliverTranscription(aiResult.finalText, perf: nil)
+                deliverTranscription(aiResult, perf: nil)
 
                 // Update history entry in place; the retry may run on a
                 // different engine than the failed attempt.
@@ -1641,7 +1669,7 @@ class SapoWhisperViewModel: ObservableObject {
         guard case .recording = appState else { return }
         sessionPeakAudioLevel = max(sessionPeakAudioLevel, level)
 
-        if overlayManager.micConnectingName != nil, level > Self.micConnectedLevelThreshold {
+        if overlayManager.micConnectingInProgress, level > Self.micConnectedLevelThreshold {
             overlayManager.setMicConnecting(deviceName: nil)
         }
 
@@ -1701,13 +1729,16 @@ class SapoWhisperViewModel: ObservableObject {
             )
         }
         switch engine {
-        case .whisperLocal:
+        case .mlxWhisper:
             // R4: after an idle unload the reload kicked off at recording
             // start may still be in flight — await it before transcribing.
-            if !whisperKitTranscriber.isModelLoaded {
-                try await whisperKitTranscriber.loadModel(currentWhisperKitModel, language: language)
+            if !mlxWhisperTranscriber.isModelLoaded {
+                guard let model = currentMLXWhisperModel else {
+                    throw MLXWhisperError.modelNotLoaded
+                }
+                try await mlxWhisperTranscriber.loadModel(model)
             }
-            return try await whisperKitTranscriber.transcribe(audioURL: audioURL, language: language)
+            return try await mlxWhisperTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
             return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
         case .localAIServer:
@@ -1727,6 +1758,9 @@ class SapoWhisperViewModel: ObservableObject {
             return currentElevenLabsMode.historyName
         case .localAIServer:
             return "Local AI Server · \(LocalAIServerConfiguration.storedModel)"
+        case .mlxWhisper:
+            let modelName = currentMLXWhisperModel?.displayName ?? mlxWhisperTranscriber.loadedModelName
+            return modelName.map { "Whisper MLX · \($0)" } ?? "Whisper MLX"
         default:
             return engine.displayName
         }
@@ -1737,7 +1771,13 @@ class SapoWhisperViewModel: ObservableObject {
         source: String,
         duration: TimeInterval?
     ) async -> TranscriptAIResult {
-        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText)
+        // Live dictations honor the user's minimum-duration setting; history
+        // re-runs are explicit intent and always attempt.
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(
+            rawText: rawText,
+            duration: duration,
+            enforceMinimumDuration: !isReprocessingHistory
+        )
         if willAttemptPolish {
             // History re-runs reuse this helper but must not drive the live
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
@@ -1751,8 +1791,10 @@ class SapoWhisperViewModel: ObservableObject {
                         timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
                             forText: rawText,
                             duration: duration,
-                            usesLocalBudget: usesLocalPolishBudget
-                        )
+                            usesLocalBudget: usesLocalPolishBudget,
+                            mode: PolishMode.current()
+                        ),
+                        compact: PolishMode.current() == .compact
                     )
                 )
             }
@@ -1768,7 +1810,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         let result = await transcriptPostProcessor.process(
             rawText: rawText,
-            duration: duration
+            duration: duration,
+            enforceMinimumDuration: !isReprocessingHistory
         )
         logAIResult(result, source: source)
         if !isReprocessingHistory {
@@ -1808,8 +1851,10 @@ class SapoWhisperViewModel: ObservableObject {
                 timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
                     forText: rawText,
                     duration: duration,
-                    usesLocalBudget: usesLocalPolishBudget
-                )
+                    usesLocalBudget: usesLocalPolishBudget,
+                    mode: PolishMode.current()
+                ),
+                compact: PolishMode.current() == .compact
             )
         )
 
@@ -2119,12 +2164,16 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
 
     /// Final delivery of a successful dictation: clipboard, overlay, paste,
     /// idle state, and the success sound. Shared by the pipeline and retry.
-    func deliverTranscription(_ finalText: String, perf: DictationPerfTimeline?) {
+    /// The AI result shapes the toast: compact shows the trim ratio, and a
+    /// polish that shipped raw (guard rejection / provider failure) says so
+    /// with the error sound instead of silently passing as polished.
+    func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?) {
+        let finalText = aiResult.finalText
         dictationGeneration &+= 1
         lastCompletedHistoryId = nil
         lastTranscription = finalText
         PasteManager.copyToClipboard(finalText)
-        overlayManager.showCopied(text: finalText)
+        overlayManager.showCopied(text: finalText, outcome: Self.copiedOutcome(for: aiResult))
 
         if autoPasteEnabled {
             PasteManager.simulatePaste { perf?.markPasteDone() }
@@ -2134,7 +2183,20 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
 
         appState = .idle
         if playSoundEnabled {
-            SoundManager.shared.play(.success)
+            SoundManager.shared.play(Self.copiedOutcome(for: aiResult) == .aiSkipped ? .error : .success)
+        }
+    }
+
+    private static func copiedOutcome(for aiResult: TranscriptAIResult) -> CopiedOutcome {
+        switch aiResult.status {
+        case .applied where aiResult.mode == PolishMode.compact.historyModeIdentifier:
+            let rawCount = max(aiResult.rawText.count, 1)
+            let reduced = max(0, rawCount - aiResult.finalText.count)
+            return .compacted(percentReduced: Int((Double(reduced) / Double(rawCount) * 100).rounded()))
+        case .failed, .rejectedFidelity:
+            return .aiSkipped
+        case .applied, .none, .skippedShort, .skippedDuration:
+            return .standard
         }
     }
 

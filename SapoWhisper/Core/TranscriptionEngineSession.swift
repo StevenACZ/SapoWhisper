@@ -19,7 +19,7 @@ import Foundation
 @MainActor
 protocol TranscriptionEngineSession: AnyObject {
     /// True when the session can begin a new dictation: the local model is
-    /// loaded (WhisperKit) or the provider API key is present (cloud).
+    /// loaded (MLX Whisper) or the provider API key is present (cloud).
     var isReady: Bool { get }
 
     /// True while the session is mid-flight on any path — a live stream, a
@@ -32,7 +32,7 @@ protocol TranscriptionEngineSession: AnyObject {
 /// `readiness` is the single source consulted for "engine available"; engine
 /// readiness deliberately mirrors *that one* session and is never the AND/OR
 /// of every backing transcriber (a cloud engine's batch and live sessions
-/// share the same API key, and WhisperKit readiness is purely "model
+/// share the same API key, and local-model readiness is purely "model
 /// loaded"). `busy` is OR-ed across every transcriber the engine can drive,
 /// matching the historical guard that blocks a new recording while *any* of
 /// the selected engine's sessions is in flight.

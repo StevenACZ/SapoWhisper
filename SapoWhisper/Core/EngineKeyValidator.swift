@@ -38,7 +38,7 @@ enum EngineKeyValidator {
                 url: URL(string: "https://api.elevenlabs.io/v1/user")!,
                 headers: ["xi-api-key": trimmed]
             )
-        case .whisperLocal, .localAIServer:
+        case .mlxWhisper, .localAIServer:
             return  // Local engines have no required key.
         }
     }

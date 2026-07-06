@@ -84,6 +84,8 @@ xcodebuild \
   -configuration "$CONFIGURATION" \
   -destination 'generic/platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
+  -skipPackagePluginValidation \
+  -skipMacroValidation \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   CODE_SIGN_STYLE=Manual \

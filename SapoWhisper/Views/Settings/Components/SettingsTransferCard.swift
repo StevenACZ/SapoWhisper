@@ -115,8 +115,8 @@ struct SettingsTransferCard: View {
         let defaults = UserDefaults.standard
 
         if sections.contains(.engine) {
-            if let model = WhisperKitModel(rawValue: defaults.string(forKey: Constants.StorageKeys.whisperKitModel) ?? "") {
-                viewModel.setWhisperKitModel(model)
+            if let model = MLXWhisperModel(rawValue: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel) ?? "") {
+                viewModel.setMLXWhisperModel(model)
             }
             if let mode = DeepgramTranscriptionMode(
                 rawValue: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode) ?? ""

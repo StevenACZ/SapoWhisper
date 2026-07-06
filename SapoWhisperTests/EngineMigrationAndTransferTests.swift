@@ -25,10 +25,19 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         )
     }
 
-    func testRemovedEngineMigratesToWhisperWithoutKeys() {
+    func testRemovedEngineMigratesToLocalWhisperWithoutKeys() {
         XCTAssertEqual(
             EnginePortfolioMigration.migratedEngine(from: "gemini_audio", hasDeepgramKey: false, hasElevenLabsKey: false),
-            TranscriptionEngine.whisperLocal.rawValue
+            TranscriptionEngine.mlxWhisper.rawValue
+        )
+    }
+
+    /// WhisperKit (raw "whisper") maps straight to its MLX replacement even
+    /// when cloud keys exist — the user had chosen a LOCAL engine.
+    func testRemovedWhisperKitAlwaysMigratesToMLX() {
+        XCTAssertEqual(
+            EnginePortfolioMigration.migratedEngine(from: "whisper", hasDeepgramKey: true, hasElevenLabsKey: true),
+            TranscriptionEngine.mlxWhisper.rawValue
         )
     }
 
@@ -88,7 +97,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
 
         XCTAssertEqual(
             defaults.string(forKey: Constants.StorageKeys.transcriptionEngine),
-            TranscriptionEngine.whisperLocal.rawValue
+            TranscriptionEngine.mlxWhisper.rawValue
         )
         // Google fields are ignored end to end: nothing writes the legacy keys.
         XCTAssertNil(defaults.string(forKey: "googleCloudAPIKey"))

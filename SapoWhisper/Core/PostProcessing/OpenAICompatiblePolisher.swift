@@ -123,42 +123,87 @@ final class OpenAICompatiblePolisher {
     /// the polished text alone would truncate the answer mid-thought.
     private static let reasoningTokenHeadroom = 4096
 
-    private static let structuredScanNote = """
+    /// The structured contract per polish mode: a leading scan field forces a
+    /// whole-transcript attention pass before the final text is written. The
+    /// normal contract scans fillers; the compact contract inventories the
+    /// requirements that must survive compression (benched 2026-07-05).
+    enum StructuredContract {
+        case polish
+        case compact
+
+        var scanNote: String {
+            switch self {
+            case .polish:
+                return """
 
 
-        Return a JSON object. First fill `filler_scan`: list every filler occurrence you found while scanning the whole transcript. Then fill `polished` with the final cleaned text — every filler you listed must be gone from it.
-        """
+                    Return a JSON object. First fill `filler_scan`: list every filler occurrence you found while scanning the whole transcript. Then fill `polished` with the final cleaned text — every filler you listed must be gone from it.
+                    """
+            case .compact:
+                return """
 
-    private static let structuredResponseFormat: [String: Any] = [
-        "type": "json_schema",
-        "json_schema": [
-            "name": "polish",
-            "strict": true,
-            "schema": [
-                "type": "object",
-                "properties": [
-                    "filler_scan": [
-                        "type": "string",
-                        "description":
-                            "Comma-separated list of every filler occurrence you found in the transcript (e.g. 'eh x3, como se dice x2, digamos x1'). Scan the WHOLE transcript before writing the polished text. Count 'como se dice' every single time, including when it introduces a term ('eso es como se dice el happy path' → 'eso es el happy path') — it is always filler.",
-                    ],
-                    "polished": [
-                        "type": "string",
-                        "description": "The final cleaned text, and nothing else.",
+
+                    Return a JSON object. First fill `requirements_scan`: inventory every instruction, decision, question, condition, number, name, path and URL in the whole transcript. Then fill `compact` with the shortest faithful text — every item you listed must appear in it.
+                    """
+            }
+        }
+
+        var responseFormat: [String: Any] {
+            switch self {
+            case .polish:
+                return Self.format(
+                    name: "polish",
+                    scanKey: "filler_scan",
+                    scanDescription:
+                        "Comma-separated list of every filler occurrence you found in the transcript (e.g. 'eh x3, como se dice x2, digamos x1'). Scan the WHOLE transcript before writing the polished text. Count 'como se dice' every single time, including when it introduces a term ('eso es como se dice el happy path' → 'eso es el happy path') — it is always filler.",
+                    textKey: "polished",
+                    textDescription: "The final cleaned text, and nothing else."
+                )
+            case .compact:
+                return Self.format(
+                    name: "compact",
+                    scanKey: "requirements_scan",
+                    scanDescription:
+                        "Semicolon-separated inventory of EVERY distinct instruction, decision, question, condition, number, name, path and URL in the WHOLE transcript — one terse item each, in your own words, NOT copied fragments. Scan the whole transcript before writing — every item listed here must survive in `compact`.",
+                    textKey: "compact",
+                    textDescription: "The final compact text, and nothing else."
+                )
+            }
+        }
+
+        private static func format(
+            name: String,
+            scanKey: String,
+            scanDescription: String,
+            textKey: String,
+            textDescription: String
+        ) -> [String: Any] {
+            [
+                "type": "json_schema",
+                "json_schema": [
+                    "name": name,
+                    "strict": true,
+                    "schema": [
+                        "type": "object",
+                        "properties": [
+                            scanKey: ["type": "string", "description": scanDescription],
+                            textKey: ["type": "string", "description": textDescription],
+                        ],
+                        "required": [scanKey, textKey],
+                        "additionalProperties": false,
                     ],
                 ],
-                "required": ["filler_scan", "polished"],
-                "additionalProperties": false,
-            ],
-        ],
-    ]
+            ]
+        }
+    }
 
     func polish(
         system: String,
         user: String,
         timeout: TimeInterval = 8,
         maxTokens: Int? = nil,
-        configuration: PolishProviderConfiguration? = nil
+        configuration: PolishProviderConfiguration? = nil,
+        contract: StructuredContract = .polish
     ) async throws -> PolishResponse {
         guard let configuration = configuration ?? PolishProviderConfiguration.current() else {
             throw PolishProviderError.notConfigured
@@ -169,7 +214,8 @@ final class OpenAICompatiblePolisher {
             timeout: timeout,
             maxTokens: maxTokens,
             configuration: configuration,
-            structured: configuration.endpoint.supportsStructuredOutputs
+            structured: configuration.endpoint.supportsStructuredOutputs,
+            contract: contract
         )
     }
 
@@ -194,6 +240,7 @@ final class OpenAICompatiblePolisher {
         maxTokens: Int? = nil,
         configuration: PolishProviderConfiguration,
         structured: Bool = false,
+        contract: StructuredContract = .polish,
         includeTemperature: Bool = true,
         includeReasoning: Bool = true,
         allowTruncationRetry: Bool = true
@@ -201,7 +248,7 @@ final class OpenAICompatiblePolisher {
         let startedAt = CFAbsoluteTimeGetCurrent()
         let reasoningEffort: PolishReasoningEffort = includeReasoning ? .current() : .automatic
         let request = try makeRequest(
-            system: structured ? system + Self.structuredScanNote : system,
+            system: structured ? system + contract.scanNote : system,
             user: user,
             timeout: timeout,
             maxTokens: maxTokens.map { base in
@@ -213,6 +260,7 @@ final class OpenAICompatiblePolisher {
             },
             configuration: configuration,
             structured: structured,
+            contract: contract,
             includeTemperature: includeTemperature,
             reasoningEffort: reasoningEffort
         )
@@ -236,6 +284,7 @@ final class OpenAICompatiblePolisher {
                     maxTokens: maxTokens,
                     configuration: configuration,
                     structured: false,
+                    contract: contract,
                     includeTemperature: includeTemperature,
                     includeReasoning: includeReasoning,
                     allowTruncationRetry: allowTruncationRetry
@@ -252,6 +301,7 @@ final class OpenAICompatiblePolisher {
                     maxTokens: maxTokens,
                     configuration: configuration,
                     structured: structured,
+                    contract: contract,
                     includeTemperature: false,
                     includeReasoning: includeReasoning,
                     allowTruncationRetry: allowTruncationRetry
@@ -271,6 +321,7 @@ final class OpenAICompatiblePolisher {
                     maxTokens: maxTokens,
                     configuration: configuration,
                     structured: structured,
+                    contract: contract,
                     includeTemperature: includeTemperature,
                     includeReasoning: false,
                     allowTruncationRetry: allowTruncationRetry
@@ -286,7 +337,7 @@ final class OpenAICompatiblePolisher {
         let body = try JSONDecoder().decode(ChatCompletionsResponse.self, from: data)
         let choice = body.choices?.first
         let content = (choice?.message?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = structured ? Self.extractStructuredPolished(from: content) : content
+        let text = structured ? Self.extractStructuredText(from: content) : content
         let finishReason = choice?.finishReason ?? "none"
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.ai.info(
@@ -308,6 +359,7 @@ final class OpenAICompatiblePolisher {
                     maxTokens: maxTokens * 2,
                     configuration: configuration,
                     structured: structured,
+                    contract: contract,
                     includeTemperature: includeTemperature,
                     includeReasoning: includeReasoning,
                     allowTruncationRetry: false
@@ -323,16 +375,18 @@ final class OpenAICompatiblePolisher {
         return PolishResponse(text: text, modelIdentifier: configuration.modelIdentifier)
     }
 
-    /// Pulls `polished` out of a structured response body. A model that
-    /// ignored the schema (some OpenRouter fallback routes) returns plain
-    /// text; keep it as-is and let the sanitizer handle any wrapper noise.
-    private static func extractStructuredPolished(from content: String) -> String {
+    /// Pulls the final text (`polished` or `compact`) out of a structured
+    /// response body. A model that ignored the schema (some OpenRouter
+    /// fallback routes) returns plain text; keep it as-is and let the
+    /// sanitizer handle any wrapper noise.
+    private static func extractStructuredText(from content: String) -> String {
         guard let data = content.data(using: .utf8),
-            let payload = try? JSONDecoder().decode(StructuredPolishPayload.self, from: data)
+            let payload = try? JSONDecoder().decode(StructuredPolishPayload.self, from: data),
+            let text = payload.polished ?? payload.compact
         else {
             return content
         }
-        return payload.polished.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func makeRequest(
@@ -342,6 +396,7 @@ final class OpenAICompatiblePolisher {
         maxTokens: Int?,
         configuration: PolishProviderConfiguration,
         structured: Bool,
+        contract: StructuredContract,
         includeTemperature: Bool,
         reasoningEffort: PolishReasoningEffort
     ) throws -> URLRequest {
@@ -365,7 +420,7 @@ final class OpenAICompatiblePolisher {
             ],
         ]
         if structured {
-            body["response_format"] = Self.structuredResponseFormat
+            body["response_format"] = contract.responseFormat
         }
         if includeTemperature {
             body["temperature"] = 0.1
@@ -419,14 +474,16 @@ private struct ChatMessage: Decodable {
     let content: String?
 }
 
-/// Content payload of a structured polish response. `filler_scan` is decoded
-/// only to tolerate its presence; it may contain transcript tokens and must
-/// never be logged or persisted.
+/// Content payload of a structured polish response (either contract). The
+/// scan fields are ignored on decode; they may contain transcript tokens and
+/// must never be logged or persisted.
 private struct StructuredPolishPayload: Decodable {
-    let polished: String
+    let polished: String?
+    let compact: String?
 
     private enum CodingKeys: String, CodingKey {
         case polished
+        case compact
     }
 }
 
