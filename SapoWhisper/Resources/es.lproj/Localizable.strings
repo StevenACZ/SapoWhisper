@@ -168,6 +168,10 @@
 "ai.polish.mode_compact" = "Compacto";
 "ai.polish.mode_compact_help" = "Extrae las ideas principales y secundarias con todas tus instrucciones, números y nombres, y reescribe el dictado en el texto más corto posible (típicamente 70–90% menos). Ideal para hablarle a una IA gastando menos tokens.";
 "ai.polish.mode_compact_hint" = "Recomendado para Compacto: OpenRouter · qwen/qwen3.5-flash-02-23 con razonamiento desactivado (el mejor balance fidelidad/velocidad/precio en pruebas reales).";
+"ai.polish.min_duration" = "Activar desde";
+"ai.polish.min_duration_desc" = "Dictados más cortos se pegan tal cual, sin IA — un audio de 5 segundos no necesita pulido. Aplica a Normal y Compacto; mejorar desde el historial siempre funciona.";
+"ai.polish.min_duration_always" = "Siempre";
+"ai.polish.min_duration_from" = "Desde %@ s";
 "ai.polish.reasoning" = "Razonamiento del modelo";
 "ai.polish.reasoning_desc" = "Cuánto puede pensar un modelo razonador antes de escribir. Apagado es lo más rápido — pulir un dictado no necesita cadena de pensamiento. Los modelos sin razonamiento lo ignoran.";
 "ai.polish.reasoning_automatic" = "Auto (según el modelo)";
@@ -481,12 +485,12 @@
 "prompts.personal_context_desc" = "Cuéntale a la IA quién eres y qué herramientas usas, para que reconozca tus términos técnicos.";
 "prompts.personal_context_hint" = "Se envía con cada mejora junto a tu vocabulario. Mantenlo corto.";
 "prompts.preview_polish" = "Probar el polish";
-"prompts.preview_polish_desc" = "Ejecuta el proveedor real con una frase de ejemplo para ver exactamente cómo la limpia el pulido.";
+"prompts.preview_polish_desc" = "Ejecuta el proveedor real con un dictado de ejemplo — ideal para comparar al cambiar de modelo o entre Normal y Compacto.";
 "prompts.preview_run" = "Pulir ejemplo";
 "prompts.preview_raw" = "Original";
 "prompts.preview_polished" = "Pulido";
 "prompts.preview_needs_provider" = "Configura el proveedor de IA arriba para ejecutar una prueba.";
-"prompts.preview_sample" = "eh bueno quería confirmarte que mañana subo el fix a la rama feature login y luego corro npm run build";
+"prompts.preview_sample" = "eh bueno básicamente te quería comentar que ya revisé lo del bug del login o sea el problema era que el token expiraba a los 30 minutos entonces lo que hice fue subir el fix a la rama feature login y corrí las pruebas y todo pasó bien así que creo que mañana lo podemos mergear si te parece y bueno también avísale a Andrea que el deploy quedaría para el viernes como a las 3 de la tarde";
 "prompts.save_prompt" = "Guardar";
 "prompts.prompt_saved" = "Guardado";
 "prompts.unsaved_changes" = "Cambios sin guardar";

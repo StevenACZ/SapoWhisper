@@ -55,17 +55,22 @@ struct RecordingPillView: View {
                     .transition(.opacity)
             }
 
-            if compactModeActive {
-                CompactModeChip()
-            }
-
-            Spacer(minLength: 12)
+            Spacer(minLength: 6)
 
             if let resumeOffer {
                 ResumePreviousChip(offer: resumeOffer, onTap: { onResumeToggle?() })
             }
 
-            OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
+            // Compact + language chips read as one tight control cluster; the
+            // default HStack spacing left them looking scattered.
+            HStack(spacing: 5) {
+                if compactModeActive {
+                    CompactModeChip()
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+
+                OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
+            }
 
             Button(action: onPause) {
                 Image(systemName: "pause.fill")
@@ -81,6 +86,10 @@ struct RecordingPillView: View {
         .frame(minWidth: 250)
         // No local animation for the connecting swap: the manager's spring
         // transaction drives it (same pattern as `showsNoSpeechHint`).
+        // The chip appears mid-recording when the minimum-duration threshold
+        // is crossed (duration ticks swap state without animation), so its
+        // pop is driven locally.
+        .animation(.smooth(duration: 0.25), value: compactModeActive)
     }
 }
 
@@ -174,7 +183,12 @@ struct CompactModeChip: View {
                 .font(.system(size: 9, weight: .bold))
             Text("overlay.compact_chip".localized)
                 .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
         }
+        // The pill lays out at ideal size inside a fixed surface; without a
+        // hard horizontal size the chip label wraps ("Compac/t") when
+        // siblings compete for width.
+        .fixedSize()
         .foregroundColor(.compactMode)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

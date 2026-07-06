@@ -136,6 +136,8 @@ nonisolated enum Constants {
         // AI polish
         static let aiPolishEnabled = "aiPolishEnabled"
         static let aiPolishMode = "aiPolishMode"
+        /// Minimum live-dictation seconds before AI polish runs (0 = always).
+        static let aiPolishMinDuration = "aiPolishMinDuration"
         static let aiPolishOutputLanguage = "aiPolishOutputLanguage"
         /// Last explicit translation target, restored by the overlay translation chip.
         static let aiPolishQuickTranslationTarget = "aiPolishQuickTranslationTarget"

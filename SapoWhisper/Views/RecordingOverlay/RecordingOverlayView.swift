@@ -163,7 +163,12 @@ struct RecordingOverlayView: View {
                 resumeOffer: manager.resumeOffer,
                 onResumeToggle: { manager.toggleResumeOffer() },
                 onTranslationToggled: { manager.onQuickTranslationToggled?($0) },
+                // Purple meter + chip only once this dictation will REALLY
+                // compact: below the user's minimum-duration threshold the
+                // polish is skipped, so the accent appears live the moment
+                // the threshold is crossed.
                 compactModeActive: PolishMode.compactIsActive()
+                    && PolishMinimumDuration.allowsPolish(duration: duration)
             )
 
         case .paused(let duration):

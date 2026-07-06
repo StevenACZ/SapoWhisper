@@ -48,6 +48,11 @@ final class PermissionRequirementsWindowController: NSWindowController {
         )
 
         let hostingController = NSHostingController(rootView: AnyView(contentView))
+        // The window frame is the single source of truth for size; default
+        // sizing options let the hosting view drive window min/max from inside
+        // the update-constraints pass, which macOS 26 punishes with the
+        // _postWindowNeedsUpdateConstraints hard crash (2026-07-05).
+        hostingController.sizingOptions = []
         hostingController.view.frame = CGRect(origin: .zero, size: windowSize)
 
         window.contentViewController = hostingController

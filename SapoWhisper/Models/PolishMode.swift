@@ -51,3 +51,36 @@ enum PolishMode: String, CaseIterable, Identifiable {
             && PolishProviderConfiguration.hasUsableConfiguration(defaults: defaults)
     }
 }
+
+/// User-selected minimum LIVE dictation length before AI polish runs (both
+/// modes): a 5-second snippet gains nothing from a polish round-trip. This is
+/// the one sanctioned duration gate because the USER chooses it explicitly
+/// (default Always keeps the historic behavior); silent gates stay forbidden.
+/// Manual re-polish from History ignores it — pressing the button is intent.
+enum PolishMinimumDuration: Int, CaseIterable, Identifiable {
+    case always = 0
+    case seconds10 = 10
+    case seconds30 = 30
+    case seconds45 = 45
+    case seconds60 = 60
+
+    var id: Int { rawValue }
+
+    nonisolated var displayName: String {
+        self == .always
+            ? "ai.polish.min_duration_always".localized
+            : "ai.polish.min_duration_from".localized("\(rawValue)")
+    }
+
+    static func current(defaults: UserDefaults = .standard) -> PolishMinimumDuration {
+        PolishMinimumDuration(rawValue: defaults.integer(forKey: Constants.StorageKeys.aiPolishMinDuration))
+            ?? .always
+    }
+
+    /// True when a live dictation of `duration` seconds should be polished.
+    /// Unknown durations polish (never silently withhold on missing data).
+    static func allowsPolish(duration: TimeInterval?, defaults: UserDefaults = .standard) -> Bool {
+        guard let duration else { return true }
+        return duration >= TimeInterval(current(defaults: defaults).rawValue)
+    }
+}

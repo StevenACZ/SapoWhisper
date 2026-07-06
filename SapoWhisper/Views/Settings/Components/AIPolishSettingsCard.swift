@@ -13,6 +13,8 @@ import os
 struct AIPolishSettingsCard: View {
     @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
     @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishModeValue = PolishMode.default.rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishMinDuration) private var aiPolishMinDurationValue =
+        PolishMinimumDuration.always.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
@@ -98,12 +100,25 @@ struct AIPolishSettingsCard: View {
 
                 Divider()
 
+                minDurationRow
+                    .opacity(aiPolishEnabled ? 1 : 0.62)
+
+                Divider()
+
                 outputLanguageRow
                     .opacity(aiPolishEnabled ? 1 : 0.62)
 
                 Divider()
 
                 reasoningEffortRow
+                    .opacity(aiPolishEnabled ? 1 : 0.62)
+
+                Divider()
+
+                // Right under the knobs it exercises: switch model, style, or
+                // reasoning and verify the result without leaving the card.
+                PolishPreviewSection()
+                    .disabled(!aiPolishEnabled)
                     .opacity(aiPolishEnabled ? 1 : 0.62)
             }
             .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
@@ -256,6 +271,37 @@ struct AIPolishSettingsCard: View {
             }
         }
         .animation(.smooth(duration: 0.22), value: currentMode)
+    }
+
+    // MARK: - Minimum duration
+
+    /// User-chosen live-dictation length below which the polish is skipped
+    /// (both styles): a 5-second snippet gains nothing from an AI round-trip.
+    /// Manual re-polish from History always runs.
+    private var minDurationRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("ai.polish.min_duration".localized)
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer(minLength: 8)
+
+                Picker("ai.polish.min_duration".localized, selection: $aiPolishMinDurationValue) {
+                    ForEach(PolishMinimumDuration.allCases) { threshold in
+                        Text(threshold.displayName).tag(threshold.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .disabled(!aiPolishEnabled)
+            }
+
+            Text("ai.polish.min_duration_desc".localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - Output language

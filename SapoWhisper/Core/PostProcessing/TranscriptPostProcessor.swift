@@ -30,23 +30,29 @@ final class TranscriptPostProcessor {
     /// L10: per-chunk budget for the polish call (including the one
     /// translation retry). Hosted providers keep the snappy 5s-20s budget;
     /// local/LAN models get a larger budget because first-token latency and
-    /// small-model reasoning can be much slower.
+    /// small-model reasoning can be much slower. Compact runs the WHOLE
+    /// transcript in one call and emits a requirements scan before the
+    /// rewrite, so its per-character cost is higher than a normal chunk —
+    /// the normal curve timed out real dictations at 10s (2026-07-05).
     static func polishTimeout(
         forCharacterCount count: Int,
         duration: TimeInterval?,
-        configuration: PolishProviderConfiguration?
+        configuration: PolishProviderConfiguration?,
+        mode: PolishMode = .normal
     ) -> UInt64 {
         polishTimeout(
             forCharacterCount: count,
             duration: duration,
-            usesLocalBudget: configuration?.usesLocalTimeoutBudget == true
+            usesLocalBudget: configuration?.usesLocalTimeoutBudget == true,
+            mode: mode
         )
     }
 
     static func polishTimeout(
         forCharacterCount count: Int,
         duration: TimeInterval?,
-        usesLocalBudget: Bool
+        usesLocalBudget: Bool,
+        mode: PolishMode = .normal
     ) -> UInt64 {
         if usesLocalBudget {
             let characterExtra = UInt64(max(0, count - 300) / 120)
@@ -54,20 +60,35 @@ final class TranscriptPostProcessor {
             return min(20 + characterExtra + durationExtra, 120)
         }
 
+        if mode == .compact {
+            let base: UInt64 = 15
+            let extra = UInt64(max(0, count - 400) / 150)
+            return min(base + extra, 60)
+        }
+
         let base: UInt64 = 5
         let extra = UInt64(max(0, count - 400) / 200)
         return min(base + extra, 20)
     }
 
-    /// Whole-step budget: the sum of per-chunk budgets after chunking. The
-    /// overlay countdown must use this same function — showing the unchunked
-    /// cap made the HUD hit 0 while a chunked polish was still legitimately
-    /// running.
+    /// Whole-step budget: the sum of per-chunk budgets after chunking (or the
+    /// single global-call budget in compact mode). The overlay countdown must
+    /// use this same function — showing the unchunked cap made the HUD hit 0
+    /// while a chunked polish was still legitimately running.
     static func totalPolishBudget(
         forText text: String,
         duration: TimeInterval?,
-        usesLocalBudget: Bool
+        usesLocalBudget: Bool,
+        mode: PolishMode = .normal
     ) -> UInt64 {
+        if mode == .compact {
+            return polishTimeout(
+                forCharacterCount: text.count,
+                duration: duration,
+                usesLocalBudget: usesLocalBudget,
+                mode: .compact
+            )
+        }
         let chunks = splitIntoChunks(text)
         let chunkDuration = duration.map { $0 / Double(chunks.count) }
         return chunks.reduce(UInt64(0)) { total, chunk in
@@ -103,10 +124,14 @@ final class TranscriptPostProcessor {
 
     /// `provider` overrides the global endpoint/model for this one run (the
     /// history "polish with…" menu); nil uses the configured provider.
+    /// `enforceMinimumDuration` applies the user's minimum-duration setting —
+    /// live dictations pass true; manual re-polish paths keep it false
+    /// (pressing the button IS the intent).
     func process(
         rawText: String,
         duration: TimeInterval? = nil,
-        provider: PolishProviderConfiguration? = nil
+        provider: PolishProviderConfiguration? = nil,
+        enforceMinimumDuration: Bool = false
     ) async -> TranscriptAIResult {
         let signpostState = SapoSignpost.begin(SapoSignpost.Name.polish)
         defer { SapoSignpost.end(SapoSignpost.Name.polish, state: signpostState) }
@@ -154,6 +179,15 @@ final class TranscriptPostProcessor {
         let defaults = UserDefaults.standard
         let enabled = defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
         guard enabled else {
+            return finish(finalText: transcript, status: .none)
+        }
+
+        // Vocabulary corrections above still applied — only the AI call is
+        // withheld for dictations shorter than the user-chosen threshold.
+        if enforceMinimumDuration, !PolishMinimumDuration.allowsPolish(duration: duration, defaults: defaults) {
+            SapoLog.ai.info(
+                "AI polish skipped reason=below-min-duration duration=\(Int(duration ?? 0), privacy: .public)s threshold=\(PolishMinimumDuration.current(defaults: defaults).rawValue, privacy: .public)s"
+            )
             return finish(finalText: transcript, status: .none)
         }
 
@@ -326,7 +360,8 @@ final class TranscriptPostProcessor {
         let budget = Self.polishTimeout(
             forCharacterCount: chunk.count,
             duration: chunkDuration,
-            configuration: configuration
+            configuration: configuration,
+            mode: mode
         )
         // Generous output cap: roughly 2x the tokens the chunk itself needs.
         // Its real job is making finish_reason=="length" detectable instead of
@@ -676,16 +711,25 @@ final class TranscriptPostProcessor {
     }
 
     /// Polish runs for every non-empty dictation when enabled and configured —
-    /// no silent duration/length gates (they read as "the AI didn't work";
+    /// no SILENT duration/length gates (they read as "the AI didn't work";
     /// see brain/lessons/sapowhisper-skip-gates-vs-explicit-output-language).
-    /// Mirrors the exact gating of `process()` so the overlay countdown never
-    /// promises a polish that will be skipped (or vice versa).
-    func willAttemptPolish(rawText: String) -> Bool {
+    /// The one sanctioned gate is the user-chosen minimum duration
+    /// (`PolishMinimumDuration`, default Always), applied to live dictations
+    /// only. Mirrors the exact gating of `process()` so the overlay countdown
+    /// never promises a polish that will be skipped (or vice versa).
+    func willAttemptPolish(
+        rawText: String,
+        duration: TimeInterval? = nil,
+        enforceMinimumDuration: Bool = false
+    ) -> Bool {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled) else { return false }
+        if enforceMinimumDuration, !PolishMinimumDuration.allowsPolish(duration: duration, defaults: defaults) {
+            return false
+        }
         guard !PolishProviderConfiguration.hostedEndpointIsPausedOffline(defaults: defaults) else { return false }
         return PolishProviderConfiguration.current() != nil
     }

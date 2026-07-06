@@ -1641,7 +1641,7 @@ class SapoWhisperViewModel: ObservableObject {
         guard case .recording = appState else { return }
         sessionPeakAudioLevel = max(sessionPeakAudioLevel, level)
 
-        if overlayManager.micConnectingName != nil, level > Self.micConnectedLevelThreshold {
+        if overlayManager.micConnectingInProgress, level > Self.micConnectedLevelThreshold {
             overlayManager.setMicConnecting(deviceName: nil)
         }
 
@@ -1737,7 +1737,13 @@ class SapoWhisperViewModel: ObservableObject {
         source: String,
         duration: TimeInterval?
     ) async -> TranscriptAIResult {
-        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(rawText: rawText)
+        // Live dictations honor the user's minimum-duration setting; history
+        // re-runs are explicit intent and always attempt.
+        let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(
+            rawText: rawText,
+            duration: duration,
+            enforceMinimumDuration: !isReprocessingHistory
+        )
         if willAttemptPolish {
             // History re-runs reuse this helper but must not drive the live
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
@@ -1751,7 +1757,8 @@ class SapoWhisperViewModel: ObservableObject {
                         timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
                             forText: rawText,
                             duration: duration,
-                            usesLocalBudget: usesLocalPolishBudget
+                            usesLocalBudget: usesLocalPolishBudget,
+                            mode: PolishMode.current()
                         ),
                         compact: PolishMode.current() == .compact
                     )
@@ -1769,7 +1776,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         let result = await transcriptPostProcessor.process(
             rawText: rawText,
-            duration: duration
+            duration: duration,
+            enforceMinimumDuration: !isReprocessingHistory
         )
         logAIResult(result, source: source)
         if !isReprocessingHistory {
@@ -1809,7 +1817,8 @@ class SapoWhisperViewModel: ObservableObject {
                 timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
                     forText: rawText,
                     duration: duration,
-                    usesLocalBudget: usesLocalPolishBudget
+                    usesLocalBudget: usesLocalPolishBudget,
+                    mode: PolishMode.current()
                 ),
                 compact: PolishMode.current() == .compact
             )

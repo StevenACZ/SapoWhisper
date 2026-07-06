@@ -32,9 +32,13 @@ class OverlayWindowManager: ObservableObject {
     /// Cleared by the first non-silent buffer, a timeout, or leaving recording.
     @Published private(set) var micConnectingName: String?
     private var micConnectingTimeoutTask: Task<Void, Never>?
+    private var micConnectingGraceTask: Task<Void, Never>?
     /// Give up on the connecting label after this long; the regular no-speech
     /// hint takes over for genuinely dead inputs.
     private static let micConnectingTimeout: TimeInterval = 6.0
+    /// Only show the connecting label if the mic is still silent after this
+    /// long — fast (USB) mics deliver signal well before it.
+    private static let micConnectingGrace: TimeInterval = 1.0
 
     /// "Continue previous dictation" chip state while recording: a recent
     /// cancelled/crashed take can be prepended to this one at stop time.
@@ -543,20 +547,46 @@ class OverlayWindowManager: ObservableObject {
         onResumeToggled?(offer.isActive)
     }
 
-    /// Toggles the "connecting <mic>" phase of the recording pill. Passing a
-    /// name arms a timeout that clears the label if signal never arrives.
+    /// True while a "connecting <mic>" phase is armed, whether or not the
+    /// label is visible yet (the grace delay below may still be running).
+    /// The first real audio buffer must cancel BOTH.
+    var micConnectingInProgress: Bool {
+        micConnectingName != nil || micConnectingGraceTask != nil
+    }
+
+    /// Toggles the "connecting <mic>" phase of the recording pill. Fast mics
+    /// (USB) deliver signal within a few hundred ms, so the label only
+    /// surfaces after a grace period — showing it instantly just flashed a
+    /// wide pill that never shrank back. Slow inputs (Bluetooth A2DP→HFP
+    /// renegotiation, 1-3s) still get the label, with a timeout that clears
+    /// it if signal never arrives.
     func setMicConnecting(deviceName: String?) {
-        guard micConnectingName != deviceName else { return }
+        micConnectingGraceTask?.cancel()
+        micConnectingGraceTask = nil
 
-        micConnectingTimeoutTask?.cancel()
-        micConnectingTimeoutTask = nil
-
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            micConnectingName = deviceName
+        guard let deviceName else {
+            micConnectingTimeoutTask?.cancel()
+            micConnectingTimeoutTask = nil
+            if micConnectingName != nil {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    micConnectingName = nil
+                }
+            }
+            return
         }
 
-        if deviceName != nil {
-            micConnectingTimeoutTask = Task { [weak self] in
+        guard micConnectingName != deviceName else { return }
+
+        micConnectingGraceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.micConnectingGrace * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.micConnectingGraceTask = nil
+
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                self.micConnectingName = deviceName
+            }
+            self.micConnectingTimeoutTask?.cancel()
+            self.micConnectingTimeoutTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(Self.micConnectingTimeout * 1_000_000_000))
                 guard !Task.isCancelled, let self else { return }
                 self.setMicConnecting(deviceName: nil)

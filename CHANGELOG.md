@@ -11,10 +11,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Compact polish mode** — Settings → AI Polish gains a "Polish style" selector: Normal (today's clean-up) or Compact. Compact extracts the main and secondary ideas plus every instruction, number, name, path, and URL, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter) — ideal for dictating to AI assistants while spending far fewer tokens. Works in any language, runs the whole transcript in one pass so repeated ideas merge globally, and was validated case-by-case against real dictation history on six cloud models and three local MLX models before shipping; the selector recommends the best-performing model.
 - **Compact mode is visible end to end** — while compact is active the recording pill shows a purple meter and a "Compact" chip, the polish phase says "Compacting…", and the post-dictation toast shows how much the text shrank (e.g. −82%).
 - **Raw-fallback notice** — when AI polish is enabled but the pasted text shipped raw (provider failure or the fidelity guard rejected the output), the post-dictation toast now says "AI not applied — raw text" with a warning tone and the error sound, instead of silently looking like a normal dictation.
+- **Minimum duration for AI polish** — Settings → AI Polish gains an "Activate after" picker (Always, 10 s, 30 s, 45 s, 60 s): dictations shorter than the chosen threshold paste as-is without an AI round-trip, in both Normal and Compact. The recording pill reflects it live — the purple meter and Compact chip appear the moment the threshold is crossed. Polishing from History always runs regardless.
+- **Live polish preview next to the controls** — the "Preview polish" tester moved from Personal context into the AI Polish card, right under the provider/style/reasoning controls. It now runs the prompt of the selected style (Compact shows the −N% trim badge) with a realistic localized sample, so switching models or Normal/Compact can be compared on the spot.
 
 ### Changed
 
 - The polish content guard is mode-aware: in Compact it allows whole rambling passages to be dropped (that is the mode's job) while still protecting every number, and a near-empty compact result is retried automatically before anything ships.
+- Compact polish gets its own timeout budget (up to 60 s scaled by transcript length) instead of the per-chunk Normal budget — a 90-second dictation timed out at 10 s and shipped raw.
+- The "Connecting <mic>…" label only appears when the microphone is genuinely slow to deliver signal (about a second, e.g. Bluetooth renegotiation) instead of flashing on every dictation with fast USB mics.
+
+### Fixed
+
+- Windows no longer crash on macOS 26 when starting a dictation or right after launch (Settings/History, About, and Permissions windows kept content-driven sizing options that macOS 26 punishes with a hard layout-reentrancy exception).
+- The "Compact" chip on the recording pill no longer wraps to two lines, and it now sits next to the language chip in the right-side control cluster instead of floating alone with a wide gap.
 
 ## [2.7.0] - 2026-07-05
 

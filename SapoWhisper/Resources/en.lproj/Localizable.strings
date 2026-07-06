@@ -168,6 +168,10 @@
 "ai.polish.mode_compact" = "Compact";
 "ai.polish.mode_compact_help" = "Extracts the main and secondary ideas with all your instructions, numbers, and names, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter). Ideal for talking to an AI while spending fewer tokens.";
 "ai.polish.mode_compact_hint" = "Recommended for Compact: OpenRouter · qwen/qwen3.5-flash-02-23 with reasoning off (best fidelity/speed/price balance in real-history tests).";
+"ai.polish.min_duration" = "Activate after";
+"ai.polish.min_duration_desc" = "Shorter dictations paste as-is, no AI — a 5-second snippet needs no polish. Applies to Normal and Compact; polishing from History always runs.";
+"ai.polish.min_duration_always" = "Always";
+"ai.polish.min_duration_from" = "From %@ s";
 "ai.polish.reasoning" = "Model reasoning";
 "ai.polish.reasoning_desc" = "How much a reasoning model may think before writing. Off is fastest — a polish needs no chain of thought. Models without reasoning support ignore this.";
 "ai.polish.reasoning_automatic" = "Auto (model default)";
@@ -481,12 +485,12 @@
 "prompts.personal_context_desc" = "Tell the AI who you are and which tools you use, so it recognizes your technical terms.";
 "prompts.personal_context_hint" = "Sent with every polish request together with your vocabulary. Keep it short.";
 "prompts.preview_polish" = "Preview polish";
-"prompts.preview_polish_desc" = "Run the live provider on a sample sentence to see exactly how the polish cleans it.";
+"prompts.preview_polish_desc" = "Run the live provider on a sample dictation — great for comparing models or Normal vs Compact.";
 "prompts.preview_run" = "Polish sample";
 "prompts.preview_raw" = "Raw";
 "prompts.preview_polished" = "Polished";
 "prompts.preview_needs_provider" = "Configure the AI provider above to run a preview.";
-"prompts.preview_sample" = "um so basically I wanted to confirm that tomorrow I will push the fix to the feature login branch and then run npm run build";
+"prompts.preview_sample" = "um so basically I wanted to let you know that I already looked into the login bug I mean the problem was that the token expired after 30 minutes so what I did was push the fix to the feature login branch and I ran the tests and everything passed so I think we can merge it tomorrow if that works for you and also let Andrea know that the deploy would be on Friday at like 3 pm";
 "prompts.save_prompt" = "Save";
 "prompts.prompt_saved" = "Saved";
 "prompts.unsaved_changes" = "Unsaved changes";
