@@ -152,6 +152,7 @@
 
 /* Engine Descriptions */
 "engine.whisper.description" = "100% private, offline. Process everything on your Mac.";
+"engine.mlx_whisper.description" = "Fastest local engine on Apple Silicon (MLX). 100% private, offline.";
 "engine.local_ai_server.description" = "Local NVIDIA server over LAN. Your Mac records; the GPU server transcribes.";
 
 /* AI Polish */
@@ -214,6 +215,15 @@
 "error.whisperkit.not_available" = "WhisperKit is not available. Add the package in Xcode.";
 "error.whisperkit.model_not_loaded" = "No model is loaded";
 "error.whisperkit.in_progress" = "A transcription is already in progress";
+"error.mlx.model_load" = "Error loading MLX model: %@";
+"error.mlx.transcription" = "MLX transcription error: %@";
+"error.mlx.model_not_loaded" = "No MLX model is loaded";
+"error.mlx.in_progress" = "A transcription is already in progress";
+"config.mlx_model" = "MLX Model";
+"mlx.state.downloading" = "Downloading %@...";
+"mlx.state.downloading_percent" = "Downloading %@... %@%%";
+"mlx.state.loading" = "Loading %@ into memory...";
+"mlx.state.ready" = "Model ready ✓";
 "ai.provider.error_http" = "AI provider error (%@): %@";
 "ai.provider.error_auth_openai" = "OpenAI rejected the API key. If you pasted an OpenRouter key, switch the provider to OpenRouter; if you want OpenAI, paste an OpenAI key.";
 "ai.provider.error_auth_openrouter" = "OpenRouter rejected the API key. Check that the key belongs to OpenRouter.";

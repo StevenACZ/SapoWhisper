@@ -8,6 +8,7 @@ import Foundation
 
 /// Motor de transcripción disponible
 nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
+    case mlxWhisper = "mlx_whisper"
     case whisperLocal = "whisper"
     case localAIServer = "local_ai_server"
     case deepgram = "deepgram"
@@ -17,6 +18,8 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .mlxWhisper:
+            return "Whisper (Local MLX)"
         case .whisperLocal:
             return "Whisper (Local)"
         case .localAIServer:
@@ -31,6 +34,8 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
     /// Localized copy is UI-only; localization lookups stay on the main actor.
     @MainActor var description: String {
         switch self {
+        case .mlxWhisper:
+            return "engine.mlx_whisper.description".localized
         case .whisperLocal:
             return "engine.whisper.description".localized
         case .localAIServer:
@@ -44,6 +49,8 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .mlxWhisper:
+            return "bolt.circle"
         case .whisperLocal:
             return "desktopcomputer"
         case .localAIServer:
@@ -57,24 +64,26 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
 
     var requiresInternet: Bool {
         switch self {
-        case .whisperLocal, .localAIServer:
+        case .mlxWhisper, .whisperLocal, .localAIServer:
             return false
         case .deepgram, .elevenLabsScribe:
             return true
         }
     }
 
-    /// Engine surfaced as the recommended high-accuracy option in the picker.
+    /// Engine surfaced as the recommended option in the picker: MLX runs the
+    /// same Whisper turbo weights ~6x faster than WhisperKit on Apple
+    /// Silicon at equal quality (benched 2026-07-05).
     var isRecommended: Bool {
-        self == .elevenLabsScribe
+        self == .mlxWhisper
     }
 
     /// Engines whose decoder consumes 16 kHz mono natively (Whisper running
-    /// locally via WhisperKit or on the Local AI Server). Capturing above
+    /// locally via MLX/WhisperKit or on the Local AI Server). Capturing above
     /// 16 kHz for them only adds a second resample before decoding.
     var isWhisperFamily: Bool {
         switch self {
-        case .whisperLocal, .localAIServer:
+        case .mlxWhisper, .whisperLocal, .localAIServer:
             return true
         case .deepgram, .elevenLabsScribe:
             return false

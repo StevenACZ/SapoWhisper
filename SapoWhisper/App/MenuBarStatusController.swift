@@ -261,7 +261,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private func currentStatusImage() -> NSImage {
         MenuBarIconImageProvider.image(
             for: viewModel.appState,
-            isLoadingWhisperKit: viewModel.isLoadingWhisperKit
+            isLoadingWhisperKit: viewModel.isLoadingLocalModel
         )
     }
 

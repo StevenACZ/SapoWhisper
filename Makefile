@@ -10,6 +10,9 @@ SWIFT_SOURCE_DIR := SapoWhisper
 DEBUG_DERIVED_DATA := ./build/audit-debug
 RELEASE_DERIVED_DATA := ./build/audit-release
 RELEASE_APP := $(RELEASE_DERIVED_DATA)/Build/Products/Release/SapoWhisper.app
+# mlx-swift ships a build plugin (CudaBuild); headless xcodebuild cannot
+# answer the interactive plugin-trust prompt, so validation is skipped here.
+XCODE_FLAGS := -skipPackagePluginValidation -skipMacroValidation
 
 help:
 	@printf "SapoWhisper developer commands\n\n"
@@ -68,17 +71,17 @@ lint-all: tools
 build:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
-		-derivedDataPath $(DEBUG_DERIVED_DATA) build
+		-derivedDataPath $(DEBUG_DERIVED_DATA) $(XCODE_FLAGS) build
 
 test:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
-		-derivedDataPath $(DEBUG_DERIVED_DATA) test
+		-derivedDataPath $(DEBUG_DERIVED_DATA) $(XCODE_FLAGS) test
 
 release:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
-		-derivedDataPath $(RELEASE_DERIVED_DATA) clean build
+		-derivedDataPath $(RELEASE_DERIVED_DATA) $(XCODE_FLAGS) clean build
 
 install-dev:
 	@chmod +x scripts/install_dev.sh

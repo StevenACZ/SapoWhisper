@@ -49,7 +49,8 @@ else
       git diff --name-only --diff-filter=ACMR -- '*.swift'
       git diff --cached --name-only --diff-filter=ACMR -- '*.swift'
       git ls-files --others --exclude-standard -- '*.swift'
-    } | sort -u
+    } | sort -u \
+      | { grep -v '^LocalPackages/MLXWhisper/Sources/MLXWhisper/' || true; }
   )
 fi
 

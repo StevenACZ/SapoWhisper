@@ -6,9 +6,10 @@
 
 import SwiftUI
 
-/// Botón para seleccionar modelo de WhisperKit
+/// Botón para seleccionar un modelo local (WhisperKit o MLX) — ambos enums
+/// se describen vía `LocalWhisperModelInfo`.
 struct WhisperModelButton: View {
-    let model: WhisperKitModel
+    let model: any LocalWhisperModelInfo
     let isSelected: Bool
     let isLoading: Bool
     let isDownloaded: Bool
@@ -17,7 +18,7 @@ struct WhisperModelButton: View {
     let onDelete: (() -> Void)?
 
     init(
-        model: WhisperKitModel,
+        model: any LocalWhisperModelInfo,
         isSelected: Bool,
         isLoading: Bool,
         isDownloaded: Bool = false,
@@ -61,12 +62,12 @@ struct WhisperModelButton: View {
                                 .foregroundColor(.primary)
 
                             if model.isRecommended {
-                                Text(model == .small ? "badge.balance".localized : "badge.pro".localized)
+                                Text(model.badgeText)
                                     .font(.caption2)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 1)
-                                    .background(model == .small ? Color.blue : Color.purple)
+                                    .background(model.badgeColor)
                                     .cornerRadius(3)
                             }
 
@@ -152,7 +153,7 @@ struct WhisperModelButton: View {
 #Preview("Whisper Models") {
     VStack(spacing: 8) {
         WhisperModelButton(
-            model: .small,
+            model: WhisperKitModel.small,
             isSelected: true,
             isLoading: false,
             isDownloaded: true,
@@ -162,7 +163,7 @@ struct WhisperModelButton: View {
         )
 
         WhisperModelButton(
-            model: .largev3Turbo,
+            model: WhisperKitModel.largev3Turbo,
             isSelected: false,
             isLoading: true,
             isDownloaded: false,
@@ -170,7 +171,7 @@ struct WhisperModelButton: View {
         )
 
         WhisperModelButton(
-            model: .base,
+            model: WhisperKitModel.base,
             isSelected: false,
             isLoading: false,
             isDownloaded: true,
@@ -180,7 +181,7 @@ struct WhisperModelButton: View {
         )
 
         WhisperModelButton(
-            model: .tiny,
+            model: WhisperKitModel.tiny,
             isSelected: false,
             isLoading: false,
             isDownloaded: false,

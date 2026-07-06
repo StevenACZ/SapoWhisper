@@ -7,6 +7,7 @@ struct EngineSettingsTab: View {
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.whisperLocal.rawValue
     @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.whisperKitModel) private var selectedWhisperModel = WhisperKitModel.small.rawValue
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel) private var selectedMLXModel = MLXWhisperModel.largeV3Turbo.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
         DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
@@ -44,9 +45,14 @@ struct EngineSettingsTab: View {
                     EngineOptionRow(
                         engine: engine,
                         isSelected: currentEngine == engine,
-                        isLoading: engine == .whisperLocal && viewModel.isLoadingWhisperKit,
-                        loadingProgress: viewModel.whisperKitLoadingProgress,
-                        loadingMessage: viewModel.whisperKitLoadingMessage,
+                        isLoading: (engine == .whisperLocal && viewModel.isLoadingWhisperKit)
+                            || (engine == .mlxWhisper && viewModel.mlxWhisperTranscriber.isLoading),
+                        loadingProgress: engine == .mlxWhisper
+                            ? viewModel.mlxWhisperTranscriber.loadingProgress
+                            : viewModel.whisperKitLoadingProgress,
+                        loadingMessage: engine == .mlxWhisper
+                            ? viewModel.mlxWhisperTranscriber.loadingMessage
+                            : viewModel.whisperKitLoadingMessage,
                         hasDetails: engine.hasInlineSettings,
                         isExpanded: $isSelectedEngineSettingsExpanded
                     ) {
@@ -70,6 +76,8 @@ struct EngineSettingsTab: View {
     @ViewBuilder
     private func selectedEngineSettings(for engine: TranscriptionEngine) -> some View {
         switch engine {
+        case .mlxWhisper:
+            MLXWhisperSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .whisperLocal:
             WhisperKitSettingsCard(viewModel: viewModel, isEmbedded: true)
         case .localAIServer:
@@ -158,6 +166,9 @@ struct EngineSettingsTab: View {
 
     private var modeSummary: (icon: String, label: String, value: String) {
         switch currentEngine {
+        case .mlxWhisper:
+            let model = MLXWhisperModel(rawValue: selectedMLXModel) ?? .largeV3Turbo
+            return ("memorychip", "config.engine_summary_model".localized, model.displayName)
         case .whisperLocal:
             let model = WhisperKitModel(rawValue: selectedWhisperModel) ?? .small
             return ("memorychip", "config.engine_summary_model".localized, model.displayName)

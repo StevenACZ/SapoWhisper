@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B0ED1FE12EE7BF1700CBF41C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = B0ED1FE02EE7BF1700CBF41C /* WhisperKit */; };
+		B0AF20012F050001000000A1 /* MLXWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = B0AF20012F050001000000A2 /* MLXWhisper */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B0ED1FE12EE7BF1700CBF41C /* WhisperKit in Frameworks */,
+				B0AF20012F050001000000A1 /* MLXWhisper in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +123,7 @@
 			name = SapoWhisper;
 			packageProductDependencies = (
 				B0ED1FE02EE7BF1700CBF41C /* WhisperKit */,
+				B0AF20012F050001000000A2 /* MLXWhisper */,
 			);
 			productName = SapoWhisper;
 			productReference = B0C248352EE7820500131DB7 /* SapoWhisper.app */;
@@ -156,6 +159,7 @@
 			mainGroup = B0C2482C2EE7820500131DB7;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				B0AF20012F050001000000B1 /* XCLocalSwiftPackageReference "LocalPackages/MLXWhisper" */,
 				B0ED1FDF2EE7BF1700CBF41C /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -486,6 +490,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		B0AF20012F050001000000B1 /* XCLocalSwiftPackageReference "LocalPackages/MLXWhisper" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/MLXWhisper;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		B0ED1FDF2EE7BF1700CBF41C /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -498,6 +509,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		B0AF20012F050001000000A2 /* MLXWhisper */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MLXWhisper;
+		};
 		B0ED1FE02EE7BF1700CBF41C /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B0ED1FDF2EE7BF1700CBF41C /* XCRemoteSwiftPackageReference "WhisperKit" */;
