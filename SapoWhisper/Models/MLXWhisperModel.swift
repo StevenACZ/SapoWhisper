@@ -5,19 +5,6 @@
 
 import SwiftUI
 
-/// Shared descriptor so `WhisperModelButton` renders WhisperKit and MLX
-/// model options with one implementation.
-protocol LocalWhisperModelInfo {
-    var displayName: String { get }
-    var fileSize: String { get }
-    var speed: String { get }
-    var accuracy: Int { get }
-    var isRecommended: Bool { get }
-    /// Badge shown next to recommended models (localized).
-    var badgeText: String { get }
-    var badgeColor: Color { get }
-}
-
 /// Curated MLX Whisper tiers (mlx-community fp16 checkpoints — the vendored
 /// loader reads plain safetensors only, so quantized 4/8-bit variants are
 /// deliberately not offered). Raw value = Hugging Face repo ID.
@@ -39,7 +26,7 @@ nonisolated enum MLXWhisperModel: String, CaseIterable, Identifiable {
     }
 
     /// Download size (weights + config + tokenizer assets), measured on the
-    /// Hugging Face repos 2026-07-05.
+    /// Hugging Face repos 2026-07-05. Shown until the real on-disk size exists.
     var fileSize: String {
         switch self {
         case .base: return "141 MB"
@@ -58,6 +45,7 @@ nonisolated enum MLXWhisperModel: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 1...5 stars in the model picker.
     var accuracy: Int {
         switch self {
         case .base: return 3
@@ -72,8 +60,8 @@ nonisolated enum MLXWhisperModel: String, CaseIterable, Identifiable {
     }
 }
 
-extension MLXWhisperModel: LocalWhisperModelInfo {
-    var speed: String {
+extension MLXWhisperModel {
+    @MainActor var speed: String {
         switch self {
         case .base: return "model.speed.very_fast".localized
         case .small: return "model.speed.fast".localized
@@ -82,16 +70,6 @@ extension MLXWhisperModel: LocalWhisperModelInfo {
         }
     }
 
-    var badgeText: String { "badge.pro".localized }
-    var badgeColor: Color { .purple }
-}
-
-extension WhisperKitModel: LocalWhisperModelInfo {
-    var badgeText: String {
-        self == .small ? "badge.balance".localized : "badge.pro".localized
-    }
-
-    var badgeColor: Color {
-        self == .small ? .blue : .purple
-    }
+    @MainActor var badgeText: String { "badge.recommended".localized }
+    var badgeColor: Color { .sapoGreen }
 }

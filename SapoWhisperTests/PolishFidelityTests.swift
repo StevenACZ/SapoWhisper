@@ -350,6 +350,41 @@ final class PolishFidelityTests: XCTestCase {
         }
     }
 
+    /// Real regression (2026-07-05): a compact rewrite of an instruction-heavy
+    /// dictation rephrases imperative cues into requirement wording, so the
+    /// cue-preservation check found none of the literal cue verbs and rejected
+    /// every attempt (3/3, raw shipped) even though the compaction was good.
+    func testInstructionGuardAcceptsCompactRewriteLosingCueVerbs() {
+        let raw =
+            "ya elimina el motor local antiguo y haz una mejor componentización revisa que los modelos se guarden bien y analiza el espacio usado"
+        let polished =
+            "Eliminación del motor local antiguo, mejor componentización, verificación del guardado de modelos y del espacio usado."
+
+        let compact = PolishInstructionResponseGuard.evaluate(
+            raw: raw, polished: polished, compactionExpected: true)
+        XCTAssertTrue(compact.isAcceptable, compact.diagnosticSummary)
+
+        // Normal mode keeps demanding the cues — only compact relaxes it.
+        let normal = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
+        XCTAssertFalse(normal.isAcceptable)
+    }
+
+    /// Answer/refusal drift must survive the compact relaxation — those
+    /// patterns match wording the model introduced, not preserved cues.
+    func testInstructionGuardStillRejectsDriftInCompactMode() {
+        let refusal = PolishInstructionResponseGuard.evaluate(
+            raw: "investígame por internet qué es WebRTC y dime las fuentes",
+            polished: "No puedo acceder a internet para buscar fuentes sobre WebRTC.",
+            compactionExpected: true)
+        XCTAssertFalse(refusal.isAcceptable)
+
+        let mathAnswer = PolishInstructionResponseGuard.evaluate(
+            raw: "dime cuánto es cinco más cinco",
+            polished: "Cinco más cinco es 10.",
+            compactionExpected: true)
+        XCTAssertFalse(mathAnswer.isAcceptable)
+    }
+
     func testInstructionGuardRejectsIntroducedRefusalOpener() {
         // The model's own refusal wording is never in the transcript.
         let raw = "resume el documento de arquitectura en tres puntos para el equipo"

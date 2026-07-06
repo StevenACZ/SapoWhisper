@@ -248,7 +248,7 @@ class VocabularyManager {
         return (terms, max(0, canonicalTerms.count - terms.count))
     }
 
-    /// Whisper-style initial prompt for local STT engines (WhisperKit and the
+    /// Whisper-style initial prompt for local STT engines (MLX Whisper and the
     /// Local AI Server). Unlike the cloud keyterm payloads, this shows the
     /// decoder only the CANONICAL spellings — feeding misheard variants here
     /// would teach the model the wrong forms. Whisper conditions on roughly the

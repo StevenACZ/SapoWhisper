@@ -165,14 +165,14 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(failure.isRetryable)
     }
 
-    func testFromWhisperKitModelNotLoadedMapsToNotConfigured() {
-        let failure = TranscriptionFailure.from(WhisperKitError.modelNotLoaded, engine: "WhisperKit")
+    func testFromMLXModelNotLoadedMapsToNotConfigured() {
+        let failure = TranscriptionFailure.from(MLXWhisperError.modelNotLoaded, engine: "Whisper (Local)")
         XCTAssertEqual(failure.kind, .notConfigured)
         XCTAssertFalse(failure.isRetryable)
     }
 
-    func testFromWhisperKitTranscriptionFailedMapsToUnknown() {
-        let failure = TranscriptionFailure.from(WhisperKitError.transcriptionFailed("boom"), engine: "WhisperKit")
+    func testFromMLXTranscriptionFailedMapsToUnknown() {
+        let failure = TranscriptionFailure.from(MLXWhisperError.transcriptionFailed("boom"), engine: "Whisper (Local)")
         XCTAssertEqual(failure.kind, .unknown)
     }
 

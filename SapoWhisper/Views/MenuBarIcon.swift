@@ -16,7 +16,7 @@ struct MenuBarIcon: View {
         Image(
             nsImage: MenuBarIconImageProvider.image(
                 for: viewModel.appState,
-                isLoadingWhisperKit: viewModel.isLoadingWhisperKit
+                isLoadingLocalModel: viewModel.isLoadingLocalModel
             )
         )
         .renderingMode(.original)
@@ -24,8 +24,8 @@ struct MenuBarIcon: View {
 }
 
 enum MenuBarIconImageProvider {
-    static func image(for appState: AppState, isLoadingWhisperKit: Bool) -> NSImage {
-        let imageName = menuBarImageName(for: appState, isLoadingWhisperKit: isLoadingWhisperKit)
+    static func image(for appState: AppState, isLoadingLocalModel: Bool) -> NSImage {
+        let imageName = menuBarImageName(for: appState, isLoadingLocalModel: isLoadingLocalModel)
 
         if let image = NSImage(named: imageName) {
             let statusImage = (image.copy() as? NSImage) ?? image
@@ -43,9 +43,9 @@ enum MenuBarIconImageProvider {
 
     private static func menuBarImageName(
         for appState: AppState,
-        isLoadingWhisperKit: Bool
+        isLoadingLocalModel: Bool
     ) -> String {
-        if isLoadingWhisperKit {
+        if isLoadingLocalModel {
             return "MenuBarIconLoading"
         }
 

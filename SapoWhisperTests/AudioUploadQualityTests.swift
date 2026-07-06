@@ -57,7 +57,7 @@ nonisolated final class AudioUploadQualityTests: XCTestCase {
             AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)
         )
 
-        for engine in [TranscriptionEngine.whisperLocal, .localAIServer] {
+        for engine in [TranscriptionEngine.mlxWhisper, .localAIServer] {
             let mediumFormat = AudioUploadQuality.medium.audioFormat(matching: input48k, for: engine)
             XCTAssertEqual(mediumFormat.sampleRate, 16_000)
             XCTAssertEqual(mediumFormat.commonFormat, .pcmFormatInt16)

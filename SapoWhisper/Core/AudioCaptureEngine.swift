@@ -20,7 +20,7 @@ struct AudioCaptureResult {
 }
 
 /// Unified microphone capture for every engine. `.batch` records a WAV at the
-/// configured `AudioUploadQuality` (WhisperKit, hosted batch, Local AI Server);
+/// configured `AudioUploadQuality` (MLX Whisper, hosted batch, Local AI Server);
 /// `.streaming` captures fixed 16 kHz mono int16 for the WebSocket engines,
 /// emitting each converted buffer as a PCM chunk while writing the same WAV as
 /// the local backup. Batch is streaming with a nil chunk handler.

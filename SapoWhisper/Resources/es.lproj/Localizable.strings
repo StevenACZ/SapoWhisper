@@ -121,10 +121,9 @@
 "config.engine_summary_ai" = "Mejora IA";
 "config.engine_summary_ai_active" = "Activa";
 "config.engine_summary_ai_translate" = "→ %@";
-"config.whisper_model" = "Modelo de Whisper";
 "config.space_used" = "Espacio usado: %@";
-"config.whisper_vocabulary_hint" = "Los hints de vocabulario no son compatibles con el modelo local de Whisper; tus reemplazos se siguen aplicando tras la transcripción.";
 "config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
+"config.mlx_vocabulary_hint" = "Tu vocabulario guía al modelo local mientras transcribe, así tus términos salen bien escritos.";
 "config.unload_after_idle" = "Liberar modelo tras inactividad";
 "config.unload_never" = "Mantener cargado";
 "config.unload_minutes" = "%@ min";
@@ -148,10 +147,9 @@
 "status.error" = "Error: %@";
 "status.no_model" = "Descarga un modelo primero";
 "status.recording_generic" = "Grabando...";
-"config.subtitle_info" = "Speech-to-Text con WhisperKit, servidor IA local, Deepgram, ElevenLabs y Mejora por IA";
+"config.subtitle_info" = "Speech-to-Text con Whisper (Local), servidor IA local, Deepgram, ElevenLabs y Mejora por IA";
 
 /* Engine Descriptions */
-"engine.whisper.description" = "100% privado, sin internet. Procesa todo en tu Mac.";
 "engine.mlx_whisper.description" = "El motor local más rápido en Apple Silicon (MLX). 100% privado, sin internet.";
 "engine.local_ai_server.description" = "Servidor NVIDIA local por LAN. Tu Mac graba; el servidor GPU transcribe.";
 
@@ -210,11 +208,6 @@
 "ai.provider.error_not_configured" = "La mejora por IA no está configurada (faltan datos del proveedor).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
 "ai.provider.error_truncated" = "La respuesta de la IA se cortó antes de terminar.";
-"error.whisperkit.model_load" = "Error cargando modelo: %@";
-"error.whisperkit.transcription" = "Error en transcripción: %@";
-"error.whisperkit.not_available" = "WhisperKit no está disponible. Agrega el package en Xcode.";
-"error.whisperkit.model_not_loaded" = "No hay un modelo cargado";
-"error.whisperkit.in_progress" = "Ya hay una transcripción en curso";
 "error.mlx.model_load" = "Error cargando modelo MLX: %@";
 "error.mlx.transcription" = "Error de transcripción MLX: %@";
 "error.mlx.model_not_loaded" = "No hay modelo MLX cargado";
@@ -250,15 +243,20 @@
 
 /* Badges & Labels */
 "badge.recommended" = "Recomendado";
-"badge.balance" = "Balance";
-"badge.pro" = "Pro";
 
 /* Model Speeds */
 "model.speed.very_fast" = "Muy rápido";
 "model.speed.fast" = "Rápido";
 "model.speed.moderate" = "Moderado";
-"model.speed.slow" = "Lento";
 "model.delete_tooltip" = "Borrar modelo para liberar espacio";
+"model.download_tooltip" = "Descargar modelo";
+"model.pause_tooltip" = "Pausar descarga";
+"model.resume_tooltip" = "Reanudar descarga";
+"model.cancel_tooltip" = "Cancelar descarga y borrar archivos parciales";
+"model.retry_tooltip" = "Reintentar descarga";
+"model.paused_label" = "En pausa";
+"model.download_failed" = "Descarga fallida: %@";
+"badge.recommended" = "Recomendado";
 
 /* Settings Tabs */
 "tab.general" = "General";

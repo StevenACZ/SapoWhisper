@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-07-06
+
 ### Added
 
 - **Whisper (Local MLX) engine** — new default local engine on Apple Silicon: the same Whisper large-v3-turbo weights running on MLX (Metal), ~4x faster than the WhisperKit engine on the 154 s Spanish benchmark fixture (7.3 s vs 30.4 s warm, RTF 0.047) at equal quality. Four downloadable tiers with progress UI (Base 141 MB, Small 463 MB, Large V3 Turbo 1.5 GB — recommended, Large V3 2.9 GB), per-model delete, idle unload policy, and the personal vocabulary conditioning the decoder as a true Whisper initial prompt (`<|startofprev|>`), so keyterms like SapoWhisper, TestFlight, or .gitignore come out spelled right at the engine level. Auto language mode runs a real detection pass (upstream mlx-audio-swift skipped the language slot entirely). The engine is vendored from mlx-audio-swift (MIT, pinned commit) as a local Swift package trimmed to Whisper only.
@@ -15,9 +17,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Raw-fallback notice** — when AI polish is enabled but the pasted text shipped raw (provider failure or the fidelity guard rejected the output), the post-dictation toast now says "AI not applied — raw text" with a warning tone and the error sound, instead of silently looking like a normal dictation.
 - **Minimum duration for AI polish** — Settings → AI Polish gains an "Activate after" picker (Always, 10 s, 30 s, 45 s, 60 s): dictations shorter than the chosen threshold paste as-is without an AI round-trip, in both Normal and Compact. The recording pill reflects it live — the purple meter and Compact chip appear the moment the threshold is crossed. Polishing from History always runs regardless.
 - **Live polish preview next to the controls** — the "Preview polish" tester moved from Personal context into the AI Polish card, right under the provider/style/reasoning controls. It now runs the prompt of the selected style (Compact shows the −N% trim badge) with a realistic localized sample, so switching models or Normal/Compact can be compared on the spot.
+- **Full download control per local model** — each model row in Settings now manages its own download: live progress ring with percentage, pause and resume (partial files survive a pause and the download continues where it left off), cancel (removes partial files and frees the space), and an inline error state with a retry button when a download fails. Downloading a model no longer requires selecting it first, and finishing the download of the selected model loads it automatically. The "space used" footer reports real bytes on disk.
 
 ### Changed
 
+- **The old Whisper (Local) engine — WhisperKit — was removed.** The MLX engine runs the exact same Whisper weights ~4x faster on the Apple Silicon GPU at equal quality, so two "local Whisper" entries only added confusion and 3+ GB of duplicate models. The MLX engine now simply appears as "Whisper (Local)". Existing installs migrate automatically: the engine selection moves to it, WhisperKit preferences are purged, and the multi-GB CoreML model caches are deleted from disk (only WhisperKit-named folders — shared HuggingFace caches are untouched). History entries transcribed with the old engine remain readable and filterable.
+- The local model manager was rebuilt as focused components (`LocalModelsCard` + `LocalModelRow`) with state-driven animations: selection spring, download-complete checkmark bounce, error shake with a red border, and animated size/space labels.
 - The polish content guard is mode-aware: in Compact it allows whole rambling passages to be dropped (that is the mode's job) while still protecting every number, and a near-empty compact result is retried automatically before anything ships.
 - Compact polish gets its own timeout budget (up to 60 s scaled by transcript length) instead of the per-chunk Normal budget — a 90-second dictation timed out at 10 s and shipped raw.
 - The "Connecting <mic>…" label only appears when the microphone is genuinely slow to deliver signal (about a second, e.g. Bluetooth renegotiation) instead of flashing on every dictation with fast USB mics.
@@ -26,6 +31,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Windows no longer crash on macOS 26 when starting a dictation or right after launch (Settings/History, About, and Permissions windows kept content-driven sizing options that macOS 26 punishes with a hard layout-reentrancy exception).
 - The "Compact" chip on the recording pill no longer wraps to two lines, and it now sits next to the language chip in the right-side control cluster instead of floating alone with a wide gap.
+- Compact polish no longer gets rejected as "answered instead of polished": the instruction-response guard demanded the literal request verbs ("haz", "analiza") survive into the output, but a compact rewrite legitimately rephrases them — instruction-heavy dictations burned all three retries and shipped raw. Real drift (refusals, answered questions) is still caught.
 
 ## [2.7.0] - 2026-07-05
 

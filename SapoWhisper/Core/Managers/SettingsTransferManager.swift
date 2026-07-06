@@ -33,7 +33,8 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var autoDuckingEnabled: Bool
     var autoDuckingAmount: Double
     var transcriptionEngine: String
-    var whisperKitModel: String
+    /// Optional: absent in exports older than the MLX engine (2026-07-06).
+    var mlxWhisperModel: String?
     var deepgramTranscriptionMode: String
     var elevenLabsTranscriptionMode: String?
     var localAIServerBaseURL: String?
@@ -271,9 +272,9 @@ struct SettingsTransferManager {
             autoDuckingEnabled: boolValue(forKey: Constants.StorageKeys.autoDuckingEnabled, defaultValue: false),
             autoDuckingAmount: doubleValue(forKey: Constants.StorageKeys.autoDuckingAmount, defaultValue: 0.8),
             transcriptionEngine: defaults.string(forKey: Constants.StorageKeys.transcriptionEngine)
-                ?? TranscriptionEngine.whisperLocal.rawValue,
-            whisperKitModel: defaults.string(forKey: Constants.StorageKeys.whisperKitModel)
-                ?? WhisperKitModel.small.rawValue,
+                ?? TranscriptionEngine.mlxWhisper.rawValue,
+            mlxWhisperModel: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel)
+                ?? MLXWhisperModel.largeV3Turbo.rawValue,
             deepgramTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
             elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
@@ -327,7 +328,9 @@ struct SettingsTransferManager {
                 hasElevenLabsKey: !(readEngineKey(.elevenLabsAPIKey) ?? "").isEmpty
             )
             defaults.set(importedEngine, forKey: Constants.StorageKeys.transcriptionEngine)
-            defaults.set(preferences.whisperKitModel, forKey: Constants.StorageKeys.whisperKitModel)
+            if let mlxModel = preferences.mlxWhisperModel, MLXWhisperModel(rawValue: mlxModel) != nil {
+                defaults.set(mlxModel, forKey: Constants.StorageKeys.mlxWhisperModel)
+            }
             defaults.set(preferences.deepgramTranscriptionMode, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
             defaults.set(
                 preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,

@@ -211,7 +211,7 @@ extension View {
         }
 
         EngineOptionRow(
-            engine: .whisperLocal,
+            engine: .mlxWhisper,
             isSelected: false,
             isLoading: false,
             loadingProgress: 0,

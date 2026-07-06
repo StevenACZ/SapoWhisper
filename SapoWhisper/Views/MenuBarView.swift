@@ -26,7 +26,7 @@ struct MenuBarView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var needsEngineSetup: Bool {
-        !onboardingComplete && !viewModel.isLoadingWhisperKit && !viewModel.isEngineReady(viewModel.currentEngine)
+        !onboardingComplete && !viewModel.isLoadingLocalModel && !viewModel.isEngineReady(viewModel.currentEngine)
     }
 
     /// R7: only the cloud engines lose anything while offline.

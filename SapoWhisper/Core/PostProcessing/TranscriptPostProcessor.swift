@@ -564,7 +564,8 @@ final class TranscriptPostProcessor {
             let instructionVerdict = PolishInstructionResponseGuard.evaluate(
                 raw: rawText,
                 polished: cleaned,
-                translationExpected: outputLanguage.requiresTranslation
+                translationExpected: outputLanguage.requiresTranslation,
+                compactionExpected: mode == .compact
             )
             let contentDiffVerdict = PolishContentDiffGuard.evaluate(
                 raw: rawText,

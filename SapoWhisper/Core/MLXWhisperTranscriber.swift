@@ -3,9 +3,8 @@
 //  SapoWhisper
 //
 //  Local Whisper on Apple Silicon via MLX (vendored engine in
-//  LocalPackages/MLXWhisper). Same weights as WhisperKit's turbo but ~6x
-//  faster on the M-series GPU (benched 2026-07-05), with the user
-//  vocabulary conditioning the decoder as a real initial prompt.
+//  LocalPackages/MLXWhisper), running the model on the M-series GPU with
+//  the user vocabulary conditioning the decoder as a real initial prompt.
 //
 
 import AVFoundation
@@ -17,11 +16,17 @@ import os
 /// actor. Actor isolation doubles as the reentrancy guard for the model.
 actor MLXWhisperEngine {
     private var model: WhisperModel?
+    /// Monotonic load counter: a cancelled load frees exactly the weights it
+    /// loaded (`unload(ifGeneration:)`) without clobbering a newer load.
+    private var loadGeneration = 0
 
     var isLoaded: Bool { model != nil }
 
-    func load(directory: URL) async throws {
+    @discardableResult
+    func load(directory: URL) async throws -> Int {
         model = try await WhisperModel.fromDirectory(directory)
+        loadGeneration += 1
+        return loadGeneration
     }
 
     func unload() {
@@ -29,6 +34,12 @@ actor MLXWhisperEngine {
         // Dropping the model frees its arrays; the buffer pool needs an
         // explicit clear or MLX keeps ~hundreds of MB resident.
         MLXWhisperRuntime.clearMemoryCache()
+    }
+
+    /// Unload only while this generation's model is still the resident one.
+    func unload(ifGeneration generation: Int) {
+        guard generation == loadGeneration else { return }
+        unload()
     }
 
     func transcribe(samples: [Float], language: String?, initialPrompt: String?) throws -> STTOutput {
@@ -45,10 +56,34 @@ actor MLXWhisperEngine {
     }
 }
 
+/// Per-model snapshot download lifecycle, driven by the settings UI. The
+/// fractions inside `downloading`/`paused` keep the row's progress ring
+/// stable across pause/resume.
+nonisolated enum MLXModelDownloadPhase: Equatable {
+    case idle
+    case downloading(Double)
+    case paused(Double)
+    case failed(String)
+
+    var fraction: Double? {
+        switch self {
+        case .downloading(let fraction), .paused(let fraction):
+            return fraction
+        case .idle, .failed:
+            return nil
+        }
+    }
+
+    var isDownloading: Bool {
+        if case .downloading = self { return true }
+        return false
+    }
+}
+
 /// Maneja la transcripcion de audio usando el motor MLX (100% local).
 ///
-/// `@Observable` like `WhisperKitTranscriber`: views read the individual
-/// progress properties, so download ticks re-render only the progress UI.
+/// `@Observable`: views read the individual progress properties, so
+/// download ticks re-render only the progress UI.
 @MainActor
 @Observable
 class MLXWhisperTranscriber {
@@ -64,7 +99,7 @@ class MLXWhisperTranscriber {
     // MARK: - Observable State
 
     /// Logic hooks for the owning ViewModel; fired on the main actor only
-    /// when the flag actually flips (same contract as WhisperKitTranscriber).
+    /// when the flag actually flips.
     @ObservationIgnored var onLoadingChanged: ((Bool) -> Void)?
     @ObservationIgnored var onModelLoadedChanged: ((Bool) -> Void)?
     @ObservationIgnored var onTranscribingChanged: ((Bool) -> Void)?
@@ -90,9 +125,17 @@ class MLXWhisperTranscriber {
     var errorMessage: String?
     var currentModelName: String?
 
-    /// Models with a complete snapshot on disk (mirrors the WhisperKit set;
-    /// the recording gate checks it for the R4 reload-on-demand path).
+    /// Models with a complete snapshot on disk (the recording gate checks it
+    /// for the R4 reload-on-demand path).
     var downloadedModels: Set<MLXWhisperModel> = []
+
+    /// Download lifecycle per tier — drives the per-row progress/pause/error
+    /// UI in Settings. Missing entry = `.idle`.
+    var downloadPhases: [MLXWhisperModel: MLXModelDownloadPhase] = [:]
+
+    /// Fired when a standalone download completes, so the owner can load the
+    /// model if it is the active selection.
+    @ObservationIgnored var onDownloadCompleted: ((MLXWhisperModel) -> Void)?
 
     // MARK: - Private Properties
 
@@ -100,6 +143,7 @@ class MLXWhisperTranscriber {
     private var currentModel: MLXWhisperModel?
     private var loadingModel: MLXWhisperModel?
     private var loadTask: Task<Void, Error>?
+    @ObservationIgnored private var downloadTasks: [MLXWhisperModel: Task<URL, Error>] = [:]
     private var idleUnloadTimer: Timer?
 
     // MARK: - Initialization
@@ -111,8 +155,8 @@ class MLXWhisperTranscriber {
         )
     }
 
-    /// Snapshot root under Application Support — owned by the app, unlike
-    /// WhisperKit's shared HuggingFace caches.
+    /// Snapshot root under Application Support — owned entirely by the app
+    /// (never a shared HuggingFace cache).
     static var modelsRootDirectory: URL {
         let appSupport =
             FileManager.default.urls(
@@ -165,27 +209,16 @@ class MLXWhisperTranscriber {
             let root = Self.modelsRootDirectory
             let alreadyDownloaded = WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: root)
 
-            if !alreadyDownloaded {
+            let directory: URL
+            if alreadyDownloaded {
+                directory = WhisperModelDownloader.modelDirectory(repo: model.rawValue, root: root)
+            } else {
                 loadingState = .downloading
                 loadingMessage = "mlx.state.downloading".localized(model.displayName)
-                SapoLog.recording.info(
-                    "MLX model download started model=\(model.rawValue, privacy: .public)"
-                )
+                // Shared with the standalone Settings download path, so a tap
+                // on the row and a selection load never race two snapshots.
+                directory = try await sharedDownloadTask(for: model).value
             }
-
-            let directory = try await WhisperModelDownloader.download(
-                repo: model.rawValue,
-                root: root,
-                progress: { [weak self] fraction in
-                    guard let self, !alreadyDownloaded else { return }
-                    self.loadingProgress = fraction * 0.9
-                    let percent = Int(fraction * 100)
-                    self.loadingMessage = "mlx.state.downloading_percent".localized(
-                        model.displayName, String(percent)
-                    )
-                }
-            )
-            markAsDownloaded(model)
 
             try Task.checkCancellation()
 
@@ -193,7 +226,14 @@ class MLXWhisperTranscriber {
             loadingMessage = "mlx.state.loading".localized(model.displayName)
             loadingProgress = alreadyDownloaded ? 0.5 : 0.9
 
-            try await engine.load(directory: directory)
+            let generation = try await engine.load(directory: directory)
+
+            // An engine/model switch mid-load cancelled this task: the weights
+            // just loaded must not stay resident under the new selection.
+            if Task.isCancelled {
+                await engine.unload(ifGeneration: generation)
+                throw CancellationError()
+            }
 
             loadingState = .ready
             loadingMessage = "mlx.state.ready".localized
@@ -218,6 +258,103 @@ class MLXWhisperTranscriber {
             )
             throw MLXWhisperError.modelLoadFailed(message)
         }
+    }
+
+    // MARK: - Download Management
+
+    func downloadPhase(_ model: MLXWhisperModel) -> MLXModelDownloadPhase {
+        downloadPhases[model] ?? .idle
+    }
+
+    /// True while any tier is actively downloading.
+    var isAnyDownloadActive: Bool {
+        downloadPhases.values.contains { $0.isDownloading }
+    }
+
+    /// Starts (or resumes after pause/failure) the snapshot download for a
+    /// tier without loading it into memory.
+    func startDownload(_ model: MLXWhisperModel) {
+        _ = sharedDownloadTask(for: model)
+    }
+
+    /// Cancels the in-flight task but keeps the partial snapshot on disk;
+    /// resuming re-enters the downloader, which skips completed files.
+    func pauseDownload(_ model: MLXWhisperModel) {
+        guard let task = downloadTasks[model] else { return }
+        let fraction = downloadPhase(model).fraction ?? 0
+        downloadTasks[model] = nil
+        downloadPhases[model] = .paused(fraction)
+        task.cancel()
+        SapoLog.settings.info(
+            "MLX download paused model=\(model.rawValue, privacy: .public) percent=\(Int(fraction * 100), privacy: .public)"
+        )
+    }
+
+    /// Aborts the download and deletes the partial snapshot — cancel means
+    /// "I changed my mind", so the disk space comes back.
+    func cancelDownload(_ model: MLXWhisperModel) {
+        let task = downloadTasks[model]
+        downloadTasks[model] = nil
+        downloadPhases[model] = .idle
+        task?.cancel()
+        WhisperModelDownloader.delete(repo: model.rawValue, root: Self.modelsRootDirectory)
+        downloadedModels.remove(model)
+        SapoLog.settings.info("MLX download cancelled model=\(model.rawValue, privacy: .public)")
+    }
+
+    /// One download task per tier, shared by the Settings row and the
+    /// selection-load path. Progress feeds the per-row phase always, and the
+    /// card-level loading bar only while this model is the one being loaded.
+    private func sharedDownloadTask(for model: MLXWhisperModel) -> Task<URL, Error> {
+        if let existing = downloadTasks[model] { return existing }
+
+        downloadPhases[model] = .downloading(downloadPhase(model).fraction ?? 0)
+        SapoLog.recording.info(
+            "MLX model download started model=\(model.rawValue, privacy: .public)"
+        )
+
+        let task = Task { [weak self] () throws -> URL in
+            do {
+                let directory = try await WhisperModelDownloader.download(
+                    repo: model.rawValue,
+                    root: Self.modelsRootDirectory,
+                    progress: { fraction in
+                        guard let self else { return }
+                        // Pause/cancel detached this task — stop publishing.
+                        guard self.downloadTasks[model] != nil else { return }
+                        self.downloadPhases[model] = .downloading(fraction)
+                        if self.loadingModel == model, self.isLoading {
+                            self.loadingProgress = fraction * 0.9
+                            self.loadingMessage = "mlx.state.downloading_percent".localized(
+                                model.displayName, String(Int(fraction * 100))
+                            )
+                        }
+                    }
+                )
+                guard let self else { return directory }
+                self.downloadTasks[model] = nil
+                self.downloadPhases[model] = .idle
+                self.markAsDownloaded(model)
+                SapoLog.recording.info(
+                    "MLX model download complete model=\(model.rawValue, privacy: .public)"
+                )
+                self.onDownloadCompleted?(model)
+                return directory
+            } catch {
+                // Pause/cancel already set the phase they want; only a real
+                // failure of a still-attached task lands in `.failed`.
+                if let self, !Task.isCancelled, self.downloadTasks[model] != nil {
+                    self.downloadTasks[model] = nil
+                    self.downloadPhases[model] = .failed(error.localizedDescription)
+                    SapoLog.recording.error(
+                        "MLX model download failed model=\(model.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                    )
+                }
+                throw error
+            }
+        }
+        downloadTasks[model] = task
+        return task
     }
 
     /// Descarga el modelo actual de memoria.
@@ -281,9 +418,9 @@ class MLXWhisperTranscriber {
         guard isModelLoaded else {
             throw MLXWhisperError.modelNotLoaded
         }
-        // Defense-in-depth mirror of WhisperKit: history retranscribe can
-        // reach this on a second path; the actor serializes the model, this
-        // flag keeps a queued second inference from piling up behind it.
+        // Defense in depth: history retranscribe can reach this on a second
+        // path; the actor serializes the model, this flag keeps a queued
+        // second inference from piling up behind it.
         guard !isTranscribing else {
             throw MLXWhisperError.transcriptionInProgress
         }
@@ -430,6 +567,11 @@ class MLXWhisperTranscriber {
     }
 
     func deleteDownloadedModel(_ model: MLXWhisperModel) {
+        if let task = downloadTasks[model] {
+            downloadTasks[model] = nil
+            task.cancel()
+        }
+        downloadPhases[model] = .idle
         if currentModel == model {
             unloadModel()
         }

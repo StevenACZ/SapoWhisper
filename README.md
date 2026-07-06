@@ -18,7 +18,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 
 | Engine | Mode | Best for |
 |---|---|---|
-| WhisperKit | Local | Private offline transcription. |
+| Whisper (Local MLX) | Local | Private offline transcription on the Apple Silicon GPU. |
 | Local AI Server (NVIDIA) | Batch LAN | Offloading transcription to a local NVIDIA GPU server with an OpenAI-style STT endpoint. |
 | Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
 | Deepgram Flux Live | Realtime | Low-latency streaming with WAV backup. |

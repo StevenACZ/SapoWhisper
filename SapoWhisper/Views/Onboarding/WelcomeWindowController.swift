@@ -65,7 +65,8 @@ final class WelcomeWindowController: NSWindowController {
             return true
         }
         let viewModel = SapoWhisperAppEnvironment.shared.viewModel
-        return viewModel.whisperKitTranscriber.isModelDownloaded(viewModel.currentWhisperKitModel)
+        guard let model = viewModel.currentMLXWhisperModel else { return false }
+        return viewModel.mlxWhisperTranscriber.isModelDownloaded(model)
     }
 
     func show() {

@@ -1,9 +1,14 @@
+//
+//  LocalModelsCard.swift
+//  SapoWhisper
+//
+
 import SwiftUI
 import os
 
-/// Model tiers, download state, and idle-unload policy for the MLX engine —
-/// same layout as `WhisperKitSettingsCard`, driven by the MLX transcriber.
-struct MLXWhisperSettingsCard: View {
+/// Local MLX model manager: tier selection, per-model download lifecycle,
+/// real disk usage, and the idle-unload policy.
+struct LocalModelsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     let isEmbedded: Bool
 
@@ -19,8 +24,10 @@ struct MLXWhisperSettingsCard: View {
         self.isEmbedded = isEmbedded
     }
 
-    private var currentModel: MLXWhisperModel {
-        MLXWhisperModel(rawValue: selectedModel) ?? .largeV3Turbo
+    /// nil = nothing selected (after deleting the selected model); no row is
+    /// highlighted until the user picks again.
+    private var currentModel: MLXWhisperModel? {
+        MLXWhisperModel(rawValue: selectedModel)
     }
 
     private var transcriber: MLXWhisperTranscriber {
@@ -53,11 +60,13 @@ struct MLXWhisperSettingsCard: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Label("config.whisper_vocabulary_hint".localized, systemImage: "info.circle")
+            Label("config.mlx_vocabulary_hint".localized, systemImage: "info.circle")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .animation(Constants.Animation.reveal, value: transcriber.isLoading)
+        .animation(Constants.Animation.reveal, value: transcriber.downloadedModels)
     }
 
     @ViewBuilder
@@ -66,12 +75,14 @@ struct MLXWhisperSettingsCard: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.sapoGreen)
+                    .symbolEffect(.bounce, value: transcriber.isModelLoaded)
                 Text(transcriber.loadedModelName ?? "")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
                 Spacer()
             }
+            .transition(.opacity)
         }
     }
 
@@ -90,6 +101,7 @@ struct MLXWhisperSettingsCard: View {
             }
         }
         .padding(.vertical, 8)
+        .transition(.opacity)
     }
 
     @ViewBuilder
@@ -108,28 +120,25 @@ struct MLXWhisperSettingsCard: View {
     private var modelsList: some View {
         VStack(spacing: 8) {
             ForEach(MLXWhisperModel.allCases) { model in
-                let isDownloaded = transcriber.isModelDownloaded(model)
-                let downloadedSize = transcriber.downloadedModelSize(model)
-
-                WhisperModelButton(
+                LocalModelRow(
                     model: model,
                     isSelected: currentModel == model,
-                    isLoading: transcriber.isLoading && currentModel == model,
-                    isDownloaded: isDownloaded,
-                    downloadedSize: downloadedSize,
-                    action: {
-                        selectedModel = model.rawValue
-                        viewModel.setMLXWhisperModel(model)
-                    },
-                    onDelete: isDownloaded
-                        ? {
-                            deleteModel(model)
-                        } : nil
+                    isActiveLoading: transcriber.isLoading && currentModel == model,
+                    isDownloaded: transcriber.isModelDownloaded(model),
+                    downloadedSize: transcriber.downloadedModelSize(model),
+                    phase: transcriber.downloadPhase(model),
+                    onSelect: { selectModel(model) },
+                    onDownload: { transcriber.startDownload(model) },
+                    onPause: { transcriber.pauseDownload(model) },
+                    onResume: { transcriber.startDownload(model) },
+                    onCancel: { transcriber.cancelDownload(model) },
+                    onDelete: { deleteModel(model) }
                 )
             }
         }
     }
 
+    /// Real bytes on disk, summed over complete snapshots.
     @ViewBuilder
     private var storageInfo: some View {
         let downloadedModels = transcriber.getDownloadedModelsInfo()
@@ -138,12 +147,14 @@ struct MLXWhisperSettingsCard: View {
             HStack {
                 Image(systemName: "internaldrive")
                     .foregroundColor(.secondary)
-                Text("config.space_used".localized(WhisperKitTranscriber.formatBytes(totalSize)))
+                Text("config.space_used".localized(totalSize.byteCountLabel))
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .contentTransition(.numericText())
                 Spacer()
             }
             .padding(.top, 4)
+            .transition(.opacity)
         }
     }
 
@@ -174,8 +185,16 @@ struct MLXWhisperSettingsCard: View {
             : "config.unload_minutes".localized(String(minutes))
     }
 
+    private func selectModel(_ model: MLXWhisperModel) {
+        selectedModel = model.rawValue
+        viewModel.setMLXWhisperModel(model)
+    }
+
     private func deleteModel(_ model: MLXWhisperModel) {
-        transcriber.deleteDownloadedModel(model)
+        // Through the ViewModel so deleting the selected model also clears
+        // the selection (a stale selection would re-download it silently on
+        // the next switch back to the local engine).
+        viewModel.deleteMLXWhisperModel(model)
         SapoLog.settings.info(
             "MLX model deleted from settings=\(model.rawValue, privacy: .public)"
         )

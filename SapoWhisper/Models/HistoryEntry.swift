@@ -212,9 +212,9 @@ extension HistoryEntry {
             audioPath: "/audio/test2.wav", status: "completed", aiStatus: "none", aiModel: nil, aiMode: nil, aiError: nil,
             isFavorite: false),
         HistoryEntry(
-            id: 3, timestamp: Date().addingTimeInterval(-7200), engine: "WhisperKit", language: "en", duration: 5.0,
-            text: "This is a test of the local WhisperKit model running on Apple Silicon",
-            rawText: "This is a test of the local WhisperKit model running on Apple Silicon", audioPath: nil,
+            id: 3, timestamp: Date().addingTimeInterval(-7200), engine: "MLX Whisper", language: "en", duration: 5.0,
+            text: "This is a test of the local MLX Whisper model running on Apple Silicon",
+            rawText: "This is a test of the local MLX Whisper model running on Apple Silicon", audioPath: nil,
             status: "completed", aiStatus: "none", aiModel: nil, aiMode: nil, aiError: nil, isFavorite: false),
         HistoryEntry(
             id: 4, timestamp: Date().addingTimeInterval(-86400), engine: "Deepgram Nova-3", language: "es", duration: 3.1, text: "",
