@@ -29,7 +29,8 @@ protocol TranscriptionPipelineHost: AnyObject {
         language: String,
         duration: TimeInterval,
         aiResult: TranscriptAIResult,
-        perf: DictationPerfTimeline?
+        perf: DictationPerfTimeline?,
+        target: HistoryPersistenceTarget
     )
     func persistFailedDictation(
         audioURL: URL,
@@ -37,16 +38,26 @@ protocol TranscriptionPipelineHost: AnyObject {
         engineName: String,
         language: String,
         duration: TimeInterval,
-        failure: TranscriptionFailure
+        failure: TranscriptionFailure,
+        target: HistoryPersistenceTarget
     )
 
     func logTranscriptionSnapshot(reason: String, extra: String)
 }
 
+/// Where the pipeline's result lands in History: live dictations insert a
+/// fresh row; a retry refreshes the failed row it came from (and a failed
+/// retry keeps that row untouched so it stays retryable).
+enum HistoryPersistenceTarget: Equatable {
+    case insertNew
+    case updateExisting(historyId: Int64)
+}
+
 /// C1: the transcribe→polish→paste→persist flow shared by the three stop
-/// paths (batch recorder, Deepgram Flux, ElevenLabs realtime). The pipeline
-/// owns control flow only: stage order, the session-staleness gate before
-/// every stage (C2), and the local-silence rule that skips failed rows.
+/// paths (batch recorder, Deepgram Flux, ElevenLabs realtime) plus retry.
+/// The pipeline owns control flow only: stage order, the session-staleness
+/// gate before every stage (C2), and the local-silence rule that skips
+/// failed rows.
 @MainActor
 final class TranscriptionPipeline {
     struct Request {
@@ -63,12 +74,15 @@ final class TranscriptionPipeline {
         let snapshotPrefix: String
         let logger: Logger
         let perf: DictationPerfTimeline?
+        var historyTarget: HistoryPersistenceTarget = .insertNew
     }
 
     struct EngineOutput {
         let transcript: String
         let audioURL: URL
-        let duration: TimeInterval
+        /// nil when the source duration is unknown (retry of a row without
+        /// one) — the polish minimum-duration gate treats unknown as allowed.
+        let duration: TimeInterval?
         /// Language persisted with the completed row (Flux reports the
         /// detected language; the other engines keep the selected one).
         let language: String
@@ -115,9 +129,10 @@ final class TranscriptionPipeline {
                 engine: request.engine,
                 engineName: request.engineName,
                 language: output.language,
-                duration: output.duration,
+                duration: output.duration ?? 0,
                 aiResult: aiResult,
-                perf: request.perf
+                perf: request.perf,
+                target: request.historyTarget
             )
         } catch {
             let captureResult = captureResultOnFailure()
@@ -141,7 +156,8 @@ final class TranscriptionPipeline {
                     engineName: request.engineName,
                     language: request.failureLanguage,
                     duration: captureResult.duration,
-                    failure: failure
+                    failure: failure,
+                    target: request.historyTarget
                 )
             }
             request.logger.error(

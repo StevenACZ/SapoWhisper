@@ -11,12 +11,14 @@ import SwiftUI
 struct PermissionGrantCelebration: ViewModifier {
     let trigger: Int
     var cornerRadius: CGFloat = 12
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
             .phaseAnimator([false, true], trigger: trigger) { view, flashing in
                 view
-                    .scaleEffect(flashing ? 1.02 : 1.0)
+                    // Reduce Motion keeps the color flash, drops the scale pop.
+                    .scaleEffect(flashing && !reduceMotion ? 1.02 : 1.0)
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .strokeBorder(Color.green.opacity(flashing ? 0.85 : 0), lineWidth: 2.5)

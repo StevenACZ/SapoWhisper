@@ -37,8 +37,11 @@ enum MenuBarIconImageProvider {
             "MenuBarIcon failed to load image=\(imageName, privacy: .public), using fallback"
         )
         let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-        return NSImage(systemSymbolName: fallbackIconName(for: appState), accessibilityDescription: nil)?
-            .withSymbolConfiguration(config) ?? NSImage()
+        return NSImage(
+            systemSymbolName: fallbackIconName(for: appState),
+            accessibilityDescription: Constants.appName
+        )?
+        .withSymbolConfiguration(config) ?? NSImage()
     }
 
     private static func menuBarImageName(

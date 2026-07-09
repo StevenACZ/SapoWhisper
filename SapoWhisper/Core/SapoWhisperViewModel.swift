@@ -389,7 +389,7 @@ class SapoWhisperViewModel: ObservableObject {
         audioRecorder.isRecordingPublisher
             .sink { [weak self] isRecording in
                 if isRecording {
-                    self?.appState = .recording
+                    self?.transition(to: .recording, reason: "capture-started")
                 }
             }
             .store(in: &cancellables)
@@ -412,7 +412,7 @@ class SapoWhisperViewModel: ObservableObject {
         mlxWhisperTranscriber.onTranscribingChanged = { [weak self] isTranscribing in
             guard let self, !self.isReprocessingHistory else { return }
             if isTranscribing {
-                self.appState = .processing
+                self.transition(to: .processing, reason: "mlx-transcribing")
             }
         }
         mlxWhisperTranscriber.onLoadingChanged = { [weak self] isLoading in
@@ -429,7 +429,7 @@ class SapoWhisperViewModel: ObservableObject {
             // "no model" state so it never clobbers .recording/.processing/
             // .polishing (mirrors the guard in loadMLXWhisperModel()).
             if case .noModel = self.appState {
-                self.appState = .idle
+                self.transition(to: .idle, reason: "model-loaded")
             }
         }
         // A standalone Settings download that finishes for the ACTIVE
@@ -449,7 +449,7 @@ class SapoWhisperViewModel: ObservableObject {
             .sink { [weak self] isTranscribing in
                 guard let self, !self.isReprocessingHistory else { return }
                 if isTranscribing {
-                    self.appState = .processing
+                    self.transition(to: .processing, reason: "elevenlabs-transcribing")
                 }
             }
             .store(in: &cancellables)
@@ -526,7 +526,7 @@ class SapoWhisperViewModel: ObservableObject {
         session.isStreamingPublisher
             .sink { [weak self] isStreaming in
                 if isStreaming {
-                    self?.appState = .recording
+                    self?.transition(to: .recording, reason: "streaming-started")
                 }
             }
             .store(in: &cancellables)
@@ -634,7 +634,19 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Initial State
 
     private func checkInitialState() {
-        appState = isEngineReady(currentEngine) ? .idle : .noModel
+        transition(to: isEngineReady(currentEngine) ? .idle : .noModel, reason: "check-initial-state")
+    }
+
+    /// Single choke point for appState writes: applies the change and logs
+    /// any edge outside `AppState.canTransition` — observability first; no
+    /// rejection until the table has survived live QA.
+    private func transition(to newState: AppState, reason: String) {
+        if !appState.canTransition(to: newState) {
+            SapoLog.lifecycle.warning(
+                "appState transition outside table \(self.appState.diagnosticName, privacy: .public) -> \(newState.diagnosticName, privacy: .public) reason=\(reason, privacy: .public)"
+            )
+        }
+        appState = newState
     }
 
     // MARK: - MLX Whisper Methods
@@ -647,7 +659,7 @@ class SapoWhisperViewModel: ObservableObject {
             // R4: an on-demand reload can finish mid-recording — only leave
             // the "no model" state, never clobber an active session state.
             if case .noModel = appState {
-                appState = .idle
+                transition(to: .idle, reason: "mlx-load-recovered")
             }
         } catch is CancellationError {
             return
@@ -657,7 +669,7 @@ class SapoWhisperViewModel: ObservableObject {
             // Mid-recording reload failures surface at stop time through the
             // normal transcription failure path; do not clobber the session.
             guard activeRecordingSessionID == nil else { return }
-            appState = .error(ErrorState(message: errorMsg))
+            transition(to: .error(ErrorState(message: errorMsg)), reason: "mlx-load-failed")
 
             // Show the error briefly, then return to noModel for retry — but
             // only while THIS error is still showing; a newer, different
@@ -882,7 +894,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         guard isReady || canReloadOnDemand else {
             activeRecordingSessionID = nil
-            appState = .noModel
+            transition(to: .noModel, reason: "start-engine-not-ready")
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
         }
@@ -912,6 +924,18 @@ class SapoWhisperViewModel: ObservableObject {
         // Guardar la app activa para volver a ella despues de pegar
         PasteManager.savePreviousApp()
 
+        // Cloud batch stops pay DNS+TLS inside stop→paste on a cold pool;
+        // open the connection now, while the user is still dictating (the
+        // streaming engines already amortize their handshake at start).
+        switch engine {
+        case .deepgram where currentDeepgramMode == .nova3:
+            Task { await deepgramTranscriber.warmUpConnection() }
+        case .elevenLabsScribe where currentElevenLabsMode == .scribeV2Batch:
+            Task { await elevenLabsTranscriber.warmUpConnection() }
+        default:
+            break
+        }
+
         // Primary-mic sync: a pinned explicit mic becomes the system default
         // input NOW. Opening a non-default device pays full route setup on
         // every take (on AirPods, the whole Bluetooth handshake); keeping app
@@ -924,7 +948,7 @@ class SapoWhisperViewModel: ObservableObject {
         // Mostrar overlay PRIMERO para feedback visual inmediato
         sessionPeakAudioLevel = 0
         sessionLevelTrackingStartedAt = triggerTime
-        appState = .recording
+        transition(to: .recording, reason: "start-optimistic")
 
         overlayManager.updateState(.recording(duration: 0))
         // Until the first real buffer lands, the pill says "connecting <mic>"
@@ -1047,6 +1071,9 @@ class SapoWhisperViewModel: ObservableObject {
         SapoLog.recording.warning(
             "Ignoring stale transcription completion session=\(sessionID, privacy: .public)"
         )
+        // A retry transcribes the failed row's HISTORY audio — going stale
+        // must never delete a file the History still references.
+        guard audioURL != lastFailedAudioURL else { return }
         audioRecorder.deleteRecording(at: audioURL)
     }
 
@@ -1078,17 +1105,16 @@ class SapoWhisperViewModel: ObservableObject {
             force: true
         )
 
-        appState = .processing
+        transition(to: .processing, reason: "stop-requested")
         overlayManager.updateState(.transcribing)
 
         Task {
+            // Inherits MainActor from the enclosing @MainActor class.
             try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
-            await MainActor.run {
-                let elapsed = Int((CFAbsoluteTimeGetCurrent() - stopRequestTime) * 1000)
-                logger.info("\(logLabel, privacy: .public) stop tail elapsed=\(elapsed, privacy: .public)ms")
-                perf.markTailDone()
-                stop(perf)
-            }
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - stopRequestTime) * 1000)
+            logger.info("\(logLabel, privacy: .public) stop tail elapsed=\(elapsed, privacy: .public)ms")
+            perf.markTailDone()
+            stop(perf)
         }
     }
 
@@ -1294,52 +1320,47 @@ class SapoWhisperViewModel: ObservableObject {
             return
         }
         guard !isRetryInFlight else { return }
+        guard activeTranscriptionSessionID == nil else { return }
         isRetryInFlight = true
 
-        appState = .processing
+        transition(to: .processing, reason: "retry-start")
         overlayManager.updateState(.transcribing)
 
         let engine = currentEngine
         let language = selectedLanguage
-        let duration = lastFailedHistoryId.flatMap { historyId in
-            historyManager.duration(for: historyId)
-        }
+        let historyId = lastFailedHistoryId
+        let duration = historyId.flatMap { historyManager.duration(for: $0) }
+        let sessionID = nextRecordingSessionID()
+        activeTranscriptionSessionID = sessionID
+
+        // The retry rides the shared pipeline: same staleness gates and
+        // delivery as a live stop, with the failed row refreshed in place
+        // instead of inserting a new one.
+        let request = TranscriptionPipeline.Request(
+            sessionID: sessionID,
+            engine: engine,
+            engineName: historyEngineName(for: engine),
+            source: "retry",
+            failureLanguage: language,
+            snapshotPrefix: "retry-transcription",
+            logger: SapoLog.recording,
+            perf: nil,
+            historyTarget: historyId.map { .updateExisting(historyId: $0) } ?? .insertNew
+        )
 
         Task {
             defer { isRetryInFlight = false }
-            do {
-                let transcription = try await transcribeAudio(at: audioURL, using: engine, language: language)
-                let aiResult = await postProcessTranscript(
-                    transcription,
-                    source: "retry",
-                    duration: duration
+            await transcriptionPipeline.run(request) {
+                let transcript = try await self.transcribeAudio(
+                    at: audioURL, using: engine, language: language)
+                return TranscriptionPipeline.EngineOutput(
+                    transcript: transcript,
+                    audioURL: audioURL,
+                    duration: duration,
+                    language: language
                 )
-
-                deliverTranscription(aiResult, perf: nil)
-
-                // Update history entry in place; the retry may run on a
-                // different engine than the failed attempt.
-                if let historyId = lastFailedHistoryId {
-                    historyManager.updateRetranscription(
-                        id: historyId,
-                        engine: historyEngineName(for: engine),
-                        finalText: aiResult.finalText,
-                        rawText: aiResult.rawText,
-                        aiStatus: aiResult.status,
-                        aiModel: aiResult.model,
-                        aiMode: aiResult.mode,
-                        aiError: aiResult.error
-                    )
-                    lastCompletedHistoryId = historyId
-                }
-                lastFailedAudioURL = nil
-                lastFailedHistoryId = nil
-
-            } catch {
-                let failure = TranscriptionFailure.from(error, engine: engine.displayName)
-                presentTranscriptionFailure(failure)
-                SapoLog.recording.error(
-                    "Retry transcription failed \(failure.logSummary, privacy: .public)")
+            } captureResultOnFailure: {
+                (audioURL, duration ?? 0)
             }
         }
     }
@@ -1531,7 +1552,9 @@ class SapoWhisperViewModel: ObservableObject {
                     return
                 }
                 self.activeRecordingSessionID = nil
-                self.appState = .error(ErrorState(message: error.localizedDescription))
+                self.transition(
+                    to: .error(ErrorState(message: error.localizedDescription)),
+                    reason: "capture-start-failed")
                 self.overlayManager.showError(message: error.localizedDescription)
                 AutoDuckingManager.shared.restore()
                 if playSound && !self.isRecoverableInputStartError(error) {
@@ -1708,7 +1731,7 @@ class SapoWhisperViewModel: ObservableObject {
         if errorState.isNoSpeech {
             checkInitialState()
         } else {
-            appState = .error(errorState)
+            transition(to: .error(errorState), reason: "transcription-failure")
         }
         overlayManager.showError(errorState)
         if playSoundEnabled && !errorState.isNoSpeech {
@@ -1782,7 +1805,7 @@ class SapoWhisperViewModel: ObservableObject {
             // History re-runs reuse this helper but must not drive the live
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
             if !isReprocessingHistory {
-                appState = .polishing
+                transition(to: .polishing, reason: "polish-start")
                 let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
                 // Same per-chunk sum the processor enforces — a chunked
                 // transcript's countdown must not hit 0 mid-polish.
@@ -1844,7 +1867,7 @@ class SapoWhisperViewModel: ObservableObject {
         let duration = lastDictationDuration
         let historyId = lastCompletedHistoryId
         let generation = dictationGeneration
-        appState = .polishing
+        transition(to: .polishing, reason: "repolish-start")
         let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
         overlayManager.updateState(
             .polishing(
@@ -1868,7 +1891,7 @@ class SapoWhisperViewModel: ObservableObject {
 
             lastTranscription = result.finalText
             PasteManager.copyToClipboard(result.finalText)
-            appState = .idle
+            transition(to: .idle, reason: "repolish-done")
             overlayManager.showCompleted(text: result.finalText)
             if playSoundEnabled {
                 SoundManager.shared.play(.success)
@@ -2169,11 +2192,12 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
     /// with the error sound instead of silently passing as polished.
     func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?) {
         let finalText = aiResult.finalText
+        let outcome = Self.copiedOutcome(for: aiResult)
         dictationGeneration &+= 1
         lastCompletedHistoryId = nil
         lastTranscription = finalText
         PasteManager.copyToClipboard(finalText)
-        overlayManager.showCopied(text: finalText, outcome: Self.copiedOutcome(for: aiResult))
+        overlayManager.showCopied(text: finalText, outcome: outcome)
 
         if autoPasteEnabled {
             PasteManager.simulatePaste { perf?.markPasteDone() }
@@ -2181,9 +2205,9 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
             perf?.markPasteDone(skipped: true)
         }
 
-        appState = .idle
+        transition(to: .idle, reason: "delivered")
         if playSoundEnabled {
-            SoundManager.shared.play(Self.copiedOutcome(for: aiResult) == .aiSkipped ? .error : .success)
+            SoundManager.shared.play(outcome == .aiSkipped ? .error : .success)
         }
     }
 
@@ -2207,17 +2231,35 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         language: String,
         duration: TimeInterval,
         aiResult: TranscriptAIResult,
-        perf: DictationPerfTimeline?
+        perf: DictationPerfTimeline?,
+        target: HistoryPersistenceTarget
     ) {
-        scheduleCompletedHistoryPersistence(
-            from: audioURL,
-            engine: engine,
-            engineName: engineName,
-            language: language,
-            duration: duration,
-            aiResult: aiResult,
-            perf: perf
-        )
+        switch target {
+        case .insertNew:
+            scheduleCompletedHistoryPersistence(
+                from: audioURL,
+                engine: engine,
+                engineName: engineName,
+                language: language,
+                duration: duration,
+                aiResult: aiResult,
+                perf: perf
+            )
+        case .updateExisting(let historyId):
+            // Retry path: refresh the failed row in place (the retry may have
+            // run on a different engine than the failed attempt).
+            historyManager.updateRetranscription(
+                id: historyId,
+                engine: engineName,
+                finalText: aiResult.finalText,
+                rawText: aiResult.rawText,
+                aiStatus: aiResult.status,
+                aiModel: aiResult.model,
+                aiMode: aiResult.mode,
+                aiError: aiResult.error
+            )
+            lastCompletedHistoryId = historyId
+        }
         lastFailedAudioURL = nil
         lastFailedHistoryId = nil
     }
@@ -2228,8 +2270,15 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         engineName: String,
         language: String,
         duration: TimeInterval,
-        failure: TranscriptionFailure
+        failure: TranscriptionFailure,
+        target: HistoryPersistenceTarget
     ) {
+        if case .updateExisting = target {
+            // A failed retry keeps the original failed row (and the retry
+            // state) untouched so the user can retry again.
+            SapoLog.recording.info("Retry failed; keeping original failed history row")
+            return
+        }
         let persistedEntry = persistHistoryEntry(
             from: audioURL,
             engine: engine,

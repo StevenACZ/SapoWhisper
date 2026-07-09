@@ -1,5 +1,11 @@
 # Security
 
+## Supported Versions
+
+Only the latest release receives security fixes. There is no auto-update
+channel: update by downloading the newest DMG from GitHub Releases and
+verifying its published SHA-256.
+
 ## Secret Handling
 
 Do not commit:
@@ -16,7 +22,11 @@ The app stores user-provided cloud credentials and optional local-server bearer 
 
 ## Reporting
 
-For security-sensitive issues, do not post secrets or private recordings in public issues. Open a minimal report that describes the affected area and share sensitive details only through a private maintainer-approved channel.
+For security-sensitive issues, do not post secrets or private recordings in public issues. Report privately via GitHub Security Advisories ("Report a vulnerability" on the repository's Security tab). If that channel is unavailable, open a minimal public issue that describes only the affected area and wait for a private follow-up.
+
+## Data Handling Model
+
+SapoWhisper is bring-your-own-key: cloud STT and AI-polish requests are sent directly from the app to the provider the user configured, authenticated with the user's own API key (sent in request headers, never in URLs). There is no intermediary backend and no telemetry. Dictation history (transcripts and WAV audio) is stored locally under the user's Library and is protected by FileVault, not by additional app-level encryption; history exports contain raw transcripts.
 
 ## Public Repo Boundary
 

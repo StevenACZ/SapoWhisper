@@ -228,10 +228,15 @@ class HotkeyManager: ObservableObject {
                     &hotkeyID
                 )
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                if hotkeyID.id == HotkeyManager.cancelHotkeyID {
-                    manager.handleCancelKeyPressed()
-                } else {
-                    manager.handleHotkeyPressed(source: "key-combination")
+                // Carbon delivers on the main run loop (GetApplicationEventTarget);
+                // make the C→MainActor hop explicit so a Swift 6 language-mode
+                // flip gets a check instead of silent UB.
+                MainActor.assumeIsolated {
+                    if hotkeyID.id == HotkeyManager.cancelHotkeyID {
+                        manager.handleCancelKeyPressed()
+                    } else {
+                        manager.handleHotkeyPressed(source: "key-combination")
+                    }
                 }
                 return noErr
             },
@@ -367,17 +372,21 @@ class HotkeyManager: ObservableObject {
                     }
 
                     let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-                    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                        manager.enableEventTap()
+                    // The tap runs on CFRunLoopGetMain; make the C→MainActor
+                    // hop explicit (same rationale as the Carbon handler).
+                    return MainActor.assumeIsolated {
+                        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                            manager.enableEventTap()
+                            return Unmanaged.passUnretained(event)
+                        }
+
+                        guard type == .flagsChanged else {
+                            return Unmanaged.passUnretained(event)
+                        }
+
+                        manager.handleFlagsChanged(event)
                         return Unmanaged.passUnretained(event)
                     }
-
-                    guard type == .flagsChanged else {
-                        return Unmanaged.passUnretained(event)
-                    }
-
-                    manager.handleFlagsChanged(event)
-                    return Unmanaged.passUnretained(event)
                 },
                 userInfo: Unmanaged.passUnretained(self).toOpaque()
             )

@@ -172,7 +172,10 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: Constants.Sizes.buttonHeight)
                 .background(buttonBackground)
-                .foregroundColor(.white)
+                // White on the amber processing fill is ~1.6:1 — unreadable.
+                .foregroundColor(
+                    viewModel.appState == .processing ? Constants.Colors.onProcessing : .white
+                )
                 .cornerRadius(Constants.Sizes.cornerRadius)
                 .scaleEffect(isHoveringRecord ? 1.02 : 1.0)
                 .shadow(color: buttonColor.opacity(0.3), radius: isHoveringRecord ? 8 : 4, y: 2)

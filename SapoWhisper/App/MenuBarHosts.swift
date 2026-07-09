@@ -53,6 +53,7 @@ struct HistoryWindowHost: View {
     var body: some View {
         HistoryView(viewModel: viewModel)
             .environment(\.locale, localizationManager.locale)
+            .tint(Constants.Colors.sapoGreen)
             .id(localizationManager.language)
     }
 }

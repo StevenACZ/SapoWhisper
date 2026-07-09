@@ -143,6 +143,19 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         return finalText
     }
 
+    // MARK: - Connection Warm-Up
+
+    /// Opens DNS+TLS to the API host while the user is still dictating, so a
+    /// cold connection pool never sits inside stop→paste. No auth, response
+    /// ignored — only the handshake matters (URLSession reuses it).
+    func warmUpConnection() async {
+        guard let url = URL(string: "https://api.elevenlabs.io") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 3
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     // MARK: - Multipart Body
 
     /// Reads the recorded WAV and assembles the multipart body off the main

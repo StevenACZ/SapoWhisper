@@ -153,13 +153,17 @@ final class AudioInputPreflightManager {
             ) { _, _ in }
             inputNode.volume = 0
             try AudioEngineGuard.prepareAndStart(engine, operation: "preflight-engine-start")
-            engine.stop()
-            inputNode.removeTap(onBus: 0)
-            engine.reset()
+            try? AudioEngineGuard.run("preflight-teardown") {
+                engine.stop()
+                inputNode.removeTap(onBus: 0)
+                engine.reset()
+            }
             consecutiveWarmupFailures = 0
         } catch {
-            engine.stop()
-            engine.reset()
+            try? AudioEngineGuard.run("preflight-failure-teardown") {
+                engine.stop()
+                engine.reset()
+            }
             SapoLog.audioRoute.warning(
                 "Audio input preflight warm-up failed error=\(error.localizedDescription, privacy: .public)"
             )

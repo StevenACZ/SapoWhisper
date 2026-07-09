@@ -91,8 +91,7 @@ enum TranscriptPolishPromptBuilder {
     /// Compact mode: extract every requirement and rewrite the dictation as
     /// the shortest faithful text. One whole-transcript call (no chunking —
     /// merging repeated ideas needs the global view). Prompt is the c3 variant
-    /// benched against real history on 6 cloud + 3 local models, 2026-07-05
-    /// (see brain/lessons/, IABrain benchmarks/sapowhisper-polish).
+    /// benched against real history on 6 cloud + 3 local models, 2026-07-05.
     static func makeCompactMessages(
         rawText: String,
         personalContext: String,

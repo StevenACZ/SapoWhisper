@@ -129,25 +129,31 @@ nonisolated enum MicrophonePermission {
 
     private static func probeAudioInput() -> Bool {
         let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-
-        guard format.sampleRate > 0, format.channelCount > 0 else {
-            return false
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: 64, format: format) { _, _ in }
-        defer {
-            inputNode.removeTap(onBus: 0)
-            if engine.isRunning {
-                engine.stop()
-            }
-            engine.reset()
-        }
-
         do {
-            engine.prepare()
-            try engine.start()
+            // AudioEngineGuard: AVFAudio asserts with uncatchable NSExceptions
+            // mid route transition; a guarded throw means "cannot start input".
+            let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "probe-input-node")
+            let format = inputNode.outputFormat(forBus: 0)
+
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                return false
+            }
+
+            try AudioEngineGuard.installTap(
+                on: inputNode, bufferSize: 64, format: format, operation: "probe-install-tap"
+            ) { _, _ in }
+            defer {
+                // Best-effort teardown; the probe engine is discarded either way.
+                try? AudioEngineGuard.run("probe-cleanup") {
+                    inputNode.removeTap(onBus: 0)
+                    if engine.isRunning {
+                        engine.stop()
+                    }
+                    engine.reset()
+                }
+            }
+
+            try AudioEngineGuard.prepareAndStart(engine, operation: "probe-engine-start")
             return engine.isRunning
         } catch {
             return false

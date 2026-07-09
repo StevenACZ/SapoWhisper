@@ -49,14 +49,62 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         // FULLMUTEX: history persistence runs off the paste path (background
         // task) while the UI reads from the main thread on this connection.
         let openFlags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
-        if sqlite3_open_v2(databasePath, &db, openFlags, nil) == SQLITE_OK {
+        if sqlite3_open_v2(databasePath, &db, openFlags, nil) == SQLITE_OK, integrityCheckPasses() {
             configureDatabase()
             createTable()
             migrateSchema()
             createIndexes()
             SapoLog.recording.info("History DB opened")
         } else {
-            SapoLog.recording.error("Failed to open history DB")
+            // A corrupt or unopenable file otherwise no-ops every later call
+            // and History dies silently forever.
+            recoverCorruptDatabase(at: databasePath, openFlags: openFlags)
+        }
+    }
+
+    /// Cheap `PRAGMA integrity_check(1)` at open time; anything but "ok"
+    /// routes through corruption recovery.
+    private func integrityCheckPasses() -> Bool {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "PRAGMA integrity_check(1)", -1, &stmt, nil) == SQLITE_OK,
+            sqlite3_step(stmt) == SQLITE_ROW,
+            let cString = sqlite3_column_text(stmt, 0)
+        else { return false }
+        return String(cString: cString).lowercased() == "ok"
+    }
+
+    /// Sidelines the corrupt file (plus WAL/SHM) with a timestamp and
+    /// recreates a fresh schema — dictation keeps persisting and the evidence
+    /// stays on disk for inspection.
+    private func recoverCorruptDatabase(at databasePath: String, openFlags: Int32) {
+        sqlite3_close(db)
+        db = nil
+        guard databasePath != ":memory:" else {
+            SapoLog.recording.error("Failed to open in-memory history DB")
+            return
+        }
+
+        let stamp = Int(Date().timeIntervalSince1970)
+        let fileManager = FileManager.default
+        for suffix in ["", "-wal", "-shm"] {
+            let source = databasePath + suffix
+            guard fileManager.fileExists(atPath: source) else { continue }
+            try? fileManager.moveItem(
+                atPath: source, toPath: databasePath + ".corrupt-\(stamp)" + suffix)
+        }
+        SapoLog.recording.error("History DB corrupt or unopenable; sidelined stamp=\(stamp, privacy: .public)")
+
+        if sqlite3_open_v2(databasePath, &db, openFlags, nil) == SQLITE_OK {
+            configureDatabase()
+            createTable()
+            migrateSchema()
+            createIndexes()
+            SapoLog.recording.info("History DB recreated after corruption")
+        } else {
+            sqlite3_close(db)
+            db = nil
+            SapoLog.recording.error("Failed to recreate history DB after corruption")
         }
     }
 

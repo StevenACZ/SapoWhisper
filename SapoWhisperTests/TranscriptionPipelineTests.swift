@@ -21,8 +21,16 @@ final class TranscriptionPipelineTests: XCTestCase {
         var polishedTranscripts: [(rawText: String, source: String, duration: TimeInterval?)] = []
         var deliveredTexts: [String] = []
         var presentedFailures: [TranscriptionFailure] = []
-        var completedPersists: [(audioURL: URL, engineName: String, language: String, finalText: String)] = []
-        var failedPersists: [(audioURL: URL, engineName: String, language: String, failureCode: String)] = []
+        var completedPersists:
+            [(
+                audioURL: URL, engineName: String, language: String, finalText: String,
+                target: HistoryPersistenceTarget
+            )] = []
+        var failedPersists:
+            [(
+                audioURL: URL, engineName: String, language: String, failureCode: String,
+                target: HistoryPersistenceTarget
+            )] = []
         var staleCleanups: [(audioURL: URL, sessionID: UInt64)] = []
         var clearedSessionCount = 0
         var snapshotReasons: [String] = []
@@ -73,9 +81,10 @@ final class TranscriptionPipelineTests: XCTestCase {
             language: String,
             duration: TimeInterval,
             aiResult: TranscriptAIResult,
-            perf: DictationPerfTimeline?
+            perf: DictationPerfTimeline?,
+            target: HistoryPersistenceTarget
         ) {
-            completedPersists.append((audioURL, engineName, language, aiResult.finalText))
+            completedPersists.append((audioURL, engineName, language, aiResult.finalText, target))
         }
 
         func persistFailedDictation(
@@ -84,9 +93,10 @@ final class TranscriptionPipelineTests: XCTestCase {
             engineName: String,
             language: String,
             duration: TimeInterval,
-            failure: TranscriptionFailure
+            failure: TranscriptionFailure,
+            target: HistoryPersistenceTarget
         ) {
-            failedPersists.append((audioURL, engineName, language, failure.diagnosticCode))
+            failedPersists.append((audioURL, engineName, language, failure.diagnosticCode, target))
         }
 
         func logTranscriptionSnapshot(reason: String, extra: String) {
@@ -143,6 +153,7 @@ final class TranscriptionPipelineTests: XCTestCase {
         XCTAssertEqual(host.completedPersists.first?.language, "es")
         XCTAssertEqual(host.completedPersists.first?.engineName, "Deepgram Flux")
         XCTAssertEqual(host.completedPersists.first?.audioURL, audioURL)
+        XCTAssertEqual(host.completedPersists.first?.target, .insertNew)
 
         XCTAssertTrue(host.presentedFailures.isEmpty)
         XCTAssertTrue(host.failedPersists.isEmpty)
@@ -293,5 +304,73 @@ final class TranscriptionPipelineTests: XCTestCase {
         XCTAssertTrue(host.staleCleanups.isEmpty)
         XCTAssertTrue(host.presentedFailures.isEmpty)
         XCTAssertTrue(host.failedPersists.isEmpty)
+    }
+
+    // MARK: - History persistence target (retry path)
+
+    private func makeRetryRequest(historyId: Int64 = 42) -> TranscriptionPipeline.Request {
+        TranscriptionPipeline.Request(
+            sessionID: 7,
+            engine: .deepgram,
+            engineName: "Deepgram Nova-3",
+            source: "retry",
+            failureLanguage: "auto",
+            snapshotPrefix: "retry-transcription",
+            logger: SapoLog.recording,
+            perf: nil,
+            historyTarget: .updateExisting(historyId: historyId)
+        )
+    }
+
+    func testRetryTargetReachesCompletedPersist() async {
+        let host = HostSpy()
+        let pipeline = TranscriptionPipeline(host: host)
+
+        await pipeline.run(makeRetryRequest(historyId: 42)) {
+            self.makeOutput()
+        } captureResultOnFailure: {
+            nil
+        }
+
+        XCTAssertEqual(host.completedPersists.count, 1)
+        XCTAssertEqual(host.completedPersists.first?.target, .updateExisting(historyId: 42))
+        XCTAssertEqual(host.deliveredTexts.count, 1)
+    }
+
+    func testRetryTargetReachesFailedPersist() async {
+        let host = HostSpy()
+        let pipeline = TranscriptionPipeline(host: host)
+
+        await pipeline.run(makeRetryRequest(historyId: 42)) {
+            throw TranscriptionFailure(kind: .network, engine: "Deepgram")
+        } captureResultOnFailure: {
+            (self.audioURL, 3.0)
+        }
+
+        XCTAssertEqual(host.failedPersists.count, 1)
+        XCTAssertEqual(host.failedPersists.first?.target, .updateExisting(historyId: 42))
+        XCTAssertEqual(host.presentedFailures.count, 1)
+    }
+
+    func testNilEngineDurationStillReachesPolishAsNil() async {
+        let host = HostSpy()
+        let pipeline = TranscriptionPipeline(host: host)
+
+        await pipeline.run(makeRequest()) {
+            TranscriptionPipeline.EngineOutput(
+                transcript: "texto",
+                audioURL: self.audioURL,
+                duration: nil,
+                language: "es"
+            )
+        } captureResultOnFailure: {
+            nil
+        }
+
+        XCTAssertEqual(host.polishedTranscripts.count, 1)
+        XCTAssertNil(
+            host.polishedTranscripts.first?.duration,
+            "unknown duration must reach the polish gate as nil (allowed), never as 0 (blocked)"
+        )
     }
 }

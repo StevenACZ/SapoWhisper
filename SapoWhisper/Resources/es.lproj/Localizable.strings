@@ -21,6 +21,7 @@
 /* History */
 "history.title" = "Historial";
 "history.search" = "Buscar transcripciones...";
+"history.relative_now" = "ahora";
 "history.empty" = "Sin historial";
 "history.empty_sub" = "Las transcripciones aparecerán aquí";
 "history.copy" = "Copiar";

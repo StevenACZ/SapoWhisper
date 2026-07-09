@@ -18,8 +18,12 @@ enum SapoIconState {
         switch self {
         case .recording:
             return "DockIconRecording"
-        case .paused, .completed, .error:
+        case .paused, .completed:
             return "DockIconLoading"
+        case .error:
+            // The error pill already carries the red state; the mascot goes
+            // back to its resting face instead of a misleading "loading".
+            return "DockIconIdle"
         case .transcribing, .polishing:
             return "DockIconTranscribing"
         }

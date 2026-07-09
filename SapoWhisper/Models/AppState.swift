@@ -115,4 +115,27 @@ enum AppState: Equatable {
             return false
         }
     }
+
+    /// Legal edges of the dictation state machine, derived from the real
+    /// v2.8.0 flows. Self-transitions are always legal (publishers re-emit),
+    /// and every state may fail (→ .error) or reset (→ .idle). The ViewModel
+    /// logs — but does not yet reject — writes outside this table.
+    func canTransition(to next: AppState) -> Bool {
+        if self == next { return true }
+        switch (self, next) {
+        case (_, .idle), (_, .error):
+            return true
+        case (.idle, .recording), (.error, .recording), (.noModel, .recording):
+            return true
+        case (.recording, .processing), (.idle, .processing),
+            (.error, .processing), (.noModel, .processing):
+            return true
+        case (.processing, .polishing), (.idle, .polishing):
+            return true
+        case (.idle, .noModel), (.error, .noModel), (.processing, .noModel):
+            return true
+        default:
+            return false
+        }
+    }
 }
