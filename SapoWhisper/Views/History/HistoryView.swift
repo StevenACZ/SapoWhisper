@@ -203,6 +203,8 @@ struct HistoryView: View {
             } label: {
                 Image(systemName: "sidebar.leading")
             }
+            .help("history.toggle_sidebar".localized)
+            .accessibilityLabel("history.toggle_sidebar".localized)
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -232,6 +234,8 @@ struct HistoryView: View {
                 Image(systemName: "ellipsis.circle")
             }
             .menuIndicator(.hidden)
+            .help("history.more_actions".localized)
+            .accessibilityLabel("history.more_actions".localized)
         }
     }
 
@@ -355,6 +359,7 @@ struct HistoryView: View {
         let sourceURL = URL(fileURLWithPath: audioPath)
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
+        panel.message = "history.export_sensitive_notice".localized
         panel.nameFieldStringValue = exportFileName(for: entry, pathExtension: sourceURL.pathExtension)
 
         if let type = UTType(filenameExtension: sourceURL.pathExtension) {
@@ -389,6 +394,7 @@ struct HistoryView: View {
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
+        panel.message = "history.export_sensitive_notice".localized
         panel.nameFieldStringValue = HistoryExporter.suggestedFileName(for: format)
         if let type = UTType(filenameExtension: format.fileExtension) {
             panel.allowedContentTypes = [type]

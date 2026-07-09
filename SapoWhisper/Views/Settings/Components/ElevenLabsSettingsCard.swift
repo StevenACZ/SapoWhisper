@@ -86,7 +86,7 @@ struct ElevenLabsSettingsCard: View {
                         subtitle: mode.description,
                         isSelected: currentMode == mode
                     ) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(Constants.Animation.reveal) {
                             selectedMode = mode.rawValue
                             viewModel.setElevenLabsMode(mode)
                         }

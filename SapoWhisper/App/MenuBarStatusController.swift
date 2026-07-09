@@ -30,6 +30,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var settingsOpenCount = 0
     private var historyOpenCount = 0
     private var historyFocusObserver: NSObjectProtocol?
+    private var settingsOpenObserver: NSObjectProtocol?
 
     init(viewModel: SapoWhisperViewModel) {
         self.viewModel = viewModel
@@ -47,6 +48,15 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.openHistoryWindow()
+            }
+        }
+        // Cmd+, replaces the phantom Settings scene: the app-menu command
+        // requests the controller-managed window through this notification.
+        settingsOpenObserver = NotificationCenter.default.addObserver(
+            forName: SettingsOpenRequest.notification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.openSettingsWindow()
             }
         }
     }
@@ -73,6 +83,8 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         button.target = self
         button.action = #selector(togglePopover)
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.toolTip = Constants.appName
+        button.setAccessibilityLabel(Constants.appName)
     }
 
     private func setupPopover() {
@@ -301,7 +313,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let controller =
             settingsWindowController
             ?? makeWindowController(
-                size: NSSize(width: 800, height: 560),
+                size: Constants.Windows.settingsSize,
                 resizable: false,
                 rootView: SettingsWindowHost(viewModel: viewModel)
             )
@@ -409,7 +421,9 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         window.setContentSize(size)
 
         if resizable {
-            window.contentMinSize = NSSize(width: 700, height: 420)
+            // Must not undercut the SwiftUI root's minWidth/minHeight or the
+            // window can shrink past its content and clip it.
+            window.contentMinSize = Constants.Windows.historyMinSize
         }
 
         return NSWindowController(window: window)

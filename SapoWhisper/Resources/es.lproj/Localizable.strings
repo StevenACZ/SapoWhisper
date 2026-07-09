@@ -21,6 +21,7 @@
 /* History */
 "history.title" = "Historial";
 "history.search" = "Buscar transcripciones...";
+"history.relative_now" = "ahora";
 "history.empty" = "Sin historial";
 "history.empty_sub" = "Las transcripciones aparecerán aquí";
 "history.copy" = "Copiar";
@@ -88,6 +89,13 @@
 "history.ai_polish_notice_title" = "Mejora con IA no aplicada";
 "history.ai_polish_rejected_notice" = "La mejora se descartó porque se alejó de tu texto original (protección de fidelidad). Se mantiene tu transcripción tal cual.";
 "history.ai_polish_unavailable_notice" = "No se pudo aplicar la mejora con IA. Revisa que el proveedor esté configurado en la pestaña Prompts.";
+"history.export_sensitive_notice" = "Este archivo contendrá contenido dictado de tu historial.";
+"history.audio_scrubber" = "Posición de reproducción";
+"history.audio_position" = "%@ de %@";
+"history.toggle_sidebar" = "Mostrar u ocultar la barra lateral";
+"history.more_actions" = "Más acciones";
+"history.filter_by_engine" = "Filtrar por motor";
+"common.clear_search" = "Borrar búsqueda";
 
 "common.cancel" = "Cancelar";
 "common.ok" = "OK";
@@ -614,3 +622,11 @@
 "overlay.cancelled_saved" = "Cancelado — audio guardado en Historial";
 "settings.welcome_tour_open" = "Abrir";
 "overlay.dock_last" = "Última transcripción";
+
+/* Overlay accessibility (VoiceOver) */
+"overlay.a11y.pause" = "Pausar la grabación";
+"overlay.a11y.resume" = "Reanudar la grabación";
+"overlay.a11y.recording_started" = "Grabación iniciada";
+"overlay.a11y.transcribing" = "Transcribiendo";
+"overlay.a11y.pasted" = "Texto pegado";
+"overlay.a11y.error" = "El dictado falló";

@@ -204,11 +204,13 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     /// Limpia recursos sin cambiar el estado de monitoreo
     private nonisolated func cleanupEngineOnQueue() {
         if let engine = audioEngine {
-            if engine.isRunning {
-                engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
+            try? AudioEngineGuard.run("monitor-cleanup-teardown") {
+                if engine.isRunning {
+                    engine.inputNode.removeTap(onBus: 0)
+                    engine.stop()
+                }
+                engine.reset()
             }
-            engine.reset()
         }
         audioEngine = nil
         sampleTapFormat = nil
@@ -336,7 +338,12 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         }
         guard let audioEngine = monitorSnapshot.engine, monitorSnapshot.isRunning else { return }
 
-        let tapFormat = monitorSnapshot.tapFormat ?? audioEngine.inputNode.outputFormat(forBus: 0)
+        guard
+            let tapFormat = monitorSnapshot.tapFormat
+                ?? (try? AudioEngineGuard.run("sample-tap-format") {
+                    audioEngine.inputNode.outputFormat(forBus: 0)
+                })
+        else { return }
         let rawURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_raw")
 
         do {

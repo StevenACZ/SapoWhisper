@@ -24,6 +24,12 @@ nonisolated final class HistoryAudioStorage: Sendable {
     init(appDirectory: URL) {
         audioDir = appDirectory.appendingPathComponent("audio")
         try? FileManager.default.createDirectory(at: audioDir, withIntermediateDirectories: true)
+        // Voice recordings + transcripts DB live here: owner-only access, so
+        // other same-user processes can't casually read them.
+        for dir in [appDirectory, audioDir] {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        }
     }
 
     func saveAudioFile(from sourceURL: URL) -> String? {

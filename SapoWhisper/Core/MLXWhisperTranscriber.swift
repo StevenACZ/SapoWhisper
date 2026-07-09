@@ -24,6 +24,12 @@ actor MLXWhisperEngine {
 
     @discardableResult
     func load(directory: URL) async throws -> Int {
+        if model != nil {
+            // Direct load-over-load: drop the resident weights and their
+            // buffer pool before the new ones allocate, or peak RAM briefly
+            // doubles and the old pool stays cached.
+            unload()
+        }
         model = try await WhisperModel.fromDirectory(directory)
         loadGeneration += 1
         return loadGeneration
@@ -52,7 +58,10 @@ actor MLXWhisperEngine {
             language: language,
             initialPrompt: initialPrompt
         )
-        return model.generate(samples: samples, generationParameters: parameters)
+        // Throws CancellationError when the caller's task is cancelled — the
+        // decode loop checks between windows and steps, so a retranscribe of
+        // a long WAV stops early instead of running to completion.
+        return try model.generate(samples: samples, generationParameters: parameters)
     }
 }
 
@@ -143,6 +152,9 @@ class MLXWhisperTranscriber {
     private var currentModel: MLXWhisperModel?
     private var loadingModel: MLXWhisperModel?
     private var loadTask: Task<Void, Error>?
+    /// Generation of the currently resident model; a late fire-and-forget
+    /// unload targets this generation so it can never clobber a newer load.
+    private var currentLoadGeneration = 0
     @ObservationIgnored private var downloadTasks: [MLXWhisperModel: Task<URL, Error>] = [:]
     private var idleUnloadTimer: Timer?
 
@@ -240,6 +252,7 @@ class MLXWhisperTranscriber {
             loadingProgress = 1.0
             currentModel = model
             currentModelName = model.displayName
+            currentLoadGeneration = generation
             isModelLoaded = true
             noteActivityForIdleUnload()
             SapoLog.recording.info(
@@ -317,6 +330,7 @@ class MLXWhisperTranscriber {
             do {
                 let directory = try await WhisperModelDownloader.download(
                     repo: model.rawValue,
+                    revision: model.revision,
                     root: Self.modelsRootDirectory,
                     progress: { fraction in
                         guard let self else { return }
@@ -371,8 +385,12 @@ class MLXWhisperTranscriber {
         loadingState = .idle
         currentModel = nil
         currentModelName = nil
+        // Generation-scoped: if a newer load lands on the actor before this
+        // task, the stale unload is a no-op instead of dropping fresh weights
+        // (Task.cancel alone never frees what a load already allocated).
+        let generation = currentLoadGeneration
         Task {
-            await engine.unload()
+            await engine.unload(ifGeneration: generation)
         }
         SapoLog.recording.info("MLX model unloaded")
     }
@@ -454,6 +472,11 @@ class MLXWhisperTranscriber {
                 "MLX transcription complete chars=\(transcription.count, privacy: .public) seconds=\(String(format: "%.2f", output.totalTime), privacy: .public) promptTokens=\(output.promptTokens, privacy: .public)"
             )
             return transcription
+        } catch is CancellationError {
+            // Cancel is not a failure: no errorMessage, callers see the
+            // CancellationError itself.
+            SapoLog.recording.info("MLX transcription cancelled")
+            throw CancellationError()
         } catch let error as MLXWhisperError {
             errorMessage = error.localizedDescription
             throw error

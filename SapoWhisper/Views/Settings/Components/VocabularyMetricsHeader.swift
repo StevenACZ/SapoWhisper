@@ -98,7 +98,7 @@ struct VocabularyMetricsHeader: View {
             }
         }
         .fixedSize(horizontal: false, vertical: true)
-        .animation(.smooth(duration: 0.3), value: metrics)
+        .animation(Constants.Animation.transition, value: metrics)
     }
 
     private var paceValue: String {
@@ -148,7 +148,7 @@ struct VocabularyMetricsHeader: View {
                 .truncationMode(.tail)
             Text("×\(usage.count)")
                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundStyle(Color.sapoGreen)
+                .foregroundStyle(Color.sapoGreenText)
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 4)

@@ -1,5 +1,22 @@
 import Foundation
 
+/// `quantization` block written by mlx-community 4/8-bit checkpoints; absent
+/// on fp16/fp32 checkpoints.
+public struct WhisperQuantization: Codable, Sendable {
+    public var groupSize: Int
+    public var bits: Int
+
+    enum CodingKeys: String, CodingKey {
+        case groupSize = "group_size"
+        case bits
+    }
+
+    public init(groupSize: Int, bits: Int) {
+        self.groupSize = groupSize
+        self.bits = bits
+    }
+}
+
 public struct WhisperConfig: Codable, Sendable {
     public var modelType: String
     public var vocabSize: Int
@@ -23,6 +40,8 @@ public struct WhisperConfig: Codable, Sendable {
 
     public var scaleEmbedding: Bool
 
+    public var quantization: WhisperQuantization?
+
     enum CodingKeys: String, CodingKey {
         case modelType = "model_type"
         case vocabSize = "vocab_size"
@@ -41,6 +60,7 @@ public struct WhisperConfig: Codable, Sendable {
         case padTokenId = "pad_token_id"
         case decoderStartTokenId = "decoder_start_token_id"
         case scaleEmbedding = "scale_embedding"
+        case quantization
 
         // OpenAI / mlx-whisper layout (mlx-community/whisper-*).
         case nMels = "n_mels"
@@ -72,7 +92,8 @@ public struct WhisperConfig: Codable, Sendable {
         eosTokenId: Int = 50257,
         padTokenId: Int = 50257,
         decoderStartTokenId: Int = 50258,
-        scaleEmbedding: Bool = false
+        scaleEmbedding: Bool = false,
+        quantization: WhisperQuantization? = nil
     ) {
         self.modelType = modelType
         self.vocabSize = vocabSize
@@ -91,6 +112,7 @@ public struct WhisperConfig: Codable, Sendable {
         self.padTokenId = padTokenId
         self.decoderStartTokenId = decoderStartTokenId
         self.scaleEmbedding = scaleEmbedding
+        self.quantization = quantization
     }
 
     public init(from decoder: Swift.Decoder) throws {
@@ -137,6 +159,7 @@ public struct WhisperConfig: Codable, Sendable {
         padTokenId = try c.decodeIfPresent(Int.self, forKey: .padTokenId) ?? 50257
         decoderStartTokenId = try c.decodeIfPresent(Int.self, forKey: .decoderStartTokenId) ?? 50258
         scaleEmbedding = try c.decodeIfPresent(Bool.self, forKey: .scaleEmbedding) ?? false
+        quantization = try c.decodeIfPresent(WhisperQuantization.self, forKey: .quantization)
     }
 
     public func encode(to encoder: Swift.Encoder) throws {
@@ -158,6 +181,7 @@ public struct WhisperConfig: Codable, Sendable {
         try c.encode(padTokenId, forKey: .padTokenId)
         try c.encode(decoderStartTokenId, forKey: .decoderStartTokenId)
         try c.encode(scaleEmbedding, forKey: .scaleEmbedding)
+        try c.encodeIfPresent(quantization, forKey: .quantization)
     }
 }
 

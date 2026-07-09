@@ -352,6 +352,9 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
         // Back on caller context (MainActor) — flip published state only; the
         // engine/file/url references were assigned on the setup queue (A4).
+        // Debug-only tripwire: the VM sinks consume these without receive(on:),
+        // so a non-main caller would corrupt appState silently.
+        MainActor.assertIsolated()
         isRecording = true
         isPaused = false
         accumulatedDuration = 0
@@ -404,9 +407,13 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     /// Must run on `audioSetupQueue`.
     private func finalizeCaptureOnQueue() -> URL? {
         deviceSentinel.end()
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine?.stop()
-        audioEngine?.reset()
+        if let engine = audioEngine {
+            try? AudioEngineGuard.run("finalize-capture-teardown") {
+                engine.inputNode.removeTap(onBus: 0)
+                engine.stop()
+                engine.reset()
+            }
+        }
 
         _ = flushRemainingConvertedAudio()
         // A1: drain pending async writes before releasing the file so the WAV
@@ -427,6 +434,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     }
 
     private func completeStop(url: URL?, stopStart: CFAbsoluteTime, logSummary: Bool) -> RecordingCaptureDiagnostics {
+        MainActor.assertIsolated()
         isRecording = false
         isPaused = false
 

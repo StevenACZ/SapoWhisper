@@ -32,6 +32,10 @@ class PasteManager {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        // nspasteboard.org convention: dictated speech is sensitive by
+        // default, so mark it concealed — clipboard managers skip it and it
+        // stays out of their synced histories.
+        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
         SapoLog.menuBar.info("Clipboard updated chars=\(text.count, privacy: .public)")
     }
 

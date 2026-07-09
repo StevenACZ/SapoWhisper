@@ -652,72 +652,8 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         return transcript.isEmpty ? pendingPartial : "\(transcript) \(pendingPartial)"
     }
 
-    func transcribe(audioURL: URL, language: String) async throws -> String {
-        guard let apiKey = KeychainStore.string(for: .elevenLabsAPIKey),
-            !apiKey.isEmpty
-        else {
-            throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
-        }
-
-        resetSessionState()
-        requestedLanguage = language
-        isStopping = true
-        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
-            maxCount: Self.maxRealtimeKeyterms,
-            maxLength: Self.maxRealtimeKeytermLength,
-            includeReplacementValues: true
-        )
-        let keyterms = keytermPayload.terms
-        let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
-        webSocketTask = task
-        audioSender.start(task: task)
-        task.resume()
-        SapoLog.recording.info(
-            "ElevenLabs realtime file replay opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public)"
-        )
-
-        receiveTask = Task { [weak self] in
-            await self?.receiveMessages()
-        }
-
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        defer { cleanupWebSocket() }
-        let pcmData = try Self.extractPCM16MonoData(from: audioURL)
-        try await sendReplayAudio(pcmData)
-        let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
-        let stats = await audioSender.finishAndCommit(timeout: 4.0)
-
-        // Preserve any already-committed segments on a failed final-commit
-        // send; only fail outright when nothing was captured.
-        if stats.failedMessages > 0 && transcriptAccumulator.transcript.isEmpty {
-            throw TranscriptionFailure(
-                kind: .network,
-                engine: Self.engineName,
-                technicalDetail: "ElevenLabs realtime file replay failedMessages=\(stats.failedMessages)"
-            )
-        }
-
-        let transcript = try await waitForFinalTranscript(
-            timeout: 6.0,
-            committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
-        )
-        let salvagedTranscript = salvagingPendingPartial(
-            transcript,
-            committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
-        )
-        let cleanedTranscript = VocabularyManager.shared
-            .applyingRecognitionCorrections(to: salvagedTranscript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-        SapoLog.recording.info(
-            "ElevenLabs realtime file replay finished elapsed=\(elapsedMs, privacy: .public)ms audioBytes=\(pcmData.count, privacy: .public) chars=\(cleanedTranscript.count, privacy: .public)"
-        )
-
-        guard !cleanedTranscript.isEmpty else {
-            throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)
-        }
-        return cleanedTranscript
-    }
+    // File transcription (retry, history, resume-merge) always routes to the
+    // batch endpoint — the old WebSocket replay path was dead code and is gone.
 
     func cancel() {
         capture.discardRecording()
@@ -891,17 +827,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             "ElevenLabs realtime attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
         )
         return false
-    }
-
-    private func sendReplayAudio(_ pcmData: Data) async throws {
-        let chunkBytes = 6_400
-        var offset = 0
-        while offset < pcmData.count {
-            let end = min(offset + chunkBytes, pcmData.count)
-            audioSender.enqueue(pcmData.subdata(in: offset..<end))
-            offset = end
-            try? await Task.sleep(nanoseconds: 25_000_000)
-        }
     }
 
     private func receiveMessages() async {

@@ -29,7 +29,7 @@ struct LanguageButton: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(isSelected ? Color.sapoGreen.opacity(0.15) : Color.secondary.opacity(0.06))
-            .foregroundStyle(isSelected ? Color.sapoGreen : .primary)
+            .foregroundStyle(isSelected ? Color.sapoGreenText : .primary)
             .clipShape(Capsule())
             .overlay(
                 Capsule()

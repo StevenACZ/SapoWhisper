@@ -30,6 +30,7 @@ struct AudioSamplePlayerView: View {
                         .foregroundStyle(isPlaying ? Color.sapoGreen : .secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel((isPlaying ? "history.pause" : "history.play").localized)
 
                 Text(label)
                     .font(.caption2)

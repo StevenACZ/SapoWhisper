@@ -35,7 +35,10 @@ struct SettingsView: View {
             // Contenido del tab seleccionado
             selectedTabContent
         }
-        .frame(width: 860, height: 620)
+        .frame(
+            width: Constants.Windows.settingsSize.width,
+            height: Constants.Windows.settingsSize.height
+        )
         .background(Color(NSColor.windowBackgroundColor))
         .toolbarBackground(Color(NSColor.windowBackgroundColor), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)

@@ -11,7 +11,8 @@ import Foundation
 enum PolishOutputSanitizer {
 
     static func clean(_ output: String, rawText: String) -> String {
-        var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeOutput = strippingUnsafeControlCharacters(from: output)
+        var text = safeOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         // An unterminated <think> means the whole output is reasoning that
         // never reached an answer; there is nothing usable to fall back to,
         // so return empty and let the pipeline keep the raw transcript.
@@ -24,7 +25,35 @@ enum PolishOutputSanitizer {
         text = stripTranscriptDelimiters(text)
         text = stripWrappingQuotes(text, rawText: rawText)
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? output.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
+        return cleaned.isEmpty ? safeOutput.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
+    }
+
+    /// The polish guards are retry-only and the last output still ships after
+    /// the retry budget, so this strip is the single boundary between provider
+    /// output and the user's clipboard/paste: control bytes (ANSI/OSC escape
+    /// sequences), bidi overrides, and invisible characters never survive.
+    /// ZWJ/ZWNJ stay (emoji and legitimate scripts); `\n` and `\t` stay.
+    private static func strippingUnsafeControlCharacters(from text: String) -> String {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        var scalars = String.UnicodeScalarView()
+        scalars.reserveCapacity(normalized.unicodeScalars.count)
+        for scalar in normalized.unicodeScalars {
+            switch scalar.value {
+            case 0x09, 0x0A:
+                scalars.append(scalar)
+            case 0x0D:
+                scalars.append("\n")
+            case 0x00...0x1F, 0x7F, 0x80...0x9F:
+                break  // C0 (ESC and friends), DEL, C1
+            case 0x202A...0x202E, 0x2066...0x2069:
+                break  // bidi embeddings/overrides/isolates
+            case 0x200B, 0x2060, 0xFEFF:
+                break  // zero-width space, word joiner, BOM
+            default:
+                scalars.append(scalar)
+            }
+        }
+        return String(scalars)
     }
 
     /// Reasoning-tuned local models can leak a leading <think>…</think> block

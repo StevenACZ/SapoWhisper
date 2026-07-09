@@ -7,8 +7,10 @@ import PackageDescription
 // (2026-07-03), trimmed to the Whisper model only so the app does not compile
 // the 18 other STT families, the codecs, or mlx-swift-lm. Local changes on
 // top of upstream: initial-prompt (`<|startofprev|>`) support so the user
-// vocabulary reaches the decoder, and a downloader with real progress
-// reporting instead of prints.
+// vocabulary reaches the decoder, a downloader with real progress reporting
+// instead of prints, 4/8-bit quantized-checkpoint loading (`quantization` in
+// config.json), and a Task-cancellation hook between decode steps so long
+// transcriptions can be aborted.
 let package = Package(
     name: "MLXWhisper",
     platforms: [.macOS(.v14)],

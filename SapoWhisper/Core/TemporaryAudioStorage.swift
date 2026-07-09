@@ -51,6 +51,8 @@ nonisolated enum TemporaryAudioStorage {
     static func makeWAVURL(prefix: String) -> URL {
         let dir = directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Raw voice audio: owner-only, same policy as the history store.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         return dir.appendingPathComponent("\(prefix)_\(UUID().uuidString).wav")
     }
 

@@ -159,9 +159,13 @@ nonisolated extension AudioCaptureEngine {
             "\(self.mode.logLabel, privacy: .public) capture interrupted event=\(event.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)"
         )
 
-        oldEngine.inputNode.removeTap(onBus: 0)
-        oldEngine.stop()
-        oldEngine.reset()
+        // Teardown races the same route churn that triggered recovery; a
+        // guarded exception here just means the engine is already dead.
+        try? AudioEngineGuard.run("recovery-teardown") {
+            oldEngine.inputNode.removeTap(onBus: 0)
+            oldEngine.stop()
+            oldEngine.reset()
+        }
         audioEngine = nil
 
         guard attempt <= 2 else {

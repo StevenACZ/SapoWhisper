@@ -72,14 +72,13 @@ struct RecordingPillView: View {
                 OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
             }
 
-            Button(action: onPause) {
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.primary.opacity(0.1)))
-            }
-            .buttonStyle(.plain)
+            OverlayIconButton(
+                systemName: "pause.fill",
+                label: "overlay.a11y.pause".localized,
+                diameter: 26,
+                iconSize: 11,
+                action: onPause
+            )
 
             OverlayTimer(duration: duration)
         }
@@ -146,14 +145,13 @@ struct PausedPillView: View {
 
             Spacer(minLength: 20)
 
-            Button(action: onResume) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.primary.opacity(0.1)))
-            }
-            .buttonStyle(.plain)
+            OverlayIconButton(
+                systemName: "play.fill",
+                label: "overlay.a11y.resume".localized,
+                diameter: 26,
+                iconSize: 11,
+                action: onResume
+            )
 
             OverlayTimer(duration: duration)
         }
@@ -238,7 +236,13 @@ struct CopiedPillView: View {
     @State private var iconScale: CGFloat = 0
     @State private var glowFlash = 0
 
+    /// Text/glyph tint: the contrast-safe green variant, not the fill green.
     private var accent: Color {
+        outcome == .aiSkipped ? .sapoError : .sapoGreenText
+    }
+
+    /// The decorative outline flash keeps the brand fill green.
+    private var glowColor: Color {
         outcome == .aiSkipped ? .sapoError : .sapoGreen
     }
 
@@ -271,15 +275,10 @@ struct CopiedPillView: View {
                     .background(Capsule().fill(Color.compactMode.opacity(0.16)))
             }
         }
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
-            content.overlay(glowStroke(color: accent, intensity: glow))
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { [glowColor] content, glow in
+            content.overlay(glowStroke(color: glowColor, intensity: glow))
         } keyframes: { _ in
-            KeyframeTrack {
-                LinearKeyframe(0.0, duration: 0.15)
-                CubicKeyframe(1.0, duration: 0.3)
-                LinearKeyframe(1.0, duration: 0.75)
-                CubicKeyframe(0.0, duration: 0.8)
-            }
+            PillGlowFlashKeyframes()
         }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
@@ -365,12 +364,12 @@ struct CompletedPillView: View {
             HStack(spacing: 8) {
                 Image(systemName: "doc.on.clipboard.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.sapoGreen)
+                    .foregroundColor(.sapoGreenText)
                     .scaleEffect(iconScale)
 
                 Text((showRecopied ? "overlay.copied_again" : "overlay.copied").localized)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.sapoGreen)
+                    .foregroundColor(.sapoGreenText)
 
                 Spacer(minLength: 16)
 
@@ -381,43 +380,30 @@ struct CompletedPillView: View {
                 }
 
                 if onOpenHistory != nil {
-                    Button {
-                        onOpenHistory?()
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .frame(width: 22, height: 22)
-                            .background(Circle().fill(Color.primary.opacity(0.1)))
+                    OverlayIconButton(
+                        systemName: "clock.arrow.circlepath",
+                        label: "overlay.open_history".localized,
+                        help: "overlay.open_history".localized,
+                        action: { onOpenHistory?() }
+                    )
+                }
+
+                OverlayIconButton(
+                    systemName: "doc.on.doc",
+                    label: "overlay.copy".localized,
+                    help: "overlay.copy".localized,
+                    action: {
+                        PasteManager.copyToClipboard(text)
+                        showRecopied = true
                     }
-                    .buttonStyle(.plain)
-                    .help("overlay.open_history".localized)
-                }
+                )
 
-                Button {
-                    PasteManager.copyToClipboard(text)
-                    showRecopied = true
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 22, height: 22)
-                        .background(Circle().fill(Color.primary.opacity(0.1)))
-                }
-                .buttonStyle(.plain)
-                .help("overlay.copy".localized)
-
-                Button {
-                    onClose?()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 22, height: 22)
-                        .background(Circle().fill(Color.primary.opacity(0.1)))
-                }
-                .buttonStyle(.plain)
-                .help("overlay.close".localized)
+                OverlayIconButton(
+                    systemName: "xmark",
+                    label: "overlay.close".localized,
+                    help: "overlay.close".localized,
+                    action: { onClose?() }
+                )
             }
 
             if !text.isEmpty {
@@ -443,19 +429,10 @@ struct CompletedPillView: View {
 
         }
         .frame(maxWidth: Self.contentWidth)
-        // One-shot success outline: short delay, ~0.3 s flash in, hold,
-        // ~0.8 s fade out. Keyframes replace the old pair of delayed
-        // withAnimation calls, which competed over one flag and could leave
-        // a stale glow when the pill changed under them.
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
-            content.overlay(glowStroke(color: .sapoGreen, intensity: glow))
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { [accent = Color.sapoGreen] content, glow in
+            content.overlay(glowStroke(color: accent, intensity: glow))
         } keyframes: { _ in
-            KeyframeTrack {
-                LinearKeyframe(0.0, duration: 0.15)
-                CubicKeyframe(1.0, duration: 0.3)
-                LinearKeyframe(1.0, duration: 0.75)
-                CubicKeyframe(0.0, duration: 0.8)
-            }
+            PillGlowFlashKeyframes()
         }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
@@ -473,6 +450,8 @@ struct CompletedPillView: View {
 struct DockedChipView: View {
     /// True while a droplet pill floats detached above the chip.
     var isExpanded: Bool = false
+    /// Overlay glass namespace; nil (previews) renders glass without an ID.
+    var glassNamespace: Namespace.ID? = nil
     var onTap: () -> Void
 
     @State private var isHovering = false
@@ -480,40 +459,39 @@ struct DockedChipView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Capsule()
-            .fill(Color.sapoGreen.opacity(isExpanded ? 0.9 : (isHovering ? 0.95 : 0.65)))
-            .frame(width: 24, height: 4)
-            .frame(width: 34, height: 8)
-            // Same ~46×12 footprint the chip had when it shared the pill's
-            // background, now self-contained.
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.25), radius: 4, y: 3)
-            )
-            // Squash-and-stretch splash as the droplet detaches from or falls
-            // back into the chip — sells the "drop separating" read on both
-            // directions. Phase-driven so rapid open/close toggles can never
-            // strand the chip stretched.
-            .phaseAnimator([1.0, 1.75], trigger: splashTrigger) { content, stretch in
-                content.scaleEffect(x: 1, y: stretch)
-            } animation: { stretch in
-                stretch > 1 ? Constants.Animation.microBounce : .spring(duration: 0.3, bounce: 0.45)
-            }
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    isHovering = hovering
+        Button(action: onTap) {
+            Capsule()
+                .fill(Color.sapoGreen.opacity(isExpanded ? 0.9 : (isHovering ? 0.95 : 0.65)))
+                .frame(width: 24, height: 4)
+                .frame(width: 34, height: 8)
+                // Same ~46×12 footprint the chip had when it shared the pill's
+                // background, now self-contained.
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .overlayChipChrome(glassNamespace: glassNamespace)
+                // Squash-and-stretch splash as the droplet detaches from or falls
+                // back into the chip — sells the "drop separating" read on both
+                // directions. Phase-driven so rapid open/close toggles can never
+                // strand the chip stretched.
+                .phaseAnimator([1.0, 1.75], trigger: splashTrigger) { content, stretch in
+                    content.scaleEffect(x: 1, y: stretch)
+                } animation: { stretch in
+                    stretch > 1 ? Constants.Animation.microBounce : .spring(duration: 0.3, bounce: 0.45)
                 }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovering = hovering
             }
-            .onTapGesture(perform: onTap)
-            .onChange(of: isExpanded) { _, _ in
-                guard !reduceMotion else { return }
-                splashTrigger += 1
-            }
-            .help("overlay.dock_last".localized)
+        }
+        .onChange(of: isExpanded) { _, _ in
+            guard !reduceMotion else { return }
+            splashTrigger += 1
+        }
+        .accessibilityLabel("overlay.dock_last".localized)
+        .help("overlay.dock_last".localized)
     }
 }
 
@@ -573,15 +551,10 @@ struct ErrorPillView: View {
             }
         }
         // Same one-shot outline flash as the completed pill, in error amber.
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { content, glow in
-            content.overlay(glowStroke(color: .sapoError, intensity: glow))
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { [accent = Color.sapoError] content, glow in
+            content.overlay(glowStroke(color: accent, intensity: glow))
         } keyframes: { _ in
-            KeyframeTrack {
-                LinearKeyframe(0.0, duration: 0.15)
-                CubicKeyframe(1.0, duration: 0.3)
-                LinearKeyframe(1.0, duration: 0.75)
-                CubicKeyframe(0.0, duration: 0.8)
-            }
+            PillGlowFlashKeyframes()
         }
         .onAppear {
             glowFlash += 1
@@ -603,8 +576,9 @@ struct DeviceChangePillView: View {
 
     private var accentColor: Color {
         switch announcement.phase {
+        // Glyph tint over material, so the contrast-safe green variant.
         case .connecting: return .aiPolish
-        case .ready: return .sapoGreen
+        case .ready: return .sapoGreenText
         case .fallback: return .sapoError
         }
     }
@@ -698,9 +672,28 @@ struct PillDivider: View {
 }
 
 /// `intensity` is the 0...1 keyframe value; full flash keeps the old 0.4 peak.
-private func glowStroke(color: Color, intensity: Double) -> some View {
-    RoundedRectangle(cornerRadius: 26, style: .continuous)
+/// Negative padding pushes the stroke back out over the pill chrome that the
+/// hosting view applies around this content.
+nonisolated private func glowStroke(color: Color, intensity: Double) -> some View {
+    OverlayPillChrome.pillShape
         .strokeBorder(color.opacity(0.4 * intensity), lineWidth: 1.5)
-        .padding(.horizontal, -20)
-        .padding(.vertical, -12)
+        .padding(.horizontal, -OverlayPillChrome.horizontalPadding)
+        .padding(.vertical, -OverlayPillChrome.verticalPadding)
+}
+
+/// One-shot pill outline flash timeline: short delay, ~0.3 s flash in, hold,
+/// ~0.8 s fade out. One shared timeline replaces the old pair of delayed
+/// withAnimation calls, which competed over one flag and could leave a stale
+/// glow when the pill changed under them. Call sites keep `keyframeAnimator`
+/// inline: hoisting it into a generic View extension makes the @Sendable
+/// content closure capture `Self.Type`, which strict concurrency rejects.
+private struct PillGlowFlashKeyframes: Keyframes {
+    var body: some Keyframes<Double> {
+        KeyframeTrack {
+            LinearKeyframe(0.0, duration: 0.15)
+            CubicKeyframe(1.0, duration: 0.3)
+            LinearKeyframe(1.0, duration: 0.75)
+            CubicKeyframe(0.0, duration: 0.8)
+        }
+    }
 }

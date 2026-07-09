@@ -6,6 +6,39 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-07-09
+
+### Added
+
+- **Large V3 Turbo (4-bit) local model** — a new quantized tier of the recommended turbo model: 464 MB download instead of 1.5 GB and roughly a third of the RAM while transcribing (~0.5 GB vs ~1.6 GB) at comparable quality. The vendored MLX engine now reads quantized checkpoints natively (packed 4-bit weights, quantized tied embeddings), so more tiers can follow.
+- **Liquid Glass overlay on macOS 26** — the recording pill and the dock chip render in real glass, and they visually fuse when the droplet detaches from or absorbs into the chip. Older systems keep the exact material look they have today.
+- **VoiceOver support across the app** — every icon-only button now has a spoken label (overlay controls, History actions, model rows, vocabulary tools), the overlay announces dictation phases (recording started, transcribing, text pasted, failed), the audio player's scrubber is adjustable with VoiceOver and arrow keys (±5 s), and hover-only affordances like vocabulary chip deletion also reveal on keyboard focus.
+- **Export notice** — the History save panels for audio and text exports now remind that the file will contain dictated content before it leaves the app.
+
+### Changed
+
+- **Retrying and re-transcribing now run through the same pipeline as live dictations** — retry results update the original History row (no duplicate rows), stale results from an abandoned retry can no longer overwrite a newer dictation, and the audio behind a failed dictation is never cleaned up while it can still be retried.
+- **Consistent motion and color language** — animations across Settings, History, and Welcome now use the shared motion tokens (including new transition and shake timings), Welcome steps and pill content swap with a blur-replace transition (Reduce Motion keeps plain crossfades), and green-as-text uses an adaptive darker shade that passes WCAG contrast on light backgrounds. The app also ships a real AccentColor, so selection tint matches the brand in every window.
+- **Cloud batch engines pre-warm their connection** when the recording starts, shaving the DNS/TLS handshake (~100–400 ms) off the stop-to-paste wait on cold starts.
+- The vendored MLX decode loop honors task cancellation between decode steps — groundwork for cancellable re-transcriptions of long recordings.
+
+### Fixed
+
+- **Two latent crash windows in audio setup** — the onboarding microphone probe and the capture-setup cleanup path called AVFAudio APIs outside the engine guard; a device route change at the wrong moment could kill the app with the same uncatchable exception class that caused historic crashes. All engine calls now go through the guard.
+- **Settings window no longer clips its content** — the window was created at 800×560 while the content laid out at 860×620 (diverged in v2.2.0); both now share one constant, and the History window minimum matches its real layout.
+- **Cmd+, opens the real Settings window** — previously a phantom empty settings window could appear while an app window was focused.
+- **History survives database corruption** — a corrupt history database is detected on open (integrity check), sidelined with a timestamped name, and recreated fresh; History keeps working instead of silently doing nothing until reinstall.
+- A race between unloading and loading local models could leave a freshly loaded model unloaded (or two resident at once); model loads are now generation-checked.
+- "now" and the m/h/d suffixes in History timestamps were hardcoded English in the Spanish UI; they are localized.
+- White text on the amber processing color in the menu bar failed contrast badly (≈1.6:1); processing states now use dark text on amber.
+
+### Security
+
+- **Pasted text is sanitized before it reaches the clipboard** — control characters, ANSI escape sequences, bidirectional-override characters, and zero-width characters are stripped from polish output and raw fallbacks alike, so a misbehaving or hostile polish endpoint cannot smuggle terminal escapes or spoofed text into what Cmd+V types.
+- **Clipboard writes are marked concealed** (`org.nspasteboard.ConcealedType`), so clipboard managers and Universal Clipboard treat dictated text as sensitive instead of syncing and indexing it.
+- History storage (database and audio) is created user-only (`0o700`).
+- Supply chain hardening: Hugging Face model downloads are pinned to exact commit revisions, GitHub Actions are pinned by commit SHA, an unused Downloads entitlement was removed, and SECURITY.md documents supported versions and the reporting channel.
+
 ## [2.8.0] - 2026-07-06
 
 ### Added

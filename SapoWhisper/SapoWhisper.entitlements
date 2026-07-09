@@ -2,23 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Acceso al micrófono -->
+    <!-- Microphone capture -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
-    
-    <!-- Acceso a archivos de usuario (para guardar modelos) -->
+
+    <!-- User-selected files (history/settings export save panels) -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
-    
-    <!-- Acceso a Application Support -->
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    
-    <!-- Acceso a red (para descargar modelos) -->
+
+    <!-- Network client (cloud STT/polish APIs, model downloads) -->
     <key>com.apple.security.network.client</key>
     <true/>
-    
-    <!-- Permitir ejecución de Apple Events (para auto-paste) -->
+
+    <!-- Apple Events (re-activate the previous app for auto-paste) -->
     <key>com.apple.security.automation.apple-events</key>
     <true/>
 </dict>

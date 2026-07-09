@@ -11,7 +11,7 @@ struct ClickableDisclosureStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(.smooth(duration: 0.25)) {
+                withAnimation(Constants.Animation.reveal) {
                     configuration.isExpanded.toggle()
                 }
             } label: {

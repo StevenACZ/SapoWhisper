@@ -63,11 +63,14 @@ public enum WhisperModelDownloader {
         try? FileManager.default.removeItem(at: modelDirectory(repo: repo, root: root))
     }
 
-    /// Download (or resume/complete) a model snapshot. `progress` receives
-    /// 0...1 fractions on the main actor. Returns the model directory ready
-    /// for `WhisperModel.fromDirectory`.
+    /// Download (or resume/complete) a model snapshot. `revision` should be
+    /// a pinned commit sha so a moved or compromised branch can never change
+    /// what lands on disk. `progress` receives 0...1 fractions on the main
+    /// actor. Returns the model directory ready for
+    /// `WhisperModel.fromDirectory`.
     public static func download(
         repo: String,
+        revision: String = "main",
         root: URL,
         progress: (@MainActor @Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
@@ -85,7 +88,7 @@ public enum WhisperModelDownloader {
             of: repoID,
             kind: .model,
             to: dir,
-            revision: "main",
+            revision: revision,
             matching: ["*.safetensors", "*.json", "*.txt", "merges.txt", "vocab.json"],
             progressHandler: { snapshotProgress in
                 // Reserve the last 2% for the tokenizer-asset prefetch below.
@@ -101,6 +104,16 @@ public enum WhisperModelDownloader {
         try await prefetchTokenizerAssetsIfNeeded(into: dir, client: client)
         await MainActor.run { progress?(1.0) }
         return dir
+    }
+
+    /// Tokenizer-asset repo for a Whisper vocab size, pinned to a concrete
+    /// revision (commit shas resolved 2026-07-09) like the model snapshots.
+    static func tokenizerRepo(forVocabSize vocabSize: Int) -> (repo: String, revision: String) {
+        switch vocabSize {
+        case 51865: return ("openai/whisper-medium", "abdf7c39ab9d0397620ccaea8974cc764cd0953e")
+        case 51864: return ("openai/whisper-medium.en", "2e98eb6279edf5095af0c8dedb36bdec0acd172b")
+        default: return ("openai/whisper-large-v3", "06f233fe06e710322aca913c1bc4249a0d71fce1")
+        }
     }
 
     // MARK: - Internals
@@ -130,17 +143,11 @@ public enum WhisperModelDownloader {
         var vocabSize = 51866
         if let data = try? Data(contentsOf: dir.appendingPathComponent("config.json")),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let size = json["vocab_size"] as? Int
+            let size = (json["vocab_size"] as? Int) ?? (json["n_vocab"] as? Int)
         {
             vocabSize = size
         }
-        let tokenizerRepo: String
-        switch vocabSize {
-        case 51866: tokenizerRepo = "openai/whisper-large-v3"
-        case 51865: tokenizerRepo = "openai/whisper-medium"
-        case 51864: tokenizerRepo = "openai/whisper-medium.en"
-        default: tokenizerRepo = "openai/whisper-large-v3"
-        }
+        let (tokenizerRepo, tokenizerRevision) = Self.tokenizerRepo(forVocabSize: vocabSize)
         guard let repoID = Repo.ID(rawValue: tokenizerRepo) else {
             throw WhisperModelDownloadError.invalidRepo(tokenizerRepo)
         }
@@ -149,7 +156,7 @@ public enum WhisperModelDownloader {
             of: repoID,
             kind: .model,
             to: dir,
-            revision: "main",
+            revision: tokenizerRevision,
             matching: [
                 "tokenizer.json",
                 "tokenizer_config.json",

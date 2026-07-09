@@ -34,10 +34,20 @@ nonisolated enum Constants {
         static let error = Color(red: 1.0, green: 0.596, blue: 0.0)  // #FF9800
         static let disabled = Color(red: 0.620, green: 0.620, blue: 0.620)  // #9E9E9E
 
-        // UI
-        static let background = Color(red: 0.118, green: 0.118, blue: 0.118)  // #1E1E1E
-        static let surface = Color(red: 0.176, green: 0.176, blue: 0.176)  // #2D2D2D
-        static let cardBackground = Color(red: 0.15, green: 0.15, blue: 0.15)
+        /// Foreground for text/icons over the amber `processing` fill — white
+        /// on #FFC107 is ~1.6:1; this dark tone keeps ~7.7:1 in both modes.
+        static let onProcessing = Color(red: 0.25, green: 0.18, blue: 0.02)
+
+        /// Brand green for TEXT and small glyphs on window/material surfaces.
+        /// `sapoGreen` (#4CAF50) is a fill color; as text on light surfaces it
+        /// falls to ~2.8:1, so this variant darkens in light mode and
+        /// brightens in dark mode.
+        static let sapoGreenText = Color(
+            nsColor: NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    ? NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 1)  // #66BB6A
+                    : NSColor(red: 0.180, green: 0.490, blue: 0.196, alpha: 1)  // #2E7D32
+            })
     }
 
     // MARK: - Animaciones
@@ -65,11 +75,34 @@ nonisolated enum Constants {
         /// Continuous progress fills (audio players) bridging 0.1 s timer ticks.
         static let progress: SwiftUI.Animation = .linear(duration: 0.1)
 
+        /// Hover highlights and other pointer-reactive micro-changes.
+        static let hover: SwiftUI.Animation = .easeOut(duration: 0.15)
+
+        /// Snappy selection/confirmation spring for chips, pickers, toggles.
+        static let springSnap: SwiftUI.Animation = .spring(duration: 0.25, bounce: 0.35)
+
+        /// Medium content swaps: detail-pane changes, section switches,
+        /// copied-state toggles.
+        static let transition: SwiftUI.Animation = .smooth(duration: 0.3)
+
+        /// Invalid-input shake driver (hotkey recorder, keycap rows).
+        static let shake: SwiftUI.Animation = .spring(duration: 0.4)
+
         /// System Reduce Motion for non-View call sites (managers); views
         /// should read `@Environment(\.accessibilityReduceMotion)` instead.
         @MainActor static var reduceMotion: Bool {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         }
+    }
+
+    // MARK: - Window Sizes
+
+    /// Single source of truth for manually sized hosting windows: the window
+    /// controller and the SwiftUI root frame must agree (they drifted apart
+    /// in v2.2.0 and the Settings content clipped for six releases).
+    enum Windows {
+        static let settingsSize = NSSize(width: 860, height: 620)
+        static let historyMinSize = NSSize(width: 840, height: 520)
     }
 
     // MARK: - UI Sizes
@@ -190,4 +223,6 @@ extension Color {
     static let compactMode = Constants.Colors.compactMode
     static let sapoError = Constants.Colors.error
     static let disabled = Constants.Colors.disabled
+    static let sapoGreenText = Constants.Colors.sapoGreenText
+    static let onProcessing = Constants.Colors.onProcessing
 }

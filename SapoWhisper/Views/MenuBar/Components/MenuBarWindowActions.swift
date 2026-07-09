@@ -10,24 +10,12 @@ import SwiftUI
 extension MenuBarView {
     func openHistoryWindow() {
         closeMenuBar()
-        if let openHistoryAction {
-            openHistoryAction()
-            return
-        }
-
-        openWindow(id: "history")
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        openHistoryAction?()
     }
 
     func openSettingsWindow() {
         closeMenuBar()
-        if let openSettingsAction {
-            openSettingsAction()
-            return
-        }
-
-        openWindow(id: "settings")
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        openSettingsAction?()
     }
 
     func openPermissionsWindow() {

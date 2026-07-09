@@ -50,7 +50,7 @@ struct PromptContextSettingsCard: View {
                 if showsSavedConfirmation {
                     Label("prompts.prompt_saved".localized, systemImage: "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(Color.sapoGreen)
+                        .foregroundStyle(Color.sapoGreenText)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
 
@@ -67,8 +67,8 @@ struct PromptContextSettingsCard: View {
                     .tint(Constants.Colors.sapoGreen)
                     .disabled(!hasUnsavedChanges)
             }
-            .animation(.smooth(duration: 0.2), value: hasUnsavedChanges)
-            .animation(.smooth(duration: 0.2), value: showsSavedConfirmation)
+            .animation(Constants.Animation.reveal, value: hasUnsavedChanges)
+            .animation(Constants.Animation.reveal, value: showsSavedConfirmation)
         }
     }
 
@@ -80,7 +80,7 @@ struct PromptContextSettingsCard: View {
         savedConfirmationTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.2))
             guard !Task.isCancelled else { return }
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(Constants.Animation.transition) {
                 showsSavedConfirmation = false
             }
         }
