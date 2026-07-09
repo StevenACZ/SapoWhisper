@@ -275,14 +275,21 @@ struct CopiedPillView: View {
                     .background(Capsule().fill(Color.compactMode.opacity(0.16)))
             }
         }
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { [glowColor] content, glow in
-            content.overlay(glowStroke(color: glowColor, intensity: glow))
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
+            [glowColor, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
+            content.overlay(glowStroke(color: glowColor, intensity: glow, chipOnTop: chipOnTop))
         } keyframes: { _ in
             PillGlowFlashKeyframes()
         }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
                 iconScale = 1.0
+            }
+        }
+        .task {
+            if let delay = glowFlashDelay() {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
             }
             glowFlash += 1
         }
@@ -429,14 +436,21 @@ struct CompletedPillView: View {
 
         }
         .frame(maxWidth: Self.contentWidth)
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { [accent = Color.sapoGreen] content, glow in
-            content.overlay(glowStroke(color: accent, intensity: glow))
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
+            [accent = Color.sapoGreen, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
+            content.overlay(glowStroke(color: accent, intensity: glow, chipOnTop: chipOnTop))
         } keyframes: { _ in
             PillGlowFlashKeyframes()
         }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
                 iconScale = 1.0
+            }
+        }
+        .task {
+            if let delay = glowFlashDelay() {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
             }
             glowFlash += 1
         }
@@ -551,12 +565,17 @@ struct ErrorPillView: View {
             }
         }
         // Same one-shot outline flash as the completed pill, in error amber.
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) { [accent = Color.sapoError] content, glow in
-            content.overlay(glowStroke(color: accent, intensity: glow))
+        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
+            [accent = Color.sapoError, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
+            content.overlay(glowStroke(color: accent, intensity: glow, chipOnTop: chipOnTop))
         } keyframes: { _ in
             PillGlowFlashKeyframes()
         }
-        .onAppear {
+        .task {
+            if let delay = glowFlashDelay() {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
+            }
             glowFlash += 1
         }
     }
@@ -671,12 +690,36 @@ struct PillDivider: View {
     }
 }
 
+/// Pills presented straight from the dock enter through the Liquid Glass
+/// detach morph, whose glass shape animates outside SwiftUI layout — an
+/// outline flashed mid-morph floats visibly inside the real pill edge, so
+/// those flashes wait for the droplet spring to settle first.
+@MainActor
+private func glowFlashDelay() -> Duration? {
+    OverlayWindowManager.shared.lastPresentationLeftDock ? .milliseconds(400) : nil
+}
+
 /// `intensity` is the 0...1 keyframe value; full flash keeps the old 0.4 peak.
+/// The stroke dissolves toward the chip side: on macOS 26 the pill fuses with
+/// the dock chip through a glass neck, and a uniform outline crossing that
+/// neck read as a cut-off border.
 /// Negative padding pushes the stroke back out over the pill chrome that the
 /// hosting view applies around this content.
-nonisolated private func glowStroke(color: Color, intensity: Double) -> some View {
-    OverlayPillChrome.pillShape
-        .strokeBorder(color.opacity(0.4 * intensity), lineWidth: 1.5)
+nonisolated private func glowStroke(color: Color, intensity: Double, chipOnTop: Bool) -> some View {
+    let tint = color.opacity(0.4 * intensity)
+    return OverlayPillChrome.pillShape
+        .strokeBorder(
+            LinearGradient(
+                stops: [
+                    .init(color: tint, location: 0.0),
+                    .init(color: tint, location: 0.55),
+                    .init(color: tint.opacity(0), location: 1.0),
+                ],
+                startPoint: chipOnTop ? .bottom : .top,
+                endPoint: chipOnTop ? .top : .bottom
+            ),
+            lineWidth: 1.5
+        )
         .padding(.horizontal, -OverlayPillChrome.horizontalPadding)
         .padding(.vertical, -OverlayPillChrome.verticalPadding)
 }

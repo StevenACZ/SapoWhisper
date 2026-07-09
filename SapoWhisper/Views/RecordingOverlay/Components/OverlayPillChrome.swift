@@ -24,6 +24,12 @@ nonisolated enum OverlayPillChrome {
     static var chipShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: chipCornerRadius, style: .continuous)
     }
+
+    /// Which vertical side of the pill faces the dock chip (and its glass
+    /// neck) for the configured overlay position.
+    static var chipOnTop: Bool {
+        OverlayPosition.configured == .top
+    }
 }
 
 /// Stable glass identities inside the overlay's shared namespace so the
