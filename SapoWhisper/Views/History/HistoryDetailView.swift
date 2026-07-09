@@ -89,19 +89,28 @@ struct HistoryDetailView: View {
             }
 
             HStack(spacing: 8) {
-                HeaderChip(text: entry.engine, dotColor: engineColor)
+                HeaderChip(text: entry.engine, dotColor: HistoryEngineColor.color(for: entry.engine))
                 HeaderChip(text: entry.language.uppercased())
             }
         }
     }
 
-    /// "Today at 3:42 PM" — relative day names read faster than raw dates.
-    private var formattedTimestamp: String {
+    /// Cached: building a DateFormatter per body evaluation is expensive.
+    private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = locale
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
+        return formatter
+    }()
+
+    /// "Today at 3:42 PM" — relative day names read faster than raw dates.
+    private var formattedTimestamp: String {
+        let formatter = Self.timestampFormatter
+        // Environment locale can change at runtime (app language switch).
+        if formatter.locale != locale {
+            formatter.locale = locale
+        }
         return formatter.string(from: entry.timestamp)
     }
 
@@ -213,14 +222,14 @@ struct HistoryDetailView: View {
 
     private func handleCopy() {
         onCopy()
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(Constants.Animation.transition) {
             showCopied = true
         }
         copiedResetTask?.cancel()
         copiedResetTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(Constants.Animation.transition) {
                 showCopied = false
             }
         }
@@ -245,7 +254,7 @@ struct HistoryDetailView: View {
             StatCell(
                 value: (entry.audioFileExists ? "history.audio_saved" : "history.audio_none").localized,
                 label: "history.audio".localized,
-                valueColor: entry.audioFileExists ? Color.sapoGreen : .secondary
+                valueColor: entry.audioFileExists ? Color.sapoGreenText : .secondary
             )
         }
         .padding(.vertical, 14)
@@ -302,7 +311,7 @@ struct HistoryDetailView: View {
     private var aiStatusColor: Color {
         switch entry.transcriptAIStatus {
         case .applied:
-            return .sapoGreen
+            return .sapoGreenText
         case .failed, .rejectedFidelity:
             return .orange
         case .skippedShort, .skippedDuration, .none:
@@ -453,19 +462,6 @@ struct HistoryDetailView: View {
                 .strokeBorder(.secondary.opacity(0.2), lineWidth: 1)
         )
     }
-
-    private var engineColor: Color {
-        switch entry.engine.lowercased() {
-        case let e where e.contains("local ai"): return .indigo
-        case let e where e.contains("elevenlabs"): return .teal
-        case let e where e.contains("deepgram"): return .blue
-        case let e where e.contains("gemini"): return .cyan
-        case let e where e.contains("google"): return .orange
-        case let e where e.contains("whisper"): return .purple
-        case let e where e.contains("apple"): return .green
-        default: return .secondary
-        }
-    }
 }
 
 // MARK: - Subcomponents
@@ -485,7 +481,7 @@ private struct PolishVersionRow: View {
             HStack(spacing: 8) {
                 Text("v\(number)")
                     .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(isCurrent ? Color.sapoGreen : Color.secondary)
+                    .foregroundStyle(isCurrent ? Color.sapoGreenText : Color.secondary)
 
                 if let model = version.model, !model.isEmpty {
                     Text(model)
@@ -504,7 +500,7 @@ private struct PolishVersionRow: View {
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
                         .background(Color.sapoGreen.opacity(0.14), in: Capsule())
-                        .foregroundStyle(Color.sapoGreen)
+                        .foregroundStyle(Color.sapoGreenText)
                 }
 
                 Spacer(minLength: 8)
@@ -524,6 +520,7 @@ private struct PolishVersionRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("history.copy".localized)
+                .accessibilityLabel("history.copy".localized)
             }
 
             Text(version.text)
@@ -535,12 +532,19 @@ private struct PolishVersionRow: View {
         }
     }
 
-    private var formattedTime: String {
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = locale
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
+        return formatter
+    }()
+
+    private var formattedTime: String {
+        let formatter = Self.timeFormatter
+        if formatter.locale != locale {
+            formatter.locale = locale
+        }
         return formatter.string(from: version.createdAt)
     }
 }
@@ -611,6 +615,7 @@ private struct IconActionButton: View {
         }
         .buttonStyle(.bordered)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 

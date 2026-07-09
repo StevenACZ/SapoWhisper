@@ -30,6 +30,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var settingsOpenCount = 0
     private var historyOpenCount = 0
     private var historyFocusObserver: NSObjectProtocol?
+    private var settingsOpenObserver: NSObjectProtocol?
 
     init(viewModel: SapoWhisperViewModel) {
         self.viewModel = viewModel
@@ -47,6 +48,15 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.openHistoryWindow()
+            }
+        }
+        // Cmd+, replaces the phantom Settings scene: the app-menu command
+        // requests the controller-managed window through this notification.
+        settingsOpenObserver = NotificationCenter.default.addObserver(
+            forName: SettingsOpenRequest.notification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.openSettingsWindow()
             }
         }
     }

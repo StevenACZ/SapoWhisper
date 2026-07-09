@@ -29,6 +29,9 @@ struct RecordingOverlayView: View {
 
     @State private var pillBounceTrigger = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Shared glass identity space (macOS 26): the droplet pill and dock chip
+    /// carry stable IDs here so their Liquid Glass shapes fuse on detach/absorb.
+    @Namespace private var glassNamespace
 
     private var stateCategory: String { manager.state.stateCategory }
     private var isActive: Bool { stateCategory != "hidden" && stateCategory != "docked" }
@@ -46,6 +49,59 @@ struct RecordingOverlayView: View {
     }
 
     var body: some View {
+        contentStack
+            .fixedSize()
+            // Publish where the real content sits inside the mostly-transparent
+            // surface, so the outside-click collapse can compare against the
+            // visible pill instead of the whole fixed window rect.
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: OverlayContentFramePreferenceKey.self,
+                        value: proxy.frame(in: .global)
+                    )
+                }
+            )
+            // Slim transparent inset on the chip side so its shadow still renders
+            // while the chip visually hugs the screen edge.
+            .padding(chipOnTop ? .top : .bottom, 4)
+            // The hosting window is a fixed transparent surface that NEVER
+            // resizes: window resizes during SwiftUI transaction animations made
+            // NSHostingView animate the window frame from inside the display
+            // cycle (updateAnimatedWindowSize), which throws and crashes the app.
+            // The content simply lays out against the configured edge; empty
+            // surface pixels are alpha-transparent, so clicks there fall through
+            // to whatever is behind the window.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: surfaceAlignment)
+            .onPreferenceChange(OverlayContentFramePreferenceKey.self) { frame in
+                Task { @MainActor in
+                    OverlayWindowManager.shared.setActiveContentFrame(frame)
+                }
+            }
+            .onChange(of: stateCategory) { oldValue, _ in
+                // Micro-bounce only on active-to-active swaps; dock transitions
+                // are carried entirely by the droplet detach/absorb.
+                guard isActive, oldValue != "hidden", oldValue != "docked" else { return }
+                guard !reduceMotion else { return }
+                pillBounceTrigger += 1
+            }
+    }
+
+    /// On macOS 26 the pill and chip render inside one glass container so
+    /// their Liquid Glass shapes blend while the droplet detaches/absorbs;
+    /// older systems lay out the same stack with the material chrome.
+    @ViewBuilder
+    private var contentStack: some View {
+        if #available(macOS 26, *) {
+            GlassEffectContainer(spacing: 24) {
+                pillAndChipStack
+            }
+        } else {
+            pillAndChipStack
+        }
+    }
+
+    private var pillAndChipStack: some View {
         VStack(spacing: 0) {
             if chipOnTop {
                 chip
@@ -62,45 +118,14 @@ struct RecordingOverlayView: View {
                 chip
             }
         }
-        .fixedSize()
-        // Publish where the real content sits inside the mostly-transparent
-        // surface, so the outside-click collapse can compare against the
-        // visible pill instead of the whole fixed window rect.
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: OverlayContentFramePreferenceKey.self,
-                    value: proxy.frame(in: .global)
-                )
-            }
-        )
-        // Slim transparent inset on the chip side so its shadow still renders
-        // while the chip visually hugs the screen edge.
-        .padding(chipOnTop ? .top : .bottom, 4)
-        // The hosting window is a fixed transparent surface that NEVER
-        // resizes: window resizes during SwiftUI transaction animations made
-        // NSHostingView animate the window frame from inside the display
-        // cycle (updateAnimatedWindowSize), which throws and crashes the app.
-        // The content simply lays out against the configured edge; empty
-        // surface pixels are alpha-transparent, so clicks there fall through
-        // to whatever is behind the window.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: surfaceAlignment)
-        .onPreferenceChange(OverlayContentFramePreferenceKey.self) { frame in
-            Task { @MainActor in
-                OverlayWindowManager.shared.setActiveContentFrame(frame)
-            }
-        }
-        .onChange(of: stateCategory) { oldValue, _ in
-            // Micro-bounce only on active-to-active swaps; dock transitions
-            // are carried entirely by the droplet detach/absorb.
-            guard isActive, oldValue != "hidden", oldValue != "docked" else { return }
-            guard !reduceMotion else { return }
-            pillBounceTrigger += 1
-        }
     }
 
     private var chip: some View {
-        DockedChipView(isExpanded: isActive, onTap: { manager.dockChipTapped() })
+        DockedChipView(
+            isExpanded: isActive,
+            glassNamespace: glassNamespace,
+            onTap: { manager.dockChipTapped() }
+        )
     }
 
     /// The droplet grows out of the chip's edge and collapses back into it:
@@ -111,30 +136,34 @@ struct RecordingOverlayView: View {
         .scale(scale: 0.04, anchor: chipOnTop ? .top : .bottom)
     }
 
+    /// Sequential content hand-off on active-to-active swaps (old leaves
+    /// fast, new enters right after). Blur-replace adds the material feel;
+    /// Reduce Motion keeps the plain crossfade.
+    private var contentSwapTransition: AnyTransition {
+        if reduceMotion {
+            return .asymmetric(
+                insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
+                removal: .opacity.animation(.easeOut(duration: 0.1))
+            )
+        }
+        return .asymmetric(
+            insertion: AnyTransition(.blurReplace).animation(.easeIn(duration: 0.16).delay(0.1)),
+            removal: AnyTransition(.blurReplace).animation(.easeOut(duration: 0.1))
+        )
+    }
+
     private var activePill: some View {
         // The ZStack hosts the outgoing and incoming pill contents during an
         // active-to-active swap so the pill morphs once while the texts hand
-        // off sequentially (old fades out fast, new fades in right after).
+        // off sequentially.
         ZStack {
             contentForState
                 .id(stateCategory)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
-                        removal: .opacity.animation(.easeOut(duration: 0.1))
-                    )
-                )
+                .transition(contentSwapTransition)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(
-            // Continuous rounded rect instead of a capsule: multi-line states
-            // (chips, expanded transcript) made the capsule's semicircular
-            // ends huge, reading as wasted width.
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-        )
+        .padding(.horizontal, OverlayPillChrome.horizontalPadding)
+        .padding(.vertical, OverlayPillChrome.verticalPadding)
+        .overlayPillChrome(glassNamespace: glassNamespace)
         // Micro-bounce on state swaps — subtle scale pop for tactile
         // feedback. Phase-driven so a swap mid-bounce can never leave the
         // pill stuck scaled up (the old detached asyncAfter could).

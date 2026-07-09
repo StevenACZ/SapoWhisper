@@ -14,7 +14,7 @@ struct AIPolishFidelityBadge: View {
             Text("ai.polish.fidelity_max".localized)
                 .font(.caption2.weight(.semibold))
         }
-        .foregroundStyle(Color.sapoGreen)
+        .foregroundStyle(Color.sapoGreenText)
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .background(Color.sapoGreen.opacity(0.10), in: Capsule())

@@ -1002,7 +1002,7 @@ class SapoWhisperViewModel: ObservableObject {
                 snapshotPrefix: "recording",
                 playSound: playSound,
                 triggerTime: triggerTime,
-                prepare: { if isStartPending { audioRecorder.cancelPendingSetup() } },
+                prepare: { audioRecorder.cancelPendingSetup() },
                 start: { try await self.startRecorderWithRecovery(microphone: mic) }
             )
         }

@@ -121,7 +121,7 @@ struct AIPolishSettingsCard: View {
                     .disabled(!aiPolishEnabled)
                     .opacity(aiPolishEnabled ? 1 : 0.62)
             }
-            .animation(.smooth(duration: 0.2), value: aiPolishEnabled)
+            .animation(Constants.Animation.reveal, value: aiPolishEnabled)
         }
         .onAppear {
             // Start collapsed when the provider already works; expand (and
@@ -270,7 +270,7 @@ struct AIPolishSettingsCard: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.smooth(duration: 0.22), value: currentMode)
+        .animation(Constants.Animation.reveal, value: currentMode)
     }
 
     // MARK: - Minimum duration
@@ -340,7 +340,7 @@ struct AIPolishSettingsCard: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.smooth(duration: 0.22), value: currentOutputLanguage.requiresTranslation)
+        .animation(Constants.Animation.reveal, value: currentOutputLanguage.requiresTranslation)
     }
 
     // MARK: - Reasoning effort

@@ -50,7 +50,7 @@ struct EngineSettingsTab: View {
                         hasDetails: engine.hasInlineSettings,
                         isExpanded: $isSelectedEngineSettingsExpanded
                     ) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(Constants.Animation.reveal) {
                             if currentEngine == engine, engine.hasInlineSettings {
                                 isSelectedEngineSettingsExpanded.toggle()
                             } else {

@@ -11,7 +11,6 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     @ObservedObject private var reachability = NetworkReachability.shared
-    @Environment(\.openWindow) var openWindow
     var missingPermissions: [AppPermission] = []
     var openSettingsAction: (() -> Void)?
     var openHistoryAction: (() -> Void)?

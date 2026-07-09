@@ -27,6 +27,7 @@ struct WelcomeView: View {
         UIPreviewMode.welcomeStep
         .flatMap(WelcomeStep.init(rawValue:)) ?? .welcome
     @Namespace private var engineSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let windowSize = CGSize(width: 660, height: 600)
 
@@ -37,12 +38,8 @@ struct WelcomeView: View {
             ZStack {
                 stepContent
                     .id(step)
-                    .transition(
-                        .asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        )
-                    )
+                    // Reduce Motion swaps steps with a plain crossfade.
+                    .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(.smooth(duration: 0.35), value: step)
@@ -68,7 +65,7 @@ struct WelcomeView: View {
                 Capsule()
                     .fill(item.rawValue <= step.rawValue ? Color.sapoGreen : Color.secondary.opacity(0.2))
                     .frame(width: item == step ? 26 : 14, height: 5)
-                    .animation(.smooth(duration: 0.3), value: step)
+                    .animation(Constants.Animation.transition, value: step)
             }
 
             Spacer()
@@ -288,26 +285,6 @@ private struct HotkeyKeycapsDemo: View {
     }
 }
 
-struct KeycapView: View {
-    let label: String
-    var width: CGFloat = 52
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 17, weight: .semibold, design: .rounded))
-            .frame(width: width, height: 46)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color(NSColor.controlBackgroundColor))
-                    .shadow(color: .black.opacity(0.28), radius: 0, y: 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
-            )
-    }
-}
-
 // MARK: - Step 2: Permissions
 
 private struct WelcomePermissionsStep: View {
@@ -345,7 +322,7 @@ private struct WelcomePermissionsStep: View {
     private func refreshGranted() {
         let updated = Set(AppPermission.required.filter { $0.isGranted() })
         guard updated != granted else { return }
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(Constants.Animation.transition) {
             granted = updated
         }
     }
@@ -480,7 +457,7 @@ private struct WelcomeEngineStep: View {
     }
 
     private func select(_ engine: TranscriptionEngine) {
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(Constants.Animation.transition) {
             selectedCard = engine
         }
         if viewModel.isEngineReady(engine) {
@@ -609,7 +586,7 @@ private struct WelcomeWhisperCard: View {
                                             if model.isRecommended {
                                                 Image(systemName: "star.fill")
                                                     .font(.system(size: 8))
-                                                    .foregroundStyle(Color.sapoGreen)
+                                                    .foregroundStyle(Color.sapoGreenText)
                                             }
                                         }
                                         Text(model.fileSize)
@@ -628,7 +605,7 @@ private struct WelcomeWhisperCard: View {
             }
         }
         .modifier(WelcomeEngineCardChrome(isSelected: isSelected, selectionNamespace: selectionNamespace))
-        .animation(.smooth(duration: 0.25), value: isLoading)
+        .animation(Constants.Animation.reveal, value: isLoading)
     }
 
     private func startDownload(_ model: MLXWhisperModel) {
@@ -722,7 +699,7 @@ private struct WelcomeLocalAIServerCard: View {
 
     private func save() {
         guard canSave else {
-            withAnimation(.spring(duration: 0.4)) {
+            withAnimation(Constants.Animation.shake) {
                 shakeTrigger += 1
             }
             return
@@ -811,14 +788,14 @@ private struct WelcomeCloudEngineCard: View {
                 try await EngineKeyValidator.validate(engine: engine, key: key)
                 KeychainStore.setString(key, for: keychainKey)
                 viewModel.setEngine(engine)
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(Constants.Animation.transition) {
                     validation = .valid
                 }
             } catch {
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(Constants.Animation.transition) {
                     validation = .invalid(error.localizedDescription)
                 }
-                withAnimation(.spring(duration: 0.4)) {
+                withAnimation(Constants.Animation.shake) {
                     shakeTrigger += 1
                 }
             }
@@ -920,7 +897,7 @@ private struct WelcomeAIPolishStep: View {
                     case .success(let identifier):
                         Label("ai.provider.test_success".localized(identifier), systemImage: "checkmark.circle.fill")
                             .font(.caption)
-                            .foregroundStyle(Color.sapoGreen)
+                            .foregroundStyle(Color.sapoGreenText)
                             .symbolEffect(.bounce, value: testState)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -979,7 +956,7 @@ private struct WelcomeAIPolishStep: View {
             PolishProviderConfiguration.setStoredBaseURLInput(newValue, for: endpoint)
             testState = .idle
         }
-        .animation(.smooth(duration: 0.25), value: endpoint)
+        .animation(Constants.Animation.reveal, value: endpoint)
     }
 
     private var shouldShowAPIKeyRow: Bool {
@@ -1200,24 +1177,8 @@ private struct ProgressRing: View {
                 .trim(from: 0, to: max(0.02, min(progress, 1)))
                 .stroke(Color.sapoGreen, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.smooth(duration: 0.3), value: progress)
+                .animation(Constants.Animation.transition, value: progress)
         }
-    }
-}
-
-/// Horizontal shake used for failed key validation.
-struct ShakeEffect: GeometryEffect {
-    var trigger: Int
-    var animatableData: CGFloat
-
-    init(trigger: Int) {
-        self.trigger = trigger
-        self.animatableData = CGFloat(trigger)
-    }
-
-    func effectValue(size: CGSize) -> ProjectionTransform {
-        let translation = 7 * sin(animatableData * .pi * 4)
-        return ProjectionTransform(CGAffineTransform(translationX: translation, y: 0))
     }
 }
 

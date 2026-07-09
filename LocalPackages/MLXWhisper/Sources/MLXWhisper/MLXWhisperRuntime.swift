@@ -18,11 +18,12 @@ public enum MLXWhisperRuntime {
 
 extension WhisperModel {
     /// Convenience entry point over raw 16 kHz mono samples, so callers do
-    /// not need to import MLX to build an `MLXArray`.
+    /// not need to import MLX to build an `MLXArray`. Cancellation-aware:
+    /// throws `CancellationError` when the surrounding task is cancelled.
     public func generate(
         samples: [Float],
         generationParameters: STTGenerateParameters
-    ) -> STTOutput {
-        generate(audio: MLXArray(samples), generationParameters: generationParameters)
+    ) throws -> STTOutput {
+        try generateCancellable(audio: MLXArray(samples), generationParameters: generationParameters)
     }
 }

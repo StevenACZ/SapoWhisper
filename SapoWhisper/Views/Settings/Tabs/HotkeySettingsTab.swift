@@ -81,7 +81,7 @@ struct HotkeySettingsTab: View {
                     doubleTapSection
                 }
             }
-            .animation(.smooth(duration: 0.25), value: triggerKind)
+            .animation(Constants.Animation.reveal, value: triggerKind)
         }
     }
 
@@ -210,7 +210,7 @@ struct HotkeySettingsTab: View {
                     : "settings.hotkey_double_tap_try".localized
             )
             .font(.caption)
-            .foregroundStyle(doubleTapFeedbackPhase >= 2 ? Color.sapoGreen : .secondary)
+            .foregroundStyle(doubleTapFeedbackPhase >= 2 ? Color.sapoGreenText : .secondary)
         }
         .onReceive(NotificationCenter.default.publisher(for: HotkeyManager.doubleTapFirstTapNotification)) { _ in
             registerDoubleTapFeedback(phase: 1)
@@ -235,7 +235,7 @@ struct HotkeySettingsTab: View {
         doubleTapFeedbackResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_600_000_000)
             guard !Task.isCancelled else { return }
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(Constants.Animation.transition) {
                 doubleTapFeedbackPhase = 0
             }
         }
@@ -269,7 +269,7 @@ struct HotkeySettingsTab: View {
 
         keycapPressBounce += 1
         if systemConflictName(keyCode: keyCode, modifiers: modifiers) != nil {
-            withAnimation(.spring(duration: 0.4)) {
+            withAnimation(Constants.Animation.shake) {
                 conflictShake += 1
             }
         }
@@ -311,7 +311,7 @@ private struct DoubleTapModifierOption: View {
 
                 Text(displayName)
                     .font(.caption2.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.sapoGreen : .secondary)
+                    .foregroundStyle(isSelected ? Color.sapoGreenText : .secondary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
@@ -334,7 +334,7 @@ private struct DoubleTapModifierOption: View {
         }
         .buttonStyle(.plain)
         .scaleEffect(isHovered && !isSelected ? 1.04 : 1.0)
-        .animation(.smooth(duration: 0.18), value: isHovered)
+        .animation(Constants.Animation.hover, value: isHovered)
         .onHover { isHovered = $0 }
     }
 
@@ -399,7 +399,7 @@ private struct AccessibilityPermissionFooter: View {
                     }
                     .buttonStyle(.plain)
                     .font(.caption)
-                    .foregroundStyle(Color.sapoGreen)
+                    .foregroundStyle(Color.sapoGreenText)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -434,7 +434,7 @@ private struct AccessibilityPermissionFooter: View {
     private func refresh() {
         let granted = PermissionService.shared.isGranted(.accessibility)
         guard granted != isGranted else { return }
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(Constants.Animation.transition) {
             isGranted = granted
         }
     }

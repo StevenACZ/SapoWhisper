@@ -126,6 +126,9 @@ struct AudioPlayerView: View {
 
     @ObservedObject private var controller = HistoryAudioPlayerController.shared
 
+    /// Seconds moved per VoiceOver adjustment or arrow-key press.
+    private static let seekStep: TimeInterval = 5
+
     var body: some View {
         HStack(spacing: 14) {
             Button(action: { controller.togglePlayback(path: audioPath) }) {
@@ -138,6 +141,7 @@ struct AudioPlayerView: View {
             }
             .buttonStyle(.plain)
             .help((controller.isPlaying ? "history.pause" : "history.play").localized)
+            .accessibilityLabel((controller.isPlaying ? "history.pause" : "history.play").localized)
 
             VStack(spacing: 5) {
                 // Progress bar with click + drag scrubbing
@@ -168,6 +172,28 @@ struct AudioPlayerView: View {
                     )
                 }
                 .frame(height: 14)
+                .focusable()
+                .onMoveCommand { direction in
+                    switch direction {
+                    case .left: seek(by: -Self.seekStep)
+                    case .right: seek(by: Self.seekStep)
+                    default: break
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("history.audio_scrubber".localized)
+                .accessibilityValue(
+                    "history.audio_position".localized(
+                        formatTime(controller.currentTime), formatTime(controller.duration)
+                    )
+                )
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: seek(by: Self.seekStep)
+                    case .decrement: seek(by: -Self.seekStep)
+                    @unknown default: break
+                    }
+                }
 
                 HStack {
                     Text(formatTime(controller.currentTime))
@@ -190,6 +216,11 @@ struct AudioPlayerView: View {
             controller.prepare(path: newPath)
         }
         .onDisappear { controller.stopIfLoaded(path: audioPath) }
+    }
+
+    private func seek(by seconds: TimeInterval) {
+        guard controller.duration > 0 else { return }
+        controller.seek(path: audioPath, to: (controller.currentTime + seconds) / controller.duration)
     }
 
     private func formatTime(_ time: TimeInterval) -> String {

@@ -147,7 +147,7 @@ struct LocalAIServerSettingsCard: View {
                 systemImage: modelAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
             )
             .font(.caption)
-            .foregroundStyle(modelAvailable ? Color.sapoGreen : Color.orange)
+            .foregroundStyle(modelAvailable ? Color.sapoGreenText : Color.orange)
             .lineLimit(2)
         case .failure(let message):
             Label(message, systemImage: "xmark.circle.fill")

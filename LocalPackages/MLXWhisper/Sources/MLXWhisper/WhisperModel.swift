@@ -6,8 +6,10 @@
 //  commit 580e952. Local changes: initial-prompt (`<|startofprev|>`)
 //  support wired through the decode loop, `fromPretrained`/ModelUtils
 //  replaced by the app-driven `WhisperModelDownloader` (progress reporting
-//  instead of prints), and the STTGenerationModel protocol dropped —
-//  Whisper is the only vendored model.
+//  instead of prints), the STTGenerationModel protocol dropped (Whisper is
+//  the only vendored model), quantized-checkpoint loading (`quantization`
+//  in config.json), and Task-cancellation checks between decode steps
+//  (`generateCancellable`).
 //
 
 import Foundation
@@ -44,10 +46,28 @@ public final class WhisperModel: Module {
         )
     }
 
+    /// Completion-only entry point (mlxwhisper-cli); the app path is the
+    /// throwing `generateCancellable`, which honors Task cancellation.
     public func generate(
         audio: MLXArray,
         generationParameters: STTGenerateParameters
     ) -> STTOutput {
+        do {
+            return try generateCancellable(audio: audio, generationParameters: generationParameters)
+        } catch {
+            // Only Task cancellation escapes the decode loop; outside a
+            // cancelled task this path is unreachable.
+            return STTOutput(text: "")
+        }
+    }
+
+    /// Same as `generate(audio:generationParameters:)` but checks Task
+    /// cancellation between 30s windows and decode steps, throwing
+    /// `CancellationError` so callers can tell a cancel from a failure.
+    public func generateCancellable(
+        audio: MLXArray,
+        generationParameters: STTGenerateParameters
+    ) throws -> STTOutput {
         let startTime = Date()
         let mono = audio.ndim > 1 ? audio.mean(axis: -1) : audio
         let chunks = chunkAudioFor30sWindows(mono)
@@ -61,13 +81,14 @@ public final class WhisperModel: Module {
         var detectedLanguageToken: Int? = nil
 
         for (index, chunk) in chunks.enumerated() {
+            try Task.checkCancellation()
             if generationParameters.verbose {
                 let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
                 print(
                     "[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s"
                 )
             }
-            let (text, promptTokens, generationTokens, lang, langToken) = transcribeChunk(
+            let (text, promptTokens, generationTokens, lang, langToken) = try transcribeChunk(
                 audio: chunk.audio,
                 generationParameters: generationParameters,
                 initialPromptTokens: initialPromptTokens,
@@ -124,40 +145,46 @@ public final class WhisperModel: Module {
             var detectedLanguage: String? = nil
             var detectedLanguageToken: Int? = nil
 
-            for (index, chunk) in chunks.enumerated() {
-                if generationParameters.verbose {
-                    let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
-                    print(
-                        "[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s"
-                    )
-                }
-
-                let (text, promptTokens, generationTokens, lang, langToken) = transcribeChunk(
-                    audio: chunk.audio,
-                    generationParameters: generationParameters,
-                    initialPromptTokens: initialPromptTokens,
-                    languageTokenId: detectedLanguageToken,
-                    onTokenDelta: { delta in
-                        if !delta.isEmpty {
-                            continuation.yield(.token(delta))
-                        }
+            do {
+                for (index, chunk) in chunks.enumerated() {
+                    try Task.checkCancellation()
+                    if generationParameters.verbose {
+                        let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
+                        print(
+                            "[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s"
+                        )
                     }
-                )
-                totalPromptTokens += promptTokens
-                totalGenerationTokens += generationTokens
-                if detectedLanguage == nil { detectedLanguage = lang }
-                if detectedLanguageToken == nil { detectedLanguageToken = langToken }
 
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    allText.append(trimmed)
-                    let endSeconds = Double(chunk.offsetSeconds) + Double(chunk.audio.dim(0)) / Double(WhisperAudioConfig.sampleRate)
-                    allSegments.append([
-                        "text": trimmed,
-                        "start": Double(chunk.offsetSeconds),
-                        "end": endSeconds,
-                    ])
+                    let (text, promptTokens, generationTokens, lang, langToken) = try transcribeChunk(
+                        audio: chunk.audio,
+                        generationParameters: generationParameters,
+                        initialPromptTokens: initialPromptTokens,
+                        languageTokenId: detectedLanguageToken,
+                        onTokenDelta: { delta in
+                            if !delta.isEmpty {
+                                continuation.yield(.token(delta))
+                            }
+                        }
+                    )
+                    totalPromptTokens += promptTokens
+                    totalGenerationTokens += generationTokens
+                    if detectedLanguage == nil { detectedLanguage = lang }
+                    if detectedLanguageToken == nil { detectedLanguageToken = langToken }
+
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        allText.append(trimmed)
+                        let endSeconds = Double(chunk.offsetSeconds) + Double(chunk.audio.dim(0)) / Double(WhisperAudioConfig.sampleRate)
+                        allSegments.append([
+                            "text": trimmed,
+                            "start": Double(chunk.offsetSeconds),
+                            "end": endSeconds,
+                        ])
+                    }
                 }
+            } catch {
+                continuation.finish(throwing: error)
+                return
             }
 
             let elapsed = Date().timeIntervalSince(startTime)
@@ -215,6 +242,12 @@ public final class WhisperModel: Module {
         return tokenizer.encodePrompt(prompt, maxTargetPositions: config.maxTargetPositions)
     }
 
+    /// Tied-embedding projection via `asLinear`, which stays correct when the
+    /// embedding is quantized (packed weights cannot be matmul'd directly).
+    private func projectToVocab(_ hidden: MLXArray) -> MLXArray {
+        model.decoder.embedTokens.asLinear(hidden)
+    }
+
     /// Single decoder step from `<|startoftranscript|>` restricted to the
     /// language tokens — the same detection pass mlx_whisper runs when no
     /// language is forced (upstream skipped the language slot entirely in
@@ -229,7 +262,7 @@ public final class WhisperModel: Module {
             encoderHidden: encoderHidden,
             caches: &caches
         )
-        let logits = model.decoder.projectToVocab(hidden[0, -1])
+        let logits = projectToVocab(hidden[0, -1])
         let logits1D = logits.ndim > 1 ? logits.squeezed() : logits
         eval(logits1D)
 
@@ -250,7 +283,7 @@ public final class WhisperModel: Module {
         initialPromptTokens: [Int] = [],
         languageTokenId: Int? = nil,
         onTokenDelta: ((String) -> Void)? = nil
-    ) -> (text: String, promptTokens: Int, generationTokens: Int, language: String?, languageTokenId: Int?) {
+    ) throws -> (text: String, promptTokens: Int, generationTokens: Int, language: String?, languageTokenId: Int?) {
         guard let tokenizer else {
             fatalError("WhisperTokenizer not loaded — call fromDirectory before generate.")
         }
@@ -282,7 +315,7 @@ public final class WhisperModel: Module {
             encoderHidden: encoderHidden,
             caches: &caches
         )
-        var logits = model.decoder.projectToVocab(hidden[0, -1])
+        var logits = projectToVocab(hidden[0, -1])
         eval(logits)
 
         var generated: [Int] = []
@@ -301,6 +334,9 @@ public final class WhisperModel: Module {
         )
 
         for step in 0..<maxTokens {
+            // Between GPU evals — the only spot a cancel can interrupt a
+            // window without cutting a blocking eval in half.
+            try Task.checkCancellation()
             var stepLogits = logits
             if step == 0, !beginSuppress.isEmpty {
                 stepLogits = suppressLogits(stepLogits, ids: beginSuppress)
@@ -336,7 +372,7 @@ public final class WhisperModel: Module {
                 encoderHidden: encoderHidden,
                 caches: &caches
             )
-            logits = model.decoder.projectToVocab(hidden[0, -1])
+            logits = projectToVocab(hidden[0, -1])
             eval(logits)
             if generated.count % 256 == 0 {
                 Memory.clearCache()
@@ -483,8 +519,9 @@ public final class WhisperModel: Module {
         if rawKey == "decoder.positional_embedding" {
             return "model.decoder.embed_positions.weight"
         }
-        if rawKey == "decoder.token_embedding.weight" {
-            return "model.decoder.embed_tokens.weight"
+        if let rest = stripPrefix(rawKey, "decoder.token_embedding.") {
+            // weight, plus scales/biases on quantized checkpoints.
+            return "model.decoder.embed_tokens." + rest
         }
         if rawKey == "encoder.conv1.weight" || rawKey == "encoder.conv1.bias"
             || rawKey == "encoder.conv2.weight" || rawKey == "encoder.conv2.bias"
@@ -598,6 +635,17 @@ public final class WhisperModel: Module {
             weights.merge(shard) { _, new in new }
         }
         let sanitized = sanitize(weights: weights, config: config)
+        if let quantization = config.quantization {
+            // Swap in quantized layers before the update so the checkpoint's
+            // packed weights + scales/biases land on matching parameters.
+            // Only layers the converter actually quantized carry `scales`.
+            MLXNN.quantize(
+                model: model,
+                groupSize: quantization.groupSize,
+                bits: quantization.bits,
+                filter: { path, _ in sanitized["\(path).scales"] != nil }
+            )
+        }
         try model.update(parameters: ModuleParameters.unflattened(sanitized), verify: .all)
 
         // mlx-community Whisper repos ship weights only; fetch the tokenizer
@@ -634,13 +682,9 @@ public final class WhisperModel: Module {
         vocabSize: Int,
         cache: HubCache
     ) async throws -> URL {
-        let tokenizerRepo: String
-        switch vocabSize {
-        case 51866: tokenizerRepo = "openai/whisper-large-v3"
-        case 51865: tokenizerRepo = "openai/whisper-medium"
-        case 51864: tokenizerRepo = "openai/whisper-medium.en"
-        default: tokenizerRepo = "openai/whisper-large-v3"
-        }
+        let (tokenizerRepo, tokenizerRevision) = WhisperModelDownloader.tokenizerRepo(
+            forVocabSize: vocabSize
+        )
 
         let hfToken =
             ProcessInfo.processInfo.environment["HF_TOKEN"]
@@ -687,7 +731,7 @@ public final class WhisperModel: Module {
             of: repoID,
             kind: .model,
             to: targetDir,
-            revision: "main",
+            revision: tokenizerRevision,
             matching: needed,
             progressHandler: { _ in }
         )

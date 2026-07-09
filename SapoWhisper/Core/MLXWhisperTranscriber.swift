@@ -58,7 +58,10 @@ actor MLXWhisperEngine {
             language: language,
             initialPrompt: initialPrompt
         )
-        return model.generate(samples: samples, generationParameters: parameters)
+        // Throws CancellationError when the caller's task is cancelled — the
+        // decode loop checks between windows and steps, so a retranscribe of
+        // a long WAV stops early instead of running to completion.
+        return try model.generate(samples: samples, generationParameters: parameters)
     }
 }
 
@@ -327,6 +330,7 @@ class MLXWhisperTranscriber {
             do {
                 let directory = try await WhisperModelDownloader.download(
                     repo: model.rawValue,
+                    revision: model.revision,
                     root: Self.modelsRootDirectory,
                     progress: { fraction in
                         guard let self else { return }
@@ -468,6 +472,11 @@ class MLXWhisperTranscriber {
                 "MLX transcription complete chars=\(transcription.count, privacy: .public) seconds=\(String(format: "%.2f", output.totalTime), privacy: .public) promptTokens=\(output.promptTokens, privacy: .public)"
             )
             return transcription
+        } catch is CancellationError {
+            // Cancel is not a failure: no errorMessage, callers see the
+            // CancellationError itself.
+            SapoLog.recording.info("MLX transcription cancelled")
+            throw CancellationError()
         } catch let error as MLXWhisperError {
             errorMessage = error.localizedDescription
             throw error

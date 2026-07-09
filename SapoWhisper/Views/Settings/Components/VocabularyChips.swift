@@ -32,7 +32,7 @@ struct VocabularyTermRow: View {
         .padding(.vertical, 6)
         .background(chipBackground(isHovering: isHovering))
         .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(Constants.Animation.hover, value: isHovering)
     }
 }
 
@@ -73,7 +73,7 @@ struct VocabularyReplacementRow: View {
         .padding(.vertical, 6)
         .background(chipBackground(isHovering: isHovering))
         .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(Constants.Animation.hover, value: isHovering)
     }
 }
 
@@ -93,7 +93,7 @@ private struct VocabularyAIBadge: View {
     var body: some View {
         Text("vocab.learning.saved_badge".localized)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(Color.sapoGreen)
+            .foregroundStyle(Color.sapoGreenText)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(
@@ -104,10 +104,13 @@ private struct VocabularyAIBadge: View {
     }
 }
 
-/// Delete button that stays in the layout (no reflow) but only shows on hover.
+/// Delete button that stays in the layout (no reflow) but only shows on hover
+/// or while keyboard focus sits on it (Full Keyboard Access / VoiceOver).
 private struct VocabularyDeleteButton: View {
     let isVisible: Bool
     let action: () -> Void
+
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
@@ -116,7 +119,8 @@ private struct VocabularyDeleteButton: View {
                 .font(.caption)
         }
         .buttonStyle(.plain)
-        .opacity(isVisible ? 1 : 0)
+        .focused($isFocused)
+        .opacity(isVisible || isFocused ? 1 : 0)
         .accessibilityLabel("config.delete_term_accessibility".localized)
     }
 }

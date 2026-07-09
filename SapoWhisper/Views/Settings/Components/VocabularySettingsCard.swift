@@ -165,6 +165,7 @@ struct VocabularySettingsCard: View {
         .menuIndicator(.hidden)
         .frame(width: 28)
         .help("settings.vocabulary.transfer_help".localized)
+        .accessibilityLabel("settings.vocabulary.transfer_help".localized)
     }
 
     private var searchField: some View {
@@ -181,6 +182,7 @@ struct VocabularySettingsCard: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("common.clear_search".localized)
             }
         }
         .padding(.horizontal, 10)
@@ -252,7 +254,7 @@ struct VocabularySettingsCard: View {
                 .font(.caption)
                 .disabled(newKeyterm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .animation(.easeOut(duration: 0.15), value: newKeyterm.isEmpty)
+        .animation(Constants.Animation.hover, value: newKeyterm.isEmpty)
     }
 
     /// Live limit feedback while typing, before the term is saved. Over-limit
@@ -406,13 +408,13 @@ struct VocabularySettingsCard: View {
             HStack(spacing: 6) {
                 Label("vocab.learning.title".localized, systemImage: "sparkles")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.sapoGreen)
+                    .foregroundStyle(Color.sapoGreenText)
 
                 Spacer(minLength: 0)
 
                 Text("vocab.learning.badge".localized)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.sapoGreen)
+                    .foregroundStyle(Color.sapoGreenText)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(
@@ -589,6 +591,7 @@ private struct LearnedCorrectionSuggestionRow: View {
             }
             .buttonStyle(.plain)
             .help("vocab.learning.accept".localized)
+            .accessibilityLabel("vocab.learning.accept".localized)
 
             Button(action: onEdit) {
                 Image(systemName: "pencil.circle")
@@ -596,6 +599,7 @@ private struct LearnedCorrectionSuggestionRow: View {
             }
             .buttonStyle(.plain)
             .help("vocab.learning.edit".localized)
+            .accessibilityLabel("vocab.learning.edit".localized)
 
             Button(action: onReject) {
                 Image(systemName: "xmark.circle")
@@ -603,6 +607,7 @@ private struct LearnedCorrectionSuggestionRow: View {
             }
             .buttonStyle(.plain)
             .help("vocab.learning.ignore".localized)
+            .accessibilityLabel("vocab.learning.ignore".localized)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

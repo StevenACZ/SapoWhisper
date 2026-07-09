@@ -367,7 +367,8 @@ class OverlayWindowManager: ObservableObject {
         }
 
         updateDisplayedSecond(for: newState)
-        let leavingDock = state.stateCategory == "docked"
+        let previousCategory = state.stateCategory
+        let leavingDock = previousCategory == "docked"
 
         // A fresh presentation (leaving the dock, or appearing from hidden)
         // opens on the screen the user is working on — the mouse screen. The
@@ -405,6 +406,7 @@ class OverlayWindowManager: ObservableObject {
             resumeOffer = nil
         }
         SapoLog.overlay.info("Overlay state changed to \(newState.stateCategory, privacy: .public)")
+        announceStateTransition(from: previousCategory, to: newState)
 
         if case .recording = newState {
             beginMeterSession()
@@ -414,6 +416,38 @@ class OverlayWindowManager: ObservableObject {
         if shouldShowOverlay(for: newState) {
             show()
         }
+    }
+
+    /// Speaks meaningful phase transitions to VoiceOver. The overlay is a
+    /// non-activating transparent panel VoiceOver never focuses, so the
+    /// announcement must be posted for the application element — posting it
+    /// on the panel itself is silently dropped. Medium priority reads politely
+    /// without interrupting; only category CHANGES speak (duration ticks and
+    /// same-state refreshes bypass or guard out).
+    private func announceStateTransition(from previousCategory: String, to newState: RecordingOverlayState) {
+        guard newState.stateCategory != previousCategory else { return }
+
+        let key: String?
+        switch newState {
+        case .recording: key = "overlay.a11y.recording_started"
+        case .transcribing: key = "overlay.a11y.transcribing"
+        case .copied: key = "overlay.a11y.pasted"
+        case .error: key = "overlay.a11y.error"
+        default: key = nil
+        }
+        guard let key else { return }
+
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: key.localized,
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+            ]
+        )
+        SapoLog.overlay.info(
+            "Overlay VO announcement for \(newState.stateCategory, privacy: .public)"
+        )
     }
 
     /// Actualiza el nivel de audio (para el ecualizador)

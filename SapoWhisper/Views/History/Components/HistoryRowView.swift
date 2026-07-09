@@ -46,7 +46,7 @@ struct HistoryRowView: View {
 
                 if entry.audioFileExists {
                     Image(systemName: "waveform")
-                        .foregroundStyle(Color.sapoGreen)
+                        .foregroundStyle(Color.sapoGreenText)
                 }
 
                 if entry.isFavorite {
@@ -90,26 +90,13 @@ private struct EngineIndicator: View {
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(color)
+                .fill(HistoryEngineColor.color(for: engine))
                 .frame(width: 6, height: 6)
 
             Text(shortName)
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-        }
-    }
-
-    private var color: Color {
-        switch engine.lowercased() {
-        case let e where e.contains("local ai"): return .indigo
-        case let e where e.contains("elevenlabs"): return .teal
-        case let e where e.contains("deepgram"): return .blue
-        case let e where e.contains("gemini"): return .cyan
-        case let e where e.contains("google"): return .orange
-        case let e where e.contains("whisper"): return .purple
-        case let e where e.contains("apple"): return .green
-        default: return .secondary
         }
     }
 

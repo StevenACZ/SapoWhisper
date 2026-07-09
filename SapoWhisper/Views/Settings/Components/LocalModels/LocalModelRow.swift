@@ -121,7 +121,7 @@ struct LocalModelRow: View {
                 if isDownloaded, let size = downloadedSize {
                     Text(size.byteCountLabel)
                         .font(.caption)
-                        .foregroundColor(.sapoGreen)
+                        .foregroundColor(.sapoGreenText)
                         .contentTransition(.numericText())
                 } else {
                     Text(model.fileSize)
@@ -203,6 +203,7 @@ struct LocalModelRow: View {
         }
         .buttonStyle(.plain)
         .help(helpKey.localized)
+        .accessibilityLabel(helpKey.localized)
         .transition(.scale.combined(with: .opacity))
     }
 

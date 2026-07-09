@@ -37,7 +37,7 @@ struct AIPolishProviderSection: View {
                     .transition(.opacity)
             }
         }
-        .animation(.smooth(duration: 0.25), value: isExpanded)
+        .animation(Constants.Animation.reveal, value: isExpanded)
     }
 
     // MARK: - Collapsed summary
@@ -77,7 +77,7 @@ struct AIPolishProviderSection: View {
 
             Button("ai.provider.summary_edit".localized) {
                 onWillExpand()
-                withAnimation(.smooth(duration: 0.25)) {
+                withAnimation(Constants.Animation.reveal) {
                     isExpanded = true
                 }
             }
@@ -107,13 +107,13 @@ struct AIPolishProviderSection: View {
 
                 if isProviderUsable {
                     Button("ai.provider.summary_done".localized) {
-                        withAnimation(.smooth(duration: 0.25)) {
+                        withAnimation(Constants.Animation.reveal) {
                             isExpanded = false
                         }
                     }
                     .buttonStyle(.plain)
                     .font(.caption)
-                    .foregroundStyle(Color.sapoGreen)
+                    .foregroundStyle(Color.sapoGreenText)
                 }
             }
 
@@ -179,7 +179,7 @@ struct AIPolishProviderSection: View {
 
             testRow
         }
-        .animation(.smooth(duration: 0.25), value: endpoint)
+        .animation(Constants.Animation.reveal, value: endpoint)
     }
 
     private var shouldShowAPIKeyRow: Bool {
@@ -219,7 +219,7 @@ struct AIPolishProviderSection: View {
     private var optionalAPIKeyButton: some View {
         Button {
             onWillEditAPIKey()
-            withAnimation(.smooth(duration: 0.2)) {
+            withAnimation(Constants.Animation.reveal) {
                 showsOptionalAPIKey = true
             }
         } label: {
@@ -252,7 +252,7 @@ struct AIPolishProviderSection: View {
             case .success(let modelIdentifier):
                 Label("ai.provider.test_success".localized(modelIdentifier), systemImage: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(Color.sapoGreen)
+                    .foregroundStyle(Color.sapoGreenText)
                     .symbolEffect(.bounce, value: testState)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -285,7 +285,7 @@ struct AIPolishProviderSection: View {
                 // configuration away after a beat so the result stays legible.
                 try? await Task.sleep(for: .seconds(1.2))
                 if case .success = testState {
-                    withAnimation(.smooth(duration: 0.25)) {
+                    withAnimation(Constants.Animation.reveal) {
                         isExpanded = false
                     }
                 }

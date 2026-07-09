@@ -31,6 +31,6 @@ struct SettingsTextEditor: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(isFocused ? Color.sapoGreen.opacity(0.45) : Color.secondary.opacity(0.18))
             )
-            .animation(.easeInOut(duration: 0.15), value: isFocused)
+            .animation(Constants.Animation.hover, value: isFocused)
     }
 }

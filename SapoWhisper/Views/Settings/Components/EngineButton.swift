@@ -121,7 +121,7 @@ struct EngineOptionRow<Details: View>: View {
                 .padding(.leading, 52)
 
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
+                withAnimation(Constants.Animation.reveal) {
                     isExpanded.toggle()
                 }
             } label: {

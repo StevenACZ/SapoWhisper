@@ -295,7 +295,7 @@ struct GeneralSettingsTab: View {
                             Spacer()
                             Text("\(Int(soundVolume * 100))%")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Constants.Colors.sapoGreen)
+                                .foregroundStyle(Constants.Colors.sapoGreenText)
                                 .monospacedDigit()
                         }
 
@@ -311,7 +311,7 @@ struct GeneralSettingsTab: View {
                             .font(.caption)
                     }
                     .buttonStyle(.borderless)
-                    .foregroundStyle(Constants.Colors.sapoGreen)
+                    .foregroundStyle(Constants.Colors.sapoGreenText)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
@@ -345,7 +345,7 @@ struct GeneralSettingsTab: View {
                             Spacer()
                             Text("\(Int(autoDuckingAmount * 100))%")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Constants.Colors.sapoGreen)
+                                .foregroundStyle(Constants.Colors.sapoGreenText)
                                 .monospacedDigit()
                         }
 
@@ -392,7 +392,7 @@ struct GeneralSettingsTab: View {
                             fromByteCount: historyAudioUsageBytes, countStyle: .file)
                     )
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Constants.Colors.sapoGreen)
+                    .foregroundStyle(Constants.Colors.sapoGreenText)
                     .monospacedDigit()
                 }
 

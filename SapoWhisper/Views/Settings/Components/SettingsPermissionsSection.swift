@@ -40,7 +40,7 @@ struct SettingsPermissionsSection: View {
     @ViewBuilder
     private var expandableSummary: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(Constants.Animation.reveal) {
                 isExpanded.toggle()
             }
         } label: {
@@ -116,7 +116,7 @@ struct SettingsPermissionsSection: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                .animation(Constants.Animation.reveal, value: isExpanded)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)

@@ -59,6 +59,7 @@ struct HistorySidebarView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("common.clear_search".localized)
                     }
                 }
                 .padding(.horizontal, 9)
@@ -129,8 +130,10 @@ struct HistorySidebarView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .animation(.smooth(duration: 0.2), value: engineFilter)
+        .animation(Constants.Animation.reveal, value: engineFilter)
         .help(engineFilter.displayName)
+        .accessibilityLabel("history.filter_by_engine".localized)
+        .accessibilityValue(engineFilter.displayName)
     }
 
     private var activeFilterTint: Color {

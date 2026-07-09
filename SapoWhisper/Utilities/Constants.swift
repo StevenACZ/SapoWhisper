@@ -81,6 +81,13 @@ nonisolated enum Constants {
         /// Snappy selection/confirmation spring for chips, pickers, toggles.
         static let springSnap: SwiftUI.Animation = .spring(duration: 0.25, bounce: 0.35)
 
+        /// Medium content swaps: detail-pane changes, section switches,
+        /// copied-state toggles.
+        static let transition: SwiftUI.Animation = .smooth(duration: 0.3)
+
+        /// Invalid-input shake driver (hotkey recorder, keycap rows).
+        static let shake: SwiftUI.Animation = .spring(duration: 0.4)
+
         /// System Reduce Motion for non-View call sites (managers); views
         /// should read `@Environment(\.accessibilityReduceMotion)` instead.
         @MainActor static var reduceMotion: Bool {

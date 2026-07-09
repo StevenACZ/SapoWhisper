@@ -89,6 +89,13 @@
 "history.ai_polish_notice_title" = "AI polish not applied";
 "history.ai_polish_rejected_notice" = "The polish was discarded because it drifted from your original words (fidelity protection). Your transcript was kept as-is.";
 "history.ai_polish_unavailable_notice" = "Couldn't apply AI polish. Check that the provider is configured in the Prompts tab.";
+"history.export_sensitive_notice" = "This file will contain dictated content from your history.";
+"history.audio_scrubber" = "Playback position";
+"history.audio_position" = "%@ of %@";
+"history.toggle_sidebar" = "Show or hide the sidebar";
+"history.more_actions" = "More actions";
+"history.filter_by_engine" = "Filter by engine";
+"common.clear_search" = "Clear search";
 
 "common.cancel" = "Cancel";
 "common.ok" = "OK";
@@ -615,3 +622,11 @@
 "overlay.cancelled_saved" = "Cancelled — audio saved to History";
 "settings.welcome_tour_open" = "Open";
 "overlay.dock_last" = "Last transcription";
+
+/* Overlay accessibility (VoiceOver) */
+"overlay.a11y.pause" = "Pause recording";
+"overlay.a11y.resume" = "Resume recording";
+"overlay.a11y.recording_started" = "Recording started";
+"overlay.a11y.transcribing" = "Transcribing";
+"overlay.a11y.pasted" = "Text pasted";
+"overlay.a11y.error" = "Dictation failed";

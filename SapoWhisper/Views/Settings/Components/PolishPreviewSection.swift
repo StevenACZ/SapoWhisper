@@ -96,7 +96,7 @@ struct PolishPreviewSection: View {
                 EmptyView()
             }
         }
-        .animation(.smooth(duration: 0.25), value: state)
+        .animation(Constants.Animation.reveal, value: state)
     }
 
     private func polishedTitle(for mode: PolishMode) -> String {
