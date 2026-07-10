@@ -1,16 +1,22 @@
 //
 //  AppleSpeechTranscriber.swift
-//  SapoWhisper
+//  SapoWhisperTests
 //
 //  On-device transcription through Apple's SpeechAnalyzer/SpeechTranscriber
-//  stack (macOS 26+). Phase 1: core transcription and asset lifecycle only —
-//  engine-enum and Settings wiring land separately.
+//  stack (macOS 26+). Lives in the TEST target as the es/en code-switch gate
+//  harness: the 2026-07-09 fixture run scored weighted 44.8 vs MLX turbo's
+//  88.2 (git/file/brand terms mangled; SpeechTranscriber accepts no
+//  contextual vocabulary per Apple DTS), so the engine is NOT wired into the
+//  app. Re-run AppleSpeechFixtureBenchTests with SAPO_BENCH=1 on new macOS
+//  releases; promote this file back to the app target if the gate ever passes.
 //
 
 import AVFoundation
 import Foundation
 import Speech
 import os
+
+@testable import SapoWhisper
 
 /// Owns the Apple Speech asset lifecycle for one locale at a time and runs
 /// file transcriptions through `SpeechAnalyzer`. Awaits on the main actor are
