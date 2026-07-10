@@ -36,7 +36,7 @@ struct PermissionSummaryBanner: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .tint(.orange)
+            .tint(Constants.Colors.warningProminent)
         }
         .padding(10)
         .background(

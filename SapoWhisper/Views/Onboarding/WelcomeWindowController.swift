@@ -21,7 +21,7 @@ struct WelcomeWindowHost: View {
     var body: some View {
         WelcomeView(viewModel: viewModel, onFinish: onFinish, onDismiss: onDismiss)
             .environment(\.locale, localizationManager.locale)
-            .tint(Constants.Colors.sapoGreen)
+            .tint(Constants.Colors.sapoGreenDark)
             .id(localizationManager.language)
     }
 }

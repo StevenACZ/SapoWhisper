@@ -42,7 +42,7 @@ struct WelcomeView: View {
                     .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.smooth(duration: 0.35), value: step)
+            .animation(Constants.Animation.transition, value: step)
 
             navigationBar
         }
@@ -136,7 +136,7 @@ struct WelcomeView: View {
         HStack {
             if step != .welcome && step != .ready {
                 Button("welcome.back".localized) {
-                    withAnimation(.smooth(duration: 0.35)) {
+                    withAnimation(Constants.Animation.transition) {
                         step = WelcomeStep(rawValue: step.rawValue - 1) ?? .welcome
                     }
                 }
@@ -157,7 +157,7 @@ struct WelcomeView: View {
                 advance()
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color.sapoGreen)
+            .tint(Color.sapoGreenDark)
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
             .disabled(!canContinue)
@@ -172,7 +172,7 @@ struct WelcomeView: View {
             onFinish()
             return
         }
-        withAnimation(.smooth(duration: 0.35)) {
+        withAnimation(Constants.Animation.transition) {
             step = WelcomeStep(rawValue: step.rawValue + 1) ?? .ready
         }
     }
@@ -1175,7 +1175,7 @@ private struct ProgressRing: View {
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 3.5)
             Circle()
                 .trim(from: 0, to: max(0.02, min(progress, 1)))
-                .stroke(Color.sapoGreen, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                .stroke(Color.sapoGreenText, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(Constants.Animation.transition, value: progress)
         }

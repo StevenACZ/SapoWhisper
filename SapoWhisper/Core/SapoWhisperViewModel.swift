@@ -28,12 +28,6 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    private struct PersistedHistoryEntry {
-        let id: Int64
-        let audioURL: URL?
-        let copiedAudioToHistory: Bool
-    }
-
     // MARK: - Published Properties
 
     @Published private(set) var appState: AppState = .idle
@@ -100,10 +94,14 @@ class SapoWhisperViewModel: ObservableObject {
     let localAIServerTranscriber = LocalAIServerTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
     private let transcriptPostProcessor = TranscriptPostProcessor()
-
-    // Retry support
-    @Published var lastFailedAudioURL: URL?
-    private var lastFailedHistoryId: Int64?
+    /// Dictation→History persistence + retry/re-polish row bookkeeping.
+    private lazy var persister = DictationHistoryPersister(
+        deleteSourceAudio: { [audioRecorder] in audioRecorder.deleteRecording(at: $0) }
+    )
+    /// Batch capture start with device-aware retry (Bluetooth budgets).
+    private lazy var captureStartSupervisor = CaptureStartSupervisor(recorder: audioRecorder)
+    /// Clipboard + synthetic Cmd+V delivery seam.
+    private let paste: any PasteDelivering = SystemPasteDelivery()
 
     // Overlay re-polish support
     /// Raw transcript + duration of the last live dictation, kept so the
@@ -111,11 +109,6 @@ class SapoWhisperViewModel: ObservableObject {
     /// translation chip).
     private var lastDictationRawText: String?
     private var lastDictationDuration: TimeInterval?
-    /// History row of the last completed dictation (arrives async from the
-    /// background persistence task); lets a re-polish update the row in place.
-    private var lastCompletedHistoryId: Int64?
-    /// Invalidates a stale persistence callback racing a newer dictation.
-    private var dictationGeneration: UInt64 = 0
     private var isRepolishInFlight = false
 
     // Reentrancy guard for retryTranscription: a second Retry (double click /
@@ -124,15 +117,6 @@ class SapoWhisperViewModel: ObservableObject {
     private var isRetryInFlight = false
 
     private static let stopTailPadding: TimeInterval = 0.12
-    private static let firstInputBufferTimeout: TimeInterval = 0.8
-    private static let startRetryBudget: TimeInterval = 1.0
-    /// Bluetooth inputs renegotiate the link when the mic opens (AirPods
-    /// switch A2DP→HFP, 1–3 s of dead air). The default timeouts declared the
-    /// capture failed while the handshake was still in flight, so BT inputs
-    /// get a wider first-buffer window and retry budget.
-    private static let bluetoothFirstInputBufferTimeout: TimeInterval = 2.5
-    private static let bluetoothStartRetryBudget: TimeInterval = 5.0
-    private static let startRetryBackoffs: [TimeInterval] = [0.15, 0.30]
     private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
     private var startRecordingTask: Task<Void, Never>?
@@ -147,56 +131,20 @@ class SapoWhisperViewModel: ObservableObject {
     /// C1: shared transcribe→polish→paste→persist flow for the three stop paths.
     private lazy var transcriptionPipeline = TranscriptionPipeline(host: self)
 
-    // No-speech fast path: track the session peak from the overlay level
-    // stream. The threshold is deliberately conservative (~−55 dBFS in the
-    // normalized 0...1 scale) so quiet speakers are never misclassified.
-    private var sessionPeakAudioLevel: Float = 0
-    private var sessionLevelTrackingStartedAt: CFAbsoluteTime = 0
-    private static let noSpeechPeakLevelThreshold: Float = 0.085
-    private static let noSpeechHintDelay: TimeInterval = 3.0
+    // No-speech fast path: session peak tracking lives in the extracted
+    // tracker; the host-protocol property below delegates to it.
+    private var levelTracker = SessionAudioLevelTracker()
 
-    var sessionLooksSilent: Bool {
-        sessionPeakAudioLevel < Self.noSpeechPeakLevelThreshold
-    }
+    var sessionLooksSilent: Bool { levelTracker.looksSilent }
 
     // MARK: - Resumable dictation (continue-previous merge)
 
-    /// A recently cancelled or crash-recovered take the user may prepend to
-    /// the next recording ("continuar dictado anterior").
-    struct ResumableDictation {
-        let historyId: Int64
-        let audioURL: URL
-        let duration: TimeInterval
-        let capturedAt: Date
-    }
-
-    private var resumableDictation: ResumableDictation?
-    /// The user opted into the merge via the recording pill chip.
-    private var resumeMergeRequested = false
-    /// Offers older than this are stale — a new dictation is a new thought.
-    private static let resumableDictationWindow: TimeInterval = 30 * 60
-
-    /// The current offer, or nil when expired / audio gone.
-    private var validResumableDictation: ResumableDictation? {
-        guard let resumable = resumableDictation else { return nil }
-        guard Date().timeIntervalSince(resumable.capturedAt) < Self.resumableDictationWindow,
-            FileManager.default.fileExists(atPath: resumable.audioURL.path)
-        else {
-            resumableDictation = nil
-            return nil
-        }
-        return resumable
-    }
+    /// Offer/merge-request state for "continuar dictado anterior".
+    private let resumableStore = ResumableDictationStore()
 
     /// Launch-time entry point: the orphan recovery adopted a crashed take.
     func offerResumableDictation(_ resumable: ResumableDictation) {
-        resumableDictation = resumable
-    }
-
-    /// m:ss label for the resume chip.
-    private static func formatResumeDuration(_ duration: TimeInterval) -> String {
-        let total = max(0, Int(duration.rounded()))
-        return String(format: "%d:%02d", total / 60, total % 60)
+        resumableStore.offer(resumable)
     }
 
     // MARK: - Computed Properties
@@ -335,7 +283,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
         overlayManager.onResumeToggled = { [weak self] isActive in
             guard let self else { return }
-            self.resumeMergeRequested = isActive
+            self.resumableStore.mergeRequested = isActive
             SapoLog.recording.info("Resume-previous merge toggled active=\(isActive, privacy: .public)")
         }
         overlayManager.onOpenHistoryRequested = { [weak self] in
@@ -349,10 +297,10 @@ class SapoWhisperViewModel: ObservableObject {
     /// dictated. The pill collapses first so the overlay never floats over
     /// the opening window.
     private func openHistoryForLastTranscription() {
-        HistoryFocusRequest.pendingEntryID = lastCompletedHistoryId
+        HistoryFocusRequest.pendingEntryID = persister.lastCompletedHistoryId
         overlayManager.hide()
         NotificationCenter.default.post(name: HistoryFocusRequest.notification, object: nil)
-        SapoLog.overlay.info("Open history from result pill entryId=\(self.lastCompletedHistoryId ?? -1, privacy: .public)")
+        SapoLog.overlay.info("Open history from result pill entryId=\(self.persister.lastCompletedHistoryId ?? -1, privacy: .public)")
     }
 
     /// Mirrors the Settings behavior: engines never translate, so the moment
@@ -910,7 +858,7 @@ class SapoWhisperViewModel: ObservableObject {
             activeRecordingSessionID = nil
             // No session/audio here, so a Retry must start fresh, not retranscribe
             // a stale prior failure ([6]).
-            clearFailedRetryState()
+            persister.clearRetryState()
             SapoLog.recording.warning("Recording blocked offline engine=\(engine.rawValue, privacy: .public)")
             presentTranscriptionFailure(
                 TranscriptionFailure(
@@ -922,7 +870,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         // Guardar la app activa para volver a ella despues de pegar
-        PasteManager.savePreviousApp()
+        paste.savePreviousApp()
 
         // Cloud batch stops pay DNS+TLS inside stop→paste on a cold pool;
         // open the connection now, while the user is still dictating (the
@@ -946,8 +894,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         // Mostrar overlay PRIMERO para feedback visual inmediato
-        sessionPeakAudioLevel = 0
-        sessionLevelTrackingStartedAt = triggerTime
+        levelTracker.beginSession(at: triggerTime)
         transition(to: .recording, reason: "start-optimistic")
 
         overlayManager.updateState(.recording(duration: 0))
@@ -958,10 +905,11 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Continue-previous offer: only the batch recorder can prepend audio
         // at stop time (streaming engines transcribe live). Starts opted-out.
-        resumeMergeRequested = false
+        resumableStore.mergeRequested = false
         let isBatchEngine = !isElevenLabsRealtimeSelected && !isDeepgramFluxLiveSelected
-        if isBatchEngine, let resumable = validResumableDictation {
-            overlayManager.setResumeOffer(durationLabel: Self.formatResumeDuration(resumable.duration))
+        if isBatchEngine, let resumable = resumableStore.validOffer {
+            overlayManager.setResumeOffer(
+                durationLabel: ResumableDictationStore.formatResumeDuration(resumable.duration))
         } else {
             overlayManager.setResumeOffer(durationLabel: nil)
         }
@@ -1003,7 +951,7 @@ class SapoWhisperViewModel: ObservableObject {
                 playSound: playSound,
                 triggerTime: triggerTime,
                 prepare: { audioRecorder.cancelPendingSetup() },
-                start: { try await self.startRecorderWithRecovery(microphone: mic) }
+                start: { try await self.captureStartSupervisor.start(microphone: mic, targetEngine: engine) }
             )
         }
     }
@@ -1073,8 +1021,7 @@ class SapoWhisperViewModel: ObservableObject {
         )
         // A retry transcribes the failed row's HISTORY audio — going stale
         // must never delete a file the History still references.
-        guard audioURL != lastFailedAudioURL else { return }
-        audioRecorder.deleteRecording(at: audioURL)
+        persister.cleanUpStaleAudio(audioURL)
     }
 
     /// Shared stop-request path (L6): the UI reacts immediately; the tail
@@ -1224,7 +1171,7 @@ class SapoWhisperViewModel: ObservableObject {
                 activeTranscriptionSessionID = nil
                 // The audio was just deleted, so the (retryable) .recordingInterrupted
                 // must not let Retry retranscribe a STALE prior session's audio ([6]).
-                clearFailedRetryState()
+                persister.clearRetryState()
                 presentTranscriptionFailure(TranscriptionFailure(kind: .recordingInterrupted))
                 return
             }
@@ -1233,8 +1180,7 @@ class SapoWhisperViewModel: ObservableObject {
             // transcription so one transcript covers both. On merge failure
             // the current take still transcribes alone — never lose new audio
             // over an enhancement.
-            let mergeResumable = resumeMergeRequested ? validResumableDictation : nil
-            resumeMergeRequested = false
+            let mergeResumable = resumableStore.consumeRequestedMerge()
 
             // No-speech fast path: the whole session peaked below the silence
             // threshold, so skip the network entirely. The WAV stays on disk
@@ -1262,7 +1208,7 @@ class SapoWhisperViewModel: ObservableObject {
                     audioRecorder.deleteRecording(at: audioURL)
                     effectiveAudioURL = mergedURL
                     effectiveDuration = mergeResumable.duration + duration
-                    resumableDictation = nil
+                    resumableStore.clearOffer()
                     // The merged take supersedes the recovered/cancelled row;
                     // keeping it would duplicate the same audio in History.
                     historyManager.delete(id: mergeResumable.historyId)
@@ -1304,17 +1250,8 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
-    /// Drops any pending failed-retry state. Called when a session ends without
-    /// persisting a retryable failure (empty / interrupted / offline fast-fail),
-    /// so a later Retry cannot retranscribe and paste a STALE prior session's
-    /// audio (the interrupted/offline paths leave no valid audio to retry).
-    private func clearFailedRetryState() {
-        lastFailedAudioURL = nil
-        lastFailedHistoryId = nil
-    }
-
     func retryTranscription() {
-        guard let audioURL = lastFailedAudioURL else {
+        guard let audioURL = persister.lastFailedAudioURL else {
             guard canStartRecordingFromHotkey() else { return }
             startRecording()
             return
@@ -1328,7 +1265,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         let engine = currentEngine
         let language = selectedLanguage
-        let historyId = lastFailedHistoryId
+        let historyId = persister.lastFailedHistoryId
         let duration = historyId.flatMap { historyManager.duration(for: $0) }
         let sessionID = nextRecordingSessionID()
         activeTranscriptionSessionID = sessionID
@@ -1386,11 +1323,14 @@ class SapoWhisperViewModel: ObservableObject {
 
         do {
             let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
+            try Task.checkCancellation()
             let aiResult = await postProcessTranscript(
                 transcription,
                 source: "history-retranscribe",
                 duration: entry.duration
             )
+            // A cancel during the polish phase must not write the row either.
+            try Task.checkCancellation()
             // Update the original row in place — no duplicate rows, no second
             // audio copy; the first engine is kept in original_engine.
             historyManager.updateRetranscription(
@@ -1406,6 +1346,12 @@ class SapoWhisperViewModel: ObservableObject {
 
             return HistoryRetranscriptionResult(entryId: entry.id, errorMessage: nil)
         } catch {
+            // User-cancelled: the row stays untouched and no failure alert
+            // shows. Task.isCancelled also covers engine errors thrown while
+            // a cancellation was already pending (cloud URLError wrapping).
+            if error is CancellationError || Task.isCancelled {
+                return HistoryRetranscriptionResult(entryId: entry.id, errorMessage: nil)
+            }
             // A failed retranscribe must not degrade the existing row; the
             // error only surfaces in the UI.
             return HistoryRetranscriptionResult(
@@ -1557,7 +1503,7 @@ class SapoWhisperViewModel: ObservableObject {
                     reason: "capture-start-failed")
                 self.overlayManager.showError(message: error.localizedDescription)
                 AutoDuckingManager.shared.restore()
-                if playSound && !self.isRecoverableInputStartError(error) {
+                if playSound && !CaptureStartSupervisor.isRecoverableInputStartError(error) {
                     SoundManager.shared.play(.error)
                 }
                 PerformanceDiagnostics.logRuntimeSnapshot(
@@ -1574,133 +1520,23 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    private func startRecorderWithRecovery(microphone: String) async throws {
-        let transport = AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: microphone)
-        let retryBudget = transport == .bluetooth ? Self.bluetoothStartRetryBudget : Self.startRetryBudget
-        if transport == .bluetooth {
-            SapoLog.recording.info("Capture start on Bluetooth input, using extended timeouts")
-        }
-        let deadline = CFAbsoluteTimeGetCurrent() + retryBudget
-        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
-
-        for attempt in 1...3 {
-            guard !Task.isCancelled else { throw CancellationError() }
-
-            do {
-                let didStart = try await attemptRecorderStart(
-                    microphone: microphone,
-                    attempt: attempt,
-                    minimumDelay: attempt == 1 ? 0 : Self.startRetryBackoffs[attempt - 2],
-                    firstInputTimeout: transport == .bluetooth
-                        ? Self.bluetoothFirstInputBufferTimeout : Self.firstInputBufferTimeout
-                )
-                if didStart {
-                    if attempt > 1 {
-                        SapoLog.recording.info("Capture recovered on retry after route transition")
-                    }
-                    return
-                }
-                lastFailure = RecordingError.noInputAfterDeviceSwitch
-            } catch {
-                if error is CancellationError {
-                    throw error
-                }
-                lastFailure = error
-            }
-
-            audioRecorder.discardRecording()
-
-            guard attempt < 3 else { break }
-
-            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
-            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
-            guard classification.isTransient else {
-                throw lastFailure
-            }
-
-            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
-            guard remainingBudget > 0 else { break }
-
-            let retryDelay = min(
-                remainingBudget,
-                max(Self.startRetryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
-            )
-
-            SapoLog.recording.warning(
-                "Capture transient start failure reason=\(classification.reason, privacy: .public) attempt=\(attempt + 1, privacy: .public)/3 retryAfterMs=\(Int(retryDelay * 1000), privacy: .public)"
-            )
-            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
-        }
-
-        throw lastFailure
-    }
-
-    private func attemptRecorderStart(
-        microphone: String,
-        attempt: Int,
-        minimumDelay: TimeInterval,
-        firstInputTimeout: TimeInterval
-    ) async throws -> Bool {
-        audioRecorder.selectedDeviceUID = microphone
-        let settleDelay = max(minimumDelay, audioRecorder.prepareInputDeviceForRecording())
-        if settleDelay > 0 {
-            let settleMs = Int(settleDelay * 1000)
-            SapoLog.recording.info("Delaying recorder start for route settle \(settleMs, privacy: .public)ms")
-            try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
-        }
-
-        guard !Task.isCancelled else { return false }
-
-        try await audioRecorder.startRecording(targetEngine: currentEngine)
-        let receivedInput = await audioRecorder.waitForFirstInputBuffer(timeout: firstInputTimeout)
-        if receivedInput {
-            return true
-        }
-
-        let diagnostics = audioRecorder.currentCaptureDiagnostics()
-        let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
-        SapoLog.recording.warning(
-            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .public)"
-        )
-        return false
-    }
-
-    private func isRecoverableInputStartError(_ error: Error) -> Bool {
-        guard let recordingError = error as? RecordingError else { return false }
-
-        switch recordingError {
-        case .noInputAfterDeviceSwitch, .invalidFormat:
-            return true
-        case .engineCreationFailed,
-            .fileCreationFailed,
-            .converterCreationFailed,
-            .deviceSelectionFailed,
-            .permissionDenied:
-            return false
-        }
-    }
-
     // MARK: - No-speech handling
-
-    /// First real signal (above digital silence) collapses the "connecting"
-    /// label; genuinely quiet rooms still read above this because the level
-    /// floor maps ambient noise well over zero.
-    private static let micConnectedLevelThreshold: Float = 0.02
 
     /// Tracks the session peak and drives the live "no voice?" overlay hint.
     private func registerSessionAudioLevel(_ level: Float) {
         guard case .recording = appState else { return }
-        sessionPeakAudioLevel = max(sessionPeakAudioLevel, level)
+        let now = CFAbsoluteTimeGetCurrent()
+        levelTracker.register(level: level, now: now)
 
-        if overlayManager.micConnectingInProgress, level > Self.micConnectedLevelThreshold {
+        if overlayManager.micConnectingInProgress, levelTracker.micConnectedCollapse(level: level) {
             overlayManager.setMicConnecting(deviceName: nil)
         }
 
-        let elapsed = CFAbsoluteTimeGetCurrent() - sessionLevelTrackingStartedAt
         // While the mic is still handshaking, "no voice?" would be misleading
         // — the connecting label owns that window.
-        let hintEligible = overlayManager.micConnectingName == nil
-        overlayManager.setNoSpeechHint(hintEligible && sessionLooksSilent && elapsed >= Self.noSpeechHintDelay)
+        overlayManager.setNoSpeechHint(
+            levelTracker.noSpeechHintActive(
+                connectingLabelVisible: overlayManager.micConnectingName != nil, now: now))
     }
 
     /// Display name of the input the capture will open: the selected device,
@@ -1720,7 +1556,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Approximate session peak in dBFS, derived from the normalized level.
     private var approximateSessionPeakDb: Int {
-        Int(sessionPeakAudioLevel * 60 - 60)
+        Int(levelTracker.peak * 60 - 60)
     }
 
     /// Single failure presenter: overlay dismiss time, retry affordance, and
@@ -1865,8 +1701,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         isRepolishInFlight = true
         let duration = lastDictationDuration
-        let historyId = lastCompletedHistoryId
-        let generation = dictationGeneration
+        let historyId = persister.lastCompletedHistoryId
+        let generation = persister.dictationGeneration
         transition(to: .polishing, reason: "repolish-start")
         let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
         overlayManager.updateState(
@@ -1890,7 +1726,7 @@ class SapoWhisperViewModel: ObservableObject {
             logAIResult(result, source: "overlay-repolish")
 
             lastTranscription = result.finalText
-            PasteManager.copyToClipboard(result.finalText)
+            paste.copyToClipboard(result.finalText)
             transition(to: .idle, reason: "repolish-done")
             overlayManager.showCompleted(text: result.finalText)
             if playSoundEnabled {
@@ -1898,7 +1734,7 @@ class SapoWhisperViewModel: ObservableObject {
             }
 
             // Only update the row if no newer dictation replaced it meanwhile.
-            if let historyId, generation == dictationGeneration {
+            if let historyId, generation == persister.dictationGeneration {
                 historyManager.updateAIProcessing(
                     id: historyId,
                     finalText: result.finalText,
@@ -1919,95 +1755,6 @@ class SapoWhisperViewModel: ObservableObject {
         SapoLog.ai.info(
             "AI polish source=\(source, privacy: .public) status=\(result.status.rawValue, privacy: .public) mode=\(mode, privacy: .public) model=\(model, privacy: .public) elapsed=\(result.elapsedMs, privacy: .public)ms rawChars=\(result.rawText.count, privacy: .public) finalChars=\(result.finalText.count, privacy: .public) fallback=\(fallbackReason, privacy: .public)"
         )
-    }
-
-    /// L3: completed dictations persist off the paste path. The audio copy and
-    /// the SQLite insert run on a background task; the UI is already idle.
-    /// Failed dictations keep the synchronous path because the retry UI needs
-    /// the persisted row id immediately.
-    private func scheduleCompletedHistoryPersistence(
-        from sourceURL: URL,
-        engine: TranscriptionEngine,
-        engineName: String?,
-        language: String,
-        duration: TimeInterval,
-        aiResult: TranscriptAIResult,
-        perf: DictationPerfTimeline?
-    ) {
-        let generation = dictationGeneration
-        Task.detached(priority: .utility) { [weak self] in
-            guard let self else { return }
-            let t0 = CFAbsoluteTimeGetCurrent()
-            let persistedEntry = self.persistHistoryEntry(
-                from: sourceURL,
-                engine: engine,
-                engineName: engineName,
-                language: language,
-                duration: duration,
-                aiResult: aiResult,
-                status: "completed"
-            )
-            self.cleanupSourceAudioIfSafe(sourceURL: sourceURL, persistedEntry: persistedEntry)
-            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-            SapoLog.performance.info("History persisted off paste path elapsed=\(elapsedMs, privacy: .public)ms")
-            perf?.reportPersist(elapsedMs: elapsedMs)
-
-            // Hand the row id back so an overlay re-polish can update it —
-            // only if a newer dictation has not replaced this one.
-            let rowID = persistedEntry.id
-            guard rowID > 0 else { return }
-            await MainActor.run {
-                guard self.dictationGeneration == generation else { return }
-                self.lastCompletedHistoryId = rowID
-            }
-        }
-    }
-
-    nonisolated private func persistHistoryEntry(
-        from sourceURL: URL,
-        engine: TranscriptionEngine,
-        engineName: String? = nil,
-        language: String,
-        duration: TimeInterval,
-        aiResult: TranscriptAIResult?,
-        status: String,
-        failureCode: String? = nil
-    ) -> PersistedHistoryEntry {
-        // Persist atomically through the manager: it copies the WAV and inserts
-        // the row under `persistenceLock` so a concurrent save's orphan sweep
-        // cannot delete the freshly copied audio before its row references it.
-        let text = aiResult?.finalText ?? ""
-        let result = historyManager.persistEntry(
-            audioSource: sourceURL,
-            engine: engineName ?? engine.displayName,
-            language: language,
-            duration: duration,
-            text: text,
-            rawText: aiResult?.rawText ?? text,
-            status: status,
-            aiStatus: aiResult?.status.rawValue ?? TranscriptAIStatus.none.rawValue,
-            aiModel: aiResult?.model,
-            aiMode: aiResult?.mode,
-            aiError: aiResult?.error,
-            failureCode: failureCode
-        )
-
-        return PersistedHistoryEntry(
-            id: result.rowID,
-            audioURL: result.audioPath.map { URL(fileURLWithPath: $0) },
-            copiedAudioToHistory: result.copiedToHistory
-        )
-    }
-
-    nonisolated private func cleanupSourceAudioIfSafe(sourceURL: URL, persistedEntry: PersistedHistoryEntry) {
-        guard persistedEntry.copiedAudioToHistory else {
-            SapoLog.recording.warning(
-                "Keeping source audio because history copy was unavailable path=\(sourceURL.path, privacy: .private)"
-            )
-            return
-        }
-
-        audioRecorder.deleteRecording(at: sourceURL)
     }
 
     // MARK: - System sleep/wake (R1)
@@ -2095,40 +1842,31 @@ class SapoWhisperViewModel: ObservableObject {
         overlayManager.updateAudioLevel(0)
 
         if let interrupted {
-            let persistedEntry = persistHistoryEntry(
-                from: interrupted.audioURL,
+            let outcome = persister.persistAbortedCapture(
+                audioURL: interrupted.audioURL,
+                duration: interrupted.duration,
                 engine: engine,
                 engineName: historyEngineName(for: engine),
                 language: selectedLanguage,
-                duration: interrupted.duration,
-                aiResult: nil,
-                status: "failed",
-                failureCode: TranscriptionFailure(
-                    kind: failureKind, engine: engine.displayName
-                ).diagnosticCode
+                failureKind: failureKind,
+                storeRetryState: storeRetryState
             )
-            if storeRetryState {
-                lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
-                lastFailedAudioURL = persistedEntry.audioURL ?? interrupted.audioURL
-            } else {
-                clearFailedRetryState()
-            }
             // Every preserved take becomes the "continue previous dictation"
             // offer for the next recording (Esc, sleep, device death alike).
-            if persistedEntry.id > 0 {
-                resumableDictation = ResumableDictation(
-                    historyId: persistedEntry.id,
-                    audioURL: persistedEntry.audioURL ?? interrupted.audioURL,
-                    duration: interrupted.duration,
-                    capturedAt: Date()
-                )
+            if let historyId = outcome.historyId, let offerURL = outcome.audioURL {
+                resumableStore.offer(
+                    ResumableDictation(
+                        historyId: historyId,
+                        audioURL: offerURL,
+                        duration: interrupted.duration,
+                        capturedAt: Date()
+                    ))
             }
-            cleanupSourceAudioIfSafe(sourceURL: interrupted.audioURL, persistedEntry: persistedEntry)
             SapoLog.lifecycle.info(
                 "Recording aborted reason=\(reasonLog, privacy: .public) durationSec=\(Int(interrupted.duration), privacy: .public)"
             )
         } else if !storeRetryState {
-            clearFailedRetryState()
+            persister.clearRetryState()
         }
 
         return (true, interrupted != nil)
@@ -2193,14 +1931,13 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
     func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?) {
         let finalText = aiResult.finalText
         let outcome = Self.copiedOutcome(for: aiResult)
-        dictationGeneration &+= 1
-        lastCompletedHistoryId = nil
+        persister.beginNewDictationDelivery()
         lastTranscription = finalText
-        PasteManager.copyToClipboard(finalText)
+        paste.copyToClipboard(finalText)
         overlayManager.showCopied(text: finalText, outcome: outcome)
 
         if autoPasteEnabled {
-            PasteManager.simulatePaste { perf?.markPasteDone() }
+            paste.simulatePaste { perf?.markPasteDone() }
         } else {
             perf?.markPasteDone(skipped: true)
         }
@@ -2234,34 +1971,16 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         perf: DictationPerfTimeline?,
         target: HistoryPersistenceTarget
     ) {
-        switch target {
-        case .insertNew:
-            scheduleCompletedHistoryPersistence(
-                from: audioURL,
-                engine: engine,
-                engineName: engineName,
-                language: language,
-                duration: duration,
-                aiResult: aiResult,
-                perf: perf
-            )
-        case .updateExisting(let historyId):
-            // Retry path: refresh the failed row in place (the retry may have
-            // run on a different engine than the failed attempt).
-            historyManager.updateRetranscription(
-                id: historyId,
-                engine: engineName,
-                finalText: aiResult.finalText,
-                rawText: aiResult.rawText,
-                aiStatus: aiResult.status,
-                aiModel: aiResult.model,
-                aiMode: aiResult.mode,
-                aiError: aiResult.error
-            )
-            lastCompletedHistoryId = historyId
-        }
-        lastFailedAudioURL = nil
-        lastFailedHistoryId = nil
+        persister.persistCompleted(
+            audioURL: audioURL,
+            engine: engine,
+            engineName: engineName,
+            language: language,
+            duration: duration,
+            aiResult: aiResult,
+            perf: perf,
+            target: target
+        )
     }
 
     func persistFailedDictation(
@@ -2273,25 +1992,15 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         failure: TranscriptionFailure,
         target: HistoryPersistenceTarget
     ) {
-        if case .updateExisting = target {
-            // A failed retry keeps the original failed row (and the retry
-            // state) untouched so the user can retry again.
-            SapoLog.recording.info("Retry failed; keeping original failed history row")
-            return
-        }
-        let persistedEntry = persistHistoryEntry(
-            from: audioURL,
+        persister.persistFailed(
+            audioURL: audioURL,
             engine: engine,
             engineName: engineName,
             language: language,
             duration: duration,
-            aiResult: nil,
-            status: "failed",
-            failureCode: failure.diagnosticCode
+            failure: failure,
+            target: target
         )
-        lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
-        lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
-        cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
     }
 
     func logTranscriptionSnapshot(reason: String, extra: String) {

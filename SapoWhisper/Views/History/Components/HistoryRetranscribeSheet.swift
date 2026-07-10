@@ -15,6 +15,8 @@ struct HistoryRetranscribeSheet: View {
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
+    @State private var isCancelling = false
+
     private var orderedEngines: [TranscriptionEngine] {
         [currentEngine] + TranscriptionEngine.allCases.filter { $0 != currentEngine }
     }
@@ -110,9 +112,16 @@ struct HistoryRetranscribeSheet: View {
 
     private var footer: some View {
         HStack {
-            Button("common.cancel".localized, action: onCancel)
-                .keyboardShortcut(.cancelAction)
-                .disabled(isProcessing)
+            Button {
+                if isProcessing {
+                    isCancelling = true
+                }
+                onCancel()
+            } label: {
+                Text(isCancelling ? "history.retranscribe_cancelling".localized : "common.cancel".localized)
+            }
+            .keyboardShortcut(.cancelAction)
+            .disabled(isCancelling)
 
             Spacer()
 

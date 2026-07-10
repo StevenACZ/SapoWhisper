@@ -50,6 +50,20 @@ class OverlayWindowManager: ObservableObject {
 
     @Published private(set) var resumeOffer: ResumeOffer?
 
+    /// True during the brief pre-collapse "inhale": the view puffs the active
+    /// pill up a touch, then the delayed collapse lets the chip swallow it.
+    @Published private(set) var hideAnticipation = false
+    /// Collapse scheduled by `hide()` after the anticipation beat; any newer
+    /// state change cancels it so a fresh dictation is never yanked into the
+    /// dock by a stale dismiss.
+    private var pendingHideTask: Task<Void, Never>?
+
+    /// True when the current pill was presented straight from the dock chip:
+    /// it entered through the Liquid Glass detach morph, whose glass shape
+    /// animates outside SwiftUI layout — glow flashes wait for it to settle
+    /// or the stroke floats visibly inside the real pill edge.
+    private(set) var lastPresentationLeftDock = false
+
     /// The user toggled the resume chip (already reflected in `resumeOffer`).
     var onResumeToggled: ((Bool) -> Void)?
 
@@ -172,15 +186,44 @@ class OverlayWindowManager: ObservableObject {
 
         completedDismissTask?.cancel()
         completedDismissTask = nil
+        pendingHideTask?.cancel()
+        pendingHideTask = nil
         finishMeterSession(reason: "docked")
         displayedRecordingSecond = nil
         publishAudioLevel(0, force: true)
         showsNoSpeechHint = false
-        withAnimation(motionAnimation(Constants.Animation.droplet)) {
+        // Committed to collapsing: the completed pill's outside-click
+        // monitors must not fire again during the anticipation beat.
+        removeOutsideClickMonitors()
+
+        guard !Constants.Animation.reduceMotion else {
+            hideAnticipation = false
             state = .docked
+            SapoLog.overlay.info("Overlay collapsed to dock")
+            return
         }
-        syncOutsideClickMonitors()
-        SapoLog.overlay.info("Overlay collapsed to dock")
+
+        // Two-beat absorb: a quick "inhale", then the chip swallows the
+        // droplet. The delayed collapse re-checks the state so a dictation
+        // starting mid-beat wins over the stale dismiss.
+        let category = state.stateCategory
+        withAnimation(.easeOut(duration: 0.1)) {
+            hideAnticipation = true
+        }
+        pendingHideTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingHideTask = nil
+            guard self.state.stateCategory == category else {
+                withAnimation(.easeOut(duration: 0.12)) { self.hideAnticipation = false }
+                return
+            }
+            withAnimation(Constants.Animation.droplet) {
+                self.hideAnticipation = false
+                self.state = .docked
+            }
+            SapoLog.overlay.info("Overlay collapsed to dock")
+        }
     }
 
     /// Dock chip click: toggle — reopen the last transcription when idle,
@@ -358,6 +401,11 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
+        // A collapse waiting on its anticipation beat must not swallow this
+        // newer state.
+        pendingHideTask?.cancel()
+        pendingHideTask = nil
+
         if case .recording = state,
             case .recording = newState
         {
@@ -369,6 +417,7 @@ class OverlayWindowManager: ObservableObject {
         updateDisplayedSecond(for: newState)
         let previousCategory = state.stateCategory
         let leavingDock = previousCategory == "docked"
+        lastPresentationLeftDock = leavingDock
 
         // A fresh presentation (leaving the dock, or appearing from hidden)
         // opens on the screen the user is working on — the mouse screen. The
@@ -386,11 +435,13 @@ class OverlayWindowManager: ObservableObject {
             // between active pills morph with the calmer spring while the
             // pill view sequences the content crossfade on top of it.
             withAnimation(motionAnimation(leavingDock ? Constants.Animation.droplet : Constants.Animation.morph)) {
+                hideAnticipation = false
                 state = newState
             }
         } else {
             // Coming from hidden: lay out the pill at its final size with no
             // animation; the window fade covers the appearance.
+            hideAnticipation = false
             state = newState
         }
         syncOutsideClickMonitors()
@@ -566,7 +617,7 @@ class OverlayWindowManager: ObservableObject {
     /// Arms (or clears) the "continue previous dictation" chip for the
     /// current recording session. The chip starts inactive; the user opts in.
     func setResumeOffer(durationLabel: String?) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(Constants.Animation.chipReveal) {
             resumeOffer = durationLabel.map { ResumeOffer(durationLabel: $0, isActive: false) }
         }
     }
@@ -575,7 +626,7 @@ class OverlayWindowManager: ObservableObject {
     func toggleResumeOffer() {
         guard var offer = resumeOffer else { return }
         offer.isActive.toggle()
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+        withAnimation(Constants.Animation.springSnap) {
             resumeOffer = offer
         }
         onResumeToggled?(offer.isActive)
@@ -602,7 +653,7 @@ class OverlayWindowManager: ObservableObject {
             micConnectingTimeoutTask?.cancel()
             micConnectingTimeoutTask = nil
             if micConnectingName != nil {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                withAnimation(Constants.Animation.chipReveal) {
                     micConnectingName = nil
                 }
             }
@@ -616,7 +667,7 @@ class OverlayWindowManager: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.micConnectingGraceTask = nil
 
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(Constants.Animation.chipReveal) {
                 self.micConnectingName = deviceName
             }
             self.micConnectingTimeoutTask?.cancel()
@@ -661,7 +712,7 @@ class OverlayWindowManager: ObservableObject {
         if shows {
             guard case .recording = state else { return }
         }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(Constants.Animation.chipReveal) {
             showsNoSpeechHint = shows
         }
         SapoLog.overlay.info("Overlay no-speech hint \(shows ? "shown" : "cleared", privacy: .public)")

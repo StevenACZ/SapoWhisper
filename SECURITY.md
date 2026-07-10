@@ -3,8 +3,10 @@
 ## Supported Versions
 
 Only the latest release receives security fixes. There is no auto-update
-channel: update by downloading the newest DMG from GitHub Releases and
-verifying its published SHA-256.
+channel: the app can passively check GitHub Releases for a newer version and
+show a notice, but nothing is downloaded or installed automatically — update
+by downloading the newest DMG from GitHub Releases and verifying its
+published SHA-256.
 
 ## Secret Handling
 
@@ -26,7 +28,7 @@ For security-sensitive issues, do not post secrets or private recordings in publ
 
 ## Data Handling Model
 
-SapoWhisper is bring-your-own-key: cloud STT and AI-polish requests are sent directly from the app to the provider the user configured, authenticated with the user's own API key (sent in request headers, never in URLs). There is no intermediary backend and no telemetry. Dictation history (transcripts and WAV audio) is stored locally under the user's Library and is protected by FileVault, not by additional app-level encryption; history exports contain raw transcripts.
+SapoWhisper is bring-your-own-key: cloud STT and AI-polish requests are sent directly from the app to the provider the user configured, authenticated with the user's own API key (sent in request headers, never in URLs). There is no intermediary backend and no telemetry; the optional daily update check is a single unauthenticated request to the GitHub Releases API (ETag-cached) that carries no identifiers or usage data and can be turned off in Settings. Dictation history (transcripts and WAV audio) is stored locally under the user's Library and is protected by FileVault, not by additional app-level encryption; history exports contain raw transcripts.
 
 ## Public Repo Boundary
 

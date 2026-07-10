@@ -127,7 +127,7 @@ struct HistoryDetailView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color.sapoGreen)
+            .tint(Color.sapoGreenDark)
             .fixedSize()
             .disabled(isFailed || entry.text.isEmpty)
 
@@ -411,7 +411,7 @@ struct HistoryDetailView: View {
                     Label("history.retranscribe_with".localized, systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                .tint(Constants.Colors.warningProminent)
                 .padding(.top, 4)
             }
         }
@@ -447,7 +447,7 @@ struct HistoryDetailView: View {
                     Label("history.retranscribe_with".localized, systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color.sapoGreen)
+                .tint(Color.sapoGreenDark)
                 .padding(.top, 4)
             }
         }

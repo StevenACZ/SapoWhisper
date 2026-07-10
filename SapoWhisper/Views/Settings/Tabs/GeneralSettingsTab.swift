@@ -36,6 +36,8 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
+    @AppStorage(Constants.StorageKeys.autoUpdateCheckEnabled) private var autoUpdateCheckEnabled = true
+
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var historyAudioUsageBytes: Int64 = 0
@@ -73,7 +75,7 @@ struct GeneralSettingsTab: View {
             }
             .padding(16)
         }
-        .tint(Constants.Colors.sapoGreen)
+        .tint(Constants.Colors.sapoGreenDark)
         .onAppear {
             refreshAudioDevicesForAppearance()
         }
@@ -486,6 +488,25 @@ struct GeneralSettingsTab: View {
                             setLaunchAtLogin(enabled: newValue)
                         }
                 }
+
+                HStack(spacing: 12) {
+                    Text("settings.update_check_toggle".localized)
+                    Spacer()
+                    Toggle("", isOn: $autoUpdateCheckEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .onChange(of: autoUpdateCheckEnabled) { _, enabled in
+                            if enabled {
+                                UpdateChecker.shared.start()
+                            } else {
+                                UpdateChecker.shared.stop()
+                            }
+                        }
+                }
+
+                Text("settings.update_check_footnote".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
 
                 HStack(spacing: 12) {
                     Text("settings.overlay_position".localized)

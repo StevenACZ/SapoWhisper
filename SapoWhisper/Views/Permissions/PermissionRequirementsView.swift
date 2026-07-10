@@ -151,7 +151,7 @@ struct PermissionRequirementsView: View {
 
     private func updateGrantedPermissions(_ nextPermissions: Set<AppPermission>) {
         guard grantedPermissions != nextPermissions else { return }
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(Constants.Animation.transition) {
             grantedPermissions = nextPermissions
         }
     }

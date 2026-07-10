@@ -86,12 +86,7 @@ class HotkeyManager: ObservableObject {
     private var watchdogTimer: Timer?
     private static let watchdogInterval: TimeInterval = 600
     private var hotkeyPressCount: UInt64 = 0
-    private var isDoubleTapModifierPressed = false
-    private var isSuppressingCurrentDoubleTapPress = false
-    private var currentDoubleTapPressStartedAt: CFAbsoluteTime?
-    private var lastDoubleTapReleaseAt: CFAbsoluteTime?
-    private static let doubleTapInterval: CFTimeInterval = 0.45
-    private static let doubleTapMaxHoldDuration: CFTimeInterval = 0.40
+    private var doubleTapRecognizer = DoubleTapRecognizer()
     private static let relevantModifierFlags: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
 
     // Hotkey por defecto: Option + Space
@@ -550,39 +545,26 @@ class HotkeyManager: ObservableObject {
         let isTargetUp = !modifierFlags.contains(option.cgFlag)
         let now = CFAbsoluteTimeGetCurrent()
 
-        if isTargetOnlyDown && !isDoubleTapModifierPressed {
-            isDoubleTapModifierPressed = true
-            currentDoubleTapPressStartedAt = now
-
-            if let lastDoubleTapReleaseAt, now - lastDoubleTapReleaseAt <= Self.doubleTapInterval {
-                isSuppressingCurrentDoubleTapPress = true
-                self.lastDoubleTapReleaseAt = nil
-                SapoLog.hotkey.info(
-                    "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
-                )
-                DispatchQueue.main.async { [weak self] in
-                    NotificationCenter.default.post(name: Self.doubleTapTriggeredNotification, object: nil)
-                    self?.handleHotkeyPressed(source: "double-modifier")
-                }
+        switch doubleTapRecognizer.handle(
+            targetOnlyDown: isTargetOnlyDown,
+            targetUp: isTargetUp,
+            otherFlagsActive: modifierFlags != option.cgFlag,
+            now: now
+        ) {
+        case .trigger:
+            SapoLog.hotkey.info(
+                "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
+            )
+            DispatchQueue.main.async { [weak self] in
+                NotificationCenter.default.post(name: Self.doubleTapTriggeredNotification, object: nil)
+                self?.handleHotkeyPressed(source: "double-modifier")
             }
-        } else if isTargetUp && isDoubleTapModifierPressed {
-            let pressDuration = now - (currentDoubleTapPressStartedAt ?? now)
-            isDoubleTapModifierPressed = false
-            currentDoubleTapPressStartedAt = nil
-
-            if isSuppressingCurrentDoubleTapPress {
-                isSuppressingCurrentDoubleTapPress = false
-                lastDoubleTapReleaseAt = nil
-            } else {
-                lastDoubleTapReleaseAt = pressDuration <= Self.doubleTapMaxHoldDuration ? now : nil
-                if lastDoubleTapReleaseAt != nil {
-                    DispatchQueue.main.async {
-                        NotificationCenter.default.post(name: Self.doubleTapFirstTapNotification, object: nil)
-                    }
-                }
+        case .firstTap:
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Self.doubleTapFirstTapNotification, object: nil)
             }
-        } else if modifierFlags != option.cgFlag {
-            resetDoubleTapState()
+        case .none:
+            break
         }
     }
 
@@ -608,10 +590,7 @@ class HotkeyManager: ObservableObject {
     }
 
     private func resetDoubleTapState() {
-        isDoubleTapModifierPressed = false
-        isSuppressingCurrentDoubleTapPress = false
-        currentDoubleTapPressStartedAt = nil
-        lastDoubleTapReleaseAt = nil
+        doubleTapRecognizer.reset()
     }
 
     private func keyName(for keyCode: Int) -> String {

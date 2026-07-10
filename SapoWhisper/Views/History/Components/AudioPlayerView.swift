@@ -136,7 +136,7 @@ struct AudioPlayerView: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.sapoGreen))
+                    .background(Circle().fill(Color.sapoGreenDark))
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)

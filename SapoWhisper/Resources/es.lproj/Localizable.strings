@@ -630,3 +630,10 @@
 "overlay.a11y.transcribing" = "Transcribiendo";
 "overlay.a11y.pasted" = "Texto pegado";
 "overlay.a11y.error" = "El dictado falló";
+
+/* Update check (passive) + retranscribe cancel */
+"menu.update_available" = "Actualización disponible";
+"about.update_available" = "Actualización disponible";
+"settings.update_check_toggle" = "Buscar actualizaciones automáticamente";
+"settings.update_check_footnote" = "Consulta GitHub Releases una vez al día. No se envía nada.";
+"history.retranscribe_cancelling" = "Cancelando…";

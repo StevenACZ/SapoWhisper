@@ -6,6 +6,24 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-09
+
+### Added
+
+- **Passive update check** — the app asks GitHub Releases once a day (ETag-cached, throttled) whether a newer version exists. When one does, a menu bar row and a capsule in Settings → About point to the release page; nothing is downloaded or installed automatically, no telemetry is sent, and the check can be turned off in Settings → General.
+- An evaluation harness for Apple's SpeechAnalyzer (macOS 26) lives in the test target: a rerunnable es/en code-switched fixture bench that gates whether the engine ever joins the portfolio. This round it was disqualified — excellent speed but weighted quality 44.8 vs 88.2 for the local MLX turbo model, and the API accepts no contextual vocabulary, so the personal dictionary cannot repair its git/file/brand-term errors. The harness stays to re-evaluate future macOS releases.
+
+### Changed
+
+- **Smoother overlay hand-off** — the recording droplet now absorbs into the dock chip with a fluid morph instead of a hard swap, and the chip's glow flashes are aware of the dock position so they land on the right edge.
+- **Non-text contrast pass (WCAG 1.4.11)** — spinners, progress dots, radio outlines, progress tracks, and the audio play button now hold 3:1 against their backgrounds, prominent green buttons use a darker accessible green, and orange accents moved to a new accessible orange.
+- The last hardcoded animation literals were converted to the shared motion tokens (including a new `chipReveal` token), so every surface animates with the same timing language.
+- Internal: five focused collaborators were extracted from the dictation view model (history persistence, capture-start supervision with the Bluetooth warm-up logic, double-tap recognition, session audio level tracking, and the resumable-dictation store). Behavior is unchanged, but the four critical flows that never had tests — cancelling mid-dictation, retrying after a network failure, the continue-previous merge, and the no-speech gate — are now covered; the suite grows to 349 tests.
+
+### Fixed
+
+- **Cancel works during long re-transcriptions** — the Cancel button in the re-transcribe sheet no longer freezes while the local MLX engine is decoding; cancelling stops the decode immediately and leaves the History row untouched instead of surfacing a false failure alert.
+
 ## [2.9.0] - 2026-07-09
 
 ### Added

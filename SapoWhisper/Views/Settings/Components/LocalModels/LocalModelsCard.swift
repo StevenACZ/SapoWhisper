@@ -90,7 +90,7 @@ struct LocalModelsCard: View {
         VStack(spacing: 8) {
             ProgressView(value: transcriber.loadingProgress)
                 .progressViewStyle(.linear)
-                .tint(transcriber.loadingState == .downloading ? .blue : .sapoGreen)
+                .tint(transcriber.loadingState == .downloading ? .blue : .sapoGreenText)
 
             HStack(spacing: 6) {
                 loadingStateIcon

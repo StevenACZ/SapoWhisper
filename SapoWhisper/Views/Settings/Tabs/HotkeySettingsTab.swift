@@ -183,7 +183,7 @@ struct HotkeySettingsTab: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .animation(.spring(duration: 0.35), value: hotkeyDoubleTapModifier)
+            .animation(Constants.Animation.morph, value: hotkeyDoubleTapModifier)
 
             HStack(spacing: 10) {
                 Text("settings.hotkey_double_pick_hint".localized)
@@ -222,13 +222,13 @@ struct HotkeySettingsTab: View {
 
     private func doubleTapDot(filled: Bool) -> some View {
         Circle()
-            .fill(filled ? Color.sapoGreen : Color.secondary.opacity(0.25))
+            .fill(filled ? Color.sapoGreenText : Color.secondary.opacity(0.25))
             .frame(width: 9, height: 9)
             .scaleEffect(filled ? 1.0 : 0.85)
     }
 
     private func registerDoubleTapFeedback(phase: Int) {
-        withAnimation(.spring(duration: 0.25)) {
+        withAnimation(Constants.Animation.springSnap) {
             doubleTapFeedbackPhase = phase
         }
         doubleTapFeedbackResetTask?.cancel()

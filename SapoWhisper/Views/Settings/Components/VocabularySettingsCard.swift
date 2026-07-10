@@ -67,7 +67,7 @@ struct VocabularySettingsCard: View {
                             )
                     }
                 }
-                .animation(.smooth(duration: 0.28), value: section)
+                .animation(Constants.Animation.transition, value: section)
 
                 if let transferMessage {
                     Text(transferMessage)
@@ -138,7 +138,7 @@ struct VocabularySettingsCard: View {
     }
 
     private var sectionPicker: some View {
-        Picker("config.vocabulary".localized, selection: $section.animation(.smooth(duration: 0.28))) {
+        Picker("config.vocabulary".localized, selection: $section.animation(Constants.Animation.transition)) {
             Text("\("config.keyterms".localized) (\(vocabularyManager.keyterms.count))")
                 .tag(VocabularySection.keywords)
             Text("\("config.replacements".localized) (\(vocabularyManager.replacements.count))")
@@ -213,7 +213,7 @@ struct VocabularySettingsCard: View {
                         .transition(.scale(scale: 0.85).combined(with: .opacity))
                     }
                 }
-                .animation(.spring(duration: 0.3), value: filteredKeyterms)
+                .animation(Constants.Animation.springSnap, value: filteredKeyterms)
             }
 
             Text("config.keyterms_desc".localized)
@@ -394,7 +394,7 @@ struct VocabularySettingsCard: View {
                         .transition(.scale(scale: 0.85).combined(with: .opacity))
                     }
                 }
-                .animation(.spring(duration: 0.3), value: filteredReplacements.map(\.key))
+                .animation(Constants.Animation.springSnap, value: filteredReplacements.map(\.key))
             }
 
             Text("config.replacements_desc".localized)

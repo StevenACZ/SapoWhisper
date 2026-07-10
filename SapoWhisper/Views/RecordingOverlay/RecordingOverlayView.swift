@@ -128,12 +128,18 @@ struct RecordingOverlayView: View {
         )
     }
 
-    /// The droplet grows out of the chip's edge and collapses back into it:
-    /// scale is anchored at the chip side and stays fully opaque, so the
-    /// enter/exit reads as a drop separating from (and being absorbed by)
-    /// the resting chip rather than a crossfade.
+    /// The droplet grows out of the chip's edge and collapses back into it,
+    /// with scale anchored at the chip side. The enter stays fully opaque so
+    /// the detach reads as a drop separating from the resting chip; the exit
+    /// adds a fade because the shrinking droplet loses its glass neck early
+    /// and a hard opaque mini-pill floating over the chip read as cut off —
+    /// dissolving while it shrinks sells "absorbed by the chip".
     private var dropletTransition: AnyTransition {
-        .scale(scale: 0.04, anchor: chipOnTop ? .top : .bottom)
+        let anchor: UnitPoint = chipOnTop ? .top : .bottom
+        return .asymmetric(
+            insertion: .scale(scale: 0.04, anchor: anchor),
+            removal: .scale(scale: 0.04, anchor: anchor).combined(with: .opacity)
+        )
     }
 
     /// Sequential content hand-off on active-to-active swaps (old leaves
@@ -172,6 +178,13 @@ struct RecordingOverlayView: View {
         } animation: { bounceScale in
             bounceScale > 1 ? Constants.Animation.microBounce : .spring(duration: 0.25, bounce: 0.3)
         }
+        // Pre-collapse "inhale": the manager arms this for a beat before the
+        // absorb, so the pill puffs up a touch and is then swallowed by the
+        // chip instead of vanishing from a standstill.
+        .scaleEffect(
+            manager.hideAnticipation ? 1.04 : 1.0,
+            anchor: chipOnTop ? .top : .bottom
+        )
     }
 
     // MARK: - Content Views

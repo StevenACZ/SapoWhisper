@@ -38,6 +38,7 @@ struct AboutView: View {
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
         .background(backgroundLayer)
+        .task { await UpdateChecker.shared.checkNow() }
     }
 
     // MARK: - Sections
@@ -54,7 +55,34 @@ struct AboutView: View {
                 .font(.system(size: 24, weight: .bold))
 
             versionButton
+
+            if let update = UpdateChecker.shared.availableUpdate {
+                updateAvailableButton(update)
+            }
         }
+    }
+
+    private func updateAvailableButton(_ update: UpdateChecker.AvailableUpdate) -> some View {
+        Button {
+            NSWorkspace.shared.open(update.releaseURL)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.caption2)
+
+                Text("about.update_available".localized)
+                    .font(.caption2.weight(.medium))
+
+                Text("v\(update.version)")
+                    .font(.caption2.monospaced())
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.sapoGreenText.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(Color.sapoGreenText.opacity(0.22), lineWidth: 1))
+            .foregroundStyle(Color.sapoGreenText)
+        }
+        .buttonStyle(.plain)
     }
 
     /// Easter egg: 3 quick taps swap in the loading icon for a moment.
@@ -98,8 +126,8 @@ struct AboutView: View {
         .buttonStyle(.plain)
         .onHover { isHoveringVersion = $0 }
         .help("about.version_copy_help".localized)
-        .animation(.easeOut(duration: 0.15), value: isHoveringVersion)
-        .animation(.easeOut(duration: 0.15), value: versionCopied)
+        .animation(Constants.Animation.hover, value: isHoveringVersion)
+        .animation(Constants.Animation.hover, value: versionCopied)
     }
 
     private var taglineSection: some View {
