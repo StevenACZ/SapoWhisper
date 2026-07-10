@@ -17,6 +17,16 @@ import os
 /// secrets) let launch and settings checks answer "is X configured?" without
 /// touching the keychain at all, so macOS shows its consent dialog at most
 /// once per new build, and only when a secret is actually needed.
+///
+/// The FILE-BASED keychain is a deliberate choice (re-evaluated 2026-07):
+/// `kSecUseDataProtectionKeychain` requires a keychain access group
+/// authorized by an embedded provisioning profile, which no build flavor of
+/// this app carries — without it every call fails with
+/// `errSecMissingEntitlement`, and adding profiles would make app launch
+/// depend on profile validity. `kSecAttrAccessibleAfterFirstUnlock` below is
+/// inert under the file-based keychain and kept only as forward-compat.
+/// Revisit only if iCloud Keychain, Secure Enclave, or biometric gating is
+/// ever needed.
 enum KeychainStore {
     private static let service = "oli.SapoWhisper"
 

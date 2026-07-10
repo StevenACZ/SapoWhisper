@@ -37,6 +37,7 @@ struct HistoryView: View {
     @State private var retranscribeEntry: HistoryEntry?
     @State private var selectedRetranscribeEngine: TranscriptionEngine = .mlxWhisper
     @State private var isRetranscribing = false
+    @State private var retranscribeTask: Task<Void, Never>?
     @State private var aiPolishingEntryID: Int64?
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
@@ -102,7 +103,9 @@ struct HistoryView: View {
                 ) {
                     performRetranscription(for: entry)
                 } onCancel: {
-                    if !isRetranscribing {
+                    if isRetranscribing {
+                        retranscribeTask?.cancel()
+                    } else {
                         retranscribeEntry = nil
                     }
                 }
@@ -180,7 +183,7 @@ struct HistoryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .animation(.easeInOut(duration: 0.25), value: sidebarVisible)
+        .animation(Constants.Animation.transition, value: sidebarVisible)
         .frame(minWidth: 840, minHeight: 520)
         .navigationTitle("history.title".localized)
         .toolbar { historyToolbar }
@@ -309,12 +312,13 @@ struct HistoryView: View {
     private func performRetranscription(for entry: HistoryEntry) {
         isRetranscribing = true
 
-        Task {
+        retranscribeTask = Task {
             let result = await viewModel.retranscribeHistoryEntry(entry, using: selectedRetranscribeEngine)
 
             await MainActor.run {
                 isRetranscribing = false
                 retranscribeEntry = nil
+                retranscribeTask = nil
 
                 if engineFilter != .all && !engineFilter.matches(selectedRetranscribeEngine.displayName) {
                     engineFilter = .all

@@ -24,7 +24,7 @@ struct ElevenLabsRealtimeAudioSenderStats {
     }
 }
 
-private struct ElevenLabsRealtimeTranscriptAccumulator {
+struct ElevenLabsRealtimeTranscriptAccumulator {
     private(set) var latestPartial: String = ""
     private(set) var committedSegments: [String] = []
     private(set) var sessionID: String?

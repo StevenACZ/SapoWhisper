@@ -56,7 +56,7 @@ struct PromptContextSettingsCard: View {
 
                 if hasUnsavedChanges {
                     Circle()
-                        .fill(Color.sapoGreen)
+                        .fill(Color.sapoGreenText)
                         .frame(width: 6, height: 6)
                         .transition(.scale.combined(with: .opacity))
                         .help("prompts.unsaved_changes".localized)
@@ -64,7 +64,7 @@ struct PromptContextSettingsCard: View {
 
                 Button("prompts.save_prompt".localized, action: saveContext)
                     .buttonStyle(.borderedProminent)
-                    .tint(Constants.Colors.sapoGreen)
+                    .tint(Constants.Colors.sapoGreenDark)
                     .disabled(!hasUnsavedChanges)
             }
             .animation(Constants.Animation.reveal, value: hasUnsavedChanges)

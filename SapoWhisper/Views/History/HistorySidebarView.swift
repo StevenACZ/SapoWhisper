@@ -100,7 +100,7 @@ struct HistorySidebarView: View {
     /// name the active filter so a narrowed list is never a mystery.
     private var engineFilterMenu: some View {
         Menu {
-            Picker("", selection: $engineFilter.animation(.easeInOut(duration: 0.18))) {
+            Picker("", selection: $engineFilter.animation(Constants.Animation.reveal)) {
                 ForEach(EngineFilter.allCases) { filter in
                     Label(filter.displayName, systemImage: filter.iconName)
                         .tag(filter)

@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         APIKeyKeychainMigration.run()
         EnginePortfolioMigration.run()
+        UpdateChecker.shared.start()
         menuBarStatusController.start()
         observeScreenChanges()
         observeSleepWake()
@@ -35,7 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let latest = recovery.latest, Date().timeIntervalSince(latest.modifiedAt) < 30 * 60 {
                 await MainActor.run {
                     SapoWhisperAppEnvironment.shared.viewModel.offerResumableDictation(
-                        SapoWhisperViewModel.ResumableDictation(
+                        ResumableDictation(
                             historyId: latest.historyId,
                             audioURL: latest.audioURL,
                             duration: latest.duration,

@@ -62,7 +62,7 @@ struct LocalModelRow: View {
         .animation(Constants.Animation.reveal, value: phase)
         .onChange(of: phase) { _, newPhase in
             if case .failed = newPhase {
-                withAnimation(.linear(duration: 0.4)) { failureShake += 1 }
+                withAnimation(Constants.Animation.shake) { failureShake += 1 }
             }
         }
     }
@@ -77,12 +77,12 @@ struct LocalModelRow: View {
     private var selectionRadio: some View {
         ZStack {
             Circle()
-                .stroke(isSelected ? Color.sapoGreen : Color.secondary.opacity(0.3), lineWidth: 2)
+                .stroke(isSelected ? Color.sapoGreenText : Color.secondary.opacity(0.3), lineWidth: 2)
                 .frame(width: 20, height: 20)
 
             if isSelected {
                 Circle()
-                    .fill(Color.sapoGreen)
+                    .fill(Color.sapoGreenText)
                     .frame(width: 12, height: 12)
                     .transition(.scale.combined(with: .opacity))
             }

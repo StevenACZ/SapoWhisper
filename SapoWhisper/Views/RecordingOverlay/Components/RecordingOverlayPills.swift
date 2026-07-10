@@ -496,7 +496,7 @@ struct DockedChipView: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(Constants.Animation.hover) {
                 isHovering = hovering
             }
         }

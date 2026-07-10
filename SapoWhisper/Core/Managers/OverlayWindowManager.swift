@@ -617,7 +617,7 @@ class OverlayWindowManager: ObservableObject {
     /// Arms (or clears) the "continue previous dictation" chip for the
     /// current recording session. The chip starts inactive; the user opts in.
     func setResumeOffer(durationLabel: String?) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(Constants.Animation.chipReveal) {
             resumeOffer = durationLabel.map { ResumeOffer(durationLabel: $0, isActive: false) }
         }
     }
@@ -626,7 +626,7 @@ class OverlayWindowManager: ObservableObject {
     func toggleResumeOffer() {
         guard var offer = resumeOffer else { return }
         offer.isActive.toggle()
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+        withAnimation(Constants.Animation.springSnap) {
             resumeOffer = offer
         }
         onResumeToggled?(offer.isActive)
@@ -653,7 +653,7 @@ class OverlayWindowManager: ObservableObject {
             micConnectingTimeoutTask?.cancel()
             micConnectingTimeoutTask = nil
             if micConnectingName != nil {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                withAnimation(Constants.Animation.chipReveal) {
                     micConnectingName = nil
                 }
             }
@@ -667,7 +667,7 @@ class OverlayWindowManager: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.micConnectingGraceTask = nil
 
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(Constants.Animation.chipReveal) {
                 self.micConnectingName = deviceName
             }
             self.micConnectingTimeoutTask?.cancel()
@@ -712,7 +712,7 @@ class OverlayWindowManager: ObservableObject {
         if shows {
             guard case .recording = state else { return }
         }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        withAnimation(Constants.Animation.chipReveal) {
             showsNoSpeechHint = shows
         }
         SapoLog.overlay.info("Overlay no-speech hint \(shows ? "shown" : "cleared", privacy: .public)")

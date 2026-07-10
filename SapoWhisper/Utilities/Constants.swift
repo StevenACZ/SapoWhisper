@@ -48,6 +48,11 @@ nonisolated enum Constants {
                     ? NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 1)  // #66BB6A
                     : NSColor(red: 0.180, green: 0.490, blue: 0.196, alpha: 1)  // #2E7D32
             })
+
+        /// Fill for prominent warning buttons. The brand `error` orange
+        /// (#FF9800) leaves white labels at ~2.1:1; this darker tone keeps
+        /// white text ≥4.5:1 and the fill ≥3:1 in both window modes.
+        static let warningProminent = Color(red: 0.706, green: 0.325, blue: 0.035)  // #B45309
     }
 
     // MARK: - Animaciones
@@ -87,6 +92,10 @@ nonisolated enum Constants {
 
         /// Invalid-input shake driver (hotkey recorder, keycap rows).
         static let shake: SwiftUI.Animation = .spring(duration: 0.4)
+
+        /// Overlay chip/hint reveals (resume chip, translation hint): calmer
+        /// than `springSnap`, matched to the dock-chip presentation springs.
+        static let chipReveal: SwiftUI.Animation = .spring(response: 0.3, dampingFraction: 0.8)
 
         /// System Reduce Motion for non-View call sites (managers); views
         /// should read `@Environment(\.accessibilityReduceMotion)` instead.
@@ -208,6 +217,11 @@ nonisolated enum Constants {
         // Auto-Ducking
         static let autoDuckingEnabled = "autoDuckingEnabled"
         static let autoDuckingAmount = "autoDuckingAmount"  // 0.0 a 1.0 (porcentaje de reducción)
+
+        // Update check (passive, GitHub Releases; no auto-install)
+        static let autoUpdateCheckEnabled = "autoUpdateCheckEnabled"
+        static let updateCheckETag = "updateCheckETag"
+        static let lastUpdateCheckAt = "lastUpdateCheckAt"
     }
 }
 
@@ -225,4 +239,5 @@ extension Color {
     static let disabled = Constants.Colors.disabled
     static let sapoGreenText = Constants.Colors.sapoGreenText
     static let onProcessing = Constants.Colors.onProcessing
+    static let warningProminent = Constants.Colors.warningProminent
 }

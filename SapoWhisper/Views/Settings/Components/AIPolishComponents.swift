@@ -70,7 +70,7 @@ struct AIPolishHeroToggle: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(isOn ? Color.sapoGreen.opacity(0.38) : Color.secondary.opacity(0.18), lineWidth: 1)
         )
-        .animation(.easeInOut(duration: 0.18), value: isOn)
+        .animation(Constants.Animation.reveal, value: isOn)
     }
 
     private var iconBackground: LinearGradient {

@@ -630,3 +630,10 @@
 "overlay.a11y.transcribing" = "Transcribing";
 "overlay.a11y.pasted" = "Text pasted";
 "overlay.a11y.error" = "Dictation failed";
+
+/* Update check (passive) + retranscribe cancel */
+"menu.update_available" = "Update available";
+"about.update_available" = "Update available";
+"settings.update_check_toggle" = "Check for updates automatically";
+"settings.update_check_footnote" = "Checks GitHub Releases once a day. Nothing is sent.";
+"history.retranscribe_cancelling" = "Cancelling…";

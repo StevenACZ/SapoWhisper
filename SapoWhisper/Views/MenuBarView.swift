@@ -156,7 +156,7 @@ struct MenuBarView: View {
                     if viewModel.appState.isBusyProcessing {
                         ProgressView()
                             .scaleEffect(0.8)
-                            .tint(.white)
+                            .tint(viewModel.appState == .processing ? Constants.Colors.onProcessing : .white)
                     } else {
                         Image(systemName: buttonIcon)
                             .font(.system(size: 18, weight: .semibold))
@@ -182,7 +182,7 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .disabled(!viewModel.canRecord)
             .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.15)) {
+                withAnimation(Constants.Animation.hover) {
                     isHoveringRecord = hovering
                 }
             }
@@ -266,6 +266,19 @@ struct MenuBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 0) {
+            if let update = UpdateChecker.shared.availableUpdate {
+                ActionRow(
+                    icon: "arrow.down.circle",
+                    title: "menu.update_available".localized,
+                    subtitle: "v\(update.version)"
+                ) {
+                    NSWorkspace.shared.open(update.releaseURL)
+                }
+
+                Divider()
+                    .padding(.horizontal)
+            }
+
             ActionRow(
                 icon: "clock.arrow.circlepath",
                 title: "menu.history".localized,

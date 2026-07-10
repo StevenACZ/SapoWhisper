@@ -35,7 +35,7 @@ struct SettingsTransferCard: View {
                         Label("settings.transfer.import".localized, systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Constants.Colors.sapoGreen)
+                    .tint(Constants.Colors.sapoGreenDark)
                 }
 
                 if let transferMessage {
@@ -180,7 +180,7 @@ private struct SettingsImportOptionsSheet: View {
                 Button("cancel".localized, action: onCancel)
                 Button("settings.transfer.import_selected".localized, action: onImport)
                     .buttonStyle(.borderedProminent)
-                    .tint(Constants.Colors.sapoGreen)
+                    .tint(Constants.Colors.sapoGreenDark)
                     .disabled(selectedSections.isEmpty)
             }
         }
