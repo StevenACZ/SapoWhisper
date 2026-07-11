@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-07-11
+
 ### Fixed
 
 - **Short and silent dictations no longer hallucinate** — pressing the hotkey without speaking could paste a phrase like "Thank you.", and a short code ("CTK214") could come back repeated twenty times. The Local AI Server request now enables the server's voice-activity detector so non-speech is never decoded, and a new hallucination filter on every batch engine catches the remaining debris: punctuation-only output, repetition loops (collapsed to a single occurrence), and takes where the decoder reads the vocabulary glossary back as the transcript. Silent takes land in the existing "no speech" flow instead of pasting garbage. Validated by replaying 193 real dictations — normal transcriptions are byte-for-byte unaffected.
