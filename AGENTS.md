@@ -79,6 +79,14 @@ addresses, and machine-specific workflow details.
   the guard existed. Treat the guarded error as transient and retry.
 - Never use a zero-length read as the EOF signal on `AVAudioFile` — reading at
   exact EOF throws; gate reads on `framePosition < length`.
+- Whisper-family engines hallucinate on silent/short takes ("Thank you.",
+  repetition loops, glossary echo — all reproduced from real history audio).
+  Two layers stop this and both must stay: the Local AI Server request always
+  sends `vad_filter=true` (kills silence hallucinations AND trailing-silence
+  repetition loops), and every batch engine result passes through
+  `WhisperHallucinationFilter` (punctuation debris, loop collapse, vocabulary
+  echo → the no-speech flow). Keep the vocabulary in `prompt`: hotwords-only
+  requests measurably lose punctuation/casing on real dictations.
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.
 - The history retranscribe/re-polish path must not drive live `appState` or overlay.
 - Hotkey registration should fall back to the default combo when registration fails, and re-arm `Esc` after mid-session re-registration.
