@@ -1587,6 +1587,7 @@ class SapoWhisperViewModel: ObservableObject {
                 technicalDetail: "offline fast-fail before request"
             )
         }
+        let transcript: String
         switch engine {
         case .mlxWhisper:
             // R4: after an idle unload the reload kicked off at recording
@@ -1597,17 +1598,38 @@ class SapoWhisperViewModel: ObservableObject {
                 }
                 try await mlxWhisperTranscriber.loadModel(model)
             }
-            return try await mlxWhisperTranscriber.transcribe(audioURL: audioURL, language: language)
+            transcript = try await mlxWhisperTranscriber.transcribe(audioURL: audioURL, language: language)
         case .deepgram:
-            return try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
+            transcript = try await deepgramTranscriber.transcribe(audioURL: audioURL, language: language)
         case .localAIServer:
-            return try await localAIServerTranscriber.transcribe(audioURL: audioURL, language: language)
+            transcript = try await localAIServerTranscriber.transcribe(audioURL: audioURL, language: language)
         case .elevenLabsScribe:
             // File transcription (retry, history, resume-merge) always uses
             // the batch endpoint even when the live mode is realtime:
             // replaying a finished file through the streaming WebSocket is
             // slower and strictly less accurate than batch on the same file.
-            return try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
+            transcript = try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
+        }
+
+        // Shared anti-hallucination pass: punctuation debris, repetition
+        // loops, and glossary echo from short/near-silent takes become the
+        // no-speech flow instead of pasting garbage.
+        switch WhisperHallucinationFilter.evaluate(
+            transcript, vocabularyTerms: VocabularyManager.shared.echoDetectionTerms())
+        {
+        case .speech(let cleaned):
+            if cleaned != transcript {
+                SapoLog.recording.warning(
+                    "Hallucination filter collapsed repetition loop chars=\(transcript.count, privacy: .public)->\(cleaned.count, privacy: .public)"
+                )
+            }
+            return cleaned
+        case .nonSpeech(let reason):
+            throw TranscriptionFailure(
+                kind: .emptyTranscription,
+                engine: engine.displayName,
+                technicalDetail: "hallucination filter: \(reason)"
+            )
         }
     }
 

@@ -49,4 +49,31 @@ final class LocalAIServerTests: XCTestCase {
         XCTAssertTrue(EngineFilter.localAI.matches("Local AI Server · mobiuslabsgmbh/faster-whisper-large-v3-turbo"))
         XCTAssertFalse(EngineFilter.other.matches("Local AI Server"))
     }
+
+    // MARK: - Transcription form fields
+
+    func testTranscriptionRequestAlwaysEnablesVADFilter() {
+        // vad_filter is the layer that stops Whisper from hallucinating
+        // ("Thank you.", repetition loops) on silent or short takes —
+        // reproduced against real history audio (2026-07-11). Do not drop it.
+        let fields = LocalAIServerTranscriber.transcriptionFormFields(
+            model: "faster-whisper", languageCode: nil, vocabularyPrompt: "")
+        XCTAssertTrue(fields.contains { $0.name == "vad_filter" && $0.value == "true" })
+        XCTAssertTrue(fields.contains { $0.name == "model" && $0.value == "faster-whisper" })
+        XCTAssertTrue(fields.contains { $0.name == "response_format" && $0.value == "json" })
+    }
+
+    func testTranscriptionRequestOmitsEmptyOptionalFields() {
+        let fields = LocalAIServerTranscriber.transcriptionFormFields(
+            model: "m", languageCode: nil, vocabularyPrompt: "")
+        XCTAssertFalse(fields.contains { $0.name == "language" })
+        XCTAssertFalse(fields.contains { $0.name == "prompt" })
+    }
+
+    func testTranscriptionRequestIncludesLanguageAndPromptWhenSet() {
+        let fields = LocalAIServerTranscriber.transcriptionFormFields(
+            model: "m", languageCode: "es", vocabularyPrompt: "Glossary: SapoWhisper.")
+        XCTAssertTrue(fields.contains { $0.name == "language" && $0.value == "es" })
+        XCTAssertTrue(fields.contains { $0.name == "prompt" && $0.value == "Glossary: SapoWhisper." })
+    }
 }

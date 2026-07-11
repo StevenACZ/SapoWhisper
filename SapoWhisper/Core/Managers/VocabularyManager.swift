@@ -255,15 +255,7 @@ class VocabularyManager {
     /// last 224 tokens, so the glossary is capped and keeps the user's own
     /// keyterms first (they outrank replacement values on overflow).
     func initialPromptText(maxLength: Int = 700) -> String {
-        var seen = Set<String>()
-        var terms: [String] = []
-        for candidate in recognitionCandidates(includeReplacementValues: true) {
-            let sanitized = Self.sanitizedRecognitionHint(candidate)
-            let key = sanitized.lowercased()
-            guard !sanitized.isEmpty, !seen.contains(key) else { continue }
-            seen.insert(key)
-            terms.append(sanitized)
-        }
+        let terms = echoDetectionTerms()
         guard !terms.isEmpty else { return "" }
 
         let prefix = "Glossary: "
@@ -275,6 +267,22 @@ class VocabularyManager {
         }
         guard !body.isEmpty else { return "" }
         return "\(prefix)\(body)."
+    }
+
+    /// Canonical vocabulary terms as the initial prompt sees them — the
+    /// hallucination filter matches glossary-echo transcripts against this
+    /// exact list.
+    func echoDetectionTerms() -> [String] {
+        var seen = Set<String>()
+        var terms: [String] = []
+        for candidate in recognitionCandidates(includeReplacementValues: true) {
+            let sanitized = Self.sanitizedRecognitionHint(candidate)
+            let key = sanitized.lowercased()
+            guard !sanitized.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            terms.append(sanitized)
+        }
+        return terms
     }
 
     /// Applies saved replacements and high-confidence vocabulary spelling corrections.

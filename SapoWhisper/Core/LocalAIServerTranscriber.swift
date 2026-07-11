@@ -130,6 +130,32 @@ final class LocalAIServerTranscriber: ObservableObject {
         return LocalAIServerConnectionResult(modelIDs: modelIDs, selectedModel: trimmedModel)
     }
 
+    /// Form fields sent with every transcription request. Kept as a pure
+    /// helper so tests can pin the anti-hallucination contract: `vad_filter`
+    /// makes the server skip non-speech before decoding, which is what stops
+    /// Whisper from hallucinating "Thank you." on silent takes and from
+    /// looping on the trailing silence of short ones. The vocabulary stays in
+    /// `prompt` — hotwords-only requests lose punctuation/casing on a large
+    /// fraction of real dictations (measured against 3 days of history).
+    nonisolated static func transcriptionFormFields(
+        model: String,
+        languageCode: String?,
+        vocabularyPrompt: String
+    ) -> [(name: String, value: String)] {
+        var fields: [(name: String, value: String)] = [
+            ("model", model),
+            ("response_format", "json"),
+            ("vad_filter", "true"),
+        ]
+        if let languageCode {
+            fields.append(("language", languageCode))
+        }
+        if !vocabularyPrompt.isEmpty {
+            fields.append(("prompt", vocabularyPrompt))
+        }
+        return fields
+    }
+
     /// Reads the recorded WAV and assembles the multipart request off the main
     /// actor; only Sendable values (URL, strings, Data) cross the boundary.
     @concurrent
@@ -153,13 +179,10 @@ final class LocalAIServerTranscriber: ObservableObject {
         }
 
         var body = Data()
-        appendFormField(name: "model", value: model, boundary: boundary, to: &body)
-        appendFormField(name: "response_format", value: "json", boundary: boundary, to: &body)
-        if let languageCode {
-            appendFormField(name: "language", value: languageCode, boundary: boundary, to: &body)
-        }
-        if !vocabularyPrompt.isEmpty {
-            appendFormField(name: "prompt", value: vocabularyPrompt, boundary: boundary, to: &body)
+        for field in transcriptionFormFields(
+            model: model, languageCode: languageCode, vocabularyPrompt: vocabularyPrompt)
+        {
+            appendFormField(name: field.name, value: field.value, boundary: boundary, to: &body)
         }
         appendFileField(
             name: "file",
