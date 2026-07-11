@@ -8,7 +8,9 @@ on:
 
 jobs:
   ci-check:
-    runs-on: macos-15
+    # Xcode 26 minimum (Liquid Glass / macOS 26 SDK) — macos-15 images top
+    # out at Xcode 16.x and have failed every build since v2.9.0.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
