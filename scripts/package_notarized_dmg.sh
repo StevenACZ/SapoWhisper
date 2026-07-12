@@ -106,6 +106,27 @@ if [[ -z "$OUTPUT_DMG" ]]; then
   OUTPUT_DMG="$HOME/Downloads/SapoWhisper-$VERSION.dmg"
 fi
 
+SPARKLE_FW="$BUILT_APP/Contents/Frameworks/Sparkle.framework"
+if [[ -d "$SPARKLE_FW" ]]; then
+  # xcodebuild with manual signing does not deep-re-sign the executables
+  # nested inside Sparkle's prebuilt xcframework; Apple notarization rejects
+  # their upstream signatures (no Developer ID, no secure timestamp).
+  # Re-sign inside-out per Sparkle's distribution guidance, preserving the
+  # XPC services' own entitlements, then re-seal the framework and the app.
+  echo "==> Re-signing Sparkle nested executables with $SIGN_IDENTITY"
+  for NESTED in \
+    "$SPARKLE_FW/Versions/B/XPCServices/Downloader.xpc" \
+    "$SPARKLE_FW/Versions/B/XPCServices/Installer.xpc" \
+    "$SPARKLE_FW/Versions/B/Updater.app" \
+    "$SPARKLE_FW/Versions/B/Autoupdate"; do
+    codesign -f -o runtime --timestamp --preserve-metadata=entitlements \
+      -s "$SIGN_IDENTITY" "$NESTED"
+  done
+  codesign -f -o runtime --timestamp -s "$SIGN_IDENTITY" "$SPARKLE_FW"
+  codesign -f -o runtime --timestamp --preserve-metadata=entitlements \
+    -s "$SIGN_IDENTITY" "$BUILT_APP"
+fi
+
 echo "==> Verifying app signature"
 codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
 SIGNING_DETAILS="$(codesign -dvv "$BUILT_APP" 2>&1)"
