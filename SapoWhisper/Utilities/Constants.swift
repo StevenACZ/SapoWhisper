@@ -218,10 +218,9 @@ nonisolated enum Constants {
         static let autoDuckingEnabled = "autoDuckingEnabled"
         static let autoDuckingAmount = "autoDuckingAmount"  // 0.0 a 1.0 (porcentaje de reducción)
 
-        // Update check (passive, GitHub Releases; no auto-install)
+        // In-app updates (Sparkle)
         static let autoUpdateCheckEnabled = "autoUpdateCheckEnabled"
-        static let updateCheckETag = "updateCheckETag"
-        static let lastUpdateCheckAt = "lastUpdateCheckAt"
+        static let updateFeedURLOverride = "updateFeedURLOverride"  // local appcast testing only
     }
 }
 

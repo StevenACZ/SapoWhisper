@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B0AF20012F050001000000A1 /* MLXWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = B0AF20012F050001000000A2 /* MLXWhisper */; };
+		B0AF20012F050001000000A3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B0AF20012F050001000000A4 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B0AF20012F050001000000A1 /* MLXWhisper in Frameworks */,
+				B0AF20012F050001000000A3 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +123,7 @@
 			name = SapoWhisper;
 			packageProductDependencies = (
 				B0AF20012F050001000000A2 /* MLXWhisper */,
+				B0AF20012F050001000000A4 /* Sparkle */,
 			);
 			productName = SapoWhisper;
 			productReference = B0C248352EE7820500131DB7 /* SapoWhisper.app */;
@@ -157,6 +160,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B0AF20012F050001000000B1 /* XCLocalSwiftPackageReference "LocalPackages/MLXWhisper" */,
+				B0AF20012F050001000000B2 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B0C248362EE7820500131DB7 /* Products */;
@@ -216,10 +220,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.10.1;
+				MARKETING_VERSION = 2.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -236,10 +240,10 @@
 			buildSettings = {
 				ARCHS = arm64;
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.10.1;
+				MARKETING_VERSION = 2.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -385,7 +389,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = SapoWhisper/SapoWhisper.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -395,12 +399,13 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_FILE = SapoWhisper/Support/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.10.1;
+				MARKETING_VERSION = 2.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -424,7 +429,7 @@
 				CODE_SIGN_ENTITLEMENTS = SapoWhisper/SapoWhisper.entitlements;
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -434,12 +439,13 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_FILE = SapoWhisper/Support/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.10.1;
+				MARKETING_VERSION = 2.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = oli.SapoWhisper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -494,12 +500,25 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		B0AF20012F050001000000B2 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.4;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		B0AF20012F050001000000A2 /* MLXWhisper */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MLXWhisper;
+		};
+		B0AF20012F050001000000A4 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B0AF20012F050001000000B2 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

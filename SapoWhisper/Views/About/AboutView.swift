@@ -38,7 +38,6 @@ struct AboutView: View {
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
         .background(backgroundLayer)
-        .task { await UpdateChecker.shared.checkNow() }
     }
 
     // MARK: - Sections
@@ -56,33 +55,120 @@ struct AboutView: View {
 
             versionButton
 
-            if let update = UpdateChecker.shared.availableUpdate {
-                updateAvailableButton(update)
-            }
+            updateStatus
         }
     }
 
-    private func updateAvailableButton(_ update: UpdateChecker.AvailableUpdate) -> some View {
-        Button {
-            NSWorkspace.shared.open(update.releaseURL)
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.caption2)
+    /// Update capsule mirroring `UpdateManager.phase`, plus a manual
+    /// "check for updates" affordance when nothing is pending.
+    @ViewBuilder
+    private var updateStatus: some View {
+        let manager = UpdateManager.shared
 
-                Text("about.update_available".localized)
-                    .font(.caption2.weight(.medium))
+        switch manager.phase {
+        case .idle:
+            checkForUpdatesButton(manager)
 
-                Text("v\(update.version)")
-                    .font(.caption2.monospaced())
+        case .available(let version):
+            VStack(spacing: 5) {
+                Button {
+                    manager.installPendingUpdate()
+                } label: {
+                    updateCapsule(icon: "arrow.down.circle", text: "about.update_install".localized(version))
+                }
+                .buttonStyle(.plain)
+
+                if manager.releasePageURL != nil {
+                    Button {
+                        manager.openReleasePage()
+                    } label: {
+                        Text("about.update_release_notes".localized)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Color.sapoGreenText.opacity(0.12)))
-            .overlay(Capsule().strokeBorder(Color.sapoGreenText.opacity(0.22), lineWidth: 1))
-            .foregroundStyle(Color.sapoGreenText)
+
+        case .downloading(let fraction):
+            updateProgressCapsule(
+                text: "about.update_downloading".localized
+                    + (fraction.map { " \(Int($0 * 100))%" } ?? ""))
+
+        case .installing:
+            updateProgressCapsule(text: "about.update_installing".localized)
+
+        case .failed:
+            Button {
+                manager.installPendingUpdate()
+            } label: {
+                updateCapsule(icon: "exclamationmark.arrow.circlepath", text: "about.update_retry".localized)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func checkForUpdatesButton(_ manager: UpdateManager) -> some View {
+        switch manager.manualCheckStatus {
+        case .checking:
+            HStack(spacing: 5) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("about.update_check".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        case .upToDate:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle")
+                    .font(.caption2)
+                Text("about.update_up_to_date".localized)
+                    .font(.caption2.weight(.medium))
+            }
+            .foregroundStyle(Color.sapoGreen)
+        case .idle:
+            Button {
+                manager.checkForUpdatesManually()
+            } label: {
+                Text("about.update_check".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .underline()
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func updateCapsule(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2)
+
+            Text(text)
+                .font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.sapoGreenText.opacity(0.12)))
+        .overlay(Capsule().strokeBorder(Color.sapoGreenText.opacity(0.22), lineWidth: 1))
+        .foregroundStyle(Color.sapoGreenText)
+    }
+
+    private func updateProgressCapsule(text: String) -> some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+
+            Text(text)
+                .font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.sapoGreenText.opacity(0.12)))
+        .overlay(Capsule().strokeBorder(Color.sapoGreenText.opacity(0.22), lineWidth: 1))
+        .foregroundStyle(Color.sapoGreenText)
     }
 
     /// Easter egg: 3 quick taps swap in the loading icon for a moment.

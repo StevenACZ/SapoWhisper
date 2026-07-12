@@ -21,7 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         APIKeyKeychainMigration.run()
         EnginePortfolioMigration.run()
-        UpdateChecker.shared.start()
+        UpdateManager.shared.start()
         menuBarStatusController.start()
         observeScreenChanges()
         observeSleepWake()

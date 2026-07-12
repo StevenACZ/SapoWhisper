@@ -13,7 +13,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
 - 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
-- 🔔 Optional daily update check against GitHub Releases — a quiet notice when a new version ships, nothing auto-installed.
+- 🔔 One-click in-app updates (Sparkle): a quiet menu notice when a new version ships; installing downloads, verifies the EdDSA signature, and relaunches automatically. The daily check can be turned off in Settings.
 
 ## 🎧 Transcription Engines
 
