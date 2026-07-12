@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-07-11
+
+### Added
+
+- **One-click in-app updates** — when a new version ships, the menu bar popover shows "Update available — click to install"; one click downloads the update with live progress, verifies its EdDSA signature against the key embedded in the app, installs, and relaunches automatically. No DMG, no drag-to-Applications, and no re-granting permissions — the app's identity is unchanged, so Microphone and Accessibility grants survive. Settings → About gains an Install capsule, a "View release notes" link to the GitHub release page, and a manual "Check for updates" button with an explicit "You're up to date" state. Powered by Sparkle 2.
+- Release tooling: `make appcast` produces the EdDSA-signed update archive and the Sparkle appcast that ships with every GitHub release.
+
+### Changed
+
+- The passive update notice from 2.10.0 (which only linked to the release page) is replaced by the in-app installer. The daily background check keeps its Settings toggle, stays silent on failures, and still sends no telemetry — the only network call is fetching the appcast from GitHub Releases.
+
 ## [2.10.1] - 2026-07-11
 
 ### Fixed
