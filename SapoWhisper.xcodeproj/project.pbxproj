@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B0AF20012F050001000000A1 /* MLXWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = B0AF20012F050001000000A2 /* MLXWhisper */; };
+		B0AF20012F050001000000A3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B0AF20012F050001000000A4 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +53,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B0AF20012F050001000000A1 /* MLXWhisper in Frameworks */,
+				B0AF20012F050001000000A3 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +123,7 @@
 			name = SapoWhisper;
 			packageProductDependencies = (
 				B0AF20012F050001000000A2 /* MLXWhisper */,
+				B0AF20012F050001000000A4 /* Sparkle */,
 			);
 			productName = SapoWhisper;
 			productReference = B0C248352EE7820500131DB7 /* SapoWhisper.app */;
@@ -157,6 +160,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B0AF20012F050001000000B1 /* XCLocalSwiftPackageReference "LocalPackages/MLXWhisper" */,
+				B0AF20012F050001000000B2 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B0C248362EE7820500131DB7 /* Products */;
@@ -395,6 +399,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_FILE = SapoWhisper/Support/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -434,6 +439,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SapoWhisper necesita permisos para completar acciones en otras aplicaciones.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_FILE = SapoWhisper/Support/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -494,12 +500,25 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		B0AF20012F050001000000B2 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.4;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		B0AF20012F050001000000A2 /* MLXWhisper */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MLXWhisper;
+		};
+		B0AF20012F050001000000A4 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B0AF20012F050001000000B2 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

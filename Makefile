@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build test release install-dev size-check secrets-scan ci-check release-check notarized-dmg hooks-install idle-cpu-note
+.PHONY: help tools format format-all lint lint-all build test release install-dev size-check secrets-scan ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
 
 .DEFAULT_GOAL := help
 
@@ -30,6 +30,7 @@ help:
 	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
 	@printf "  make release-check Release gate: lint + Release build + size check\n"
 	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
+	@printf "  make appcast       Zip the notarized app, EdDSA-sign it, and write appcast.xml\n"
 	@printf "  make hooks-install Install optional Lefthook git hooks\n"
 	@printf "  make idle-cpu-note Print the manual idle-CPU verification steps (R6)\n"
 
@@ -101,6 +102,9 @@ release-check: lint release size-check
 
 notarized-dmg:
 	@scripts/package_notarized_dmg.sh
+
+appcast:
+	@scripts/generate_appcast.sh
 
 hooks-install:
 	@command -v lefthook >/dev/null || { echo "lefthook is not installed. Install it with: brew install lefthook"; exit 69; }

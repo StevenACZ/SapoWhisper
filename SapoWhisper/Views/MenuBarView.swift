@@ -266,14 +266,8 @@ struct MenuBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 0) {
-            if let update = UpdateChecker.shared.availableUpdate {
-                ActionRow(
-                    icon: "arrow.down.circle",
-                    title: "menu.update_available".localized,
-                    subtitle: "v\(update.version)"
-                ) {
-                    NSWorkspace.shared.open(update.releaseURL)
-                }
+            if UpdateManager.shared.phase != .idle {
+                UpdateMenuRow(manager: UpdateManager.shared)
 
                 Divider()
                     .padding(.horizontal)

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sparkle: merged into the generated Info.plist (GENERATE_INFOPLIST_FILE stays YES). -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/StevenACZ/SapoWhisper/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>EjJwYzuWlNuccLSqIcVxHRlGMLg7R6ONwpUjnVbFqY8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+</dict>
+</plist>

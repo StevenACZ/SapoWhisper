@@ -631,9 +631,21 @@
 "overlay.a11y.pasted" = "Texto pegado";
 "overlay.a11y.error" = "El dictado falló";
 
-/* Update check (passive) + retranscribe cancel */
+/* In-app updates (Sparkle) + retranscribe cancel */
 "menu.update_available" = "Actualización disponible";
-"about.update_available" = "Actualización disponible";
+"menu.update_install_hint" = "v%@ — clic para instalar";
+"menu.update_downloading" = "Descargando actualización…";
+"menu.update_installing" = "Instalando actualización…";
+"menu.update_relaunch" = "SapoWhisper se relanzará solo";
+"menu.update_failed" = "La actualización falló";
+"menu.update_retry_hint" = "Clic para reintentar";
+"about.update_install" = "Instalar v%@";
+"about.update_downloading" = "Descargando…";
+"about.update_installing" = "Instalando…";
+"about.update_retry" = "Falló la actualización — reintentar";
+"about.update_release_notes" = "Ver notas de la versión";
+"about.update_check" = "Buscar actualizaciones";
+"about.update_up_to_date" = "Estás al día";
 "settings.update_check_toggle" = "Buscar actualizaciones automáticamente";
 "settings.update_check_footnote" = "Consulta GitHub Releases una vez al día. No se envía nada.";
 "history.retranscribe_cancelling" = "Cancelando…";

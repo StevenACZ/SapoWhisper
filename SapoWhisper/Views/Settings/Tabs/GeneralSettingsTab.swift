@@ -496,11 +496,7 @@ struct GeneralSettingsTab: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .onChange(of: autoUpdateCheckEnabled) { _, enabled in
-                            if enabled {
-                                UpdateChecker.shared.start()
-                            } else {
-                                UpdateChecker.shared.stop()
-                            }
+                            UpdateManager.shared.autoCheckDidChange(enabled: enabled)
                         }
                 }
 
