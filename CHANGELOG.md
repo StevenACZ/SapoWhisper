@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-07-16
+
 ### Added
 
 - **Your audio is never lost again** — batch dictations are saved into History the moment recording stops, BEFORE transcription starts. If the engine hangs, the app crashes, or you force-quit mid-transcription, the recording is already a History row you can retranscribe or continue. Rows interrupted by a crash resolve to a retryable "failed" state on the next launch and are offered as "continue previous dictation".
