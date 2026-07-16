@@ -169,6 +169,9 @@ nonisolated enum Constants {
 
         // Motor de transcripcion
         static let transcriptionEngine = "transcriptionEngine"
+        /// Optional backup engine used when the primary fails with a
+        /// connectivity-class error ("" = none).
+        static let fallbackTranscriptionEngine = "fallbackTranscriptionEngine"
         static let mlxWhisperModel = "mlxWhisperModel"
         /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
         static let mlxWhisperUnloadAfterMinutes = "mlxWhisperUnloadAfterMinutes"

@@ -67,6 +67,11 @@ final class LocalAIServerTranscriber: ObservableObject {
         isTranscribing = true
         defer { isTranscribing = false }
 
+        // Fail fast when the server is unreachable (host off, LAN change):
+        // without this, a blackholed upload waits the full scaled request
+        // timeout (2-10 min) before reporting anything.
+        try await preflightServerReachability(baseURL: baseURL, apiKey: apiKey)
+
         // Reading the WAV and copying it into the multipart body is heavy for
         // long takes, so the request is assembled off the main actor.
         let payload = try await Self.makeTranscriptionRequest(
@@ -195,6 +200,36 @@ final class LocalAIServerTranscriber: ObservableObject {
         body.appendUTF8("--\(boundary)--\r\n")
         request.httpBody = body
         return (request, audioData.count)
+    }
+
+    /// Cheap GET to `/health` with a short timeout before uploading audio.
+    /// ANY HTTP response — including 404 on servers without that endpoint —
+    /// proves the host is alive and lets the real request proceed; only
+    /// transport-level failures (refused, unreachable, timed out) throw.
+    nonisolated static let preflightTimeout: TimeInterval = 3
+    private func preflightServerReachability(baseURL: URL, apiKey: String) async throws {
+        var request = URLRequest(url: LocalAIServerConfiguration.healthURL(from: baseURL))
+        request.httpMethod = "GET"
+        request.timeoutInterval = Self.preflightTimeout
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedKey.isEmpty {
+            request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            _ = try await session.data(for: request)
+        } catch {
+            try Task.checkCancellation()
+            let failure = TranscriptionFailure(
+                kind: .network,
+                engine: Self.engineName,
+                technicalDetail:
+                    "preflight health probe failed error=\((error as? URLError).map { "URLError.\($0.code.rawValue)" } ?? error.localizedDescription)"
+            )
+            SapoLog.recording.error(
+                "Local AI Server preflight failed \(failure.logSummary, privacy: .public)")
+            throw failure
+        }
     }
 
     private func probe(url: URL, apiKey: String) async throws {

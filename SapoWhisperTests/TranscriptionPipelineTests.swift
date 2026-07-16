@@ -352,6 +352,67 @@ final class TranscriptionPipelineTests: XCTestCase {
         XCTAssertEqual(host.presentedFailures.count, 1)
     }
 
+    // MARK: - Pre-persisted pending rows (.finalizePending)
+
+    private func makePendingRequest(historyId: Int64 = 77) -> TranscriptionPipeline.Request {
+        var request = makeRequest()
+        request.historyTarget = .finalizePending(historyId: historyId)
+        return request
+    }
+
+    func testPendingTargetReachesCompletedPersist() async {
+        let host = HostSpy()
+        let pipeline = TranscriptionPipeline(host: host)
+
+        await pipeline.run(makePendingRequest(historyId: 77)) {
+            self.makeOutput()
+        } captureResultOnFailure: {
+            nil
+        }
+
+        XCTAssertEqual(host.completedPersists.first?.target, .finalizePending(historyId: 77))
+    }
+
+    func testPendingTargetSilentEmptyTranscriptionStillResolvesRow() async {
+        let host = HostSpy()
+        host.sessionLooksSilent = true
+        let pipeline = TranscriptionPipeline(host: host)
+
+        await pipeline.run(makePendingRequest(historyId: 77)) {
+            throw TranscriptionFailure(kind: .emptyTranscription, engine: "Deepgram")
+        } captureResultOnFailure: {
+            (self.audioURL, 3.0)
+        }
+
+        XCTAssertEqual(
+            host.failedPersists.count, 1,
+            "a pre-persisted row must always resolve — even under the local-silence rule"
+        )
+        XCTAssertEqual(host.failedPersists.first?.target, .finalizePending(historyId: 77))
+    }
+
+    func testEngineNameOverrideReachesCompletedPersist() async {
+        let host = HostSpy()
+        let pipeline = TranscriptionPipeline(host: host)
+
+        await pipeline.run(makeRequest()) {
+            TranscriptionPipeline.EngineOutput(
+                transcript: "texto",
+                audioURL: self.audioURL,
+                duration: 2.0,
+                language: "es",
+                engineNameOverride: "MLX Whisper (backup)"
+            )
+        } captureResultOnFailure: {
+            nil
+        }
+
+        XCTAssertEqual(
+            host.completedPersists.first?.engineName, "MLX Whisper (backup)",
+            "History must record the engine that actually transcribed"
+        )
+    }
+
     func testNilEngineDurationStillReachesPolishAsNil() async {
         let host = HostSpy()
         let pipeline = TranscriptionPipeline(host: host)

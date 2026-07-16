@@ -33,6 +33,8 @@
 "history.failed_detail" = "La transcripción no pudo completarse. Intenta de nuevo si el audio está guardado.";
 "history.cancelled" = "Cancelado";
 "history.cancelled_detail" = "La grabación fue cancelada. El audio quedó guardado para poder re-transcribirlo.";
+"history.transcribing" = "Transcribiendo…";
+"history.transcribing_detail" = "Este dictado se está transcribiendo. El audio ya está guardado, así que no se pierde nada si falla.";
 "history.pinned" = "Fijados";
 "history.today" = "Hoy";
 "history.yesterday" = "Ayer";
@@ -121,6 +123,10 @@
 /* Model Download / Config View */
 "config.tab_settings" = "Ajustes";
 "config.engine" = "Motor de Transcripción";
+"config.fallback_engine" = "Motor de Respaldo";
+"config.fallback_engine_description" = "Si el motor principal no responde (servidor apagado, timeout), el dictado se reintenta automáticamente una vez con este motor.";
+"config.fallback_engine_none" = "Ninguno";
+"config.fallback_engine_not_configured" = "%@ aún no está configurado, así que el respaldo se omitirá.";
 "config.engine_summary" = "Configuración actual";
 "config.engine_summary_engine" = "Motor";
 "config.engine_summary_mode" = "Modo";

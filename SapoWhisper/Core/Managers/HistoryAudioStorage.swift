@@ -54,6 +54,14 @@ nonisolated final class HistoryAudioStorage: Sendable {
         try? FileManager.default.removeItem(atPath: path)
     }
 
+    /// True when `url` is inside the permanent audio directory. Symlinks are
+    /// resolved on both sides (/var vs /private/var) like the orphan sweep.
+    func ownsFile(at url: URL) -> Bool {
+        let filePath = url.resolvingSymlinksInPath().path
+        let dirPath = audioDir.resolvingSymlinksInPath().path
+        return filePath.hasPrefix(dirPath + "/")
+    }
+
     func directorySize() -> Int64 {
         audioFiles().reduce(0) { $0 + $1.size }
     }

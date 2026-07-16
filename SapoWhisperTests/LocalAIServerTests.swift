@@ -76,4 +76,142 @@ final class LocalAIServerTests: XCTestCase {
         XCTAssertTrue(fields.contains { $0.name == "language" && $0.value == "es" })
         XCTAssertTrue(fields.contains { $0.name == "prompt" && $0.value == "Glossary: SapoWhisper." })
     }
+
+    // MARK: - Preflight reachability (fail fast when the server is down)
+
+    /// URLProtocol stub: routes every request through a static handler so the
+    /// tests can drive the preflight and upload responses independently.
+    private final class StubURLProtocol: URLProtocol {
+        nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> Result<(status: Int, body: Data), URLError>)?
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func stopLoading() {}
+
+        override func startLoading() {
+            guard let handler = Self.handler, let url = request.url else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+                return
+            }
+            switch handler(request) {
+            case .success(let response):
+                let http = HTTPURLResponse(
+                    url: url, statusCode: response.status, httpVersion: "HTTP/1.1",
+                    headerFields: nil)!
+                client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: response.body)
+                client?.urlProtocolDidFinishLoading(self)
+            case .failure(let error):
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+    }
+
+    private func makeStubbedTranscriber() -> LocalAIServerTranscriber {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        return LocalAIServerTranscriber(session: URLSession(configuration: configuration))
+    }
+
+    /// Sets the UserDefaults config transcribe() reads, runs the body, and
+    /// restores the previous values (the test host shares the defaults domain).
+    private func withLocalAIServerDefaults(_ body: () async throws -> Void) async rethrows {
+        let defaults = UserDefaults.standard
+        let previousURL = defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL)
+        let previousModel = defaults.string(forKey: Constants.StorageKeys.localAIServerModel)
+        defaults.set("http://127.0.0.1:9999", forKey: Constants.StorageKeys.localAIServerBaseURL)
+        defaults.set("test-model", forKey: Constants.StorageKeys.localAIServerModel)
+        defer {
+            if let previousURL {
+                defaults.set(previousURL, forKey: Constants.StorageKeys.localAIServerBaseURL)
+            } else {
+                defaults.removeObject(forKey: Constants.StorageKeys.localAIServerBaseURL)
+            }
+            if let previousModel {
+                defaults.set(previousModel, forKey: Constants.StorageKeys.localAIServerModel)
+            } else {
+                defaults.removeObject(forKey: Constants.StorageKeys.localAIServerModel)
+            }
+            StubURLProtocol.handler = nil
+        }
+        try await body()
+    }
+
+    private func makeValidWAV() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("local-ai-preflight-\(UUID().uuidString).wav")
+        let sampleRate: UInt32 = 16_000
+        let dataSize: UInt32 = sampleRate * 2  // 1 second, mono int16
+
+        var data = Data()
+        data.append(contentsOf: "RIFF".utf8)
+        appendUInt32(&data, 36 + dataSize)
+        data.append(contentsOf: "WAVE".utf8)
+        data.append(contentsOf: "fmt ".utf8)
+        appendUInt32(&data, 16)
+        appendUInt16(&data, 1)  // PCM
+        appendUInt16(&data, 1)  // mono
+        appendUInt32(&data, sampleRate)
+        appendUInt32(&data, sampleRate * 2)
+        appendUInt16(&data, 2)  // block align
+        appendUInt16(&data, 16)  // bits per sample
+        data.append(contentsOf: "data".utf8)
+        appendUInt32(&data, dataSize)
+        data.append(Data(count: Int(dataSize)))
+        try data.write(to: url)
+        return url
+    }
+
+    private func appendUInt32(_ data: inout Data, _ value: UInt32) {
+        var little = value.littleEndian
+        withUnsafeBytes(of: &little) { data.append(contentsOf: $0) }
+    }
+
+    private func appendUInt16(_ data: inout Data, _ value: UInt16) {
+        var little = value.littleEndian
+        withUnsafeBytes(of: &little) { data.append(contentsOf: $0) }
+    }
+
+    @MainActor
+    func testTranscribeFailsFastWithNetworkErrorWhenServerUnreachable() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        try await withLocalAIServerDefaults {
+            StubURLProtocol.handler = { _ in .failure(URLError(.cannotConnectToHost)) }
+            let transcriber = makeStubbedTranscriber()
+
+            do {
+                _ = try await transcriber.transcribe(audioURL: audioURL, language: "es")
+                XCTFail("transcribe must throw when the server is unreachable")
+            } catch let failure as TranscriptionFailure {
+                XCTAssertEqual(failure.kind, .network)
+                XCTAssertTrue(
+                    failure.technicalDetail?.contains("preflight") == true,
+                    "the failure must come from the preflight, not the upload timeout"
+                )
+            }
+        }
+    }
+
+    @MainActor
+    func testPreflightAcceptsAnyHTTPResponseAndUploadProceeds() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        try await withLocalAIServerDefaults {
+            // A 404 on /health (server without that endpoint) still proves
+            // the host is alive; only transport failures may block the upload.
+            StubURLProtocol.handler = { request in
+                if request.url?.path.hasSuffix("/health") == true {
+                    return .success((status: 404, body: Data()))
+                }
+                return .success((status: 200, body: Data(#"{"text": "hola mundo"}"#.utf8)))
+            }
+            let transcriber = makeStubbedTranscriber()
+
+            let transcript = try await transcriber.transcribe(audioURL: audioURL, language: "es")
+            XCTAssertEqual(transcript, "hola mundo")
+        }
+    }
 }

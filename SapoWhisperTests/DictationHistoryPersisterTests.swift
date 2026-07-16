@@ -204,6 +204,130 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertNil(persister.lastFailedHistoryId)
     }
 
+    // MARK: - Pre-persisted pending rows
+
+    func testPersistPendingInsertsTranscribingRowAndCleansSource() throws {
+        let source = makeSourceWAV(named: "pending")
+
+        let pending = try XCTUnwrap(
+            persister.persistPending(
+                audioURL: source,
+                engine: .localAIServer,
+                engineName: "Local AI Server · test-model",
+                language: "es",
+                duration: 12.5
+            ))
+
+        let rows = manager.fetchAll()
+        XCTAssertEqual(rows.count, 1)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.id, pending.historyId)
+        XCTAssertEqual(row.status, "transcribing")
+        XCTAssertEqual(row.engine, "Local AI Server · test-model")
+        XCTAssertEqual(row.duration, 12.5, accuracy: 0.01)
+        XCTAssertTrue(row.text.isEmpty)
+
+        XCTAssertNotEqual(pending.audioURL, source, "the engine must read the History copy")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pending.audioURL.path))
+        XCTAssertTrue(manager.referencedAudioPaths().contains(pending.audioURL.path))
+        XCTAssertEqual(deleteSpy.deleted, [source], "the temp WAV is cleaned once the copy exists")
+    }
+
+    func testFinalizePendingSuccessFillsRowInPlace() throws {
+        let source = makeSourceWAV(named: "pending-success")
+        let pending = try XCTUnwrap(
+            persister.persistPending(
+                audioURL: source,
+                engine: .localAIServer,
+                engineName: "Local AI Server · test-model",
+                language: "es",
+                duration: 4.0
+            ))
+
+        let aiResult = TranscriptAIResult(
+            rawText: "hola",
+            finalText: "Hola.",
+            status: .applied,
+            model: "test-model",
+            mode: "automatic",
+            error: nil,
+            elapsedMs: 1
+        )
+        persister.persistCompleted(
+            audioURL: pending.audioURL,
+            engine: .localAIServer,
+            engineName: "Local AI Server · test-model",
+            language: "es",
+            duration: 4.0,
+            aiResult: aiResult,
+            perf: nil,
+            target: .finalizePending(historyId: pending.historyId)
+        )
+
+        let rows = manager.fetchAll()
+        XCTAssertEqual(rows.count, 1, "finalizing must not insert a second row")
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.status, "completed")
+        XCTAssertNil(row.failureCode)
+        XCTAssertEqual(row.text, "Hola.")
+        XCTAssertEqual(persister.lastCompletedHistoryId, pending.historyId)
+    }
+
+    func testFinalizePendingFailureMarksRowFailedAndArmsRetry() throws {
+        let source = makeSourceWAV(named: "pending-failure")
+        let pending = try XCTUnwrap(
+            persister.persistPending(
+                audioURL: source,
+                engine: .localAIServer,
+                engineName: "Local AI Server · test-model",
+                language: "es",
+                duration: 4.0
+            ))
+        let deletesAfterPersist = deleteSpy.deleted.count
+
+        persister.persistFailed(
+            audioURL: pending.audioURL,
+            engine: .localAIServer,
+            engineName: "Local AI Server · test-model",
+            language: "es",
+            duration: 4.0,
+            failure: TranscriptionFailure(kind: .network, engine: "Local AI Server"),
+            target: .finalizePending(historyId: pending.historyId)
+        )
+
+        let rows = manager.fetchAll()
+        XCTAssertEqual(rows.count, 1, "failure must resolve the pending row, not insert another")
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.status, "failed")
+        XCTAssertEqual(row.failureCode, "Local AI Server/network")
+        XCTAssertTrue(row.audioFileExists, "the pre-persisted audio survives the failure")
+
+        XCTAssertEqual(persister.lastFailedHistoryId, pending.historyId)
+        XCTAssertEqual(persister.lastFailedAudioURL, pending.audioURL)
+        XCTAssertEqual(deleteSpy.deleted.count, deletesAfterPersist, "no audio is deleted on failure")
+    }
+
+    func testStaleCleanupNeverDeletesHistoryOwnedAudio() throws {
+        let source = makeSourceWAV(named: "pending-stale")
+        let pending = try XCTUnwrap(
+            persister.persistPending(
+                audioURL: source,
+                engine: .localAIServer,
+                engineName: "Local AI Server · test-model",
+                language: "es",
+                duration: 4.0
+            ))
+        // Cancel path: retry state is cleared, then the cancelled pipeline's
+        // stale completion asks to clean up the History-owned WAV.
+        persister.clearRetryState()
+        let deletesAfterPersist = deleteSpy.deleted.count
+
+        persister.cleanUpStaleAudio(pending.audioURL)
+
+        XCTAssertEqual(deleteSpy.deleted.count, deletesAfterPersist)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pending.audioURL.path))
+    }
+
     // MARK: - Stale cleanup
 
     func testStaleCleanupNeverDeletesRetryAudio() throws {

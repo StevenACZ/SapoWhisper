@@ -8,7 +8,7 @@ addresses, and machine-specific workflow details.
 
 - macOS menu bar speech-to-text app.
 - Main flow: press `Option + Space`, speak, stop, then paste with clipboard + `Cmd+V`.
-- `Esc` cancels an active dictation without transcribing or pasting, but preserves captured audio as a cancelled History entry; pending-start cancels create no row.
+- `Esc` cancels an active dictation without transcribing or pasting, but preserves captured audio as a cancelled History entry; pending-start cancels create no row. Esc also cancels an in-flight batch transcription (the pre-persisted row resolves to cancelled and is offered as continue-previous).
 - Minimum macOS: 14.0.
 - Release target: Apple Silicon only (`arm64`, M1 and newer).
 - Main target: `SapoWhisper` in `SapoWhisper.xcodeproj`.
@@ -25,6 +25,8 @@ addresses, and machine-specific workflow details.
 - Streaming engines (Flux, ElevenLabs realtime) are driven through `StreamingDictationSession` plus one shared start/stop/pause/abort/binding path in the ViewModel (`StreamingEngineContext`). Do not add per-engine copies of that flow.
 - Observation: `MLXWhisperTranscriber` and the vocabulary/AI-memory/prompt-context managers are `@Observable` — views read them directly; do not reintroduce `@Published` mirrors in the ViewModel. High-frequency tickers (recording duration) stay OFF ObservableObject state: publish through a subject and subscribe locally in the one view that renders them.
 - History persists through SQLite and local audio storage. Use atomic history persistence helpers; do not split audio save and row save.
+- Batch dictations persist audio + a "transcribing" History row BEFORE the engine runs (`DictationHistoryPersister.persistPending` → pipeline target `.finalizePending`); success fills the row, failure marks it failed, and a launch sweep (`recoverInterruptedTranscriptions`) resolves rows orphaned by a crash. Never move persistence back to after transcription — that reopens the audio-loss window this exists to close.
+- An optional backup engine (Settings → Engine) retries a dictation once when the primary fails with a connectivity-class error (`network`/`timedOut`/`serverError`). The backup runs through the same `transcribeAudio` dispatch; History records the engine that actually transcribed. Explicit engine choices (history retranscribe menu) never fall back.
 - Vocabulary metrics are read-only from recent history rows; do not add tracking columns for them.
 - Speech-mishearing brand tables and spoken-form helpers live in `SpeechConfusionCatalog`, shared by `VocabularyManager` and `AIPolishMemoryManager`. Add new mishearing variants there — do not re-add per-manager copies (they drift).
 - MLX model snapshots live under the app's own `Application Support/SapoWhisper/MLXModels/` (one folder per tier, `WhisperModelDownloader.modelDirectory`); a model counts as downloaded only when weights + config + tokenizer are all present and non-empty.
@@ -87,6 +89,7 @@ addresses, and machine-specific workflow details.
   `WhisperHallucinationFilter` (punctuation debris, loop collapse, vocabulary
   echo → the no-speech flow). Keep the vocabulary in `prompt`: hotwords-only
   requests measurably lose punctuation/casing on real dictations.
+- Local AI Server transcriptions preflight `GET /health` (3 s timeout) before uploading: any HTTP response — including 404 on servers without that endpoint — counts as alive; only transport failures throw. Do not remove it — without the preflight a powered-off server hangs the dictation for the full scaled request timeout (2–10 min).
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.
 - The history retranscribe/re-polish path must not drive live `appState` or overlay.
 - Hotkey registration should fall back to the default combo when registration fails, and re-arm `Esc` after mid-session re-registration.

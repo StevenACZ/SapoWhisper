@@ -5,6 +5,7 @@ struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
     @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.mlxWhisper.rawValue
+    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine) private var fallbackEngineRawValue = ""
     @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.mlxWhisperModel) private var selectedMLXModel = MLXWhisperModel.largeV3Turbo.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
@@ -27,6 +28,7 @@ struct EngineSettingsTab: View {
             ScrollView {
                 VStack(spacing: 12) {
                     transcriptionEngineCard
+                    fallbackEngineCard
                     currentSetupCard
                 }
                 .frame(maxWidth: 720)
@@ -62,6 +64,51 @@ struct EngineSettingsTab: View {
                     } details: {
                         selectedEngineSettings(for: engine)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Backup engine
+
+    /// Engines other than the primary; the stored value falls back to "none"
+    /// at runtime if the user later selects it as the primary.
+    private var fallbackCandidates: [TranscriptionEngine] {
+        TranscriptionEngine.allCases.filter { $0 != currentEngine }
+    }
+
+    private var selectedFallbackEngine: TranscriptionEngine? {
+        guard let engine = TranscriptionEngine(rawValue: fallbackEngineRawValue),
+            engine != currentEngine
+        else { return nil }
+        return engine
+    }
+
+    private var fallbackEngineCard: some View {
+        SettingsCard(icon: "arrow.triangle.2.circlepath", title: "config.fallback_engine".localized) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("config.fallback_engine_description".localized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Picker("", selection: $fallbackEngineRawValue) {
+                    Text("config.fallback_engine_none".localized).tag("")
+                    ForEach(fallbackCandidates) { engine in
+                        Text(engine.displayName).tag(engine.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: 280, alignment: .leading)
+
+                if let backup = selectedFallbackEngine, !viewModel.isBackupEngineUsable(backup) {
+                    Label(
+                        "config.fallback_engine_not_configured".localized(backup.displayName),
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundColor(.orange)
                 }
             }
         }

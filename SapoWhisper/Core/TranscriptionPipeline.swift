@@ -47,10 +47,14 @@ protocol TranscriptionPipelineHost: AnyObject {
 
 /// Where the pipeline's result lands in History: live dictations insert a
 /// fresh row; a retry refreshes the failed row it came from (and a failed
-/// retry keeps that row untouched so it stays retryable).
+/// retry keeps that row untouched so it stays retryable). A dictation whose
+/// audio was pre-persisted as a "transcribing" row finalizes that row in
+/// place: success fills the transcript, failure marks it failed — either way
+/// the audio is already safe in History before the engine ever runs.
 enum HistoryPersistenceTarget: Equatable {
     case insertNew
     case updateExisting(historyId: Int64)
+    case finalizePending(historyId: Int64)
 }
 
 /// C1: the transcribe→polish→paste→persist flow shared by the three stop
@@ -86,6 +90,10 @@ final class TranscriptionPipeline {
         /// Language persisted with the completed row (Flux reports the
         /// detected language; the other engines keep the selected one).
         let language: String
+        /// Set when the transcript came from the configured backup engine
+        /// instead of `request.engine`, so History records the engine that
+        /// actually transcribed.
+        var engineNameOverride: String? = nil
     }
 
     private unowned let host: TranscriptionPipelineHost
@@ -127,7 +135,7 @@ final class TranscriptionPipeline {
             host.persistCompletedDictation(
                 audioURL: output.audioURL,
                 engine: request.engine,
-                engineName: request.engineName,
+                engineName: output.engineNameOverride ?? request.engineName,
                 language: output.language,
                 duration: output.duration ?? 0,
                 aiResult: aiResult,
@@ -147,9 +155,13 @@ final class TranscriptionPipeline {
             host.presentTranscriptionFailure(failure)
 
             // Silence sessions keep their WAV but never create a failed
-            // history row — there was nothing to transcribe.
+            // history row — there was nothing to transcribe. A pre-persisted
+            // row is the exception: it already exists and must resolve, or it
+            // would sit as "transcribing" until the next launch sweep.
+            var hasPendingRow = false
+            if case .finalizePending = request.historyTarget { hasPendingRow = true }
             let isLocalSilence = failure.kind == .emptyTranscription && host.sessionLooksSilent
-            if let captureResult, !isLocalSilence {
+            if let captureResult, !isLocalSilence || hasPendingRow {
                 host.persistFailedDictation(
                     audioURL: captureResult.audioURL,
                     engine: request.engine,
