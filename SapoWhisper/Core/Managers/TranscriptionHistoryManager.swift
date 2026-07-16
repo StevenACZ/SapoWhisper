@@ -325,6 +325,75 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         notifyDidChange()
     }
 
+    /// Resolves a pre-persisted "transcribing" row (or any row) into a failed
+    /// one, keeping its History audio retranscribable.
+    func markTranscriptionFailed(id: Int64, failureCode: String) {
+        let sql = "UPDATE transcriptions SET status = 'failed', failure_code = ? WHERE id = ?;"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        bindText(stmt, 1, failureCode)
+        sqlite3_bind_int64(stmt, 2, id)
+        stepStatement(stmt, operation: "markTranscriptionFailed")
+        notifyDidChange()
+    }
+
+    /// A dictation whose app died mid-transcription: its row was pre-persisted
+    /// as "transcribing" and never resolved.
+    struct InterruptedTranscription {
+        let id: Int64
+        let audioPath: String?
+        let duration: TimeInterval
+        let timestamp: Date
+    }
+
+    static let interruptedTranscriptionFailureCode = "SapoWhisper/interrupted_transcription"
+
+    /// Launch sweep: rows stuck in "transcribing" belong to a session that died
+    /// mid-transcription (crash, force-quit, power loss). Their audio already
+    /// lives in History storage, so each becomes a failed row the user can
+    /// retranscribe. Returns the most recent one as the "continue previous
+    /// dictation" offer candidate.
+    @discardableResult
+    func recoverInterruptedTranscriptions() -> InterruptedTranscription? {
+        let sql = """
+            SELECT id, audio_path, duration_seconds, timestamp FROM transcriptions
+            WHERE status = 'transcribing' ORDER BY timestamp DESC, id DESC;
+            """
+        var stmt: OpaquePointer?
+        var interrupted: [InterruptedTranscription] = []
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let audioPath: String? =
+                sqlite3_column_type(stmt, 1) != SQLITE_NULL
+                ? String(cString: sqlite3_column_text(stmt, 1)) : nil
+            let timestampStr = String(cString: sqlite3_column_text(stmt, 3))
+            interrupted.append(
+                InterruptedTranscription(
+                    id: sqlite3_column_int64(stmt, 0),
+                    audioPath: audioPath,
+                    duration: sqlite3_column_double(stmt, 2),
+                    timestamp: Self.isoFormatter.date(from: timestampStr) ?? Date()
+                )
+            )
+        }
+        guard !interrupted.isEmpty else { return nil }
+        for row in interrupted {
+            markTranscriptionFailed(id: row.id, failureCode: Self.interruptedTranscriptionFailureCode)
+        }
+        SapoLog.recording.info(
+            "Interrupted transcriptions recovered rows=\(interrupted.count, privacy: .public)"
+        )
+        return interrupted.first
+    }
+
+    /// True when `url` lives inside History's permanent audio directory —
+    /// files History owns must never be deleted by temp/stale cleanup paths.
+    func ownsAudioFile(at url: URL) -> Bool {
+        audioStorage.ownsFile(at: url)
+    }
+
     func updateAIProcessing(
         id: Int64,
         finalText: String,

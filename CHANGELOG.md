@@ -6,6 +6,16 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Your audio is never lost again** — batch dictations are saved into History the moment recording stops, BEFORE transcription starts. If the engine hangs, the app crashes, or you force-quit mid-transcription, the recording is already a History row you can retranscribe or continue. Rows interrupted by a crash resolve to a retryable "failed" state on the next launch and are offered as "continue previous dictation".
+- **Esc cancels a stuck transcription** — pressing Esc while the overlay says "Transcribing" aborts the engine call and keeps the full audio in History (marked as cancelled), ready to retranscribe or continue in the next dictation. Previously Esc only worked while recording.
+- **Backup transcription engine** — a new Settings → Engine card lets you pick a second engine. If the main engine fails with a connectivity error (server off, timeout, 5xx), the dictation automatically retries once on the backup, and History records which engine actually transcribed.
+
+### Fixed
+
+- **Local AI Server fails fast when the server is down** — a 3-second `/health` preflight runs before every upload, so an unreachable server (NAS powered off, LAN change) reports a network error immediately instead of hanging for the 2–10 minute scaled request timeout. Any HTTP response (even 404 on servers without that endpoint) counts as alive.
+
 ## [2.11.0] - 2026-07-11
 
 ### Added

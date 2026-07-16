@@ -21,6 +21,14 @@ struct HistoryRowView: View {
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            } else if entry.status == "transcribing" {
+                HStack(spacing: 4) {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.caption)
+                    Text("history.transcribing".localized)
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
             } else if isFailed {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")

@@ -76,9 +76,10 @@ final class DictationHistoryPersister {
                 aiResult: aiResult,
                 perf: perf
             )
-        case .updateExisting(let historyId):
-            // Retry path: refresh the failed row in place (the retry may have
-            // run on a different engine than the failed attempt).
+        case .updateExisting(let historyId), .finalizePending(let historyId):
+            // Retry path and pre-persisted pending rows: refresh the row in
+            // place (the transcript may have come from a different engine
+            // than the one recorded at insert time).
             historyManager.updateRetranscription(
                 id: historyId,
                 engine: engineName,
@@ -110,6 +111,15 @@ final class DictationHistoryPersister {
             SapoLog.recording.info("Retry failed; keeping original failed history row")
             return
         }
+        if case .finalizePending(let historyId) = target {
+            // The audio already lives in History; only the row status needs
+            // to resolve so the dictation shows up as failed + retryable.
+            historyManager.markTranscriptionFailed(
+                id: historyId, failureCode: failure.diagnosticCode)
+            lastFailedHistoryId = historyId
+            lastFailedAudioURL = audioURL
+            return
+        }
         let persistedEntry = persistEntry(
             from: audioURL,
             engine: engine,
@@ -123,6 +133,46 @@ final class DictationHistoryPersister {
         lastFailedHistoryId = persistedEntry.id > 0 ? persistedEntry.id : nil
         lastFailedAudioURL = persistedEntry.audioURL ?? audioURL
         cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
+    }
+
+    /// Result of pre-persisting a dictation before its engine runs: the
+    /// pending row and the History copy of the WAV the engine should read.
+    struct PendingOutcome {
+        let historyId: Int64
+        let audioURL: URL
+    }
+
+    /// Persists the finished capture into History as a "transcribing" row
+    /// BEFORE the engine runs, so a hang, crash, cancel, or force-quit during
+    /// transcription can never lose the audio. The pipeline then finalizes
+    /// the row via `.finalizePending`. Returns nil when the insert or the
+    /// audio copy failed — callers fall back to the legacy post-persist flow.
+    func persistPending(
+        audioURL: URL,
+        engine: TranscriptionEngine,
+        engineName: String?,
+        language: String,
+        duration: TimeInterval
+    ) -> PendingOutcome? {
+        let persistedEntry = persistEntry(
+            from: audioURL,
+            engine: engine,
+            engineName: engineName,
+            language: language,
+            duration: duration,
+            aiResult: nil,
+            status: "transcribing"
+        )
+        // Insert failure already rolled back the copied audio inside the
+        // manager; a rowless pending state falls back to the legacy flow.
+        // A copy failure with a good row is still usable: the row references
+        // the temp WAV, exactly like failed rows do when the copy fails.
+        guard persistedEntry.id > 0, let pendingAudioURL = persistedEntry.audioURL else {
+            SapoLog.recording.warning("Pre-transcription persist unavailable; using legacy flow")
+            return nil
+        }
+        cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
+        return PendingOutcome(historyId: persistedEntry.id, audioURL: pendingAudioURL)
     }
 
     /// Persistence half of the abort paths (sleep, device failure, cancel,
@@ -177,6 +227,9 @@ final class DictationHistoryPersister {
     /// the History still references.
     func cleanUpStaleAudio(_ audioURL: URL) {
         guard audioURL != lastFailedAudioURL else { return }
+        // Pre-persisted dictations hand the pipeline a History-owned WAV —
+        // going stale (e.g. a cancelled transcription) must never delete it.
+        guard !historyManager.ownsAudioFile(at: audioURL) else { return }
         deleteSourceAudio(audioURL)
     }
 

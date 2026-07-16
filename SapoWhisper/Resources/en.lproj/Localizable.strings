@@ -33,6 +33,8 @@
 "history.failed_detail" = "Transcription could not be completed. Try again if audio is saved.";
 "history.cancelled" = "Cancelled";
 "history.cancelled_detail" = "Recording was cancelled. Audio was saved so you can re-transcribe it.";
+"history.transcribing" = "Transcribing…";
+"history.transcribing_detail" = "This dictation is being transcribed. The audio is already saved, so nothing is lost if it fails.";
 "history.pinned" = "Pinned";
 "history.today" = "Today";
 "history.yesterday" = "Yesterday";
@@ -121,6 +123,10 @@
 /* Model Download / Config View */
 "config.tab_settings" = "Settings";
 "config.engine" = "Transcription Engine";
+"config.fallback_engine" = "Backup Engine";
+"config.fallback_engine_description" = "If the main engine is unreachable (server off, timeout), the dictation automatically retries once with this engine.";
+"config.fallback_engine_none" = "None";
+"config.fallback_engine_not_configured" = "%@ is not configured yet, so the backup will be skipped.";
 "config.engine_summary" = "Current Setup";
 "config.engine_summary_engine" = "Engine";
 "config.engine_summary_mode" = "Mode";

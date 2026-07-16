@@ -27,6 +27,9 @@ struct HistoryDetailView: View {
 
     private var isFailed: Bool { entry.status == "failed" }
     private var isUserCancelled: Bool { entry.isUserCancelled }
+    /// Pre-persisted row whose engine is still running (live only — stale
+    /// ones resolve to failed at launch).
+    private var isTranscribing: Bool { entry.status == "transcribing" }
 
     private var canPolish: Bool {
         entry.status == "completed"
@@ -46,6 +49,8 @@ struct HistoryDetailView: View {
 
                 if isUserCancelled {
                     cancelledCard
+                } else if isTranscribing {
+                    transcribingCard
                 } else if isFailed {
                     failedCard
                 } else {
@@ -424,6 +429,32 @@ struct HistoryDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(.orange.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private var transcribingCard: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+
+            Text("history.transcribing".localized)
+                .font(.title3.weight(.semibold))
+
+            Text("history.transcribing_detail".localized)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.secondary.opacity(0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.secondary.opacity(0.2), lineWidth: 1)
         )
     }
 

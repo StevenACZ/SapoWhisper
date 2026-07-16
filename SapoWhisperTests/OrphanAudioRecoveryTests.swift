@@ -144,6 +144,46 @@ final class OrphanAudioRecoveryTests: XCTestCase {
 
     /// Builds a 16 kHz mono int16 WAV. `staleHeader: true` mimics an
     /// interrupted AVAudioFile writer: samples on disk, sizes still 0.
+    // MARK: - Interrupted-transcription sweep (pre-persisted rows)
+
+    func testRecoverInterruptedTranscriptionsResolvesStuckRows() throws {
+        let source = tempDir.appendingPathComponent("interrupted-source.wav")
+        try writeWAV(to: source, seconds: 4, staleHeader: false)
+        let persisted = manager.persistEntry(
+            audioSource: source,
+            engine: "Local AI Server",
+            language: "es",
+            duration: 42,
+            text: "",
+            status: "transcribing"
+        )
+        XCTAssertGreaterThan(persisted.rowID, 0)
+
+        let latest = manager.recoverInterruptedTranscriptions()
+
+        XCTAssertEqual(latest?.id, persisted.rowID)
+        XCTAssertEqual(latest?.audioPath, persisted.audioPath)
+        XCTAssertEqual(latest?.duration ?? 0, 42, accuracy: 0.1)
+        let entry = try XCTUnwrap(manager.fetchAll().first)
+        XCTAssertEqual(entry.status, "failed")
+        XCTAssertEqual(
+            entry.failureCode, TranscriptionHistoryManager.interruptedTranscriptionFailureCode)
+        XCTAssertTrue(entry.audioFileExists, "the pre-persisted audio survives the app dying")
+    }
+
+    func testRecoverInterruptedTranscriptionsIgnoresResolvedRows() {
+        manager.persistEntry(
+            audioSource: nil, engine: "e", language: "es", duration: 1,
+            text: "hola", status: "completed")
+        manager.persistEntry(
+            audioSource: nil, engine: "e", language: "es", duration: 1,
+            text: "", status: "failed", failureCode: "Engine/network")
+
+        XCTAssertNil(manager.recoverInterruptedTranscriptions())
+        let statuses = manager.fetchAll().map(\.status).sorted()
+        XCTAssertEqual(statuses, ["completed", "failed"])
+    }
+
     private func writeWAV(to url: URL, seconds: TimeInterval, staleHeader: Bool) throws {
         let sampleRate: UInt32 = 16_000
         let byteRate = sampleRate * 2

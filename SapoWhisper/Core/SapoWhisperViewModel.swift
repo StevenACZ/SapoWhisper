@@ -80,6 +80,9 @@ class SapoWhisperViewModel: ObservableObject {
         ElevenLabsTranscriptionMode.defaultMode.rawValue
     @AppStorage(Constants.StorageKeys.localAIServerModel) var selectedLocalAIServerModel: String =
         LocalAIServerConfiguration.defaultModel
+    /// Optional backup engine: when the primary fails with a connectivity
+    /// error (server down, timeout), the dictation retries on it once.
+    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine) var fallbackEngineRawValue: String = ""
 
     // MARK: - Managers
 
@@ -125,6 +128,18 @@ class SapoWhisperViewModel: ObservableObject {
     private var toggleRecordingCount: UInt64 = 0
     private var activeRecordingSessionID: UInt64?
     private var activeTranscriptionSessionID: UInt64?
+
+    /// In-flight batch transcription (post-stop, engine running). Its history
+    /// row was pre-persisted as "transcribing", so Esc can cancel the engine
+    /// call and resolve the row without losing the audio.
+    private struct ActiveBatchTranscription {
+        let sessionID: UInt64
+        let historyId: Int64?
+        let audioURL: URL
+        let duration: TimeInterval
+        let task: Task<Void, Never>
+    }
+    private var activeBatchTranscription: ActiveBatchTranscription?
     private var lastStartHotkeyTime: CFAbsoluteTime = 0
     /// A5: single owner of mic exclusivity (monitor suspend/resume, overlap assert).
     private let captureCoordinator = AudioCaptureCoordinator.shared
@@ -151,6 +166,15 @@ class SapoWhisperViewModel: ObservableObject {
 
     var currentEngine: TranscriptionEngine {
         TranscriptionEngine(rawValue: selectedEngine) ?? .mlxWhisper
+    }
+
+    /// The configured backup engine, or nil when unset or equal to the
+    /// primary (selecting the same engine twice means "no backup").
+    var fallbackEngine: TranscriptionEngine? {
+        guard let engine = TranscriptionEngine(rawValue: fallbackEngineRawValue),
+            engine != currentEngine
+        else { return nil }
+        return engine
     }
 
     /// nil = no local model selected (the selection clears when its model is
@@ -410,9 +434,16 @@ class SapoWhisperViewModel: ObservableObject {
                 DockIconManager.shared.updateIcon(for: state, isModelLoading: self?.isLoadingLocalModel ?? false)
                 // Auto-Ducking: reducir/restaurar volumen del sistema
                 AutoDuckingManager.shared.handleStateChange(state)
-                // Esc cancela el dictado solo mientras hay sesión activa
-                self?.hotkeyManager.setCancelKeyActive(state == .recording) { [weak self] in
-                    self?.cancelActiveDictation()
+                // Esc cancela el dictado mientras graba y también la
+                // transcripción en vuelo (la fila ya está pre-persistida)
+                self?.hotkeyManager.setCancelKeyActive(state == .recording || state == .processing) {
+                    [weak self] in
+                    guard let self else { return }
+                    if self.appState == .processing {
+                        self.cancelActiveTranscription()
+                    } else {
+                        self.cancelActiveDictation()
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -1222,7 +1253,19 @@ class SapoWhisperViewModel: ObservableObject {
                 }
             }
 
-            let request = TranscriptionPipeline.Request(
+            // The finished capture is persisted BEFORE the engine runs: a
+            // hang, crash, Esc, or force-quit during transcription can no
+            // longer lose the audio — it is already a History row that the
+            // pipeline finalizes (or the launch sweep resolves).
+            let pending = persister.persistPending(
+                audioURL: effectiveAudioURL,
+                engine: engine,
+                engineName: historyEngineName(for: engine),
+                language: language,
+                duration: effectiveDuration
+            )
+
+            var request = TranscriptionPipeline.Request(
                 sessionID: sessionID,
                 engine: engine,
                 engineName: historyEngineName(for: engine),
@@ -1232,21 +1275,133 @@ class SapoWhisperViewModel: ObservableObject {
                 logger: SapoLog.recording,
                 perf: perf
             )
+            if let pending {
+                request.historyTarget = .finalizePending(historyId: pending.historyId)
+            }
 
-            let transcriptionURL = effectiveAudioURL
+            let transcriptionURL = pending?.audioURL ?? effectiveAudioURL
             let transcriptionDuration = effectiveDuration
-            await transcriptionPipeline.run(request) {
-                let transcript = try await self.transcribeAudio(at: transcriptionURL, using: engine, language: language)
-                return TranscriptionPipeline.EngineOutput(
-                    transcript: transcript,
-                    audioURL: transcriptionURL,
-                    duration: transcriptionDuration,
-                    language: language
-                )
-            } captureResultOnFailure: {
-                (transcriptionURL, transcriptionDuration)
+            let pipelineRequest = request
+            let pipelineTask = Task {
+                await self.transcriptionPipeline.run(pipelineRequest) {
+                    let result = try await self.transcribeWithFallback(
+                        at: transcriptionURL, primary: engine, language: language)
+                    return TranscriptionPipeline.EngineOutput(
+                        transcript: result.transcript,
+                        audioURL: transcriptionURL,
+                        duration: transcriptionDuration,
+                        language: language,
+                        engineNameOverride: result.engineNameOverride
+                    )
+                } captureResultOnFailure: {
+                    (transcriptionURL, transcriptionDuration)
+                }
+            }
+            activeBatchTranscription = ActiveBatchTranscription(
+                sessionID: sessionID,
+                historyId: pending?.historyId,
+                audioURL: transcriptionURL,
+                duration: transcriptionDuration,
+                task: pipelineTask
+            )
+            await pipelineTask.value
+            if activeBatchTranscription?.sessionID == sessionID {
+                activeBatchTranscription = nil
             }
         }
+    }
+
+    /// Esc while "transcribing": aborts the in-flight engine call. The audio
+    /// is already safe in History (pre-persisted row) — resolve that row as
+    /// cancelled, offer it as the continue-previous take, and go idle. Only
+    /// armed when the pre-persist succeeded; otherwise cancelling could still
+    /// lose the temp WAV, so Esc stays inert like before.
+    func cancelActiveTranscription() {
+        guard let active = activeBatchTranscription,
+            let historyId = active.historyId,
+            activeTranscriptionSessionID == active.sessionID
+        else { return }
+
+        SapoLog.hotkey.info(
+            "Transcription cancelled route=esc \(self.diagnosticContext(), privacy: .public)")
+        historyManager.markTranscriptionFailed(
+            id: historyId,
+            failureCode: TranscriptionFailure(
+                kind: .userCancelled, engine: currentEngine.displayName
+            ).diagnosticCode
+        )
+        resumableStore.offer(
+            ResumableDictation(
+                historyId: historyId,
+                audioURL: active.audioURL,
+                duration: active.duration,
+                capturedAt: Date()
+            ))
+        // Staling the session first makes the cancelled pipeline exit through
+        // the stale gate without touching UI, history, or the preserved WAV.
+        activeTranscriptionSessionID = nil
+        activeBatchTranscription = nil
+        active.task.cancel()
+        persister.clearRetryState()
+        overlayManager.showCancelled()
+        checkInitialState()
+    }
+
+    /// Engine failures a configured backup engine may rescue: the primary is
+    /// unreachable or erroring server-side — not misconfigured, and not a
+    /// problem with the audio itself.
+    nonisolated private static let fallbackEligibleKinds: Set<TranscriptionFailure.Kind> = [
+        .network, .timedOut, .serverError,
+    ]
+
+    /// Runs the primary engine and, on a connectivity-class failure, retries
+    /// once on the configured backup engine. When both fail, the PRIMARY
+    /// failure is presented — it is the root cause the user should fix; the
+    /// backup's failure only goes to the log.
+    private func transcribeWithFallback(
+        at audioURL: URL,
+        primary: TranscriptionEngine,
+        language: String
+    ) async throws -> (transcript: String, engineNameOverride: String?) {
+        do {
+            let transcript = try await transcribeAudio(at: audioURL, using: primary, language: language)
+            return (transcript, nil)
+        } catch {
+            let failure = TranscriptionFailure.from(error, engine: primary.displayName)
+            guard !Task.isCancelled,
+                Self.fallbackEligibleKinds.contains(failure.kind),
+                let backup = fallbackEngine,
+                isBackupEngineUsable(backup)
+            else { throw error }
+
+            SapoLog.recording.warning(
+                "Primary engine failed \(failure.diagnosticCode, privacy: .public); trying backup engine=\(backup.rawValue, privacy: .public)"
+            )
+            do {
+                let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
+                return (transcript, historyEngineName(for: backup))
+            } catch let backupError {
+                let backupFailure = TranscriptionFailure.from(backupError, engine: backup.displayName)
+                SapoLog.recording.error(
+                    "Backup engine also failed \(backupFailure.logSummary, privacy: .public)")
+                throw error
+            }
+        }
+    }
+
+    /// Whether the backup engine can plausibly transcribe right now. MLX
+    /// counts as usable when its model is merely downloaded — transcribeAudio
+    /// lazy-loads it. Internal so Settings can hint at a misconfigured backup.
+    func isBackupEngineUsable(_ backup: TranscriptionEngine) -> Bool {
+        if backup == .mlxWhisper {
+            guard let model = currentMLXWhisperModel else { return false }
+            return mlxWhisperTranscriber.isModelLoaded
+                || mlxWhisperTranscriber.isModelDownloaded(model)
+        }
+        if backup.requiresInternet && NetworkReachability.shared.isOffline {
+            return false
+        }
+        return isEngineReady(backup)
     }
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
@@ -1288,13 +1443,14 @@ class SapoWhisperViewModel: ObservableObject {
         Task {
             defer { isRetryInFlight = false }
             await transcriptionPipeline.run(request) {
-                let transcript = try await self.transcribeAudio(
-                    at: audioURL, using: engine, language: language)
+                let result = try await self.transcribeWithFallback(
+                    at: audioURL, primary: engine, language: language)
                 return TranscriptionPipeline.EngineOutput(
-                    transcript: transcript,
+                    transcript: result.transcript,
                     audioURL: audioURL,
                     duration: duration,
-                    language: language
+                    language: language,
+                    engineNameOverride: result.engineNameOverride
                 )
             } captureResultOnFailure: {
                 (audioURL, duration ?? 0)
@@ -1806,6 +1962,16 @@ class SapoWhisperViewModel: ObservableObject {
         if isStartPending {
             cancelPendingRecordingStart()
             return
+        }
+
+        // A graceful quit mid-transcription resolves the pre-persisted row
+        // right away instead of leaving it for the next launch sweep.
+        if let active = activeBatchTranscription, let historyId = active.historyId {
+            historyManager.markTranscriptionFailed(
+                id: historyId,
+                failureCode: TranscriptionHistoryManager.interruptedTranscriptionFailureCode
+            )
+            active.task.cancel()
         }
 
         guard activeTranscriptionSessionID == nil else { return }
