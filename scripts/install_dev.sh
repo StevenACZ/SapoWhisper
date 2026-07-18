@@ -8,6 +8,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_SRC="$ROOT/build/audit-release/Build/Products/Release/SapoWhisper.app"
 APP_DST="/Applications/SapoWhisper.app"
+INSTALL_TMP="$(mktemp -d "${TMPDIR%/}/sapowhisper-install.XXXXXX")"
+APP_BACKUP="$INSTALL_TMP/SapoWhisper.previous.app"
+
+cleanup() {
+  local status=$?
+  if [[ $status -ne 0 ]]; then
+    if [[ -e "$APP_DST" ]]; then
+      mv "$APP_DST" "$INSTALL_TMP/SapoWhisper.failed.app"
+    fi
+    if [[ -d "$APP_BACKUP" ]]; then
+      mv "$APP_BACKUP" "$APP_DST"
+    fi
+  fi
+  rm -rf "$INSTALL_TMP"
+  exit "$status"
+}
+trap cleanup EXIT
 
 cd "$ROOT"
 make release
@@ -35,7 +52,11 @@ if pgrep -x SapoWhisper >/dev/null 2>&1; then
   sleep 1
 fi
 
+if [[ -d "$APP_DST" ]]; then
+  mv "$APP_DST" "$APP_BACKUP"
+fi
 ditto "$APP_SRC" "$APP_DST"
+codesign --verify --deep --strict "$APP_DST"
 open "$APP_DST"
 
 CDHASH="$(codesign -dvvv "$APP_DST" 2>&1 | sed -n 's/^CDHash=//p' | head -1)"

@@ -128,6 +128,7 @@ class SapoWhisperViewModel: ObservableObject {
     private var toggleRecordingCount: UInt64 = 0
     private var activeRecordingSessionID: UInt64?
     private var activeTranscriptionSessionID: UInt64?
+    private var activeInputDeviceOverrideUID: String?
 
     /// In-flight batch transcription (post-stop, engine running). Its history
     /// row was pre-persisted as "transcribing", so Esc can cancel the engine
@@ -620,13 +621,17 @@ class SapoWhisperViewModel: ObservableObject {
     /// any edge outside `AppState.canTransition` — observability first; no
     /// rejection until the table has survived live QA.
     private func transition(to newState: AppState, reason: String) {
+        let oldState = appState
         if !appState.canTransition(to: newState) {
             SapoLog.lifecycle.warning(
                 "appState transition outside table \(self.appState.diagnosticName, privacy: .public) -> \(newState.diagnosticName, privacy: .public) reason=\(reason, privacy: .public)"
             )
         }
-        DictationStateBroadcaster.broadcast(from: appState, to: newState)
+        DictationStateBroadcaster.broadcast(from: oldState, to: newState)
         appState = newState
+        if oldState == .recording, newState != .recording {
+            endInputDeviceOverrideIfNeeded()
+        }
     }
 
     // MARK: - MLX Whisper Methods
@@ -727,7 +732,7 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Recording & Transcription
 
     /// Toggle de grabación (llamado por hotkey o botón)
-    func toggleRecording() {
+    func toggleRecording(inputDeviceUID: String? = nil) {
         toggleRecordingCount &+= 1
         let toggleCount = toggleRecordingCount
         SapoLog.hotkey.info(
@@ -752,7 +757,7 @@ class SapoWhisperViewModel: ObservableObject {
             requestStopRecordingAndTranscribe()
         } else if canStartRecordingFromHotkey() {
             SapoLog.hotkey.info("Recording toggle route=start count=\(toggleCount, privacy: .public)")
-            startRecording()
+            startRecording(inputDeviceUID: inputDeviceUID)
         } else {
             SapoLog.hotkey.info("Recording toggle route=ignored count=\(toggleCount, privacy: .public)")
             return
@@ -839,7 +844,17 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Inicia la grabacion.
-    func startRecording() {
+    func startRecording(inputDeviceUID: String? = nil) {
+        if let inputDeviceUID {
+            PreferredMicrophoneCoordinator.shared.beginExternalDefaultInputSession()
+            activeInputDeviceOverrideUID = inputDeviceUID
+        }
+        var didEnterRecording = false
+        defer {
+            if !didEnterRecording {
+                endInputDeviceOverrideIfNeeded()
+            }
+        }
         let triggerTime = CFAbsoluteTimeGetCurrent()
         let engine = currentEngine
         let sessionID = nextRecordingSessionID()
@@ -921,19 +936,24 @@ class SapoWhisperViewModel: ObservableObject {
         // every take (on AirPods, the whole Bluetooth handshake); keeping app
         // and system aligned makes the fast path the only path. The route
         // settle window this may open is honored by the recorder start below.
-        if PreferredMicrophoneCoordinator.shared.ensureSystemDefaultMatchesSelection() {
+        if inputDeviceUID == nil,
+            PreferredMicrophoneCoordinator.shared.ensureSystemDefaultMatchesSelection()
+        {
             SapoLog.recording.info("Recording start synced system default input to primary mic")
         }
 
         // Mostrar overlay PRIMERO para feedback visual inmediato
         levelTracker.beginSession(at: triggerTime)
         transition(to: .recording, reason: "start-optimistic")
+        didEnterRecording = true
 
         overlayManager.updateState(.recording(duration: 0))
         // Until the first real buffer lands, the pill says "connecting <mic>"
         // instead of showing a dead flat waveform — Bluetooth inputs spend
         // 1–3 s renegotiating (A2DP→HFP) before any signal flows.
-        overlayManager.setMicConnecting(deviceName: effectiveInputDisplayName())
+        overlayManager.setMicConnecting(
+            deviceName: effectiveInputDisplayName(inputDeviceUID: inputDeviceUID)
+        )
 
         // Continue-previous offer: only the batch recorder can prepend audio
         // at stop time (streaming engines transcribe live). Starts opted-out.
@@ -952,7 +972,7 @@ class SapoWhisperViewModel: ObservableObject {
             context: diagnosticContext(extra: "session=\(sessionID) uiReadyMs=\(uiReadyMs)")
         )
 
-        let mic = selectedMicrophone
+        let mic = inputDeviceUID ?? selectedMicrophone
         let playSound = playSoundEnabled
         isStartPending = true
         // El beep de inicio suena antes de abrir el micrófono en todos los
@@ -1698,9 +1718,9 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Display name of the input the capture will open: the selected device,
     /// or whatever the system default resolves to right now.
-    private func effectiveInputDisplayName() -> String {
+    private func effectiveInputDisplayName(inputDeviceUID: String? = nil) -> String {
         let deviceManager = AudioDeviceManager.shared
-        let uid = selectedMicrophone
+        let uid = inputDeviceUID ?? selectedMicrophone
         let deviceID =
             uid == AudioDevice.systemDefault.uid
             ? deviceManager.getSystemDefaultInputDevice()
@@ -1709,6 +1729,12 @@ class SapoWhisperViewModel: ObservableObject {
             return "overlay.mic_generic".localized
         }
         return name
+    }
+
+    private func endInputDeviceOverrideIfNeeded() {
+        guard activeInputDeviceOverrideUID != nil else { return }
+        activeInputDeviceOverrideUID = nil
+        PreferredMicrophoneCoordinator.shared.endExternalDefaultInputSession()
     }
 
     /// Approximate session peak in dBFS, derived from the normalized level.
@@ -2066,6 +2092,7 @@ class SapoWhisperViewModel: ObservableObject {
     func handleSystemDidWake() {
         SapoLog.lifecycle.info("System did wake \(self.diagnosticContext(), privacy: .public)")
         hotkeyManager.assertHotkeyAlive(reason: "wake")
+        PreferredMicrophoneCoordinator.shared.requestReconciliation(reason: "wake")
         AudioInputPreflightManager.shared.preflightSoon(reason: "wake")
     }
 

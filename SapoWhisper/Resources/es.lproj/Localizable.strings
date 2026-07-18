@@ -106,8 +106,8 @@
 "settings.hotkeys" = "Atajos";
 "settings.microphone" = "Micrófono";
 "settings.microphone_desc" = "Dispositivo de entrada de audio";
-"settings.pin_primary_mic" = "Micrófono principal — mantenerlo siempre";
-"settings.pin_primary_mic_desc_on" = "Este micrófono queda fijo aunque conectes AirPods, y la grabación arranca al instante.";
+"settings.pin_primary_mic" = "Usar siempre como micrófono principal";
+"settings.pin_primary_mic_desc_on" = "SapoWhisper restaura este micrófono después de conectar AirPods, despertar, reiniciar o terminar una sesión de Mirador. Si se desconecta temporalmente, la preferencia se conserva.";
 "settings.pin_primary_mic_desc_off" = "El sistema puede cambiar la entrada al conectar dispositivos; los micrófonos Bluetooth pueden tardar unos segundos en arrancar.";
 "settings.language_header" = "Idioma";
 "settings.input_language" = "Idioma de transcripción";

@@ -106,8 +106,8 @@
 "settings.hotkeys" = "Hotkeys";
 "settings.microphone" = "Microphone";
 "settings.microphone_desc" = "Audio input device";
-"settings.pin_primary_mic" = "Primary microphone — keep it always";
-"settings.pin_primary_mic_desc_on" = "This mic stays fixed even when AirPods connect, and recordings start instantly.";
+"settings.pin_primary_mic" = "Always use as primary microphone";
+"settings.pin_primary_mic_desc_on" = "SapoWhisper restores this microphone after AirPods connect, wake, relaunch, or a Mirador session. If it disconnects temporarily, the preference is preserved.";
 "settings.pin_primary_mic_desc_off" = "The system may switch inputs when devices connect; Bluetooth mics can take a few seconds to start.";
 "settings.language_header" = "Language";
 "settings.input_language" = "Transcription Language";

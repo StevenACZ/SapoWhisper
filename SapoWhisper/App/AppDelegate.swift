@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeObserver: NSObjectProtocol?
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var remoteDictationObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
@@ -25,6 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarStatusController.start()
         observeScreenChanges()
         observeSleepWake()
+        observeRemoteDictationCommands()
         scheduleInitialOnboardingCheck()
         Task.detached(priority: .utility) {
             // Rows stuck in "transcribing" (the app died mid-transcription)
@@ -72,6 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         SapoLog.performance.info("Application became active")
         PerformanceDiagnostics.logRuntimeSnapshot(reason: "app-active")
+        PreferredMicrophoneCoordinator.shared.requestReconciliation(reason: "app-active")
         AudioInputPreflightManager.shared.preflightSoon(reason: "app-active")
     }
 
@@ -88,8 +91,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let wakeObserver {
             workspaceCenter.removeObserver(wakeObserver)
         }
+        if let remoteDictationObserver {
+            DistributedNotificationCenter.default().removeObserver(remoteDictationObserver)
+        }
         AutoDuckingManager.shared.forceRestore()
         DictationStateBroadcaster.broadcastRecordingEnded()
+    }
+
+    private func observeRemoteDictationCommands() {
+        remoteDictationObserver = DistributedNotificationCenter.default().addObserver(
+            forName: DictationStateBroadcaster.toggleRequestedNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                SapoLog.recording.info("Remote dictation toggle received")
+                SapoWhisperAppEnvironment.shared.viewModel.toggleRecording(
+                    inputDeviceUID: DictationStateBroadcaster.remoteInputDeviceUID
+                )
+            }
+        }
     }
 
     /// R1: the app is resident for days — recording must stop cleanly before
