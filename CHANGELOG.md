@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-07-18
+
 ### Added
 
 - SapoWhisper can be started and stopped from the Mirador iPhone viewer through
