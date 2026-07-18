@@ -180,6 +180,11 @@ hdiutil verify "$OUTPUT_DMG"
 echo "==> Notarizing DMG"
 xcrun notarytool submit "$OUTPUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 
+echo "==> Stapling app"
+xcrun stapler staple "$BUILT_APP"
+xcrun stapler validate "$BUILT_APP"
+codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
+
 echo "==> Stapling DMG"
 xcrun stapler staple "$OUTPUT_DMG"
 xcrun stapler validate "$OUTPUT_DMG"

@@ -36,9 +36,25 @@ ZIP_NAME="SapoWhisper-$VERSION.zip"
 ZIP_PATH="$OUTPUT_DIR/$ZIP_NAME"
 APPCAST_PATH="$OUTPUT_DIR/appcast.xml"
 
+echo "==> Verifying stapled app"
+codesign --verify --deep --strict "$APP_PATH"
+xcrun stapler validate "$APP_PATH"
+
 echo "==> Zipping $APP_PATH -> $ZIP_PATH"
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+VALIDATION_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-appcast.XXXXXX")"
+cleanup() {
+  rm -rf "$VALIDATION_DIR"
+}
+trap cleanup EXIT
+
+echo "==> Verifying archived app"
+ditto -x -k "$ZIP_PATH" "$VALIDATION_DIR"
+ARCHIVED_APP="$VALIDATION_DIR/$(basename "$APP_PATH")"
+codesign --verify --deep --strict "$ARCHIVED_APP"
+xcrun stapler validate "$ARCHIVED_APP"
 
 echo "==> Signing update (EdDSA key from the login Keychain)"
 SIGNATURE_ATTRS="$("$SPARKLE_BIN/sign_update" "$ZIP_PATH")"
