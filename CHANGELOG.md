@@ -28,6 +28,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sleep/wake, app relaunch, device reconnection, and Mirador sessions.
 - Development installs now replace the previous app bundle cleanly instead of
   leaving stale debug dylibs that invalidate its code signature.
+- Sparkle update archives now require and preserve a stapled notarization
+  ticket, then verify the extracted app before release publication.
 
 ## [2.12.0] - 2026-07-16
 
