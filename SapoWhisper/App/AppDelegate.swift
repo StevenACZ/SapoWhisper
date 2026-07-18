@@ -89,6 +89,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             workspaceCenter.removeObserver(wakeObserver)
         }
         AutoDuckingManager.shared.forceRestore()
+        DictationStateBroadcaster.broadcastRecordingEnded()
     }
 
     /// R1: the app is resident for days — recording must stop cleanly before

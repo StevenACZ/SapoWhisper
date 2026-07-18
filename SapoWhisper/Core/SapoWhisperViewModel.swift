@@ -625,6 +625,7 @@ class SapoWhisperViewModel: ObservableObject {
                 "appState transition outside table \(self.appState.diagnosticName, privacy: .public) -> \(newState.diagnosticName, privacy: .public) reason=\(reason, privacy: .public)"
             )
         }
+        DictationStateBroadcaster.broadcast(from: appState, to: newState)
         appState = newState
     }
 
