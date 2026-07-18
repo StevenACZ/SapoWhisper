@@ -75,7 +75,6 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         var lastDefaultInputTransitionTime: CFAbsoluteTime = 0
         var lastDefaultOutputTransitionTime: CFAbsoluteTime = 0
         var lastDeviceListChangeTime: CFAbsoluteTime = 0
-        var suppressNextDefaultInputNotification = false
     }
 
     @Published var availableDevices: [AudioDevice] = []
@@ -247,19 +246,6 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
     }
 
     private nonisolated func handleDefaultInputDeviceChanged() {
-        // Skip if this change was triggered by our own setSystemDefaultInputDevice call
-        let shouldSkip = writeState { state in
-            if state.suppressNextDefaultInputNotification {
-                state.suppressNextDefaultInputNotification = false
-                return true
-            }
-            return false
-        }
-
-        if shouldSkip {
-            return
-        }
-
         refreshDevices()
         checkDefaultInputDeviceChange()
     }
@@ -430,7 +416,6 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         if status == noErr {
             let timestamp = CFAbsoluteTimeGetCurrent()
             writeState { state in
-                state.suppressNextDefaultInputNotification = true
                 state.lastKnownDefaultInputDeviceID = deviceID
                 state.lastDefaultInputTransitionTime = timestamp
             }

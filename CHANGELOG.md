@@ -6,6 +6,27 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- SapoWhisper can be started and stopped from the Mirador iPhone viewer through
+  a payload-free distributed notification contract. Remote sessions capture
+  explicitly from `Mirador Microphone`; normal hotkeys and buttons keep using
+  the user's saved microphone.
+
+### Changed
+
+- Preferred-microphone reconciliation pauses during a Mirador-owned capture,
+  so it cannot race the temporary system-default route. The saved microphone
+  selection is never overwritten and resumes after the remote session ends.
+
+### Fixed
+
+- The primary-microphone pin now preserves an explicit selection while its
+  device is temporarily unavailable and reliably restores it after AirPods,
+  sleep/wake, app relaunch, device reconnection, and Mirador sessions.
+- Development installs now replace the previous app bundle cleanly instead of
+  leaving stale debug dylibs that invalidate its code signature.
+
 ## [2.12.0] - 2026-07-16
 
 ### Added

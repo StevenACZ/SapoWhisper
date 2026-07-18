@@ -10,6 +10,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🧠 Local and cloud transcription engines.
 - 🗂️ Searchable history with saved audio, cancelled-recording recovery, replay, download, pinning, and re-transcription.
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
+- 📱 Companion control from Mirador: start or stop SapoWhisper in the iPhone viewer and use the phone as the host microphone without synthetic hotkeys.
 - 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
 - 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
