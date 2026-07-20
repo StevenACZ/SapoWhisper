@@ -132,6 +132,16 @@ struct HistoryView: View {
                 loadEntries()
                 consumePendingFocusRequest()
             }
+            // Reopen of the cached window: select the newest entry, never a
+            // selection retained from the previous time it was open.
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: HistoryFocusRequest.windowPresentedNotification)
+            ) { _ in
+                selectedEntry = nil
+                loadEntries(resetPaging: true)
+                consumePendingFocusRequest()
+            }
     }
 
     /// Selects the entry the overlay pill asked for (set before this window

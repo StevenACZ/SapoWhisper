@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.13.1] - 2026-07-19
+
+### Fixed
+
+- Reopening the History window now always selects the most recent
+  transcription instead of a selection retained from a previous visit. The
+  cached window kept the old selection alive across reopens, which made it
+  easy to copy an outdated entry. In-window refreshes (pin, delete, polish)
+  still preserve the current selection, and opening History from the overlay
+  pill still focuses the requested entry.
+
 ## [2.13.0] - 2026-07-18
 
 ### Added

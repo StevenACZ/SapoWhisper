@@ -340,7 +340,13 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
                 rootView: HistoryWindowHost(viewModel: viewModel)
             )
         historyWindowController = controller
+        let wasVisible = controller.window?.isVisible == true
         show(controller)
+        if !wasVisible {
+            NotificationCenter.default.post(
+                name: HistoryFocusRequest.windowPresentedNotification, object: nil
+            )
+        }
     }
 
     private func openPermissionsWindow() {
