@@ -105,6 +105,12 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
 enum HistoryFocusRequest {
     static let notification = Notification.Name("SapoWhisper.openHistoryEntry")
     static var pendingEntryID: Int64?
+
+    /// Posted when the History window goes from hidden to shown. The cached
+    /// window keeps its SwiftUI tree alive, so `.onAppear` never re-fires on
+    /// reopen and a stale selection would stick; this resets it to the most
+    /// recent entry (unless a pending focus request targets a specific one).
+    static let windowPresentedNotification = Notification.Name("SapoWhisper.historyWindowPresented")
 }
 
 /// One applied polish of a history entry. The trail keeps every regeneration;
