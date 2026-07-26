@@ -200,6 +200,144 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertEqual(document.preferences?.audioUploadQuality, AudioUploadQuality.high.rawValue)
     }
 
+    // MARK: - Hotkey import hardening
+
+    /// A hand-edited or truncated export file can carry an out-of-range hotkey.
+    /// `UInt32(_:)` traps on those, so the import must sanitize before it
+    /// persists anything: an unvalidated value in UserDefaults bricks the next
+    /// launch, and the only recovery is `defaults delete` from a terminal.
+    func testImportSanitizesOutOfRangeHotkeyValues() throws {
+        let corruptedExport = """
+            {
+              "schemaVersion": 1,
+              "appVersion": "2.13.1",
+              "exportedAt": "2026-07-26T10:00:00Z",
+              "preferences": {
+                "appLanguage": "es",
+                "transcriptionLanguage": "es",
+                "autoPaste": true,
+                "playSound": true,
+                "soundVolume": 1,
+                "autoDuckingEnabled": false,
+                "autoDuckingAmount": 0.8,
+                "transcriptionEngine": "mlx_whisper",
+                "deepgramTranscriptionMode": "nova3",
+                "hotkeyKeyCode": -1,
+                "hotkeyModifiers": -2048,
+                "hotkeyDoubleTapModifier": -2048,
+                "audioGain": 1,
+                "aiPolishEnabled": false,
+                "aiPolishMode": "automatic",
+                "aiPolishOutputLanguage": "same_as_input"
+              }
+            }
+            """
+
+        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // The import also reconfigures the shared hotkey manager, which writes
+        // the standard suite; put the live combo back afterwards.
+        let hotkeyManager = HotkeyManager.shared
+        let liveTriggerKind = hotkeyManager.currentTriggerKind
+        let liveKeyCode = hotkeyManager.currentKeyCode
+        let liveModifiers = hotkeyManager.currentModifiers
+        let liveDoubleTapModifier = hotkeyManager.currentDoubleTapModifier
+        defer {
+            hotkeyManager.updateConfiguration(
+                triggerKind: liveTriggerKind,
+                keyCode: liveKeyCode,
+                modifiers: liveModifiers,
+                doubleTapModifier: liveDoubleTapModifier
+            )
+        }
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in }
+        )
+        let document = try manager.decodedDocument(from: Data(corruptedExport.utf8))
+        try manager.importDocument(document, sections: [.hotkey])
+
+        XCTAssertEqual(
+            defaults.integer(forKey: Constants.StorageKeys.hotkeyKeyCode),
+            Int(Constants.Hotkey.defaultKeyCode)
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: Constants.StorageKeys.hotkeyModifiers),
+            Int(Constants.Hotkey.defaultModifiers)
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: Constants.StorageKeys.hotkeyDoubleTapModifier),
+            Int(Constants.Hotkey.defaultDoubleTapModifier)
+        )
+        XCTAssertEqual(hotkeyManager.currentKeyCode, Constants.Hotkey.defaultKeyCode)
+        XCTAssertEqual(hotkeyManager.currentModifiers, Constants.Hotkey.defaultModifiers)
+    }
+
+    /// A valid file still lands unchanged — the sanitizer is a floor, not a
+    /// filter that flattens real user hotkeys.
+    func testImportKeepsValidHotkeyValues() throws {
+        let validExport = """
+            {
+              "schemaVersion": 1,
+              "appVersion": "2.13.1",
+              "exportedAt": "2026-07-26T10:00:00Z",
+              "preferences": {
+                "appLanguage": "es",
+                "transcriptionLanguage": "es",
+                "autoPaste": true,
+                "playSound": true,
+                "soundVolume": 1,
+                "autoDuckingEnabled": false,
+                "autoDuckingAmount": 0.8,
+                "transcriptionEngine": "mlx_whisper",
+                "deepgramTranscriptionMode": "nova3",
+                "hotkeyKeyCode": 0,
+                "hotkeyModifiers": 256,
+                "audioGain": 1,
+                "aiPolishEnabled": false,
+                "aiPolishMode": "automatic",
+                "aiPolishOutputLanguage": "same_as_input"
+              }
+            }
+            """
+
+        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let hotkeyManager = HotkeyManager.shared
+        let liveTriggerKind = hotkeyManager.currentTriggerKind
+        let liveKeyCode = hotkeyManager.currentKeyCode
+        let liveModifiers = hotkeyManager.currentModifiers
+        let liveDoubleTapModifier = hotkeyManager.currentDoubleTapModifier
+        defer {
+            hotkeyManager.updateConfiguration(
+                triggerKind: liveTriggerKind,
+                keyCode: liveKeyCode,
+                modifiers: liveModifiers,
+                doubleTapModifier: liveDoubleTapModifier
+            )
+        }
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in }
+        )
+        let document = try manager.decodedDocument(from: Data(validExport.utf8))
+        try manager.importDocument(document, sections: [.hotkey])
+
+        // 0 is kVK_ANSI_A, a key the recorder can genuinely capture.
+        XCTAssertEqual(defaults.integer(forKey: Constants.StorageKeys.hotkeyKeyCode), 0)
+        XCTAssertEqual(defaults.integer(forKey: Constants.StorageKeys.hotkeyModifiers), 256)
+        XCTAssertEqual(hotkeyManager.currentKeyCode, 0)
+        XCTAssertEqual(hotkeyManager.currentModifiers, 256)
+    }
+
     // MARK: - History filter buckets
 
     func testEngineFilterBucketsRemovedEnginesUnderOther() {

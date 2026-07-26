@@ -348,16 +348,26 @@ struct SettingsTransferManager {
         if sections.contains(.hotkey) {
             let triggerKindRaw = preferences.hotkeyTriggerKind ?? Constants.Hotkey.defaultTriggerKind
             let triggerKind = HotkeyTriggerKind(rawValue: triggerKindRaw) ?? .keyCombination
-            let doubleTapModifier = preferences.hotkeyDoubleTapModifier ?? Int(Constants.Hotkey.defaultDoubleTapModifier)
+            // Sanitize BEFORE persisting: an out-of-range Int traps the UInt32
+            // conversion, so a stored value the import never validated would
+            // brick the next launch instead of failing the import.
+            let keyCode = HotkeyManager.sanitizedKeyCode(
+                preferences.hotkeyKeyCode, fallback: Constants.Hotkey.defaultKeyCode)
+            let modifiers = HotkeyManager.sanitizedModifiers(
+                preferences.hotkeyModifiers, fallback: Constants.Hotkey.defaultModifiers)
+            let doubleTapModifier = HotkeyManager.sanitizedModifiers(
+                preferences.hotkeyDoubleTapModifier ?? Int(Constants.Hotkey.defaultDoubleTapModifier),
+                fallback: Constants.Hotkey.defaultDoubleTapModifier
+            )
             defaults.set(triggerKind.rawValue, forKey: Constants.StorageKeys.hotkeyTriggerKind)
-            defaults.set(preferences.hotkeyKeyCode, forKey: Constants.StorageKeys.hotkeyKeyCode)
-            defaults.set(preferences.hotkeyModifiers, forKey: Constants.StorageKeys.hotkeyModifiers)
-            defaults.set(doubleTapModifier, forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
+            defaults.set(Int(keyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
+            defaults.set(Int(modifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
+            defaults.set(Int(doubleTapModifier), forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
             HotkeyManager.shared.updateConfiguration(
                 triggerKind: triggerKind,
-                keyCode: UInt32(preferences.hotkeyKeyCode),
-                modifiers: UInt32(preferences.hotkeyModifiers),
-                doubleTapModifier: UInt32(doubleTapModifier)
+                keyCode: keyCode,
+                modifiers: modifiers,
+                doubleTapModifier: doubleTapModifier
             )
         }
 

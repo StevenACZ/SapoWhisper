@@ -95,19 +95,45 @@ class HotkeyManager: ObservableObject {
     @Published var currentModifiers: UInt32
     @Published var currentDoubleTapModifier: UInt32
 
+    /// Carbon key codes and modifier masks are `UInt32`; a hand-edited or
+    /// truncated settings file can store a negative or oversized `Int`, and the
+    /// plain `UInt32(_:)` initializer TRAPS on those instead of throwing.
+    static func sanitizedKeyCode(_ value: Int, fallback: UInt32) -> UInt32 {
+        UInt32(exactly: value) ?? fallback
+    }
+
+    /// A modifier mask has no valid zero — the recorder refuses a bare key —
+    /// so an empty mask is as unusable as a corrupted one.
+    static func sanitizedModifiers(_ value: Int, fallback: UInt32) -> UInt32 {
+        value > 0 ? sanitizedKeyCode(value, fallback: fallback) : fallback
+    }
+
+    /// Absent means "never configured"; 0 is `kVK_ANSI_A`, a real key the user
+    /// can pick, so presence — not the value — decides the default.
+    static func storedKeyCode(in defaults: UserDefaults) -> UInt32 {
+        guard defaults.object(forKey: Constants.StorageKeys.hotkeyKeyCode) != nil else {
+            return Constants.Hotkey.defaultKeyCode
+        }
+        return sanitizedKeyCode(
+            defaults.integer(forKey: Constants.StorageKeys.hotkeyKeyCode),
+            fallback: Constants.Hotkey.defaultKeyCode
+        )
+    }
+
     private init() {
         // Cargar valores guardados o usar defaults
-        let savedTriggerKind = UserDefaults.standard.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
-        let savedKeyCode = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyKeyCode)
-        let savedModifiers = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyModifiers)
-        let savedDoubleTapModifier = UserDefaults.standard.integer(forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
+        let defaults = UserDefaults.standard
+        let savedTriggerKind = defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
+        let savedModifiers = defaults.integer(forKey: Constants.StorageKeys.hotkeyModifiers)
+        let savedDoubleTapModifier = defaults.integer(forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
 
         self.currentTriggerKind =
             HotkeyTriggerKind(rawValue: savedTriggerKind ?? Constants.Hotkey.defaultTriggerKind) ?? .keyCombination
-        self.currentKeyCode = savedKeyCode > 0 ? UInt32(savedKeyCode) : UInt32(kVK_Space)
-        self.currentModifiers = savedModifiers > 0 ? UInt32(savedModifiers) : UInt32(optionKey)
-        self.currentDoubleTapModifier =
-            savedDoubleTapModifier > 0 ? UInt32(savedDoubleTapModifier) : UInt32(optionKey)
+        self.currentKeyCode = Self.storedKeyCode(in: defaults)
+        self.currentModifiers = Self.sanitizedModifiers(
+            savedModifiers, fallback: Constants.Hotkey.defaultModifiers)
+        self.currentDoubleTapModifier = Self.sanitizedModifiers(
+            savedDoubleTapModifier, fallback: Constants.Hotkey.defaultDoubleTapModifier)
     }
 
     /// Registra el hotkey global

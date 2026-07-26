@@ -16,6 +16,9 @@ struct LocalModelRow: View {
     let isDownloaded: Bool
     let downloadedSize: Int64?
     let phase: MLXModelDownloadPhase
+    /// A local transcription is decoding right now: switching tier would swap
+    /// the weights under it, and deleting this model would pull them away.
+    var isBusy = false
 
     let onSelect: () -> Void
     let onDownload: () -> Void
@@ -38,7 +41,7 @@ struct LocalModelRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(isActiveLoading)
+                .disabled(isActiveLoading || isBusy)
 
                 trailingControls
             }
@@ -172,6 +175,7 @@ struct LocalModelRow: View {
             } else if isDownloaded {
                 controlIcon("trash", tint: .red.opacity(0.7), help: "model.delete_tooltip", action: onDelete)
                     .font(.system(size: 12))
+                    .disabled(isBusy)
             } else {
                 controlIcon(
                     "arrow.down.circle", tint: .secondary.opacity(0.6),
