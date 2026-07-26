@@ -139,6 +139,7 @@ nonisolated extension AudioCaptureEngine {
                 try audioFile.write(from: convertedBuffer)
                 self?.registerWrittenFrames(convertedBuffer.frameLength)
             } catch {
+                self?.registerWriteFailure(error)
                 SapoLog.recording.error(
                     "\(self?.mode.logLabel ?? "Capture", privacy: .public) audio buffer write failed error=\(error.localizedDescription, privacy: .public)"
                 )

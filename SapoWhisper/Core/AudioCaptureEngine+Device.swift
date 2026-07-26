@@ -126,6 +126,16 @@ nonisolated extension AudioCaptureEngine {
         }
     }
 
+    /// A paused capture can never satisfy the health condition (`isRunning` is
+    /// false and no buffers arrive), so recovering one would restart the engine
+    /// behind the user's pause and burn the recovery budget until the session
+    /// aborts. `resumeRecording` owns the restart instead.
+    func shouldRecoverAfterConfigurationChange(isEngineRunning: Bool, lastBufferAge: TimeInterval?) -> Bool {
+        guard !isPaused else { return false }
+        guard isEngineRunning, let lastBufferAge else { return true }
+        return lastBufferAge > Self.captureHealthyBufferMaxAge
+    }
+
     /// Runs on `audioSetupQueue`. Leaves a healthy engine (still running,
     /// buffers still arriving) untouched and rebuilds only a dead stream.
     private func runCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
@@ -133,11 +143,12 @@ nonisolated extension AudioCaptureEngine {
         guard isSetupGenerationCurrent(generation), let engine = audioEngine else { return }
 
         let lastBuffer = currentLastInputBufferTime()
-        let bufferAge = CFAbsoluteTimeGetCurrent() - lastBuffer
-        if engine.isRunning, lastBuffer > 0, bufferAge <= Self.captureHealthyBufferMaxAge {
+        let lastBufferAge: TimeInterval? = lastBuffer > 0 ? CFAbsoluteTimeGetCurrent() - lastBuffer : nil
+        guard shouldRecoverAfterConfigurationChange(isEngineRunning: engine.isRunning, lastBufferAge: lastBufferAge) else {
             captureRecoveryAttempts = 0
+            let bufferAgeMs = lastBufferAge.map { Int($0 * 1000) } ?? -1
             SapoLog.recording.info(
-                "\(self.mode.logLabel, privacy: .public) capture healthy after configuration change bufferAgeMs=\(Int(bufferAge * 1000), privacy: .public)"
+                "\(self.mode.logLabel, privacy: .public) capture kept after configuration change paused=\(self.isPaused, privacy: .public) bufferAgeMs=\(bufferAgeMs, privacy: .public)"
             )
             return
         }
@@ -222,13 +233,20 @@ nonisolated extension AudioCaptureEngine {
         ) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
-        try AudioEngineGuard.prepareAndStart(engine, operation: "\(mode.opPrefix)-rebuild-engine-start")
+        // Rebuilding behind a pause repairs the tap and the device binding, but
+        // starting the engine would capture audio the user asked to stop.
+        let paused = isPaused
+        if paused {
+            try AudioEngineGuard.run("\(mode.opPrefix)-rebuild-engine-prepare") { engine.prepare() }
+        } else {
+            try AudioEngineGuard.prepareAndStart(engine, operation: "\(mode.opPrefix)-rebuild-engine-start")
+        }
 
         audioEngine = engine
         beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
         let inputDescription = deviceUID == AudioDevice.systemDefault.uid ? "system-default" : deviceUID
         SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .public) hz=\(Int(tapFormat.sampleRate), privacy: .public)"
+            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .public) hz=\(Int(tapFormat.sampleRate), privacy: .public) paused=\(paused, privacy: .public)"
         )
     }
 

@@ -11,9 +11,13 @@ nonisolated extension AudioCaptureEngine {
     func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
         deviceSentinel.end()
         if let engine {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-            engine.reset()
+            // Teardown races the route change that aborted the setup; a guarded
+            // exception here just means the engine is already dead.
+            try? AudioEngineGuard.run("cleanup-setup-teardown") {
+                engine.inputNode.removeTap(onBus: 0)
+                engine.stop()
+                engine.reset()
+            }
         }
 
         audioWriteQueue.sync {}
@@ -40,6 +44,8 @@ nonisolated extension AudioCaptureEngine {
         emittedChunkCount = 0
         firstInputLatencyMs = nil
         maxInputGapMs = 0
+        failedWriteCount = 0
+        firstWriteError = nil
         captureDeviceUID = deviceUID
         captureStateLock.unlock()
     }
@@ -82,6 +88,15 @@ nonisolated extension AudioCaptureEngine {
         captureStateLock.unlock()
     }
 
+    func registerWriteFailure(_ error: Error) {
+        captureStateLock.lock()
+        failedWriteCount += 1
+        if firstWriteError == nil {
+            firstWriteError = error.localizedDescription
+        }
+        captureStateLock.unlock()
+    }
+
     func registerEmittedChunk() -> Int {
         captureStateLock.lock()
         emittedChunkCount += 1
@@ -119,6 +134,8 @@ nonisolated extension AudioCaptureEngine {
         let maxGap = maxInputGapMs
         let deviceUID = captureDeviceUID
         let lastBuffer = lastInputBufferTime
+        let failedWrites = failedWriteCount
+        let writeError = firstWriteError
         captureStateLock.unlock()
 
         let lastBufferAgeMs = lastBuffer > 0 ? (referenceTime - lastBuffer) * 1000 : nil
@@ -139,7 +156,9 @@ nonisolated extension AudioCaptureEngine {
             firstInputLatencyMs: firstLatency,
             lastBufferAgeMs: lastBufferAgeMs,
             maxInputGapMs: maxGap,
-            fileSizeBytes: fileSizeBytes
+            fileSizeBytes: fileSizeBytes,
+            failedWriteCount: failedWrites,
+            firstWriteError: writeError
         )
     }
 
