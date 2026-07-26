@@ -23,6 +23,14 @@ struct EngineSettingsTab: View {
         TranscriptionEngine(rawValue: selectedEngine) ?? .mlxWhisper
     }
 
+    private var currentVariant: TranscriptionEngineVariant {
+        .primary(
+            engine: currentEngine,
+            deepgramMode: DeepgramTranscriptionMode(rawValue: selectedDeepgramMode) ?? .nova3,
+            elevenLabsMode: ElevenLabsTranscriptionMode(rawValue: selectedElevenLabsMode) ?? .defaultMode
+        )
+    }
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
@@ -71,17 +79,29 @@ struct EngineSettingsTab: View {
 
     // MARK: - Backup engine
 
-    /// Engines other than the primary; the stored value falls back to "none"
-    /// at runtime if the user later selects it as the primary.
-    private var fallbackCandidates: [TranscriptionEngine] {
-        TranscriptionEngine.allCases.filter { $0 != currentEngine }
+    /// Variants on a DIFFERENT engine than the primary. A sibling mode shares
+    /// its provider's key, host and reachability, so it is down exactly when
+    /// the primary is; offering it would promise a rescue that can never run.
+    /// The stored value falls back to "none" at runtime if the user later
+    /// selects its engine as the primary.
+    private var fallbackCandidates: [TranscriptionEngineVariant] {
+        TranscriptionEngineVariant.allCases.filter { $0.engine != currentVariant.engine }
     }
 
-    private var selectedFallbackEngine: TranscriptionEngine? {
-        guard let engine = TranscriptionEngine(rawValue: fallbackEngineRawValue),
-            engine != currentEngine
+    private var selectedFallbackEngine: TranscriptionEngineVariant? {
+        guard let variant = TranscriptionEngineVariant.stored(fallbackEngineRawValue),
+            variant.engine != currentVariant.engine
         else { return nil }
-        return engine
+        return variant
+    }
+
+    /// Reads through the same normalization the engine does, so a selection
+    /// stored before the picker listed live modes still shows its row.
+    private var fallbackSelection: Binding<String> {
+        Binding(
+            get: { TranscriptionEngineVariant.stored(fallbackEngineRawValue)?.rawValue ?? "" },
+            set: { fallbackEngineRawValue = $0 }
+        )
     }
 
     private var fallbackEngineCard: some View {
@@ -92,23 +112,30 @@ struct EngineSettingsTab: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Picker("", selection: $fallbackEngineRawValue) {
+                Picker("", selection: fallbackSelection) {
                     Text("config.fallback_engine_none".localized).tag("")
-                    ForEach(fallbackCandidates) { engine in
-                        Text(engine.displayName).tag(engine.rawValue)
+                    ForEach(fallbackCandidates) { variant in
+                        Label(variant.displayName, systemImage: variant.icon).tag(variant.rawValue)
                     }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .frame(maxWidth: 280, alignment: .leading)
 
-                if let backup = selectedFallbackEngine, !viewModel.isBackupEngineUsable(backup) {
-                    Label(
-                        "config.fallback_engine_not_configured".localized(backup.displayName),
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(.caption)
-                    .foregroundColor(.orange)
+                if let backup = selectedFallbackEngine {
+                    if !viewModel.isBackupEngineUsable(backup) {
+                        Label(
+                            "config.fallback_engine_not_configured".localized(backup.displayName),
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                    } else if backup.isStreaming {
+                        Text("config.fallback_engine_live_note".localized)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

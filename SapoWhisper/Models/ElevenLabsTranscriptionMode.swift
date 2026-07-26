@@ -31,7 +31,7 @@ enum ElevenLabsTranscriptionMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: String {
+    nonisolated var icon: String {
         switch self {
         case .scribeV2Batch:
             return "waveform"
@@ -40,7 +40,7 @@ enum ElevenLabsTranscriptionMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var historyName: String {
+    nonisolated var historyName: String {
         switch self {
         case .scribeV2Batch:
             return "ElevenLabs Scribe v2"
