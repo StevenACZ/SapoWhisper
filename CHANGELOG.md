@@ -6,6 +6,30 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- The backup engine can now be any engine *and mode*: Deepgram Nova-3,
+  Deepgram Flux Live, ElevenLabs Scribe, ElevenLabs Scribe Realtime, Whisper
+  (Local) or Local AI Server. The picker used to offer only the four brands,
+  so the live models could never be chosen as a backup.
+- The backup now also takes over *before* recording starts. When the primary
+  is unconfigured, offline, or already known to be down, the dictation begins
+  on the backup — and a live backup dictates live, exactly as if it had been
+  the main engine.
+- A Local AI Server dictation checks the server's health in the background
+  while you are still speaking. If the server is down, the take moves to the
+  backup with no wait at all instead of stalling on the dead host first; the
+  primary is used again as soon as it answers.
+
+### Fixed
+
+- A live dictation (Flux Live, Scribe Realtime) that fails on a network,
+  timeout, or server error is now rescued by the configured backup engine
+  using the audio captured locally. Until now the backup only ever ran on the
+  batch path, so it was dead letter for the live engines.
+- A failure on the primary is remembered briefly, so a burst of dictations
+  against a downed server no longer pays the same connection wait every time.
+
 ## [2.13.1] - 2026-07-19
 
 ### Fixed

@@ -29,7 +29,7 @@ enum DeepgramTranscriptionMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: String {
+    nonisolated var icon: String {
         switch self {
         case .nova3:
             return "waveform"
@@ -38,7 +38,7 @@ enum DeepgramTranscriptionMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var historyName: String {
+    nonisolated var historyName: String {
         switch self {
         case .nova3:
             return "Deepgram Nova-3"

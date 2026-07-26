@@ -124,9 +124,10 @@
 "config.tab_settings" = "Settings";
 "config.engine" = "Transcription Engine";
 "config.fallback_engine" = "Backup Engine";
-"config.fallback_engine_description" = "If the main engine is unreachable (server off, timeout), the dictation automatically retries once with this engine.";
+"config.fallback_engine_description" = "If the main engine is unreachable (server off, timeout), this engine takes the dictation: from the start when the primary is already known to be down, or by rescuing the audio when transcription fails.";
 "config.fallback_engine_none" = "None";
 "config.fallback_engine_not_configured" = "%@ is not configured yet, so the backup will be skipped.";
+"config.fallback_engine_live_note" = "Live when the backup starts the dictation; rescuing an already-recorded take uses the same provider's file model.";
 "config.engine_summary" = "Current Setup";
 "config.engine_summary_engine" = "Engine";
 "config.engine_summary_mode" = "Mode";

@@ -169,14 +169,42 @@ class SapoWhisperViewModel: ObservableObject {
         TranscriptionEngine(rawValue: selectedEngine) ?? .mlxWhisper
     }
 
-    /// The configured backup engine, or nil when unset or equal to the
-    /// primary (selecting the same engine twice means "no backup").
-    var fallbackEngine: TranscriptionEngine? {
-        guard let engine = TranscriptionEngine(rawValue: fallbackEngineRawValue),
-            engine != currentEngine
-        else { return nil }
-        return engine
+    /// The variant the primary selection resolves to (engine + its live/file
+    /// mode). Everything downstream runs on variants, so a live mode is never
+    /// mistaken for its brand's file endpoint.
+    var currentVariant: TranscriptionEngineVariant {
+        .primary(
+            engine: currentEngine,
+            deepgramMode: currentDeepgramMode,
+            elevenLabsMode: currentElevenLabsMode
+        )
     }
+
+    /// The configured backup, or nil when unset or equal to the primary
+    /// (selecting the same variant twice means "no backup").
+    var fallbackVariant: TranscriptionEngineVariant? {
+        guard let variant = TranscriptionEngineVariant.stored(fallbackEngineRawValue),
+            variant != currentVariant
+        else { return nil }
+        return variant
+    }
+
+    /// The variant driving the dictation in flight. Set when recording starts
+    /// — which is where the backup may take over — so stop, transcription and
+    /// History all report the engine that actually ran, not the one selected.
+    private var activeSessionVariant: TranscriptionEngineVariant?
+
+    /// The variant the dictation in flight runs on, or the current selection
+    /// outside a session (retry, history, settings summaries).
+    var sessionVariant: TranscriptionEngineVariant { activeSessionVariant ?? currentVariant }
+
+    /// Providers proved down recently, so the next dictation starts on the
+    /// backup instead of opening the mic against a dead host.
+    private var reachabilityLog = EngineReachabilityLog()
+
+    /// In-flight health probe for the recording in progress. It runs while the
+    /// user dictates, so its verdict is already in by stop time.
+    private var reachabilityProbeTask: Task<Void, Never>?
 
     /// nil = no local model selected (the selection clears when its model is
     /// deleted); nothing downloads or loads again until an explicit pick.
@@ -190,14 +218,6 @@ class SapoWhisperViewModel: ObservableObject {
 
     var currentElevenLabsMode: ElevenLabsTranscriptionMode {
         ElevenLabsTranscriptionMode(rawValue: selectedElevenLabsMode) ?? .defaultMode
-    }
-
-    private var isDeepgramFluxLiveSelected: Bool {
-        currentEngine == .deepgram && currentDeepgramMode == .fluxLive
-    }
-
-    private var isElevenLabsRealtimeSelected: Bool {
-        currentEngine == .elevenLabsScribe && currentElevenLabsMode == .scribeV2Realtime
     }
 
     private var isAnyRecorderActive: Bool {
@@ -377,8 +397,8 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Streaming sessions share one binding set (state, duration, level,
         // overlay duration) parametrized by owning engine.
-        bindStreamingSession(deepgramFluxTranscriber, engine: .deepgram)
-        bindStreamingSession(elevenLabsRealtimeTranscriber, engine: .elevenLabsScribe)
+        bindStreamingSession(deepgramFluxTranscriber, variant: .deepgramFluxLive)
+        bindStreamingSession(elevenLabsRealtimeTranscriber, variant: .elevenLabsScribeRealtime)
 
         // Hooks del motor MLX (transcripcion, carga, modelo listo) — callback
         // hooks on the @Observable transcriber replace the old Combine sinks.
@@ -500,9 +520,19 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// One binding set per streaming session: state, duration mirror, audio
-    /// level, and overlay duration — the duration/level sinks only apply while
-    /// the owning engine is the selected one (mirrors the historical guards).
-    private func bindStreamingSession(_ session: any StreamingDictationSession, engine: TranscriptionEngine) {
+    /// level, and overlay duration.
+    ///
+    /// The duration/level sinks are gated on the variant DRIVING the dictation,
+    /// never on the selected engine: when the backup takes over, the live
+    /// session that runs is not the selected one, and gating on the selection
+    /// silently drops its meter and timer. That starves
+    /// `registerSessionAudioLevel`, which is the only thing that clears the
+    /// "connecting <mic>" label — so the pill sticks on "connecting" at 00:00
+    /// for a dictation that is in fact recording fine.
+    private func bindStreamingSession(
+        _ session: any StreamingDictationSession,
+        variant: TranscriptionEngineVariant
+    ) {
         session.isStreamingPublisher
             .sink { [weak self] isStreaming in
                 if isStreaming {
@@ -513,7 +543,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         session.recordingDurationPublisher
             .sink { [weak self] duration in
-                guard self?.currentEngine == engine else { return }
+                guard self?.sessionVariant == variant else { return }
                 self?.recordingDuration = duration
             }
             .store(in: &cancellables)
@@ -521,7 +551,7 @@ class SapoWhisperViewModel: ObservableObject {
         session.audioLevelPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
-                guard self?.currentEngine == engine else { return }
+                guard self?.sessionVariant == variant else { return }
                 self?.overlayManager.updateAudioLevel(level)
                 self?.registerSessionAudioLevel(level)
             }
@@ -530,7 +560,7 @@ class SapoWhisperViewModel: ObservableObject {
         session.recordingDurationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] duration in
-                guard let self, self.currentEngine == engine else { return }
+                guard let self, self.sessionVariant == variant else { return }
                 switch self.overlayManager.state {
                 case .recording:
                     self.overlayManager.updateRecordingDuration(duration)
@@ -550,9 +580,10 @@ class SapoWhisperViewModel: ObservableObject {
     private struct StreamingEngineContext {
         let session: any StreamingDictationSession
         let owner: AudioCaptureCoordinator.CaptureOwner
-        let engine: TranscriptionEngine
-        /// History/perf label for rows and the perf timeline.
-        let engineName: String
+        /// The live variant this context drives. Fixed per context — a Flux
+        /// context is always Flux Live, whatever the Deepgram mode picker says
+        /// — so a backup-driven live dictation labels itself honestly.
+        let variant: TranscriptionEngineVariant
         /// `TranscriptionPipeline.Request` source tag.
         let source: String
         /// Snapshot-reason prefix, e.g. "flux" → "flux-stop-requested".
@@ -562,14 +593,17 @@ class SapoWhisperViewModel: ObservableObject {
         let logger: Logger
         /// Language recorded on a failed row when the stream dies.
         let failureLanguage: String
+
+        var engine: TranscriptionEngine { variant.engine }
+        /// History/perf label for rows and the perf timeline.
+        var engineName: String { variant.displayName }
     }
 
     private var fluxContext: StreamingEngineContext {
         StreamingEngineContext(
             session: deepgramFluxTranscriber,
             owner: .fluxStreaming,
-            engine: .deepgram,
-            engineName: currentDeepgramMode.historyName,
+            variant: .deepgramFluxLive,
             source: "flux",
             snapshotPrefix: "flux",
             logLabel: "Flux",
@@ -582,8 +616,7 @@ class SapoWhisperViewModel: ObservableObject {
         StreamingEngineContext(
             session: elevenLabsRealtimeTranscriber,
             owner: .elevenLabsStreaming,
-            engine: .elevenLabsScribe,
-            engineName: currentElevenLabsMode.historyName,
+            variant: .elevenLabsScribeRealtime,
             source: "elevenlabs_realtime",
             snapshotPrefix: "elevenlabs-realtime",
             logLabel: "ElevenLabs realtime",
@@ -603,18 +636,28 @@ class SapoWhisperViewModel: ObservableObject {
         streamingContexts.first { $0.session.isStreaming }
     }
 
-    /// The context the NEXT dictation will use, when the current selection is
-    /// a streaming mode.
-    private var selectedStreamingContext: StreamingEngineContext? {
-        if isElevenLabsRealtimeSelected { return elevenLabsRealtimeContext }
-        if isDeepgramFluxLiveSelected { return fluxContext }
-        return nil
+    /// The context that drives a live dictation on `variant`, or nil for the
+    /// file-upload variants.
+    private func streamingContext(for variant: TranscriptionEngineVariant) -> StreamingEngineContext? {
+        switch variant {
+        case .elevenLabsScribeRealtime:
+            return elevenLabsRealtimeContext
+        case .deepgramFluxLive:
+            return fluxContext
+        case .mlxWhisper, .localAIServer, .deepgramNova3, .elevenLabsScribeBatch:
+            return nil
+        }
     }
 
     // MARK: - Initial State
 
     private func checkInitialState() {
-        transition(to: isEngineReady(currentEngine) ? .idle : .noModel, reason: "check-initial-state")
+        // A usable backup means dictation still works, so an unconfigured
+        // primary must not park the app in "no model".
+        let canDictate =
+            isEngineReady(currentEngine)
+            || fallbackVariant.map { isBackupEngineUsable($0) } == true
+        transition(to: canDictate ? .idle : .noModel, reason: "check-initial-state")
     }
 
     /// Single choke point for appState writes: applies the change and logs
@@ -856,12 +899,12 @@ class SapoWhisperViewModel: ObservableObject {
             }
         }
         let triggerTime = CFAbsoluteTimeGetCurrent()
-        let engine = currentEngine
+        let selectedVariant = currentVariant
         let sessionID = nextRecordingSessionID()
         lastStartHotkeyTime = triggerTime
         activeRecordingSessionID = sessionID
         SapoLog.hotkey.info(
-            "Recording trigger accepted engine=\(engine.rawValue, privacy: .public) session=\(sessionID, privacy: .public)"
+            "Recording trigger accepted engine=\(selectedVariant.rawValue, privacy: .public) session=\(sessionID, privacy: .public)"
         )
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "recording-trigger-accepted",
@@ -877,27 +920,34 @@ class SapoWhisperViewModel: ObservableObject {
             return
         }
 
-        // Verificar que el motor actual tiene modelo cargado
-        let isReady = isEngineReady(engine)
-
-        // R4: a model unloaded after idle reloads on demand — recording starts
-        // immediately and the transcription awaits the reload at stop time.
-        let canReloadOnDemand =
-            engine == .mlxWhisper
-            && currentMLXWhisperModel.map { mlxWhisperTranscriber.downloadedModels.contains($0) } == true
-            && !mlxWhisperTranscriber.isTranscribing
-
-        guard isReady || canReloadOnDemand else {
+        // The backup may take the dictation before the mic even opens: a
+        // primary that is not configured, is offline, or that a probe already
+        // proved down hands the take over now, so the user never dictates into
+        // an engine that cannot answer.
+        guard let (variant, startedOnBackup) = resolveStartVariant(selected: selectedVariant) else {
             activeRecordingSessionID = nil
             transition(to: .noModel, reason: "start-engine-not-ready")
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
         }
+        if let startedOnBackup {
+            SapoLog.recording.info(
+                "Dictation starting on backup engine=\(variant.rawValue, privacy: .public) reason=\(startedOnBackup.rawValue, privacy: .public)"
+            )
+        }
+        activeSessionVariant = variant
+        let engine = variant.engine
 
-        if !isReady {
+        if engine == .mlxWhisper, !isEngineReady(.mlxWhisper) {
             SapoLog.recording.info("Local model reloading on demand after idle unload")
             Task { await self.loadMLXWhisperModel() }
         }
+
+        // Probe the SELECTED primary while the user talks — whichever engine
+        // ends up running. Its verdict is in by stop time, so a dead primary
+        // is skipped with no wait, and a primary that came back clears its
+        // entry and takes the next dictation again.
+        startReachabilityProbe(for: selectedVariant)
 
         // R7: offline fast-fail before opening the mic — cloud engines would
         // otherwise burn their full network timeout after the dictation.
@@ -922,10 +972,10 @@ class SapoWhisperViewModel: ObservableObject {
         // Cloud batch stops pay DNS+TLS inside stop→paste on a cold pool;
         // open the connection now, while the user is still dictating (the
         // streaming engines already amortize their handshake at start).
-        switch engine {
-        case .deepgram where currentDeepgramMode == .nova3:
+        switch variant {
+        case .deepgramNova3:
             Task { await deepgramTranscriber.warmUpConnection() }
-        case .elevenLabsScribe where currentElevenLabsMode == .scribeV2Batch:
+        case .elevenLabsScribeBatch:
             Task { await elevenLabsTranscriber.warmUpConnection() }
         default:
             break
@@ -958,8 +1008,7 @@ class SapoWhisperViewModel: ObservableObject {
         // Continue-previous offer: only the batch recorder can prepend audio
         // at stop time (streaming engines transcribe live). Starts opted-out.
         resumableStore.mergeRequested = false
-        let isBatchEngine = !isElevenLabsRealtimeSelected && !isDeepgramFluxLiveSelected
-        if isBatchEngine, let resumable = resumableStore.validOffer {
+        if !variant.isStreaming, let resumable = resumableStore.validOffer {
             overlayManager.setResumeOffer(
                 durationLabel: ResumableDictationStore.formatResumeDuration(resumable.duration))
         } else {
@@ -982,7 +1031,7 @@ class SapoWhisperViewModel: ObservableObject {
         if playSound {
             SoundManager.shared.play(.startRecording)
         }
-        if let context = selectedStreamingContext {
+        if let context = streamingContext(for: variant) {
             let language = selectedLanguage
             startCaptureSession(
                 sessionID: sessionID,
@@ -1046,6 +1095,7 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask = nil
         isStartPending = false
         activeRecordingSessionID = nil
+        activeSessionVariant = nil
         overlayManager.updateAudioLevel(0)
         overlayManager.updateState(.hidden)
         captureCoordinator.endActiveCapture()
@@ -1166,19 +1216,70 @@ class SapoWhisperViewModel: ObservableObject {
         )
 
         let session = context.session
+        let variant = context.variant
+        let language = selectedLanguage
         Task { @MainActor in
             perf?.markFinalizeDone()
             await transcriptionPipeline.run(request) {
-                let result = try await session.stop()
-                return TranscriptionPipeline.EngineOutput(
-                    transcript: result.transcript,
-                    audioURL: result.audioURL,
-                    duration: result.duration,
-                    language: result.language
-                )
+                do {
+                    let result = try await session.stop()
+                    self.reachabilityLog.markReachable(variant.engine)
+                    return TranscriptionPipeline.EngineOutput(
+                        transcript: result.transcript,
+                        audioURL: result.audioURL,
+                        duration: result.duration,
+                        language: result.language
+                    )
+                } catch {
+                    return try await self.rescueFailedStream(
+                        error, variant: variant, session: session, language: language)
+                }
             } captureResultOnFailure: {
                 session.lastCaptureResult.map { ($0.audioURL, $0.duration) }
             }
+        }
+    }
+
+    /// A live dictation that died on a connectivity-class failure still holds
+    /// its locally captured WAV, so the configured backup transcribes that
+    /// instead of leaving the user a failed row. Without this the backup was
+    /// dead letter for Flux and Scribe Realtime: the rescue only ever ran on
+    /// the batch path.
+    private func rescueFailedStream(
+        _ error: Error,
+        variant: TranscriptionEngineVariant,
+        session: any StreamingDictationSession,
+        language: String
+    ) async throws -> TranscriptionPipeline.EngineOutput {
+        let failure = TranscriptionFailure.from(error, engine: variant.displayName)
+        guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
+        reachabilityLog.markUnreachable(variant.engine)
+
+        // A live dictation that already started ON the backup has nothing left
+        // to fall back to; otherwise the backup's file endpoint is a genuinely
+        // different path from the socket that just died.
+        guard let backup = fallbackVariant, backup != variant, isBackupEngineUsable(backup),
+            let capture = session.lastCaptureResult
+        else { throw error }
+
+        SapoLog.recording.warning(
+            "Live engine failed \(failure.diagnosticCode, privacy: .public); rescuing capture with backup=\(backup.rawValue, privacy: .public)"
+        )
+        do {
+            let rescued = try await transcribeOnBackup(
+                at: capture.audioURL, backup: backup, language: language)
+            return TranscriptionPipeline.EngineOutput(
+                transcript: rescued.transcript,
+                audioURL: capture.audioURL,
+                duration: capture.duration,
+                language: language,
+                engineNameOverride: rescued.engineNameOverride
+            )
+        } catch let backupError {
+            let backupFailure = TranscriptionFailure.from(backupError, engine: backup.displayName)
+            SapoLog.recording.error(
+                "Backup engine also failed \(backupFailure.logSummary, privacy: .public)")
+            throw error
         }
     }
 
@@ -1192,7 +1293,8 @@ class SapoWhisperViewModel: ObservableObject {
             SoundManager.shared.play(.stopRecording)
         }
 
-        let engine = currentEngine
+        let variant = sessionVariant
+        let engine = variant.engine
         let language = selectedLanguage
         let duration = recordingDuration
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
@@ -1281,7 +1383,7 @@ class SapoWhisperViewModel: ObservableObject {
             let pending = persister.persistPending(
                 audioURL: effectiveAudioURL,
                 engine: engine,
-                engineName: historyEngineName(for: engine),
+                engineName: historyEngineName(for: variant),
                 language: language,
                 duration: effectiveDuration
             )
@@ -1289,8 +1391,8 @@ class SapoWhisperViewModel: ObservableObject {
             var request = TranscriptionPipeline.Request(
                 sessionID: sessionID,
                 engine: engine,
-                engineName: historyEngineName(for: engine),
-                source: engine.rawValue,
+                engineName: historyEngineName(for: variant),
+                source: variant.rawValue,
                 failureLanguage: language,
                 snapshotPrefix: "transcription",
                 logger: SapoLog.recording,
@@ -1306,7 +1408,7 @@ class SapoWhisperViewModel: ObservableObject {
             let pipelineTask = Task {
                 await self.transcriptionPipeline.run(pipelineRequest) {
                     let result = try await self.transcribeWithFallback(
-                        at: transcriptionURL, primary: engine, language: language)
+                        at: transcriptionURL, primary: variant, language: language)
                     return TranscriptionPipeline.EngineOutput(
                         transcript: result.transcript,
                         audioURL: transcriptionURL,
@@ -1368,39 +1470,52 @@ class SapoWhisperViewModel: ObservableObject {
         checkInitialState()
     }
 
-    /// Engine failures a configured backup engine may rescue: the primary is
-    /// unreachable or erroring server-side — not misconfigured, and not a
-    /// problem with the audio itself.
-    nonisolated private static let fallbackEligibleKinds: Set<TranscriptionFailure.Kind> = [
-        .network, .timedOut, .serverError,
-    ]
-
     /// Runs the primary engine and, on a connectivity-class failure, retries
-    /// once on the configured backup engine. When both fail, the PRIMARY
-    /// failure is presented — it is the root cause the user should fix; the
-    /// backup's failure only goes to the log.
+    /// once on the configured backup. When both fail, the PRIMARY failure is
+    /// presented — it is the root cause the user should fix; the backup's
+    /// failure only goes to the log.
+    ///
+    /// A primary already proved down — by the probe that ran while the user
+    /// was still dictating, or by a failure minutes ago — is skipped outright:
+    /// attempting it again would pay the full connect timeout before landing
+    /// on the same rescue, which is exactly the wait the backup exists to
+    /// remove.
     private func transcribeWithFallback(
         at audioURL: URL,
-        primary: TranscriptionEngine,
+        primary: TranscriptionEngineVariant,
         language: String
     ) async throws -> (transcript: String, engineNameOverride: String?) {
+        // Compared on the file variant, because that is what actually runs
+        // here: rescuing an upload with the endpoint that just failed is no
+        // rescue, and a dictation that already started on the backup has
+        // nothing left to fall back to.
+        let backup = fallbackVariant.flatMap {
+            $0.fileTranscriptionVariant != primary.fileTranscriptionVariant
+                && isBackupEngineUsable($0) ? $0 : nil
+        }
+
+        if let backup, reachabilityLog.isUnreachable(primary.engine) {
+            SapoLog.recording.info(
+                "Skipping primary known unreachable engine=\(primary.engine.rawValue, privacy: .public) backup=\(backup.rawValue, privacy: .public)"
+            )
+            return try await transcribeOnBackup(at: audioURL, backup: backup, language: language)
+        }
+
         do {
             let transcript = try await transcribeAudio(at: audioURL, using: primary, language: language)
+            reachabilityLog.markReachable(primary.engine)
             return (transcript, nil)
         } catch {
             let failure = TranscriptionFailure.from(error, engine: primary.displayName)
-            guard !Task.isCancelled,
-                Self.fallbackEligibleKinds.contains(failure.kind),
-                let backup = fallbackEngine,
-                isBackupEngineUsable(backup)
-            else { throw error }
+            guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
+            reachabilityLog.markUnreachable(primary.engine)
+            guard let backup else { throw error }
 
             SapoLog.recording.warning(
                 "Primary engine failed \(failure.diagnosticCode, privacy: .public); trying backup engine=\(backup.rawValue, privacy: .public)"
             )
             do {
-                let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
-                return (transcript, historyEngineName(for: backup))
+                return try await transcribeOnBackup(at: audioURL, backup: backup, language: language)
             } catch let backupError {
                 let backupFailure = TranscriptionFailure.from(backupError, engine: backup.displayName)
                 SapoLog.recording.error(
@@ -1410,19 +1525,98 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// Whether the backup engine can plausibly transcribe right now. MLX
-    /// counts as usable when its model is merely downloaded — transcribeAudio
-    /// lazy-loads it. Internal so Settings can hint at a misconfigured backup.
-    func isBackupEngineUsable(_ backup: TranscriptionEngine) -> Bool {
-        if backup == .mlxWhisper {
-            guard let model = currentMLXWhisperModel else { return false }
-            return mlxWhisperTranscriber.isModelLoaded
-                || mlxWhisperTranscriber.isModelDownloaded(model)
+    private func transcribeOnBackup(
+        at audioURL: URL,
+        backup: TranscriptionEngineVariant,
+        language: String
+    ) async throws -> (transcript: String, engineNameOverride: String?) {
+        let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
+        // History must name what ran, and a live-only backup rescues an
+        // existing recording through its provider's file model.
+        return (transcript, historyEngineName(for: backup.fileTranscriptionVariant))
+    }
+
+    /// Whether the backup can plausibly transcribe right now. Internal so
+    /// Settings can hint at a misconfigured backup.
+    func isBackupEngineUsable(_ backup: TranscriptionEngineVariant) -> Bool {
+        isEngineConfigured(backup) && !isKnownUnreachable(backup)
+    }
+
+    /// Configured to run at all: credentials present, or — for MLX — a model
+    /// on disk, which is enough because `transcribeAudio` lazy-loads it.
+    private func isEngineConfigured(_ variant: TranscriptionEngineVariant) -> Bool {
+        guard variant.engine == .mlxWhisper else { return isEngineReady(variant.engine) }
+        guard let model = currentMLXWhisperModel else { return false }
+        return mlxWhisperTranscriber.isModelLoaded || mlxWhisperTranscriber.isModelDownloaded(model)
+    }
+
+    /// Being offline counts as unreachable rather than unusable: the engine is
+    /// configured fine, the network it needs is simply gone — so a local
+    /// backup takes over instead of the dictation failing.
+    private func isKnownUnreachable(_ variant: TranscriptionEngineVariant) -> Bool {
+        if variant.requiresInternet && NetworkReachability.shared.isOffline { return true }
+        return reachabilityLog.isUnreachable(variant.engine)
+    }
+
+    /// What the failover policy knows about one variant right now.
+    private func availability(of variant: TranscriptionEngineVariant) -> EngineFailoverPolicy.Availability {
+        EngineFailoverPolicy.Availability(
+            isUsable: isEngineConfigured(variant),
+            isKnownUnreachable: isKnownUnreachable(variant)
+        )
+    }
+
+    /// Which variant takes this dictation. A primary that is not configured,
+    /// is offline, or that a probe already proved down hands the take to the
+    /// backup BEFORE the mic opens — and a live backup then dictates natively
+    /// instead of rescuing a finished recording. nil means nothing can record.
+    private func resolveStartVariant(
+        selected: TranscriptionEngineVariant
+    ) -> (variant: TranscriptionEngineVariant, startedOnBackup: EngineFailoverPolicy.Reason?)? {
+        // R4: a model unloaded after idle reloads on demand — the primary
+        // stays usable and the transcription awaits the reload at stop time.
+        let canReloadOnDemand =
+            selected.engine == .mlxWhisper
+            && currentMLXWhisperModel.map { mlxWhisperTranscriber.downloadedModels.contains($0) } == true
+            && !mlxWhisperTranscriber.isTranscribing
+
+        let primary = EngineFailoverPolicy.Availability(
+            isUsable: isEngineConfigured(selected) || canReloadOnDemand,
+            isKnownUnreachable: isKnownUnreachable(selected)
+        )
+        let backup = fallbackVariant
+
+        switch EngineFailoverPolicy.decision(primary: primary, backup: backup.map { availability(of: $0) }) {
+        case .primary:
+            return (selected, nil)
+        case .backup(let reason):
+            guard let backup else { return (selected, nil) }
+            return (backup, reason)
+        case .blocked:
+            return nil
         }
-        if backup.requiresInternet && NetworkReachability.shared.isOffline {
-            return false
+    }
+
+    /// Probes the primary in the background while the dictation runs. Only the
+    /// Local AI Server has a cheap liveness endpoint; cloud providers are
+    /// already covered by network reachability, and a local model cannot be
+    /// "down". The verdict lands in `reachabilityLog` before stop time.
+    private func startReachabilityProbe(for variant: TranscriptionEngineVariant) {
+        reachabilityProbeTask?.cancel()
+        reachabilityProbeTask = nil
+        guard variant.engine == .localAIServer else { return }
+
+        reachabilityProbeTask = Task { [weak self] in
+            guard let isAlive = await self?.localAIServerTranscriber.probeReachability() else { return }
+            guard let self, !Task.isCancelled else { return }
+            if isAlive {
+                self.reachabilityLog.markReachable(.localAIServer)
+            } else {
+                self.reachabilityLog.markUnreachable(.localAIServer)
+                SapoLog.recording.warning(
+                    "Local AI Server probe failed mid-dictation; the backup takes this take")
+            }
         }
-        return isEngineReady(backup)
     }
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
@@ -1439,7 +1633,7 @@ class SapoWhisperViewModel: ObservableObject {
         transition(to: .processing, reason: "retry-start")
         overlayManager.updateState(.transcribing)
 
-        let engine = currentEngine
+        let variant = currentVariant
         let language = selectedLanguage
         let historyId = persister.lastFailedHistoryId
         let duration = historyId.flatMap { historyManager.duration(for: $0) }
@@ -1451,8 +1645,8 @@ class SapoWhisperViewModel: ObservableObject {
         // instead of inserting a new one.
         let request = TranscriptionPipeline.Request(
             sessionID: sessionID,
-            engine: engine,
-            engineName: historyEngineName(for: engine),
+            engine: variant.engine,
+            engineName: historyEngineName(for: variant),
             source: "retry",
             failureLanguage: language,
             snapshotPrefix: "retry-transcription",
@@ -1465,7 +1659,7 @@ class SapoWhisperViewModel: ObservableObject {
             defer { isRetryInFlight = false }
             await transcriptionPipeline.run(request) {
                 let result = try await self.transcribeWithFallback(
-                    at: audioURL, primary: engine, language: language)
+                    at: audioURL, primary: variant, language: language)
                 return TranscriptionPipeline.EngineOutput(
                     transcript: result.transcript,
                     audioURL: audioURL,
@@ -1494,12 +1688,14 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         let audioURL = URL(fileURLWithPath: audioPath)
+        // The menu picks a brand, and an explicit choice never falls back.
+        let variant = TranscriptionEngineVariant.fileVariant(for: engine)
 
         historyReprocessingDepth += 1
         defer { historyReprocessingDepth -= 1 }
 
         do {
-            let transcription = try await transcribeAudio(at: audioURL, using: engine, language: entry.language)
+            let transcription = try await transcribeAudio(at: audioURL, using: variant, language: entry.language)
             try Task.checkCancellation()
             let aiResult = await postProcessTranscript(
                 transcription,
@@ -1512,7 +1708,7 @@ class SapoWhisperViewModel: ObservableObject {
             // audio copy; the first engine is kept in original_engine.
             historyManager.updateRetranscription(
                 id: entry.id,
-                engine: historyEngineName(for: engine),
+                engine: historyEngineName(for: variant),
                 finalText: aiResult.finalText,
                 rawText: aiResult.rawText,
                 aiStatus: aiResult.status,
@@ -1758,9 +1954,17 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    private func transcribeAudio(at audioURL: URL, using engine: TranscriptionEngine, language: String) async throws -> String {
+    private func transcribeAudio(
+        at audioURL: URL,
+        using variant: TranscriptionEngineVariant,
+        language: String
+    ) async throws -> String {
         // Fail fast with a clear message if the recording is missing, empty, or corrupt.
         try AudioFileValidator.validate(audioURL)
+
+        // A finished recording always goes through a file endpoint, so a
+        // live-only variant resolves to its provider's file model here.
+        let engine = variant.fileTranscriptionVariant.engine
 
         // R7: offline fast-fail instead of riding the request timeout. Covers
         // retry and history retranscription too; local engines are unaffected.
@@ -1787,10 +1991,6 @@ class SapoWhisperViewModel: ObservableObject {
         case .localAIServer:
             transcript = try await localAIServerTranscriber.transcribe(audioURL: audioURL, language: language)
         case .elevenLabsScribe:
-            // File transcription (retry, history, resume-merge) always uses
-            // the batch endpoint even when the live mode is realtime:
-            // replaying a finished file through the streaming WebSocket is
-            // slower and strictly less accurate than batch on the same file.
             transcript = try await elevenLabsTranscriber.transcribe(audioURL: audioURL, language: language)
         }
 
@@ -1816,17 +2016,15 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    private func historyEngineName(for engine: TranscriptionEngine) -> String {
-        switch engine {
-        case .elevenLabsScribe:
-            return currentElevenLabsMode.historyName
+    private func historyEngineName(for variant: TranscriptionEngineVariant) -> String {
+        switch variant {
         case .localAIServer:
             return "Local AI Server · \(LocalAIServerConfiguration.storedModel)"
         case .mlxWhisper:
             let modelName = currentMLXWhisperModel?.displayName ?? mlxWhisperTranscriber.loadedModelName
             return modelName.map { "Whisper MLX · \($0)" } ?? "Whisper MLX"
-        default:
-            return engine.displayName
+        case .deepgramNova3, .deepgramFluxLive, .elevenLabsScribeBatch, .elevenLabsScribeRealtime:
+            return variant.displayName
         }
     }
 
@@ -2035,7 +2233,8 @@ class SapoWhisperViewModel: ObservableObject {
         failureKind: TranscriptionFailure.Kind = .recordingInterrupted,
         storeRetryState: Bool = true
     ) -> (aborted: Bool, preservedAudio: Bool) {
-        let engine = currentEngine
+        let variant = sessionVariant
+        let engine = variant.engine
         var interrupted: (audioURL: URL, duration: TimeInterval)?
 
         if let context = activeStreamingContext {
@@ -2061,7 +2260,7 @@ class SapoWhisperViewModel: ObservableObject {
                 audioURL: interrupted.audioURL,
                 duration: interrupted.duration,
                 engine: engine,
-                engineName: historyEngineName(for: engine),
+                engineName: historyEngineName(for: variant),
                 language: selectedLanguage,
                 failureKind: failureKind,
                 storeRetryState: storeRetryState
@@ -2112,12 +2311,23 @@ class SapoWhisperViewModel: ObservableObject {
         isAnyRecorderActive ? "menu.stop_recording".localized : "menu.start_recording".localized
     }
 
-    /// Si el boton de grabar esta habilitado
+    /// Si el boton de grabar esta habilitado. A primary that is merely not
+    /// ready no longer disables it: the backup takes the dictation from the
+    /// start, so refusing here would grey out a button that would have worked.
     var canRecord: Bool {
-        engineSessions(for: currentEngine).canRecord(
-            hasActiveTranscriptionSession: activeTranscriptionSessionID != nil,
-            appIsBusyProcessing: appState.isBusyProcessing
-        )
+        func canRecord(_ sessions: EngineSessions) -> Bool {
+            sessions.canRecord(
+                hasActiveTranscriptionSession: activeTranscriptionSessionID != nil,
+                appIsBusyProcessing: appState.isBusyProcessing
+            )
+        }
+
+        let primary = engineSessions(for: currentEngine)
+        if canRecord(primary) { return true }
+        guard !primary.isBusy, let backup = fallbackVariant, isBackupEngineUsable(backup) else {
+            return false
+        }
+        return canRecord(engineSessions(for: backup.engine))
     }
 
     /// Formatea la duración de grabación

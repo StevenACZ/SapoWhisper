@@ -202,6 +202,28 @@ final class LocalAIServerTranscriber: ObservableObject {
         return (request, audioData.count)
     }
 
+    /// Standalone reachability probe, run while the user is still dictating so
+    /// a dead server is known BEFORE the upload would start: the backup engine
+    /// then takes the dictation without it paying the preflight wait. Same
+    /// contract as the pre-upload preflight; never throws, and an
+    /// unconfigured server reports nothing rather than a false "down".
+    func probeReachability() async -> Bool? {
+        guard
+            let baseURL = LocalAIServerConfiguration.normalizedBaseURL(
+                from: LocalAIServerConfiguration.storedBaseURL)
+        else { return nil }
+
+        do {
+            try await preflightServerReachability(
+                baseURL: baseURL,
+                apiKey: KeychainStore.string(for: .localAIServerAPIKey) ?? ""
+            )
+            return true
+        } catch {
+            return Task.isCancelled ? nil : false
+        }
+    }
+
     /// Cheap GET to `/health` with a short timeout before uploading audio.
     /// ANY HTTP response — including 404 on servers without that endpoint —
     /// proves the host is alive and lets the real request proceed; only
