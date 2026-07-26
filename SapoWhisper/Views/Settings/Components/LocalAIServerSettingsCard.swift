@@ -103,6 +103,7 @@ struct LocalAIServerSettingsCard: View {
                 SecureField("config.local_ai_api_key_placeholder".localized, text: $apiKey)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
+                    .disabled(keychainReadDenied)
                 Text("config.local_ai_api_key_desc".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
