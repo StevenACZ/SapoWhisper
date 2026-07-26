@@ -7,6 +7,11 @@ import Foundation
 import SQLite3
 
 nonisolated extension TranscriptionHistoryManager {
+    /// Pre-persisted row whose engine is still running. Its History audio is
+    /// the only copy of the in-flight dictation, so no delete path may remove
+    /// it before the pipeline (or the launch sweep) resolves the row.
+    static let inFlightStatus = "transcribing"
+
     /// H5: delete entries (and their audio) older than `days`, keeping pinned
     /// rows. Returns the number of deleted rows.
     @discardableResult
@@ -32,17 +37,19 @@ nonisolated extension TranscriptionHistoryManager {
         return deleted
     }
 
-    /// H5: clear the whole history (audio included). Returns the row count.
+    /// H5: clear the whole history (audio included), except rows still being
+    /// transcribed. Returns the row count.
     @discardableResult
     func deleteAll() -> Int {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
-        let paths = referencedAudioPaths()
+        let paths = deletableAudioPaths()
 
-        let deleteSql = "DELETE FROM transcriptions;"
+        let deleteSql = "DELETE FROM transcriptions WHERE status != ?;"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
+        bindText(deleteStmt, 1, Self.inFlightStatus)
         guard stepStatement(deleteStmt, operation: "deleteAll") else { return 0 }
         let deleted = Int(sqlite3_changes(db))
 
@@ -89,17 +96,19 @@ nonisolated extension TranscriptionHistoryManager {
         return newState
     }
 
-    /// Delete a transcription entry and its audio file.
+    /// Delete a transcription entry and its audio file. A row still being
+    /// transcribed is refused, and its audio only goes once the row is gone.
     func delete(id: Int64) {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
         let audioPath = audioPath(for: id)
-        let deleteSql = "DELETE FROM transcriptions WHERE id = ?;"
+        let deleteSql = "DELETE FROM transcriptions WHERE id = ? AND status != ?;"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_int64(deleteStmt, 1, id)
-        guard stepStatement(deleteStmt, operation: "delete") else { return }
+        bindText(deleteStmt, 2, Self.inFlightStatus)
+        guard stepStatement(deleteStmt, operation: "delete"), sqlite3_changes(db) > 0 else { return }
 
         if let audioPath {
             audioStorage.deleteAudioFile(at: audioPath)
@@ -135,6 +144,24 @@ nonisolated extension TranscriptionHistoryManager {
         return rows
     }
 
+    /// Audio referenced only by rows `deleteAll` is allowed to remove, so the
+    /// in-flight take keeps its file.
+    private func deletableAudioPaths() -> Set<String> {
+        let sql = "SELECT audio_path FROM transcriptions WHERE audio_path IS NOT NULL AND status != ?;"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        bindText(stmt, 1, Self.inFlightStatus)
+
+        var paths = Set<String>()
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let cString = sqlite3_column_text(stmt, 0) {
+                paths.insert(String(cString: cString))
+            }
+        }
+        return paths
+    }
+
     private func audioPath(for id: Int64) -> String? {
         let selectSql = "SELECT audio_path FROM transcriptions WHERE id = ?;"
         var selectStmt: OpaquePointer?
@@ -150,5 +177,13 @@ nonisolated extension TranscriptionHistoryManager {
         }
 
         return String(cString: cString)
+    }
+}
+
+nonisolated extension HistoryEntry {
+    /// Mirrors the guard `delete(id:)` and `deleteAll()` enforce in SQL, so the
+    /// UI can disable a delete instead of silently no-opping it.
+    var isDeletable: Bool {
+        status != TranscriptionHistoryManager.inFlightStatus
     }
 }

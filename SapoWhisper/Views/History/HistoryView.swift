@@ -38,7 +38,7 @@ struct HistoryView: View {
     @State private var selectedRetranscribeEngine: TranscriptionEngine = .mlxWhisper
     @State private var isRetranscribing = false
     @State private var retranscribeTask: Task<Void, Never>?
-    @State private var aiPolishingEntryID: Int64?
+    @State private var aiPolishingEntryIDs: Set<Int64> = []
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
     @State private var showNoticeAlert = false
@@ -179,7 +179,7 @@ struct HistoryView: View {
                 if let entry = selectedEntry {
                     HistoryDetailView(
                         entry: entry,
-                        isAIPolishing: aiPolishingEntryID == entry.id,
+                        isAIPolishing: aiPolishingEntryIDs.contains(entry.id),
                         onCopy: { PasteManager.copyToClipboard(entry.text) },
                         onPolishWithAI: { option in handlePolishWithAI(entry, option: option) },
                         onRetranscribe: { handleRetranscribe(entry) },
@@ -309,6 +309,7 @@ struct HistoryView: View {
     }
 
     private func handleDelete(_ entry: HistoryEntry) {
+        guard entry.isDeletable else { return }
         TranscriptionHistoryManager.shared.delete(id: entry.id)
         selectedEntry = nil
         loadEntries()
@@ -345,15 +346,18 @@ struct HistoryView: View {
     }
 
     private func handlePolishWithAI(_ entry: HistoryEntry, option: PolishModelOption?) {
-        aiPolishingEntryID = entry.id
+        guard !aiPolishingEntryIDs.contains(entry.id) else { return }
+        aiPolishingEntryIDs.insert(entry.id)
 
         Task {
             let result = await viewModel.polishHistoryEntry(entry, with: option)
 
             await MainActor.run {
-                aiPolishingEntryID = nil
+                aiPolishingEntryIDs.remove(entry.id)
+                // A polish rewrites its row in place and the reload keeps the
+                // current selection, so this must never move it: the user may
+                // have walked on to another entry while the request ran.
                 loadEntries()
-                selectedEntry = entries.first { $0.id == result.entryId }
 
                 if let errorMessage = result.errorMessage {
                     presentActionError(errorMessage)

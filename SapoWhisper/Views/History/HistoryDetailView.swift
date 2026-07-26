@@ -168,6 +168,7 @@ struct HistoryDetailView: View {
                 role: .destructive,
                 action: onDelete
             )
+            .disabled(isTranscribing)
         }
         .controlSize(.regular)
     }
