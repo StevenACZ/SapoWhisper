@@ -328,6 +328,48 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: pending.audioURL.path))
     }
 
+    /// HSW-044: when the History copy fails the row deliberately keeps pointing
+    /// at the TEMP WAV, which fails the directory-ownership test — stale cleanup
+    /// must consult the row references before deleting the only audio left.
+    func testStaleCleanupKeepsTempAudioAHistoryRowReferences() throws {
+        let fileManager = FileManager.default
+        let blockedDir = fileManager.temporaryDirectory
+            .appendingPathComponent("persister-copy-blocked-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: blockedDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: blockedDir) }
+        // A regular file where HistoryAudioStorage wants its directory: every
+        // copy into History storage fails, like a full or read-only disk.
+        fileManager.createFile(atPath: blockedDir.appendingPathComponent("audio").path, contents: Data())
+
+        let blockedManager = TranscriptionHistoryManager(
+            databasePath: ":memory:", audioDirectory: blockedDir)
+        let spy = DeleteSpy()
+        let blockedPersister = DictationHistoryPersister(historyManager: blockedManager) { spy.record($0) }
+
+        let tempWAV = blockedDir.appendingPathComponent("recording_\(UUID().uuidString).wav")
+        fileManager.createFile(atPath: tempWAV.path, contents: Data(repeating: 0, count: 2048))
+
+        let pending = try XCTUnwrap(
+            blockedPersister.persistPending(
+                audioURL: tempWAV,
+                engine: .localAIServer,
+                engineName: "Local AI Server · test-model",
+                language: "es",
+                duration: 3.0
+            ))
+        XCTAssertEqual(
+            pending.audioURL.path, tempWAV.path,
+            "a failed history copy leaves the row on the temp WAV"
+        )
+
+        blockedPersister.clearRetryState()
+        blockedPersister.cleanUpStaleAudio(pending.audioURL)
+
+        XCTAssertEqual(
+            spy.deleted, [], "stale cleanup deleted the only audio the History row points at")
+        XCTAssertTrue(try XCTUnwrap(blockedManager.fetchAll().first).audioFileExists)
+    }
+
     // MARK: - Stale cleanup
 
     func testStaleCleanupNeverDeletesRetryAudio() throws {

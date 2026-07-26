@@ -24,7 +24,7 @@ nonisolated enum TemporaryAudioStorage {
 
         let timer = Timer(timeInterval: 86_400, repeats: true) { _ in
             Task.detached(priority: .utility) {
-                sweepStaleFiles()
+                sweepStaleFiles(referencedNames: historyReferencedNames())
             }
         }
         timer.tolerance = 3_600
@@ -56,46 +56,63 @@ nonisolated enum TemporaryAudioStorage {
         return dir.appendingPathComponent("\(prefix)_\(UUID().uuidString).wav")
     }
 
+    /// Last-path-component names of the audio History still points at. A row
+    /// whose History copy failed keeps pointing at the temp WAV, so the sweep
+    /// would otherwise delete the only audio that dictation has left.
+    static func historyReferencedNames() -> Set<String> {
+        Set(
+            TranscriptionHistoryManager.shared.referencedAudioPaths().map {
+                ($0 as NSString).lastPathComponent
+            }
+        )
+    }
+
     /// Removes temp WAVs older than 24h plus legacy timestamp-named WAVs that
-    /// previous versions left in the shared system temp directory.
-    static func sweepStaleFiles(now: Date = Date()) {
-        var removed = 0
-        let fileManager = FileManager.default
-
-        if let files = try? fileManager.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
-        ) {
-            for file in files {
-                let modified =
-                    (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                guard now.timeIntervalSince(modified) > staleAge else { continue }
-                try? fileManager.removeItem(at: file)
-                removed += 1
-            }
-        }
-
-        if let legacyFiles = try? fileManager.contentsOfDirectory(
-            at: fileManager.temporaryDirectory, includingPropertiesForKeys: [.contentModificationDateKey]
-        ) {
-            for file in legacyFiles {
-                let name = file.lastPathComponent
-                guard name.hasSuffix(".wav"), legacyPrefixes.contains(where: name.hasPrefix) else {
-                    continue
-                }
-                // Same staleAge gate as the private dir: a crash mid-write on the
-                // old temp path must not have its still-recoverable WAV deleted.
-                let modified =
-                    (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                guard now.timeIntervalSince(modified) > staleAge else { continue }
-                try? fileManager.removeItem(at: file)
-                removed += 1
-            }
-        }
+    /// previous versions left in the shared system temp directory. Files named
+    /// in `referencedNames` belong to a History row and are never swept.
+    static func sweepStaleFiles(now: Date = Date(), referencedNames: Set<String> = []) {
+        var removed = sweepStaleFiles(in: directory, now: now, referencedNames: referencedNames)
+        removed += sweepStaleFiles(
+            in: FileManager.default.temporaryDirectory,
+            now: now,
+            referencedNames: referencedNames,
+            legacyPrefixesOnly: true
+        )
 
         if removed > 0 {
             SapoLog.recording.info("Temp audio sweep removed=\(removed, privacy: .public)")
         }
+    }
+
+    @discardableResult
+    static func sweepStaleFiles(
+        in directory: URL,
+        now: Date = Date(),
+        referencedNames: Set<String> = [],
+        legacyPrefixesOnly: Bool = false
+    ) -> Int {
+        let fileManager = FileManager.default
+        guard
+            let files = try? fileManager.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
+            )
+        else { return 0 }
+
+        var removed = 0
+        for file in files {
+            let name = file.lastPathComponent
+            if legacyPrefixesOnly {
+                guard name.hasSuffix(".wav"), legacyPrefixes.contains(where: name.hasPrefix) else { continue }
+            }
+            guard !referencedNames.contains(name) else { continue }
+            // A crash mid-write must not have its still-recoverable WAV deleted.
+            let modified =
+                (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            guard now.timeIntervalSince(modified) > staleAge else { continue }
+            try? fileManager.removeItem(at: file)
+            removed += 1
+        }
+        return removed
     }
 }

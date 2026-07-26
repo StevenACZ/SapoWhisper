@@ -35,7 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Recovery first: orphaned dictation WAVs become retranscribable
             // History rows before the stale sweep can consider deleting them.
             let recovery = OrphanAudioRecovery.recoverAbandonedRecordings()
-            TemporaryAudioStorage.sweepStaleFiles()
+            TemporaryAudioStorage.sweepStaleFiles(
+                referencedNames: TemporaryAudioStorage.historyReferencedNames()
+            )
             // The freshest preserved take (crashed WAV or interrupted
             // transcription) becomes the "continue previous dictation" offer.
             var offer: ResumableDictation?

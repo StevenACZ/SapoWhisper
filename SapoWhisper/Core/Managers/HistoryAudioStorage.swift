@@ -54,6 +54,32 @@ nonisolated final class HistoryAudioStorage: Sendable {
         try? FileManager.default.removeItem(atPath: path)
     }
 
+    /// Corruption recovery: the rows that referenced these WAVs are gone, so the
+    /// orphan sweep would delete every one of them. Move the whole directory
+    /// aside with the same stamp as the sidelined DB and start empty; the
+    /// recordings stay on disk for the user to rescue.
+    func sidelineAll(stamp: Int) {
+        let fileManager = FileManager.default
+        let contents = (try? fileManager.contentsOfDirectory(atPath: audioDir.path)) ?? []
+        guard !contents.isEmpty else { return }
+
+        let sidelined = audioDir.deletingLastPathComponent()
+            .appendingPathComponent("audio.corrupt-\(stamp)")
+        do {
+            try fileManager.moveItem(at: audioDir, to: sidelined)
+        } catch {
+            SapoLog.recording.error(
+                "History audio sideline failed error=\(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+        try? fileManager.createDirectory(at: audioDir, withIntermediateDirectories: true)
+        try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: audioDir.path)
+        SapoLog.recording.error(
+            "History audio sidelined stamp=\(stamp, privacy: .public) files=\(contents.count, privacy: .public)"
+        )
+    }
+
     /// True when `url` is inside the permanent audio directory. Symlinks are
     /// resolved on both sides (/var vs /private/var) like the orphan sweep.
     func ownsFile(at url: URL) -> Bool {
