@@ -28,6 +28,21 @@ public enum WhisperModelDownloadError: LocalizedError {
 
 public enum WhisperModelDownloader {
 
+    /// Every tokenizer file the loader may read locally. All of them are
+    /// present in the three pinned openai/whisper-* revisions; treating a
+    /// subset as "downloaded" leaves a tier permanently stuck, because the
+    /// download early-returns on that same check.
+    public static let tokenizerAssetFiles = [
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "vocab.json",
+        "merges.txt",
+        "normalizer.json",
+        "generation_config.json",
+    ]
+
     /// Directory a repo's snapshot lives in under the app-chosen root.
     public static func modelDirectory(repo: String, root: URL) -> URL {
         root.appendingPathComponent(repo.replacingOccurrences(of: "/", with: "_"))
@@ -41,9 +56,15 @@ public enum WhisperModelDownloader {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent("config.json")),
             (try? JSONSerialization.jsonObject(with: data)) != nil
         else { return false }
-        return FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("tokenizer.json").path
-        )
+        return hasTokenizerAssets(in: dir)
+    }
+
+    /// True only when every tokenizer asset exists and is non-empty.
+    static func hasTokenizerAssets(in dir: URL) -> Bool {
+        tokenizerAssetFiles.allSatisfy { name in
+            let file = dir.appendingPathComponent(name)
+            return ((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) > 0
+        }
     }
 
     /// Bytes on disk for a downloaded model (0 when absent).
@@ -137,8 +158,7 @@ public enum WhisperModelDownloader {
         into dir: URL,
         client: HubClient
     ) async throws {
-        let tokenizerPath = dir.appendingPathComponent("tokenizer.json")
-        guard !FileManager.default.fileExists(atPath: tokenizerPath.path) else { return }
+        guard !hasTokenizerAssets(in: dir) else { return }
 
         var vocabSize = 51866
         if let data = try? Data(contentsOf: dir.appendingPathComponent("config.json")),
@@ -157,20 +177,11 @@ public enum WhisperModelDownloader {
             kind: .model,
             to: dir,
             revision: tokenizerRevision,
-            matching: [
-                "tokenizer.json",
-                "tokenizer_config.json",
-                "special_tokens_map.json",
-                "added_tokens.json",
-                "vocab.json",
-                "merges.txt",
-                "normalizer.json",
-                "generation_config.json",
-            ],
+            matching: tokenizerAssetFiles,
             progressHandler: { _ in }
         )
 
-        guard FileManager.default.fileExists(atPath: tokenizerPath.path) else {
+        guard hasTokenizerAssets(in: dir) else {
             throw WhisperModelDownloadError.incompleteDownload(tokenizerRepo)
         }
     }

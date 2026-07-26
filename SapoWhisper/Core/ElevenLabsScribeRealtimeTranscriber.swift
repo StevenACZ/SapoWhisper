@@ -18,6 +18,10 @@ struct ElevenLabsRealtimeAudioSenderStats {
     let maxBufferedBytes: Int
     let maxSendWaitMs: Int
     let timedOutSends: Int
+    /// The drain deadline expired and the socket was cancelled with sends
+    /// still in flight; those chunks never reach the server and never reach
+    /// `failedMessages` either, so the counters alone look healthy.
+    var drainTimedOut: Bool = false
 
     var pendingChunks: Int {
         max(0, enqueuedChunks - sentMessages - failedMessages)
@@ -155,7 +159,8 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard let self else { return }
                 let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-                let stats = self.snapshot()
+                var stats = self.snapshot()
+                stats.drainTimedOut = true
                 if resumeOnce(returning: stats) {
                     self.abortPendingSends()
                     SapoLog.recording.warning(
@@ -520,9 +525,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         // the full take through the batch endpoint (same pattern as the Flux
         // fallback); a failed fallback falls through so waitForFinalTranscript
         // still salvages whatever the server already committed.
-        if senderStats.failedMessages > 0 {
+        if Self.shouldFallBackToBatch(senderStats: senderStats) {
             SapoLog.recording.warning(
-                "ElevenLabs realtime sender incomplete failedMessages=\(senderStats.failedMessages, privacy: .public) timedOut=\(senderStats.timedOutSends, privacy: .public); falling back to batch transcription"
+                "ElevenLabs realtime sender incomplete failedMessages=\(senderStats.failedMessages, privacy: .public) timedOut=\(senderStats.timedOutSends, privacy: .public) drainTimedOut=\(senderStats.drainTimedOut, privacy: .public); falling back to batch transcription"
             )
             do {
                 return try await transcribeFullCaptureFallback(captureResult, reason: "sender_incomplete")
@@ -532,7 +537,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
                         kind: .network,
                         engine: Self.engineName,
                         technicalDetail:
-                            "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends); batch fallback failed: \(error.localizedDescription)"
+                            "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends) drainTimedOut=\(senderStats.drainTimedOut); batch fallback failed: \(error.localizedDescription)"
                     )
                 }
                 SapoLog.recording.warning(
@@ -602,6 +607,14 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             language: requestedLanguage,
             diagnostics: captureResult.diagnostics
         )
+    }
+
+    /// A degraded send path means the realtime transcript is missing audio.
+    /// `pendingChunks` is deliberately not a signal here: `enqueuedChunks`
+    /// counts capture callbacks while `sentMessages` counts 6400-byte
+    /// messages, so their difference is noise.
+    nonisolated static func shouldFallBackToBatch(senderStats: ElevenLabsRealtimeAudioSenderStats) -> Bool {
+        senderStats.failedMessages > 0 || senderStats.drainTimedOut
     }
 
     /// Batch fallback for a degraded realtime session (mirrors

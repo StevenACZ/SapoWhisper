@@ -651,8 +651,7 @@ public final class WhisperModel: Module {
         // mlx-community Whisper repos ship weights only; fetch the tokenizer
         // from the sibling openai/whisper-* repo when missing.
         let tokenizerDir: URL
-        let localTokenizer = modelDirectory.appendingPathComponent("tokenizer.json")
-        if FileManager.default.fileExists(atPath: localTokenizer.path) {
+        if WhisperModelDownloader.hasTokenizerAssets(in: modelDirectory) {
             tokenizerDir = modelDirectory
         } else {
             tokenizerDir = try await downloadTokenizerAssets(
@@ -711,17 +710,7 @@ public final class WhisperModel: Module {
             .appendingPathComponent("mlx-audio")
             .appendingPathComponent("\(modelSubdir)_tokenizer_only")
 
-        let needed = [
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "special_tokens_map.json",
-            "added_tokens.json",
-            "vocab.json",
-            "merges.txt",
-            "normalizer.json",
-            "generation_config.json",
-        ]
-        if needed.allSatisfy({ FileManager.default.fileExists(atPath: targetDir.appendingPathComponent($0).path) }) {
+        if WhisperModelDownloader.hasTokenizerAssets(in: targetDir) {
             return targetDir
         }
 
@@ -732,17 +721,17 @@ public final class WhisperModel: Module {
             kind: .model,
             to: targetDir,
             revision: tokenizerRevision,
-            matching: needed,
+            matching: WhisperModelDownloader.tokenizerAssetFiles,
             progressHandler: { _ in }
         )
 
-        guard FileManager.default.fileExists(atPath: targetDir.appendingPathComponent("tokenizer.json").path) else {
+        guard WhisperModelDownloader.hasTokenizerAssets(in: targetDir) else {
             throw NSError(
                 domain: "WhisperModel",
                 code: 4,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Tokenizer fallback download from \(tokenizerRepo) did not include tokenizer.json."
+                        "Tokenizer fallback download from \(tokenizerRepo) is missing or has zero-byte tokenizer assets."
                 ]
             )
         }

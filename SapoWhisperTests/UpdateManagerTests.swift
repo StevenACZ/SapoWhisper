@@ -113,6 +113,22 @@ final class UpdateManagerTests: XCTestCase {
         XCTAssertEqual(manager.phase, .available(version: "9.9.9"))
     }
 
+    /// SECURITY.md promises nothing downloads until the user presses Install.
+    /// The install consent must not survive the session teardown, or the next
+    /// scheduled check installs and relaunches unattended.
+    func testDismissClearsInstallConsentSoTheNextCheckOnlySurfaces() {
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", releasePage: nil, informationOnly: false)
+        manager.beginRequestedInstall()
+
+        manager.handleDismissInstallation()
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", releasePage: nil, informationOnly: false)
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .available(version: "9.9.9"))
+    }
+
     func testDismissKeepsPendingRowAlive() {
         _ = manager.handleUpdateFound(
             version: "9.9.9", releasePage: nil, informationOnly: false)

@@ -112,9 +112,15 @@ final class UpdateManager {
             return
         }
         guard updater.sessionInProgress == false else { return }
+        beginRequestedInstall()
+        updater.checkForUpdates()
+    }
+
+    /// State half of the Install click, split out so the consent flag can be
+    /// exercised without a live Sparkle session.
+    func beginRequestedInstall() {
         installRequested = true
         phase = .downloading(fraction: nil)
-        updater.checkForUpdates()
     }
 
     /// About window: explicit re-check with visible "up to date" feedback.
@@ -205,7 +211,9 @@ final class UpdateManager {
     }
 
     /// Sparkle tears the session down (abort or completion). Keep the
-    /// pending row alive; only roll back an in-flight progress state.
+    /// pending row alive; only roll back an in-flight progress state. The
+    /// install consent dies with the session — a later scheduled check must
+    /// never download and relaunch on its own.
     func handleDismissInstallation() {
         switch phase {
         case .downloading, .installing:
@@ -213,6 +221,7 @@ final class UpdateManager {
         case .idle, .available, .failed:
             break
         }
+        installRequested = false
     }
 
     private func finishManualCheck(status: ManualCheckStatus) {
