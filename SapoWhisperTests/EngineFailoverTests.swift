@@ -265,22 +265,40 @@ final class BackupEngineSelectionTests: XCTestCase {
         XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .deepgramNova3)
     }
 
-    /// Both halves of "same variant means no backup": the live mode of the
-    /// primary brand IS a distinct backup, but the exact primary is not.
-    func testBackupMatchingThePrimaryVariantReadsAsNoBackup() {
+    /// A backup on the primary's own provider reads as "no backup" — including
+    /// the sibling live mode. Readiness and reachability are provider-wide (one
+    /// key, one host), so a sibling is down exactly when the primary is and
+    /// could never rescue anything; offering it would promise a rescue that can
+    /// never run.
+    func testBackupOnThePrimaryProviderReadsAsNoBackup() {
         set(TranscriptionEngine.deepgram.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
         set(DeepgramTranscriptionMode.nova3.rawValue, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
-        set(
-            TranscriptionEngineVariant.deepgramNova3.rawValue,
-            forKey: Constants.StorageKeys.fallbackTranscriptionEngine
-        )
-        XCTAssertNil(SapoWhisperViewModel().fallbackVariant)
 
+        for sibling: TranscriptionEngineVariant in [.deepgramNova3, .deepgramFluxLive] {
+            set(sibling.rawValue, forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+            XCTAssertNil(
+                SapoWhisperViewModel().fallbackVariant,
+                "\(sibling.rawValue) shares Deepgram's key and host — it cannot be its own backup"
+            )
+        }
+
+        // A different provider is a real backup, live mode included.
         set(
-            TranscriptionEngineVariant.deepgramFluxLive.rawValue,
+            TranscriptionEngineVariant.elevenLabsScribeRealtime.rawValue,
             forKey: Constants.StorageKeys.fallbackTranscriptionEngine
         )
-        XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .deepgramFluxLive)
+        XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .elevenLabsScribeRealtime)
+    }
+
+    /// The legacy migration must not resurrect a same-provider backup: before
+    /// the picker listed modes, "deepgram" stored against a Deepgram primary
+    /// meant "none", and it still has to.
+    func testLegacyValueOnThePrimaryProviderStaysNoBackup() {
+        set(TranscriptionEngine.deepgram.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
+        set(DeepgramTranscriptionMode.fluxLive.rawValue, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+        set("deepgram", forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+
+        XCTAssertNil(SapoWhisperViewModel().fallbackVariant)
     }
 
     func testPrimaryVariantFollowsTheModePicker() {

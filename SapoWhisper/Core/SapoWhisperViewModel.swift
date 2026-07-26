@@ -180,11 +180,16 @@ class SapoWhisperViewModel: ObservableObject {
         )
     }
 
-    /// The configured backup, or nil when unset or equal to the primary
-    /// (selecting the same variant twice means "no backup").
+    /// The configured backup, or nil when unset or on the primary's provider.
+    ///
+    /// The backup must be a DIFFERENT engine, not merely a different mode:
+    /// readiness and reachability are provider-wide (one API key, one host), so
+    /// a sibling mode is down exactly when the primary is and could never
+    /// rescue anything. The live→file direction of one provider is already
+    /// covered inside the streaming transcribers themselves.
     var fallbackVariant: TranscriptionEngineVariant? {
         guard let variant = TranscriptionEngineVariant.stored(fallbackEngineRawValue),
-            variant != currentVariant
+            variant.engine != currentVariant.engine
         else { return nil }
         return variant
     }
@@ -953,6 +958,7 @@ class SapoWhisperViewModel: ObservableObject {
         // otherwise burn their full network timeout after the dictation.
         if engine.requiresInternet && NetworkReachability.shared.isOffline {
             activeRecordingSessionID = nil
+            activeSessionVariant = nil
             // No session/audio here, so a Retry must start fresh, not retranscribe
             // a stale prior failure ([6]).
             persister.clearRetryState()
@@ -1172,7 +1178,7 @@ class SapoWhisperViewModel: ObservableObject {
             logLabel: "Recording",
             snapshotPrefix: "recording",
             logger: SapoLog.recording,
-            perfEngine: currentEngine.rawValue
+            perfEngine: sessionVariant.rawValue
         ) { perf in
             self.stopRecordingAndTranscribe(perf: perf)
         }
@@ -1201,6 +1207,7 @@ class SapoWhisperViewModel: ObservableObject {
 
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
         activeRecordingSessionID = nil
+        activeSessionVariant = nil
         activeTranscriptionSessionID = sessionID
         context.logger.info("\(context.logLabel, privacy: .public) stopping session=\(sessionID, privacy: .public)")
 
@@ -1223,7 +1230,7 @@ class SapoWhisperViewModel: ObservableObject {
             await transcriptionPipeline.run(request) {
                 do {
                     let result = try await session.stop()
-                    self.reachabilityLog.markReachable(variant.engine)
+                    self.settleReachability(variant.engine, reachable: true)
                     return TranscriptionPipeline.EngineOutput(
                         transcript: result.transcript,
                         audioURL: result.audioURL,
@@ -1253,7 +1260,7 @@ class SapoWhisperViewModel: ObservableObject {
     ) async throws -> TranscriptionPipeline.EngineOutput {
         let failure = TranscriptionFailure.from(error, engine: variant.displayName)
         guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
-        reachabilityLog.markUnreachable(variant.engine)
+        settleReachability(variant.engine, reachable: false)
 
         // A live dictation that already started ON the backup has nothing left
         // to fall back to; otherwise the backup's file endpoint is a genuinely
@@ -1299,6 +1306,7 @@ class SapoWhisperViewModel: ObservableObject {
         let duration = recordingDuration
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
         activeRecordingSessionID = nil
+        activeSessionVariant = nil
         activeTranscriptionSessionID = sessionID
 
         Task { @MainActor in
@@ -1450,7 +1458,7 @@ class SapoWhisperViewModel: ObservableObject {
         historyManager.markTranscriptionFailed(
             id: historyId,
             failureCode: TranscriptionFailure(
-                kind: .userCancelled, engine: currentEngine.displayName
+                kind: .userCancelled, engine: sessionVariant.displayName
             ).diagnosticCode
         )
         resumableStore.offer(
@@ -1503,12 +1511,12 @@ class SapoWhisperViewModel: ObservableObject {
 
         do {
             let transcript = try await transcribeAudio(at: audioURL, using: primary, language: language)
-            reachabilityLog.markReachable(primary.engine)
+            settleReachability(primary.engine, reachable: true)
             return (transcript, nil)
         } catch {
             let failure = TranscriptionFailure.from(error, engine: primary.displayName)
             guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
-            reachabilityLog.markUnreachable(primary.engine)
+            settleReachability(primary.engine, reachable: false)
             guard let backup else { throw error }
 
             SapoLog.recording.warning(
@@ -1597,10 +1605,30 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    /// Records a reachability verdict that came from a REAL transcription, and
+    /// cancels any probe still in flight.
+    ///
+    /// The probe is a cheap guess with a 3 s timeout; an actual request that
+    /// succeeded or failed is the authority. Without this cancellation a probe
+    /// resolving late overwrites the fresher verdict — a slow `/health` on a
+    /// healthy server would strand the next 90 s of dictations on the backup,
+    /// and a server answering `/health` while failing transcriptions would
+    /// erase the very failure that must skip it.
+    private func settleReachability(_ engine: TranscriptionEngine, reachable: Bool) {
+        reachabilityProbeTask?.cancel()
+        reachabilityProbeTask = nil
+        if reachable {
+            reachabilityLog.markReachable(engine)
+        } else {
+            reachabilityLog.markUnreachable(engine)
+        }
+    }
+
     /// Probes the primary in the background while the dictation runs. Only the
     /// Local AI Server has a cheap liveness endpoint; cloud providers are
     /// already covered by network reachability, and a local model cannot be
-    /// "down". The verdict lands in `reachabilityLog` before stop time.
+    /// "down". The verdict lands in `reachabilityLog` before stop time, unless
+    /// a real transcription settles it first.
     private func startReachabilityProbe(for variant: TranscriptionEngineVariant) {
         reachabilityProbeTask?.cancel()
         reachabilityProbeTask = nil
@@ -1633,7 +1661,10 @@ class SapoWhisperViewModel: ObservableObject {
         transition(to: .processing, reason: "retry-start")
         overlayManager.updateState(.transcribing)
 
-        let variant = currentVariant
+        // A retry transcribes a FILE, so a live primary retries through its
+        // provider's file model — and History must be told that, not the live
+        // mode that is merely selected.
+        let variant = currentVariant.fileTranscriptionVariant
         let language = selectedLanguage
         let historyId = persister.lastFailedHistoryId
         let duration = historyId.flatMap { historyManager.duration(for: $0) }
@@ -2251,6 +2282,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         activeRecordingSessionID = nil
+        activeSessionVariant = nil
         captureCoordinator.endActiveCapture()
         AutoDuckingManager.shared.restore()
         overlayManager.updateAudioLevel(0)

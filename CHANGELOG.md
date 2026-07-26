@@ -6,12 +6,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-07-25
+
 ### Added
 
-- The backup engine can now be any engine *and mode*: Deepgram Nova-3,
-  Deepgram Flux Live, ElevenLabs Scribe, ElevenLabs Scribe Realtime, Whisper
-  (Local) or Local AI Server. The picker used to offer only the four brands,
-  so the live models could never be chosen as a backup.
+- The backup engine can now be a *live* engine, not just a brand: the picker
+  lists Deepgram Nova-3, Deepgram Flux Live, ElevenLabs Scribe, ElevenLabs
+  Scribe Realtime, Whisper (Local) and Local AI Server. It only offers engines
+  other than your main one — two modes of the same provider share its key and
+  host, so they go down together and could never rescue each other.
 - The backup now also takes over *before* recording starts. When the primary
   is unconfigured, offline, or already known to be down, the dictation begins
   on the backup — and a live backup dictates live, exactly as if it had been

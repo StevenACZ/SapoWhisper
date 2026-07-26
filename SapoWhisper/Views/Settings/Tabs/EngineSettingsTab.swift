@@ -79,15 +79,18 @@ struct EngineSettingsTab: View {
 
     // MARK: - Backup engine
 
-    /// Variants other than the primary; the stored value falls back to "none"
-    /// at runtime if the user later selects it as the primary.
+    /// Variants on a DIFFERENT engine than the primary. A sibling mode shares
+    /// its provider's key, host and reachability, so it is down exactly when
+    /// the primary is; offering it would promise a rescue that can never run.
+    /// The stored value falls back to "none" at runtime if the user later
+    /// selects its engine as the primary.
     private var fallbackCandidates: [TranscriptionEngineVariant] {
-        TranscriptionEngineVariant.allCases.filter { $0 != currentVariant }
+        TranscriptionEngineVariant.allCases.filter { $0.engine != currentVariant.engine }
     }
 
     private var selectedFallbackEngine: TranscriptionEngineVariant? {
         guard let variant = TranscriptionEngineVariant.stored(fallbackEngineRawValue),
-            variant != currentVariant
+            variant.engine != currentVariant.engine
         else { return nil }
         return variant
     }
