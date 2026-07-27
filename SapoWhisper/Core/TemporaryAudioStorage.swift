@@ -56,21 +56,20 @@ nonisolated enum TemporaryAudioStorage {
         return dir.appendingPathComponent("\(prefix)_\(UUID().uuidString).wav")
     }
 
-    /// Last-path-component names of the audio History still points at. A row
-    /// whose History copy failed keeps pointing at the temp WAV, so the sweep
-    /// would otherwise delete the only audio that dictation has left.
-    static func historyReferencedNames() -> Set<String> {
-        Set(
-            TranscriptionHistoryManager.shared.referencedAudioPaths().map {
-                ($0 as NSString).lastPathComponent
-            }
-        )
+    /// Last-path-component names of the audio History still points at, or nil
+    /// when the scan was truncated. A row whose History copy failed points at
+    /// the temp WAV, so a truncated scan would read as "nothing is referenced".
+    static func historyReferencedNames() -> Set<String>? {
+        TranscriptionHistoryManager.shared.referencedAudioPathsIfComplete().map { paths in
+            Set(paths.map { ($0 as NSString).lastPathComponent })
+        }
     }
 
     /// Removes temp WAVs older than 24h plus legacy timestamp-named WAVs that
     /// previous versions left in the shared system temp directory. Files named
-    /// in `referencedNames` belong to a History row and are never swept.
-    static func sweepStaleFiles(now: Date = Date(), referencedNames: Set<String> = []) {
+    /// in `referencedNames` belong to a History row and are never swept; a nil
+    /// set means the reference scan failed and nothing may be deleted.
+    static func sweepStaleFiles(now: Date = Date(), referencedNames: Set<String>?) {
         var removed = sweepStaleFiles(in: directory, now: now, referencedNames: referencedNames)
         removed += sweepStaleFiles(
             in: FileManager.default.temporaryDirectory,
@@ -88,9 +87,13 @@ nonisolated enum TemporaryAudioStorage {
     static func sweepStaleFiles(
         in directory: URL,
         now: Date = Date(),
-        referencedNames: Set<String> = [],
+        referencedNames: Set<String>?,
         legacyPrefixesOnly: Bool = false
     ) -> Int {
+        guard let referencedNames else {
+            SapoLog.recording.error("failure=TempAudio/staleSweep detail=incomplete-reference-scan")
+            return 0
+        }
         let fileManager = FileManager.default
         guard
             let files = try? fileManager.contentsOfDirectory(

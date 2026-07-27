@@ -186,8 +186,8 @@ nonisolated extension TranscriptionHistoryManager {
 
     /// Every audio path the database references, or nil when the scan did not
     /// reach SQLITE_DONE. A truncated set is indistinguishable from a complete
-    /// one, so any caller that DELETES audio must use this and skip its sweep
-    /// on nil — `referencedAudioPaths()` is for read-only callers.
+    /// one, so every caller that DELETES audio uses this and skips its sweep on
+    /// nil; `referencedAudioPaths()` is for read-only callers only.
     func referencedAudioPathsIfComplete() -> Set<String>? {
         let sql = "SELECT audio_path FROM transcriptions WHERE audio_path IS NOT NULL;"
         var stmt: OpaquePointer?

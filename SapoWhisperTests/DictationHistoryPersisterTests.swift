@@ -8,6 +8,7 @@
 //  never deletes the retry audio.
 //
 
+import SQLite3
 import XCTest
 
 @testable import SapoWhisper
@@ -328,7 +329,7 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: pending.audioURL.path))
     }
 
-    /// HSW-044: when the History copy fails the row deliberately keeps pointing
+    /// When the History copy fails the row deliberately keeps pointing
     /// at the TEMP WAV, which fails the directory-ownership test — stale cleanup
     /// must consult the row references before deleting the only audio left.
     func testStaleCleanupKeepsTempAudioAHistoryRowReferences() throws {
@@ -368,6 +369,28 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertEqual(
             spy.deleted, [], "stale cleanup deleted the only audio the History row points at")
         XCTAssertTrue(try XCTUnwrap(blockedManager.fetchAll().first).audioFileExists)
+    }
+
+    /// The reference scan is the only thing that keeps a row-referenced temp
+    /// WAV alive here, so a truncated scan must stop the delete instead of
+    /// degrading to "nothing is referenced".
+    func testStaleCleanupKeepsAudioWhenTheReferenceScanCannotFinish() throws {
+        let source = makeSourceWAV(named: "unproven")
+        persister.clearRetryState()
+
+        sqlite3_progress_handler(manager.db, 1, { _ in 1 }, nil)
+        persister.cleanUpStaleAudio(source)
+        XCTAssertEqual(
+            deleteSpy.deleted, [],
+            "stale cleanup deleted audio on a reference scan that never completed"
+        )
+
+        sqlite3_progress_handler(manager.db, 0, nil, nil)
+        persister.cleanUpStaleAudio(source)
+        XCTAssertEqual(
+            deleteSpy.deleted, [source],
+            "the guard must skip the delete, not disable it"
+        )
     }
 
     // MARK: - Stale cleanup

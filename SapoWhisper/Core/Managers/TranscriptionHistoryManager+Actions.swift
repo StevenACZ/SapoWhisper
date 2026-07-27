@@ -79,10 +79,9 @@ nonisolated extension TranscriptionHistoryManager {
         }
     }
 
-    /// Deletes unreferenced audio only when the reference scan proved complete.
-    /// A truncated scan makes live recordings look orphaned, so it aborts the
-    /// sweep (and the size trim behind it) instead of deleting. Returns false
-    /// when the sweep was skipped.
+    /// A truncated reference scan makes live recordings look orphaned, so it
+    /// aborts the sweep (and the size trim behind it) instead of deleting.
+    /// Returns false when the sweep was skipped.
     @discardableResult
     private func sweepOrphanedAudio() -> Bool {
         guard let referencedPaths = referencedAudioPathsIfComplete() else {

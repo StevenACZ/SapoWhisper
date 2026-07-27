@@ -232,9 +232,11 @@ final class DictationHistoryPersister {
         guard !historyManager.ownsAudioFile(at: audioURL) else { return }
         // Directory ownership is not enough: when the History copy fails, the
         // row keeps pointing at the TEMP WAV, which is the only audio left.
-        let referencedNames = Set(
-            historyManager.referencedAudioPaths().map { ($0 as NSString).lastPathComponent }
-        )
+        guard let referencedPaths = historyManager.referencedAudioPathsIfComplete() else {
+            SapoLog.recording.error("failure=History/staleAudioCleanup detail=incomplete-reference-scan")
+            return
+        }
+        let referencedNames = Set(referencedPaths.map { ($0 as NSString).lastPathComponent })
         guard !referencedNames.contains(audioURL.lastPathComponent) else { return }
         deleteSourceAudio(audioURL)
     }
