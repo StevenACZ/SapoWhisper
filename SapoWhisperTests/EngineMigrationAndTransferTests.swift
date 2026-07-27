@@ -90,7 +90,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         let manager = SettingsTransferManager(
             defaults: defaults,
             readEngineKey: { _ in nil },
-            writeEngineKey: { _, _ in }
+            writeEngineKey: { _, _ in true }
         )
         let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
         try manager.importDocument(document, sections: [.engine])
@@ -125,7 +125,10 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         let manager = SettingsTransferManager(
             defaults: defaults,
             readEngineKey: { _ in nil },
-            writeEngineKey: { value, key in written[key] = value }
+            writeEngineKey: { value, key in
+                written[key] = value
+                return true
+            }
         )
         let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
         XCTAssertTrue(manager.availableSections(in: document).contains(.apiKeys))
@@ -137,6 +140,64 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertEqual(written[.elevenLabsAPIKey], "el-legacy-key")
         XCTAssertNil(defaults.string(forKey: Constants.StorageKeys.deepgramAPIKey))
         XCTAssertNil(defaults.string(forKey: Constants.StorageKeys.elevenLabsAPIKey))
+    }
+
+    func testImportFailsWhenTheKeychainRefusesTheAPIKeys() throws {
+        let legacyExport = """
+            {
+              "schemaVersion": 1,
+              "appVersion": "2.2.0",
+              "exportedAt": "2026-01-15T10:00:00Z",
+              "apiKeys": {
+                "deepgramAPIKey": "dg-legacy-key",
+                "elevenLabsAPIKey": "el-legacy-key"
+              }
+            }
+            """
+
+        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in false }
+        )
+        let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
+
+        XCTAssertThrowsError(try manager.importDocument(document, sections: [.apiKeys])) { error in
+            guard case SettingsTransferError.apiKeysNotStored(let count) = error else {
+                return XCTFail("Expected apiKeysNotStored, got \(error)")
+            }
+            XCTAssertEqual(count, 2)
+        }
+    }
+
+    func testImportSucceedsWhenTheKeychainStoresTheAPIKeys() throws {
+        let legacyExport = """
+            {
+              "schemaVersion": 1,
+              "appVersion": "2.2.0",
+              "exportedAt": "2026-01-15T10:00:00Z",
+              "apiKeys": {
+                "deepgramAPIKey": "dg-legacy-key"
+              }
+            }
+            """
+
+        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in true }
+        )
+        let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
+
+        XCTAssertNoThrow(try manager.importDocument(document, sections: [.apiKeys]))
     }
 
     func testOldExportWithoutAudioUploadQualityImportsMediumDefault() throws {
@@ -173,7 +234,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         let manager = SettingsTransferManager(
             defaults: defaults,
             readEngineKey: { _ in nil },
-            writeEngineKey: { _, _ in }
+            writeEngineKey: { _, _ in true }
         )
         let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
         try manager.importDocument(document, sections: [.audio])
@@ -193,7 +254,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         let manager = SettingsTransferManager(
             defaults: defaults,
             readEngineKey: { _ in nil },
-            writeEngineKey: { _, _ in }
+            writeEngineKey: { _, _ in true }
         )
         let document = try manager.decodedDocument(from: try manager.encodedSettings())
 
@@ -256,7 +317,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         let manager = SettingsTransferManager(
             defaults: defaults,
             readEngineKey: { _ in nil },
-            writeEngineKey: { _, _ in }
+            writeEngineKey: { _, _ in true }
         )
         let document = try manager.decodedDocument(from: Data(corruptedExport.utf8))
         try manager.importDocument(document, sections: [.hotkey])
@@ -326,7 +387,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         let manager = SettingsTransferManager(
             defaults: defaults,
             readEngineKey: { _ in nil },
-            writeEngineKey: { _, _ in }
+            writeEngineKey: { _, _ in true }
         )
         let document = try manager.decodedDocument(from: Data(validExport.utf8))
         try manager.importDocument(document, sections: [.hotkey])

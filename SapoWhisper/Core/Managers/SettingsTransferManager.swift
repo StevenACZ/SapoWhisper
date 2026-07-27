@@ -122,6 +122,7 @@ enum SettingsTransferError: LocalizedError {
     case emptyImportSelection
     case missingVocabulary
     case unsupportedSchema(Int)
+    case apiKeysNotStored(Int)
 
     var errorDescription: String? {
         switch self {
@@ -131,6 +132,8 @@ enum SettingsTransferError: LocalizedError {
             return "The selected file does not contain vocabulary data"
         case .unsupportedSchema(let version):
             return "Unsupported settings file version: \(version)"
+        case .apiKeysNotStored(let count):
+            return "\(count) API key(s) could not be saved to the Keychain; the rest of the settings were imported"
         }
     }
 }
@@ -140,7 +143,7 @@ struct SettingsTransferManager {
 
     private let defaults: UserDefaults
     private let readEngineKey: (KeychainStore.Key) -> String?
-    private let writeEngineKey: (String, KeychainStore.Key) -> Void
+    private let writeEngineKey: (String, KeychainStore.Key) -> Bool
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -152,7 +155,7 @@ struct SettingsTransferManager {
             // EnginePortfolioMigration. The non-nil sentinel is intentionally opaque.
             KeychainStore.hasValue(for: $0) ? "present" : nil
         },
-        writeEngineKey: @escaping (String, KeychainStore.Key) -> Void = {
+        writeEngineKey: @escaping (String, KeychainStore.Key) -> Bool = {
             KeychainStore.setString($0, for: $1)
         }
     ) {
@@ -237,7 +240,10 @@ struct SettingsTransferManager {
         }
 
         if sections.contains(.apiKeys), let apiKeys = document.apiKeys {
-            importAPIKeys(apiKeys)
+            let notStored = importAPIKeys(apiKeys)
+            guard notStored == 0 else {
+                throw SettingsTransferError.apiKeysNotStored(notStored)
+            }
         }
     }
 
@@ -348,9 +354,8 @@ struct SettingsTransferManager {
         if sections.contains(.hotkey) {
             let triggerKindRaw = preferences.hotkeyTriggerKind ?? Constants.Hotkey.defaultTriggerKind
             let triggerKind = HotkeyTriggerKind(rawValue: triggerKindRaw) ?? .keyCombination
-            // Sanitize BEFORE persisting: an out-of-range Int traps the UInt32
-            // conversion, so a stored value the import never validated would
-            // brick the next launch instead of failing the import.
+            // Sanitize BEFORE persisting: an unvalidated out-of-range value in
+            // UserDefaults traps the UInt32 conversion on the next launch.
             let keyCode = HotkeyManager.sanitizedKeyCode(
                 preferences.hotkeyKeyCode, fallback: Constants.Hotkey.defaultKeyCode)
             let modifiers = HotkeyManager.sanitizedModifiers(
@@ -386,14 +391,20 @@ struct SettingsTransferManager {
         }
     }
 
-    private func importAPIKeys(_ apiKeys: SettingsTransferAPIKeys) {
-        // Keys from legacy export files land in the Keychain, never UserDefaults.
-        if let deepgramAPIKey = emptyStringAsNil(apiKeys.deepgramAPIKey) {
-            writeEngineKey(deepgramAPIKey, .deepgramAPIKey)
+    /// Keys from legacy export files land in the Keychain, never UserDefaults.
+    /// Returns how many never made it there — a denied keychain read turns the
+    /// write into a silent no-op, and the import must not report success.
+    private func importAPIKeys(_ apiKeys: SettingsTransferAPIKeys) -> Int {
+        var notStored = 0
+        if let deepgramAPIKey = emptyStringAsNil(apiKeys.deepgramAPIKey), !writeEngineKey(deepgramAPIKey, .deepgramAPIKey) {
+            notStored += 1
         }
-        if let elevenLabsAPIKey = emptyStringAsNil(apiKeys.elevenLabsAPIKey) {
-            writeEngineKey(elevenLabsAPIKey, .elevenLabsAPIKey)
+        if let elevenLabsAPIKey = emptyStringAsNil(apiKeys.elevenLabsAPIKey),
+            !writeEngineKey(elevenLabsAPIKey, .elevenLabsAPIKey)
+        {
+            notStored += 1
         }
+        return notStored
     }
 
     private func emptyStringAsNil(_ value: String?) -> String? {
