@@ -6,6 +6,40 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The accessibility announcement after a dictation now says "Text copied"
+  instead of "Text pasted": when Secure Keyboard Entry blocks the synthetic
+  paste, the text really is only on the clipboard.
+- An update you never asked to install no longer stays "requested" after
+  Sparkle closes its session, so a later scheduled check cannot download and
+  relaunch the app on its own.
+
+### Fixed
+
+- History entries that are still being transcribed can no longer be deleted
+  from the sidebar, the detail view, "Delete older than 30 days", or "Clear
+  all". Their recording is the only copy of the dictation the engine is still
+  reading, and the delete used to take it with the row.
+- Onboarding no longer shows an API key as valid when macOS refused access to
+  the Keychain. The key fields offer the same "Allow again" recovery the
+  Settings cards do, and importing settings now reports an error instead of
+  finishing "successfully" with no credentials stored.
+- Recordings are never deleted on an incomplete database scan. If the History
+  lookup is interrupted mid-sweep, the stale-audio cleanup, the temporary-file
+  sweep, and the orphan sweep all skip their deletions instead of treating an
+  empty answer as "nothing is referenced".
+- Recordings set aside after a corrupt History database no longer stay on disk
+  forever: they are kept for 30 days so they can be rescued from Finder, then
+  removed.
+- Aborting a microphone setup now always stops the audio engine, even when
+  removing the tap fails mid device change, so the macOS microphone indicator
+  cannot stay on.
+- A model tier whose tokenizer download was incomplete is no longer reported as
+  downloaded, which used to leave that tier permanently unusable.
+- Polishing several History entries at once no longer moves your selection to
+  whichever entry finished last.
+
 ## [2.14.0] - 2026-07-25
 
 ### Added
