@@ -3,6 +3,7 @@
 //  SapoWhisperTests
 //
 
+import MLXWhisper
 import XCTest
 
 @testable import SapoWhisper
@@ -64,6 +65,13 @@ final class DictationSessionGuardTests: XCTestCase {
 
     private let defaults = UserDefaults.standard
     private var restore: [String: String?] = [:]
+
+    private static var largeV3SnapshotDirectory: URL {
+        WhisperModelDownloader.modelDirectory(
+            repo: MLXWhisperModel.largeV3.rawValue,
+            root: MLXWhisperTranscriber.modelsRootDirectory
+        )
+    }
 
     private func set(_ value: String, forKey key: String) {
         if restore[key] == nil {
@@ -140,9 +148,12 @@ final class DictationSessionGuardTests: XCTestCase {
 
         let viewModel = makeRecordingViewModel()
         defer { endCapture(viewModel) }
+        // The delete removes the tier's snapshot directory from the app's real
+        // Application Support root, and an incomplete snapshot does not count
+        // as downloaded, so absence on disk is the only safe precondition.
         try XCTSkipIf(
-            viewModel.mlxWhisperTranscriber.isModelDownloaded(.largeV3),
-            "largeV3 is really downloaded on this machine; skipping to avoid deleting it"
+            FileManager.default.fileExists(atPath: Self.largeV3SnapshotDirectory.path),
+            "a largeV3 snapshot exists on this machine; skipping to avoid deleting real files"
         )
         viewModel.activeRecordingSessionID = nil
         viewModel.activeTranscriptionSessionID = 1

@@ -5,6 +5,7 @@
 
 import Foundation
 import SQLite3
+import os
 
 nonisolated extension TranscriptionHistoryManager {
     /// Pre-persisted row whose engine is still running. Its History audio is
@@ -13,7 +14,8 @@ nonisolated extension TranscriptionHistoryManager {
     static let inFlightStatus = "transcribing"
 
     /// H5: delete entries (and their audio) older than `days`, keeping pinned
-    /// rows. Returns the number of deleted rows.
+    /// rows and rows still being transcribed. Returns the number of deleted
+    /// rows.
     @discardableResult
     func deleteEntries(olderThanDays days: Int) -> Int {
         persistenceLock.lock()
@@ -21,16 +23,19 @@ nonisolated extension TranscriptionHistoryManager {
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
         let iso = Self.isoFormatter.string(from: cutoff)
 
-        let deleteSql = "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0;"
+        let deleteSql =
+            "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0 AND status != ?;"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
         bindText(deleteStmt, 1, iso)
+        bindText(deleteStmt, 2, Self.inFlightStatus)
         guard stepStatement(deleteStmt, operation: "deleteOlderThan") else { return 0 }
         let deleted = Int(sqlite3_changes(db))
 
-        // Pinned rows survive the DELETE: sweep only audio that lost its row.
-        audioStorage.deleteOrphanedAudioFiles(referencedPaths: referencedAudioPaths())
+        // Pinned and in-flight rows survive the DELETE: sweep only audio that
+        // lost its row.
+        sweepOrphanedAudio()
         deleteOrphanedPolishVersions()
 
         notifyDidChange()
@@ -65,13 +70,27 @@ nonisolated extension TranscriptionHistoryManager {
     func enforceAudioStorageLimit() {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
-        audioStorage.deleteOrphanedAudioFiles(referencedPaths: referencedAudioPaths())
+        guard sweepOrphanedAudio() else { return }
         guard audioStorage.directorySize() > HistoryAudioStorage.maxAudioStorageBytes else { return }
 
         deleteOldestEntriesWithAudio(includeFavorites: false)
         if audioStorage.directorySize() > HistoryAudioStorage.maxAudioStorageBytes {
             deleteOldestEntriesWithAudio(includeFavorites: true)
         }
+    }
+
+    /// Deletes unreferenced audio only when the reference scan proved complete.
+    /// A truncated scan makes live recordings look orphaned, so it aborts the
+    /// sweep (and the size trim behind it) instead of deleting. Returns false
+    /// when the sweep was skipped.
+    @discardableResult
+    private func sweepOrphanedAudio() -> Bool {
+        guard let referencedPaths = referencedAudioPathsIfComplete() else {
+            SapoLog.recording.error("failure=History/orphanSweep detail=incomplete-reference-scan")
+            return false
+        }
+        audioStorage.deleteOrphanedAudioFiles(referencedPaths: referencedPaths)
+        return true
     }
 
     /// Toggle the favorite status of an entry. Returns new state.
