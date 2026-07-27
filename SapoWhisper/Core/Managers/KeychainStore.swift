@@ -337,9 +337,8 @@ enum KeychainStore {
 
         private static let simulatedRead = OSAllocatedUnfairLock<SimulatedRead?>(initialState: nil)
 
-        /// Tests never reach the keychain — `skipsConsentPrompts` reports an
-        /// empty, reliable payload — so a denied read is only reachable by
-        /// injecting the outcome here. Pass `nil` to restore that default.
+        /// Tests never reach the keychain, so a denied read is only reachable
+        /// by injecting the outcome here. Pass `nil` to restore the default.
         static func simulateRead(payload: [String: String]?, isReliable: Bool = true) {
             simulatedRead.withLock { state in
                 state = payload.map { SimulatedRead(payload: $0, isReliable: isReliable) }

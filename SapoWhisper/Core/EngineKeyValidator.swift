@@ -43,6 +43,13 @@ enum EngineKeyValidator {
         }
     }
 
+    /// False when the secret is NOT stored, so no caller may report the key as
+    /// configured: a denied keychain read turns `setString` into a no-op.
+    static func persist(key: String, for keychainKey: KeychainStore.Key) -> Bool {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        return KeychainStore.setString(trimmed, for: keychainKey) || trimmed.isEmpty
+    }
+
     private static func probe(url: URL, headers: [String: String]) async throws {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"

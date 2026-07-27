@@ -64,4 +64,29 @@ final class KeychainStoreTests: XCTestCase {
         XCTAssertNil(KeychainStore.string(for: .deepgramAPIKey))
         XCTAssertEqual(KeychainStore.string(for: .elevenLabsAPIKey), "stored-elevenlabs")
     }
+
+    /// Onboarding validates the key over the network and then reports it as
+    /// configured. A denied read makes the write a no-op, so the seam the
+    /// Welcome flow gates on must say the secret is not stored.
+    func testPersistReportsFailureWhileTheReadIsDenied() {
+        KeychainStore.simulateRead(payload: [:], isReliable: false)
+
+        XCTAssertFalse(EngineKeyValidator.persist(key: "dg-onboarding-key", for: .deepgramAPIKey))
+        XCTAssertNil(KeychainStore.string(for: .deepgramAPIKey))
+    }
+
+    func testPersistStoresTheTrimmedKeyOnAReliableRead() {
+        KeychainStore.simulateRead(payload: storedPayload, isReliable: true)
+
+        XCTAssertTrue(EngineKeyValidator.persist(key: "  dg-onboarding-key  ", for: .deepgramAPIKey))
+        XCTAssertEqual(KeychainStore.string(for: .deepgramAPIKey), "dg-onboarding-key")
+    }
+
+    /// An empty field carries nothing to lose, so a denied read must not block
+    /// a flow whose API key is optional.
+    func testPersistToleratesAnEmptyKeyWhileTheReadIsDenied() {
+        KeychainStore.simulateRead(payload: [:], isReliable: false)
+
+        XCTAssertTrue(EngineKeyValidator.persist(key: "   ", for: .localAIServerAPIKey))
+    }
 }
