@@ -230,6 +230,14 @@ final class DictationHistoryPersister {
         // Pre-persisted dictations hand the pipeline a History-owned WAV —
         // going stale (e.g. a cancelled transcription) must never delete it.
         guard !historyManager.ownsAudioFile(at: audioURL) else { return }
+        // Directory ownership is not enough: when the History copy fails, the
+        // row keeps pointing at the TEMP WAV, which is the only audio left.
+        guard let referencedPaths = historyManager.referencedAudioPathsIfComplete() else {
+            SapoLog.recording.error("failure=History/staleAudioCleanup detail=incomplete-reference-scan")
+            return
+        }
+        let referencedNames = Set(referencedPaths.map { ($0 as NSString).lastPathComponent })
+        guard !referencedNames.contains(audioURL.lastPathComponent) else { return }
         deleteSourceAudio(audioURL)
     }
 

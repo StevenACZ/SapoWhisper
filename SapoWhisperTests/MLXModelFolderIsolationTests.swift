@@ -35,8 +35,9 @@ final class MLXModelFolderIsolationTests: XCTestCase {
     // MARK: - Fixtures
 
     /// Fake snapshot satisfying the downloader's "downloaded" contract:
-    /// non-empty weights + parseable config + tokenizer present. Weights are
-    /// sized from the repo id so every tier has a distinct sizeOnDisk.
+    /// non-empty weights + parseable config + every tokenizer asset present
+    /// and non-empty. Weights are sized from the repo id so every tier has a
+    /// distinct sizeOnDisk.
     private func makeFakeSnapshot(repo: String, root: URL) throws {
         let dir = WhisperModelDownloader.modelDirectory(repo: repo, root: root)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -44,8 +45,9 @@ final class MLXModelFolderIsolationTests: XCTestCase {
             .write(to: dir.appendingPathComponent("weights.safetensors"))
         try Data(#"{"vocab_size":51866}"#.utf8)
             .write(to: dir.appendingPathComponent("config.json"))
-        try Data(#"{"model":{}}"#.utf8)
-            .write(to: dir.appendingPathComponent("tokenizer.json"))
+        for asset in WhisperModelDownloader.tokenizerAssetFiles {
+            try Data(#"{"model":{}}"#.utf8).write(to: dir.appendingPathComponent(asset))
+        }
     }
 
     private func subRoot(_ name: String) throws -> URL {
@@ -174,5 +176,39 @@ final class MLXModelFolderIsolationTests: XCTestCase {
         try FileManager.default.removeItem(at: dir.appendingPathComponent("tokenizer.json"))
 
         XCTAssertFalse(WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: root))
+    }
+
+    /// The tokenizer prefetch is the reserved last 2% of a download and
+    /// `download` early-returns on `isDownloaded`. Accepting a partial
+    /// prefetch leaves the tier reporting "downloaded" forever while the
+    /// loader dies, and retrying is a no-op.
+    func testAnyMissingTokenizerAssetIsNotDownloaded() throws {
+        let model = MLXWhisperModel.small
+        for asset in WhisperModelDownloader.tokenizerAssetFiles {
+            let tierRoot = try subRoot("partial-missing-\(asset)")
+            try makeFakeSnapshot(repo: model.rawValue, root: tierRoot)
+            let dir = WhisperModelDownloader.modelDirectory(repo: model.rawValue, root: tierRoot)
+            try FileManager.default.removeItem(at: dir.appendingPathComponent(asset))
+
+            XCTAssertFalse(
+                WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: tierRoot),
+                "missing \(asset) must not count as a complete snapshot"
+            )
+        }
+    }
+
+    func testZeroByteTokenizerAssetIsNotDownloaded() throws {
+        let model = MLXWhisperModel.small
+        for asset in WhisperModelDownloader.tokenizerAssetFiles {
+            let tierRoot = try subRoot("partial-empty-\(asset)")
+            try makeFakeSnapshot(repo: model.rawValue, root: tierRoot)
+            let dir = WhisperModelDownloader.modelDirectory(repo: model.rawValue, root: tierRoot)
+            try Data().write(to: dir.appendingPathComponent(asset))
+
+            XCTAssertFalse(
+                WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: tierRoot),
+                "zero-byte \(asset) must not count as a complete snapshot"
+            )
+        }
     }
 }

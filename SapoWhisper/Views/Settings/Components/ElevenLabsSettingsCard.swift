@@ -64,6 +64,7 @@ struct ElevenLabsSettingsCard: View {
             SecureField("config.elevenlabs_key_placeholder".localized, text: $elevenLabsAPIKey)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
+                .disabled(keychainReadDenied)
 
             Text("config.elevenlabs_key_desc".localized)
                 .font(.caption)

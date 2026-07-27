@@ -19,6 +19,12 @@ nonisolated final class HistoryAudioStorage: Sendable {
         maxAudioStorageBytes * 8 / 10
     }
 
+    /// Sidelined audio sits outside `audioDir`, so neither the orphan sweep nor
+    /// `enforceAudioStorageLimit` can ever reclaim it; without a window of its
+    /// own it would grow for the life of the install.
+    static let sidelinedRetention: TimeInterval = 30 * 24 * 60 * 60
+    private static let sidelinedPrefix = "audio.corrupt-"
+
     private let audioDir: URL
 
     init(appDirectory: URL) {
@@ -30,6 +36,7 @@ nonisolated final class HistoryAudioStorage: Sendable {
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o700], ofItemAtPath: dir.path)
         }
+        pruneSidelinedAudio()
     }
 
     func saveAudioFile(from sourceURL: URL) -> String? {
@@ -52,6 +59,48 @@ nonisolated final class HistoryAudioStorage: Sendable {
 
     func deleteAudioFile(at path: String) {
         try? FileManager.default.removeItem(atPath: path)
+    }
+
+    /// Corruption recovery: the rows that referenced these WAVs are gone, so the
+    /// orphan sweep would delete every one of them. The directory moves aside
+    /// under the same stamp as the sidelined DB and stays readable in Finder
+    /// until `sidelinedRetention` expires.
+    func sidelineAll(stamp: Int) {
+        let fileManager = FileManager.default
+        let contents = (try? fileManager.contentsOfDirectory(atPath: audioDir.path)) ?? []
+        guard !contents.isEmpty else { return }
+
+        let sidelined = audioDir.deletingLastPathComponent()
+            .appendingPathComponent("\(Self.sidelinedPrefix)\(stamp)")
+        do {
+            try fileManager.moveItem(at: audioDir, to: sidelined)
+        } catch {
+            SapoLog.recording.error(
+                "History audio sideline failed error=\(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+        try? fileManager.createDirectory(at: audioDir, withIntermediateDirectories: true)
+        try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: audioDir.path)
+        SapoLog.recording.error(
+            "History audio sidelined stamp=\(stamp, privacy: .public) files=\(contents.count, privacy: .public)"
+        )
+    }
+
+    func pruneSidelinedAudio(now: Date = Date()) {
+        let fileManager = FileManager.default
+        let parent = audioDir.deletingLastPathComponent()
+        let contents = (try? fileManager.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil)) ?? []
+
+        for directory in contents {
+            let name = directory.lastPathComponent
+            guard name.hasPrefix(Self.sidelinedPrefix),
+                let stamp = TimeInterval(name.dropFirst(Self.sidelinedPrefix.count)),
+                now.timeIntervalSince1970 - stamp > Self.sidelinedRetention
+            else { continue }
+            try? fileManager.removeItem(at: directory)
+            SapoLog.recording.info("History audio sideline expired name=\(name, privacy: .public)")
+        }
     }
 
     /// True when `url` is inside the permanent audio directory. Symlinks are

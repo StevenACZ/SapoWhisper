@@ -635,7 +635,7 @@
 "overlay.a11y.resume" = "Resume recording";
 "overlay.a11y.recording_started" = "Recording started";
 "overlay.a11y.transcribing" = "Transcribing";
-"overlay.a11y.pasted" = "Text pasted";
+"overlay.a11y.pasted" = "Text copied";
 "overlay.a11y.error" = "Dictation failed";
 
 /* In-app updates (Sparkle) + retranscribe cancel */

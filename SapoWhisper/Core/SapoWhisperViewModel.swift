@@ -71,7 +71,6 @@ class SapoWhisperViewModel: ObservableObject {
     /// Same key the Settings toggle writes; before this the menu toggle drove
     /// a non-persisted @Published and the Settings toggle changed nothing.
     @AppStorage(Constants.StorageKeys.autoPaste) var autoPasteEnabled = true
-    // Default engine on Mac: local MLX Whisper (Steven's decision 2026-07-05).
     @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.mlxWhisper.rawValue
     @AppStorage(Constants.StorageKeys.mlxWhisperModel) var selectedMLXWhisperModel: String =
         MLXWhisperModel.largeV3Turbo.rawValue
@@ -126,8 +125,8 @@ class SapoWhisperViewModel: ObservableObject {
     private var isStartPending = false
     private var recordingSessionCounter: UInt64 = 0
     private var toggleRecordingCount: UInt64 = 0
-    private var activeRecordingSessionID: UInt64?
-    private var activeTranscriptionSessionID: UInt64?
+    var activeRecordingSessionID: UInt64?
+    var activeTranscriptionSessionID: UInt64?
     private var activeInputDeviceOverrideUID: String?
 
     /// In-flight batch transcription (post-stop, engine running). Its history
@@ -264,8 +263,10 @@ class SapoWhisperViewModel: ObservableObject {
     init() {
         setupBindings()
         checkInitialState()
-        setupHotkey()
+        // Before setupHotkey: Carbon registers whatever the manager holds, and
+        // an in-memory correction afterwards would never re-register.
         loadSavedSettings()
+        setupHotkey()
         setupOverlayCallbacks()
         _ = SoundManager.shared
         overlayManager.prewarm()
@@ -377,9 +378,12 @@ class SapoWhisperViewModel: ObservableObject {
 
         // Aplicar hotkey guardado
         hotkeyManager.currentTriggerKind = HotkeyTriggerKind(rawValue: hotkeyTriggerKind) ?? .keyCombination
-        hotkeyManager.currentKeyCode = UInt32(hotkeyKeyCode)
-        hotkeyManager.currentModifiers = UInt32(hotkeyModifiers)
-        hotkeyManager.currentDoubleTapModifier = UInt32(hotkeyDoubleTapModifier)
+        hotkeyManager.currentKeyCode = HotkeyManager.sanitizedKeyCode(
+            hotkeyKeyCode, fallback: Constants.Hotkey.defaultKeyCode)
+        hotkeyManager.currentModifiers = HotkeyManager.sanitizedModifiers(
+            hotkeyModifiers, fallback: Constants.Hotkey.defaultModifiers)
+        hotkeyManager.currentDoubleTapModifier = HotkeyManager.sanitizedModifiers(
+            hotkeyDoubleTapModifier, fallback: Constants.Hotkey.defaultDoubleTapModifier)
     }
 
     private func setupBindings() {
@@ -657,6 +661,11 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Initial State
 
     private func checkInitialState() {
+        // Settings cards recompute readiness from `onAppear`, so mid-dictation
+        // the resulting .idle/.noModel would broadcast a false `.ended` and drop
+        // the input-device override with the capture still live.
+        guard activeRecordingSessionID == nil, activeTranscriptionSessionID == nil else { return }
+
         // A usable backup means dictation still works, so an unconfigured
         // primary must not park the app in "no model".
         let canDictate =
@@ -759,9 +768,7 @@ class SapoWhisperViewModel: ObservableObject {
         mlxWhisperTranscriber.deleteDownloadedModel(model)
         if wasSelected {
             selectedMLXWhisperModel = ""
-            // Never clobber an active session state; a mid-dictation failure
-            // surfaces through the normal transcription failure path.
-            if currentEngine == .mlxWhisper, activeRecordingSessionID == nil {
+            if currentEngine == .mlxWhisper {
                 checkInitialState()
             }
         }
@@ -1533,15 +1540,27 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    /// Marked straight on the log rather than through `settleReachability`:
+    /// the probe that call would cancel belongs to the PRIMARY, and a verdict
+    /// about the backup says nothing about it.
     private func transcribeOnBackup(
         at audioURL: URL,
         backup: TranscriptionEngineVariant,
         language: String
     ) async throws -> (transcript: String, engineNameOverride: String?) {
-        let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
-        // History must name what ran, and a live-only backup rescues an
-        // existing recording through its provider's file model.
-        return (transcript, historyEngineName(for: backup.fileTranscriptionVariant))
+        do {
+            let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
+            reachabilityLog.markReachable(backup.engine)
+            // History must name what ran, and a live-only backup rescues an
+            // existing recording through its provider's file model.
+            return (transcript, historyEngineName(for: backup.fileTranscriptionVariant))
+        } catch {
+            let failure = TranscriptionFailure.from(error, engine: backup.displayName)
+            if EngineFailoverPolicy.isRescuable(failure) {
+                reachabilityLog.markUnreachable(backup.engine)
+            }
+            throw error
+        }
     }
 
     /// Whether the backup can plausibly transcribe right now. Internal so

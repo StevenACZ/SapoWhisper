@@ -126,6 +126,15 @@ nonisolated extension AudioCaptureEngine {
         }
     }
 
+    /// A paused capture can never satisfy the health condition, so recovering
+    /// one would restart the engine behind the user's pause; `resumeRecording`
+    /// owns that restart.
+    func shouldRecoverAfterConfigurationChange(isEngineRunning: Bool, lastBufferAge: TimeInterval?) -> Bool {
+        guard !isPaused else { return false }
+        guard isEngineRunning, let lastBufferAge else { return true }
+        return lastBufferAge > Self.captureHealthyBufferMaxAge
+    }
+
     /// Runs on `audioSetupQueue`. Leaves a healthy engine (still running,
     /// buffers still arriving) untouched and rebuilds only a dead stream.
     private func runCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
@@ -133,11 +142,12 @@ nonisolated extension AudioCaptureEngine {
         guard isSetupGenerationCurrent(generation), let engine = audioEngine else { return }
 
         let lastBuffer = currentLastInputBufferTime()
-        let bufferAge = CFAbsoluteTimeGetCurrent() - lastBuffer
-        if engine.isRunning, lastBuffer > 0, bufferAge <= Self.captureHealthyBufferMaxAge {
+        let lastBufferAge: TimeInterval? = lastBuffer > 0 ? CFAbsoluteTimeGetCurrent() - lastBuffer : nil
+        guard shouldRecoverAfterConfigurationChange(isEngineRunning: engine.isRunning, lastBufferAge: lastBufferAge) else {
             captureRecoveryAttempts = 0
+            let bufferAgeMs = lastBufferAge.map { Int($0 * 1000) } ?? -1
             SapoLog.recording.info(
-                "\(self.mode.logLabel, privacy: .public) capture healthy after configuration change bufferAgeMs=\(Int(bufferAge * 1000), privacy: .public)"
+                "\(self.mode.logLabel, privacy: .public) capture kept after configuration change paused=\(self.isPaused, privacy: .public) bufferAgeMs=\(bufferAgeMs, privacy: .public)"
             )
             return
         }
@@ -159,13 +169,11 @@ nonisolated extension AudioCaptureEngine {
             "\(self.mode.logLabel, privacy: .public) capture interrupted event=\(event.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)"
         )
 
-        // Teardown races the same route churn that triggered recovery; a
-        // guarded exception here just means the engine is already dead.
-        try? AudioEngineGuard.run("recovery-teardown") {
+        try? AudioEngineGuard.run("recovery-remove-tap") {
             oldEngine.inputNode.removeTap(onBus: 0)
-            oldEngine.stop()
-            oldEngine.reset()
         }
+        try? AudioEngineGuard.run("recovery-stop") { oldEngine.stop() }
+        try? AudioEngineGuard.run("recovery-reset") { oldEngine.reset() }
         audioEngine = nil
 
         guard attempt <= 2 else {
@@ -222,13 +230,20 @@ nonisolated extension AudioCaptureEngine {
         ) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
-        try AudioEngineGuard.prepareAndStart(engine, operation: "\(mode.opPrefix)-rebuild-engine-start")
+        // Starting the rebuilt engine behind a pause would capture audio the
+        // user asked to stop.
+        let paused = isPaused
+        if paused {
+            try AudioEngineGuard.run("\(mode.opPrefix)-rebuild-engine-prepare") { engine.prepare() }
+        } else {
+            try AudioEngineGuard.prepareAndStart(engine, operation: "\(mode.opPrefix)-rebuild-engine-start")
+        }
 
         audioEngine = engine
         beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
         let inputDescription = deviceUID == AudioDevice.systemDefault.uid ? "system-default" : deviceUID
         SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .public) hz=\(Int(tapFormat.sampleRate), privacy: .public)"
+            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .public) hz=\(Int(tapFormat.sampleRate), privacy: .public) paused=\(paused, privacy: .public)"
         )
     }
 

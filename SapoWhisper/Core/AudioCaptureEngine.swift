@@ -117,6 +117,8 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     var lastInputBufferTime: CFAbsoluteTime = 0
     var inputBufferCount = 0
     var writtenFrameCount: AVAudioFramePosition = 0
+    var failedWriteCount = 0
+    var firstWriteError: String?
     var emittedChunkCount = 0
     var firstInputLatencyMs: Double?
     var maxInputGapMs: Double = 0
@@ -408,11 +410,11 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     private func finalizeCaptureOnQueue() -> URL? {
         deviceSentinel.end()
         if let engine = audioEngine {
-            try? AudioEngineGuard.run("finalize-capture-teardown") {
+            try? AudioEngineGuard.run("finalize-capture-remove-tap") {
                 engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
-                engine.reset()
             }
+            try? AudioEngineGuard.run("finalize-capture-stop") { engine.stop() }
+            try? AudioEngineGuard.run("finalize-capture-reset") { engine.reset() }
         }
 
         _ = flushRemainingConvertedAudio()
@@ -450,6 +452,11 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                     "\(self.mode.logLabel, privacy: .public) stopped without input buffers bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .public)"
                 )
             }
+            if !diagnostics.isComplete {
+                SapoLog.recording.error(
+                    "\(self.mode.logLabel, privacy: .public) recording incomplete failedWrites=\(diagnostics.failedWriteCount, privacy: .public) firstError=\(diagnostics.firstWriteError ?? "unknown", privacy: .public)"
+                )
+            }
         }
 
         recordingDuration = 0
@@ -477,9 +484,10 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
         // A4: engine lifecycle stays on audioSetupQueue (like start/stop) so a
         // pause never races a concurrent recoverCapture rebuilding the engine
-        // on that queue.
-        audioSetupQueue.sync { audioEngine?.pause() }
+        // on that queue. `isPaused` is published BEFORE that hop: a rebuild in
+        // flight reads it to decide whether to start the new engine.
         isPaused = true
+        audioSetupQueue.sync { audioEngine?.pause() }
 
         // Guardar tiempo acumulado
         timer?.invalidate()
@@ -578,9 +586,15 @@ nonisolated struct RecordingCaptureDiagnostics {
     let lastBufferAgeMs: Double?
     let maxInputGapMs: Double
     let fileSizeBytes: Int
+    var failedWriteCount: Int = 0
+    var firstWriteError: String?
 
     var receivedInput: Bool {
         inputBufferCount > 0 && writtenFrameCount > 0
+    }
+
+    var isComplete: Bool {
+        failedWriteCount == 0
     }
 }
 

@@ -154,6 +154,97 @@ final class HistoryAudioPersistenceTests: XCTestCase {
         }
     }
 
+    // MARK: - Corrupt database recovery
+
+    /// Recovery sidelines the corrupt DB and opens an empty schema, so
+    /// every stored WAV instantly looks orphaned. The audio must be sidelined
+    /// with it — otherwise the first sweep (every save, plus the launch
+    /// auto-delete) erases every recording the user ever made.
+    func testCorruptDatabaseRecoverySidelinesAudioInsteadOfSweepingIt() throws {
+        let fileManager = FileManager.default
+        let appDir = fileManager.temporaryDirectory
+            .appendingPathComponent("history-corrupt-tests-\(UUID().uuidString)", isDirectory: true)
+        let audioDir = appDir.appendingPathComponent("audio", isDirectory: true)
+        try fileManager.createDirectory(at: audioDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: appDir) }
+
+        let databasePath = appDir.appendingPathComponent("history.db").path
+        try Data(repeating: 0x41, count: 4096).write(to: URL(fileURLWithPath: databasePath))
+        let recordings = (0..<2).map { _ in "audio_\(UUID().uuidString).wav" }
+        for name in recordings {
+            fileManager.createFile(
+                atPath: audioDir.appendingPathComponent(name).path,
+                contents: Data(repeating: 0, count: 2048)
+            )
+        }
+
+        let recovered = TranscriptionHistoryManager(databasePath: databasePath, audioDirectory: appDir)
+
+        let appDirContents = try fileManager.contentsOfDirectory(atPath: appDir.path)
+        XCTAssertTrue(
+            appDirContents.contains { $0.hasPrefix("history.db.corrupt-") },
+            "the corrupt DB itself must be sidelined"
+        )
+        let sidelinedName = try XCTUnwrap(
+            appDirContents.first { $0.hasPrefix("audio.corrupt-") },
+            "the audio of the corrupt DB must be sidelined, not left for the orphan sweep"
+        )
+        let sidelinedDir = appDir.appendingPathComponent(sidelinedName, isDirectory: true)
+        XCTAssertEqual(
+            Set(try fileManager.contentsOfDirectory(atPath: sidelinedDir.path)), Set(recordings))
+        XCTAssertEqual(
+            try fileManager.contentsOfDirectory(atPath: audioDir.path), [],
+            "recovery starts from an empty audio directory"
+        )
+
+        // The very next dictation runs the orphan sweep; the sidelined audio is
+        // outside its directory and must survive.
+        let source = appDir.appendingPathComponent("post-recovery-\(UUID().uuidString).wav")
+        fileManager.createFile(atPath: source.path, contents: Data(repeating: 0, count: 2048))
+        let result = recovered.persistEntry(
+            audioSource: source, engine: "Deepgram", language: "es", duration: 1, text: "after recovery"
+        )
+        XCTAssertGreaterThan(result.rowID, 0, "the recreated schema must accept new rows")
+        recovered.enforceAudioStorageLimit()
+
+        for name in recordings {
+            XCTAssertTrue(
+                fileManager.fileExists(atPath: sidelinedDir.appendingPathComponent(name).path),
+                "the orphan sweep deleted a recording the corrupt DB referenced: \(name)"
+            )
+        }
+    }
+
+    /// Sidelined audio is unreachable for every other delete path, so its own
+    /// window is the only thing that stops repeated corruptions from filling
+    /// the disk. Recent sidelines must survive it.
+    func testSidelinedAudioExpiresAfterItsRetentionWindow() throws {
+        let fileManager = FileManager.default
+        let appDir = fileManager.temporaryDirectory
+            .appendingPathComponent("history-sideline-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: appDir) }
+
+        let now = Date()
+        let expiredStamp = Int(now.timeIntervalSince1970 - HistoryAudioStorage.sidelinedRetention - 60)
+        let freshStamp = Int(now.timeIntervalSince1970 - 60)
+        for stamp in [expiredStamp, freshStamp] {
+            let directory = appDir.appendingPathComponent("audio.corrupt-\(stamp)", isDirectory: true)
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            fileManager.createFile(
+                atPath: directory.appendingPathComponent("audio_kept.wav").path,
+                contents: Data(repeating: 0, count: 2048)
+            )
+        }
+
+        let storage = HistoryAudioStorage(appDirectory: appDir)
+        storage.pruneSidelinedAudio(now: now)
+
+        let remaining = try fileManager.contentsOfDirectory(atPath: appDir.path)
+            .filter { $0.hasPrefix("audio.corrupt-") }
+        XCTAssertEqual(remaining, ["audio.corrupt-\(freshStamp)"])
+    }
+
     // MARK: - Helpers
 
     private func makeSourceWAV(named name: String) -> URL {

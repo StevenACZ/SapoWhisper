@@ -13,10 +13,12 @@ enum PolishOutputSanitizer {
     static func clean(_ output: String, rawText: String) -> String {
         let safeOutput = strippingUnsafeControlCharacters(from: output)
         var text = safeOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-        // An unterminated <think> means the whole output is reasoning that
-        // never reached an answer; there is nothing usable to fall back to,
-        // so return empty and let the pipeline keep the raw transcript.
-        if text.hasPrefix("<think>"), text.range(of: "</think>") == nil {
+        // Output that is nothing but reasoning never reached an answer; there
+        // is nothing usable to fall back to, so return empty and let the
+        // pipeline keep the raw transcript. Restoring the wrapper-stripped
+        // original here would paste the model's private reasoning verbatim.
+        let startedWithThinking = text.hasPrefix("<think>")
+        if startedWithThinking, text.range(of: "</think>") == nil {
             return ""
         }
         text = stripThinkingBlock(text)
@@ -25,7 +27,8 @@ enum PolishOutputSanitizer {
         text = stripTranscriptDelimiters(text)
         text = stripWrappingQuotes(text, rawText: rawText)
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? safeOutput.trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
+        guard cleaned.isEmpty else { return cleaned }
+        return startedWithThinking ? "" : safeOutput.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The polish guards are retry-only and the last output still ships after

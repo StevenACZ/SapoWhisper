@@ -7,6 +7,7 @@
 //  interrupted writer's stale RIFF/data sizes repaired in place.
 //
 
+import SQLite3
 import XCTest
 
 @testable import SapoWhisper
@@ -182,6 +183,72 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         XCTAssertNil(manager.recoverInterruptedTranscriptions())
         let statuses = manager.fetchAll().map(\.status).sorted()
         XCTAssertEqual(statuses, ["completed", "failed"])
+    }
+
+    // MARK: - Stale temp sweep vs. History references
+
+    /// The 24h temp sweep deletes by age alone, but a History row can
+    /// point at a temp WAV (the persist copy-failure path). Referenced files
+    /// survive; unreferenced stale ones still go.
+    func testStaleSweepKeepsHistoryReferencedTempAudio() throws {
+        let sweepDir = tempDir.appendingPathComponent("temp-sweep", isDirectory: true)
+        try FileManager.default.createDirectory(at: sweepDir, withIntermediateDirectories: true)
+
+        let referenced = sweepDir.appendingPathComponent("recording_referenced.wav")
+        try writeWAV(to: referenced, seconds: 5, staleHeader: false)
+        try backdate(referenced, by: 48 * 60 * 60)
+        let abandoned = sweepDir.appendingPathComponent("recording_abandoned.wav")
+        try writeWAV(to: abandoned, seconds: 5, staleHeader: false)
+        try backdate(abandoned, by: 48 * 60 * 60)
+
+        manager.save(
+            engine: "Test", language: "auto", duration: 5, text: "x",
+            audioPath: referenced.path, status: "failed"
+        )
+        let referencedNames = Set(
+            manager.referencedAudioPaths().map { ($0 as NSString).lastPathComponent }
+        )
+
+        TemporaryAudioStorage.sweepStaleFiles(in: sweepDir, referencedNames: referencedNames)
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: referenced.path),
+            "the sweep deleted a WAV the History still references"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: abandoned.path),
+            "an unreferenced stale WAV must still be swept"
+        )
+    }
+
+    /// A truncated reference scan is indistinguishable from "nothing is
+    /// referenced", which is exactly the state that makes the sweep delete the
+    /// last copy of a dictation.
+    func testStaleSweepDeletesNothingWhenTheReferenceScanCannotFinish() throws {
+        let sweepDir = tempDir.appendingPathComponent("temp-sweep-unproven", isDirectory: true)
+        try FileManager.default.createDirectory(at: sweepDir, withIntermediateDirectories: true)
+
+        let referenced = sweepDir.appendingPathComponent("recording_referenced.wav")
+        try writeWAV(to: referenced, seconds: 5, staleHeader: false)
+        try backdate(referenced, by: 48 * 60 * 60)
+
+        manager.save(
+            engine: "Test", language: "auto", duration: 5, text: "x",
+            audioPath: referenced.path, status: "failed"
+        )
+
+        sqlite3_progress_handler(manager.db, 1, { _ in 1 }, nil)
+        defer { sqlite3_progress_handler(manager.db, 0, nil, nil) }
+        let referencedNames = manager.referencedAudioPathsIfComplete().map { paths in
+            Set(paths.map { ($0 as NSString).lastPathComponent })
+        }
+
+        XCTAssertNil(referencedNames, "the interrupted scan must not report a complete set")
+        XCTAssertEqual(TemporaryAudioStorage.sweepStaleFiles(in: sweepDir, referencedNames: referencedNames), 0)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: referenced.path),
+            "the sweep ran on a reference scan that never completed"
+        )
     }
 
     private func writeWAV(to url: URL, seconds: TimeInterval, staleHeader: Bool) throws {

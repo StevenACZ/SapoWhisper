@@ -58,6 +58,24 @@ final class PolishOutputSanitizerTests: XCTestCase {
         XCTAssertFalse(clean(onlyWrapped).unicodeScalars.contains { $0.value == 0x1B })
     }
 
+    // MARK: - Reasoning blocks
+
+    func testThinkingOnlyOutputIsDroppedInsteadOfPasted() {
+        XCTAssertEqual(
+            clean("<think>El usuario quiere que limpie el texto. Debo responder…</think>"),
+            "",
+            "reasoning with no answer after it must never reach the clipboard"
+        )
+    }
+
+    func testUnterminatedThinkingOutputIsDropped() {
+        XCTAssertEqual(clean("<think>El usuario quiere que limpie el texto"), "")
+    }
+
+    func testThinkingBlockBeforeAnAnswerKeepsOnlyTheAnswer() {
+        XCTAssertEqual(clean("<think>razono</think>\nTexto dictado limpio."), "Texto dictado limpio.")
+    }
+
     func testComposesWithWrapperStripping() {
         XCTAssertEqual(
             clean("```\nhola\u{200B} mundo\n```"),

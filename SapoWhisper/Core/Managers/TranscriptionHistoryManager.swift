@@ -74,9 +74,9 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         return String(cString: cString).lowercased() == "ok"
     }
 
-    /// Sidelines the corrupt file (plus WAL/SHM) with a timestamp and
-    /// recreates a fresh schema — dictation keeps persisting and the evidence
-    /// stays on disk for inspection.
+    /// Sidelines the corrupt file (plus WAL/SHM) and the audio it referenced
+    /// with a timestamp, then recreates a fresh schema — dictation keeps
+    /// persisting and the evidence stays on disk for inspection.
     private func recoverCorruptDatabase(at databasePath: String, openFlags: Int32) {
         sqlite3_close(db)
         db = nil
@@ -94,6 +94,9 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
                 atPath: source, toPath: databasePath + ".corrupt-\(stamp)" + suffix)
         }
         SapoLog.recording.error("History DB corrupt or unopenable; sidelined stamp=\(stamp, privacy: .public)")
+        // The fresh schema references no audio, so the first orphan sweep would
+        // delete every recording the lost rows pointed at.
+        audioStorage.sidelineAll(stamp: stamp)
 
         if sqlite3_open_v2(databasePath, &db, openFlags, nil) == SQLITE_OK {
             configureDatabase()

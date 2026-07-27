@@ -8,7 +8,8 @@ Usage:
   scripts/swift_format_changed.sh format [file.swift ...]
   scripts/swift_format_changed.sh lint [file.swift ...]
 
-Without explicit files, checks Swift files changed from HEAD plus untracked Swift files.
+Without explicit files, checks Swift files changed from HEAD, untracked Swift
+files, and everything the current branch changed since LINT_BASE_REF (main).
 USAGE
 }
 
@@ -35,6 +36,18 @@ if ! xcrun --find swift-format >/dev/null 2>&1; then
   exit 69
 fi
 
+base_ref="${LINT_BASE_REF:-main}"
+
+# A fully committed branch has an empty working-tree diff, which would make the
+# whole branch invisible to the gate.
+branch_swift_files() {
+  local base head
+  base="$(git merge-base "$base_ref" HEAD 2>/dev/null || true)"
+  head="$(git rev-parse HEAD 2>/dev/null || true)"
+  [[ -n "$base" && -n "$head" && "$base" != "$head" ]] || return 0
+  git diff --name-only --diff-filter=ACMR "$base..$head" -- '*.swift'
+}
+
 files=()
 
 if [[ $# -gt 0 ]]; then
@@ -49,6 +62,7 @@ else
       git diff --name-only --diff-filter=ACMR -- '*.swift'
       git diff --cached --name-only --diff-filter=ACMR -- '*.swift'
       git ls-files --others --exclude-standard -- '*.swift'
+      branch_swift_files
     } | sort -u \
       | { grep -v '^LocalPackages/MLXWhisper/Sources/MLXWhisper/' || true; }
   )

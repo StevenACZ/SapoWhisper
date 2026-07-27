@@ -626,6 +626,7 @@ private struct WelcomeLocalAIServerCard: View {
     @AppStorage(Constants.StorageKeys.localAIServerModel) private var model = LocalAIServerConfiguration.defaultModel
     @State private var apiKey = ""
     @State private var shakeTrigger = 0
+    @State private var keychainReadDenied = false
 
     private var isReady: Bool {
         viewModel.isEngineReady(.localAIServer)
@@ -669,9 +670,16 @@ private struct WelcomeLocalAIServerCard: View {
                         .menuStyle(.borderlessButton)
                     }
 
+                    if keychainReadDenied {
+                        KeychainAccessRetryNotice {
+                            keychainReadDenied = KeychainStore.isReadDenied
+                        }
+                    }
+
                     SecureField("config.local_ai_api_key_placeholder".localized, text: $apiKey)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
+                        .disabled(keychainReadDenied)
 
                     HStack(spacing: 8) {
                         Button("welcome.local_ai_use_server".localized, action: save)
@@ -693,18 +701,19 @@ private struct WelcomeLocalAIServerCard: View {
         .onAppear {
             if KeychainStore.hasValue(for: .localAIServerAPIKey) {
                 apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
+                keychainReadDenied = KeychainStore.isReadDenied
             }
         }
     }
 
     private func save() {
-        guard canSave else {
+        guard canSave, EngineKeyValidator.persist(key: apiKey, for: .localAIServerAPIKey) else {
+            keychainReadDenied = KeychainStore.isReadDenied
             withAnimation(Constants.Animation.shake) {
                 shakeTrigger += 1
             }
             return
         }
-        KeychainStore.setString(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: .localAIServerAPIKey)
         viewModel.setEngine(.localAIServer)
     }
 }
@@ -720,6 +729,7 @@ private struct WelcomeCloudEngineCard: View {
     @State private var apiKey = ""
     @State private var validation: ValidationState = .idle
     @State private var shakeTrigger = 0
+    @State private var keychainReadDenied = false
 
     private enum ValidationState: Equatable {
         case idle
@@ -745,10 +755,18 @@ private struct WelcomeCloudEngineCard: View {
             .buttonStyle(.plain)
 
             if isSelected && !isReady {
+                if keychainReadDenied {
+                    KeychainAccessRetryNotice {
+                        keychainReadDenied = KeychainStore.isReadDenied
+                        validation = .idle
+                    }
+                }
+
                 HStack(spacing: 8) {
                     SecureField("welcome.key_placeholder".localized, text: $apiKey)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { validate() }
+                        .disabled(keychainReadDenied)
 
                     Button(action: validate) {
                         switch validation {
@@ -762,7 +780,10 @@ private struct WelcomeCloudEngineCard: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
-                    .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty || validation == .validating)
+                    .disabled(
+                        keychainReadDenied || apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+                            || validation == .validating
+                    )
                 }
                 .modifier(ShakeEffect(trigger: shakeTrigger))
                 .transition(.opacity)
@@ -786,7 +807,16 @@ private struct WelcomeCloudEngineCard: View {
         Task { @MainActor in
             do {
                 try await EngineKeyValidator.validate(engine: engine, key: key)
-                KeychainStore.setString(key, for: keychainKey)
+                guard EngineKeyValidator.persist(key: key, for: keychainKey) else {
+                    keychainReadDenied = true
+                    withAnimation(Constants.Animation.transition) {
+                        validation = .invalid("keychain.read_denied".localized)
+                    }
+                    withAnimation(Constants.Animation.shake) {
+                        shakeTrigger += 1
+                    }
+                    return
+                }
                 viewModel.setEngine(engine)
                 withAnimation(Constants.Animation.transition) {
                     validation = .valid
@@ -815,6 +845,7 @@ private struct WelcomeAIPolishStep: View {
     @State private var testState: ProviderTestState = .idle
     @State private var showsOptionalAPIKey = false
     @State private var isLoadingProviderFields = false
+    @State private var keychainReadDenied = false
 
     private var endpoint: PolishEndpoint {
         PolishEndpoint(rawValue: endpointValue) ?? .default
@@ -863,8 +894,15 @@ private struct WelcomeAIPolishStep: View {
                             .font(.subheadline)
                             SecureField("ai.provider.api_key_placeholder".localized, text: $apiKey)
                                 .textFieldStyle(.roundedBorder)
+                                .disabled(keychainReadDenied)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                if keychainReadDenied {
+                    KeychainAccessRetryNotice {
+                        loadAPIKeyForEditing()
                     }
                 }
 
@@ -940,12 +978,13 @@ private struct WelcomeAIPolishStep: View {
         .onChange(of: apiKey) { _, newValue in
             guard !isLoadingProviderFields else { return }
             guard endpoint.showsAPIKeyByDefault || showsOptionalAPIKey else { return }
-            KeychainStore.setString(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: endpoint.apiKeychainKey)
+            keychainReadDenied = !EngineKeyValidator.persist(key: newValue, for: endpoint.apiKeychainKey)
             testState = .idle
         }
         .onChange(of: endpointValue) { _, _ in
             loadProviderFields(allowLegacyFallback: false, readAPIKey: endpoint.showsAPIKeyByDefault)
             showsOptionalAPIKey = false
+            keychainReadDenied = false
             testState = .idle
         }
         .onChange(of: model) { _, newValue in
@@ -1011,8 +1050,9 @@ private struct WelcomeAIPolishStep: View {
     private func loadAPIKeyForEditing() {
         apiKey = PolishProviderConfiguration.apiKey(for: endpoint, allowLegacyFallback: true)
         if !apiKey.isEmpty, !KeychainStore.hasValue(for: endpoint.apiKeychainKey) {
-            KeychainStore.setString(apiKey, for: endpoint.apiKeychainKey)
+            _ = EngineKeyValidator.persist(key: apiKey, for: endpoint.apiKeychainKey)
         }
+        keychainReadDenied = KeychainStore.isReadDenied
     }
 }
 

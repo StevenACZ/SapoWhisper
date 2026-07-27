@@ -127,6 +127,7 @@ struct LocalModelsCard: View {
                     isDownloaded: transcriber.isModelDownloaded(model),
                     downloadedSize: transcriber.downloadedModelSize(model),
                     phase: transcriber.downloadPhase(model),
+                    isBusy: transcriber.isTranscribing,
                     onSelect: { selectModel(model) },
                     onDownload: { transcriber.startDownload(model) },
                     onPause: { transcriber.pauseDownload(model) },

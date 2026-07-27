@@ -5,6 +5,7 @@
 
 import Foundation
 import SQLite3
+import os
 
 nonisolated extension TranscriptionHistoryManager {
     /// Fetch all transcription entries, newest first.
@@ -183,19 +184,37 @@ nonisolated extension TranscriptionHistoryManager {
         return terms.joined(separator: " ")
     }
 
-    func referencedAudioPaths() -> Set<String> {
+    /// Every audio path the database references, or nil when the scan did not
+    /// reach SQLITE_DONE. A truncated set is indistinguishable from a complete
+    /// one, so every caller that DELETES audio uses this and skips its sweep on
+    /// nil; `referencedAudioPaths()` is for read-only callers only.
+    func referencedAudioPathsIfComplete() -> Set<String>? {
         let sql = "SELECT audio_path FROM transcriptions WHERE audio_path IS NOT NULL;"
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
 
         var paths = Set<String>()
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            if let cString = sqlite3_column_text(stmt, 0) {
-                paths.insert(String(cString: cString))
+        while true {
+            let result = sqlite3_step(stmt)
+            if result == SQLITE_ROW {
+                if let cString = sqlite3_column_text(stmt, 0) {
+                    paths.insert(String(cString: cString))
+                }
+            } else if result == SQLITE_DONE {
+                return paths
+            } else {
+                let message = sqlite3_errmsg(db).map { String(cString: $0) } ?? "unknown"
+                SapoLog.recording.error(
+                    "failure=History/referencedAudioPaths code=\(result, privacy: .public) detail=\(message, privacy: .public)"
+                )
+                return nil
             }
         }
-        return paths
+    }
+
+    func referencedAudioPaths() -> Set<String> {
+        referencedAudioPathsIfComplete() ?? []
     }
 
     private func makeEntry(from stmt: OpaquePointer?) -> HistoryEntry {

@@ -58,6 +58,7 @@ struct DeepgramSettingsCard: View {
             SecureField("config.deepgram_key_placeholder".localized, text: $deepgramAPIKey)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
+                .disabled(keychainReadDenied)
 
             Text("config.deepgram_key_desc".localized)
                 .font(.caption)

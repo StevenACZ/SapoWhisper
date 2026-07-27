@@ -213,6 +213,7 @@ struct HistorySidebarView: View {
         } label: {
             Label("history.delete".localized, systemImage: "trash")
         }
+        .disabled(!entry.isDeletable)
     }
 }
 

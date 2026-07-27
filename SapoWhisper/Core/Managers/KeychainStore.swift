@@ -131,6 +131,10 @@ enum KeychainStore {
         }
 
         var payload = loadPayload()
+        // A denied read leaves the payload a stub, and writing it back would
+        // delete every other secret the item holds.
+        guard !isReadDenied else { return false }
+
         if value.isEmpty {
             payload.removeValue(forKey: key.rawValue)
         } else {
@@ -152,6 +156,12 @@ enum KeychainStore {
             // UI preview and test launches must never hit the keychain:
             // every ad-hoc rebuild would re-trigger the consent dialog.
             if UIPreviewMode.skipsConsentPrompts {
+                #if DEBUG
+                    if let simulated = simulatedRead.withLock({ $0 }) {
+                        state = .loaded(payload: simulated.payload, isReliable: simulated.isReliable)
+                        return simulated.payload
+                    }
+                #endif
                 state = .loaded(payload: [:], isReliable: true)
                 return [:]
             }
@@ -316,4 +326,24 @@ enum KeychainStore {
 
         return cdhash.map { String(format: "%02x", $0) }.joined()
     }
+
+    #if DEBUG
+        // MARK: - Test seam
+
+        private struct SimulatedRead: Sendable {
+            let payload: [String: String]
+            let isReliable: Bool
+        }
+
+        private static let simulatedRead = OSAllocatedUnfairLock<SimulatedRead?>(initialState: nil)
+
+        /// Tests never reach the keychain, so a denied read is only reachable
+        /// by injecting the outcome here. Pass `nil` to restore the default.
+        static func simulateRead(payload: [String: String]?, isReliable: Bool = true) {
+            simulatedRead.withLock { state in
+                state = payload.map { SimulatedRead(payload: $0, isReliable: isReliable) }
+            }
+            cache.withLock { $0 = .unloaded }
+        }
+    #endif
 }
