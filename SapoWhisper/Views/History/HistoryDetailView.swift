@@ -29,7 +29,7 @@ struct HistoryDetailView: View {
     private var isUserCancelled: Bool { entry.isUserCancelled }
     /// Pre-persisted row whose engine is still running (live only — stale
     /// ones resolve to failed at launch).
-    private var isTranscribing: Bool { entry.status == "transcribing" }
+    private var isTranscribing: Bool { !entry.isDeletable }
 
     private var canPolish: Bool {
         entry.status == "completed"
@@ -168,7 +168,7 @@ struct HistoryDetailView: View {
                 role: .destructive,
                 action: onDelete
             )
-            .disabled(isTranscribing)
+            .disabled(!entry.isDeletable)
         }
         .controlSize(.regular)
     }
