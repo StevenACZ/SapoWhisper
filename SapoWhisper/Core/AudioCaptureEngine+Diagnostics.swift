@@ -11,13 +11,11 @@ nonisolated extension AudioCaptureEngine {
     func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
         deviceSentinel.end()
         if let engine {
-            // Teardown races the route change that aborted the setup; a guarded
-            // exception here just means the engine is already dead.
-            try? AudioEngineGuard.run("cleanup-setup-teardown") {
+            try? AudioEngineGuard.run("cleanup-setup-remove-tap") {
                 engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
-                engine.reset()
             }
+            try? AudioEngineGuard.run("cleanup-setup-stop") { engine.stop() }
+            try? AudioEngineGuard.run("cleanup-setup-reset") { engine.reset() }
         }
 
         audioWriteQueue.sync {}

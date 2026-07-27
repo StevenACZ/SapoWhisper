@@ -410,11 +410,11 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     private func finalizeCaptureOnQueue() -> URL? {
         deviceSentinel.end()
         if let engine = audioEngine {
-            try? AudioEngineGuard.run("finalize-capture-teardown") {
+            try? AudioEngineGuard.run("finalize-capture-remove-tap") {
                 engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
-                engine.reset()
             }
+            try? AudioEngineGuard.run("finalize-capture-stop") { engine.stop() }
+            try? AudioEngineGuard.run("finalize-capture-reset") { engine.reset() }
         }
 
         _ = flushRemainingConvertedAudio()
@@ -484,9 +484,8 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
         // A4: engine lifecycle stays on audioSetupQueue (like start/stop) so a
         // pause never races a concurrent recoverCapture rebuilding the engine
-        // on that queue. `isPaused` is published BEFORE that hop because the
-        // rebuild reads it to decide whether to start the new engine; setting it
-        // after would let a rebuild in flight resume capture behind the pause.
+        // on that queue. `isPaused` is published BEFORE that hop: a rebuild in
+        // flight reads it to decide whether to start the new engine.
         isPaused = true
         audioSetupQueue.sync { audioEngine?.pause() }
 
@@ -594,9 +593,6 @@ nonisolated struct RecordingCaptureDiagnostics {
         inputBufferCount > 0 && writtenFrameCount > 0
     }
 
-    /// A dropped write means the WAV on disk is missing frames the tap
-    /// produced, so it cannot be trusted as the rescue backup for a failed
-    /// transcription even when `receivedInput` is true.
     var isComplete: Bool {
         failedWriteCount == 0
     }

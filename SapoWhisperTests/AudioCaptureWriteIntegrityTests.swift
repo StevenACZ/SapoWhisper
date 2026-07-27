@@ -2,9 +2,9 @@
 //  AudioCaptureWriteIntegrityTests.swift
 //  SapoWhisperTests
 //
-//  HSW-046: a failed disk write must reach the stop-path diagnostics, so a
-//  truncated WAV is never handed back as a clean take (it is also the backup a
-//  failed transcription is rescued from).
+//  A failed disk write must reach the stop-path diagnostics: the stop log is
+//  the only place a truncated WAV can be recognised, and the counters must not
+//  leak into the next recording.
 //
 
 import AVFoundation

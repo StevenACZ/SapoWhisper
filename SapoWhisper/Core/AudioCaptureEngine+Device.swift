@@ -126,10 +126,9 @@ nonisolated extension AudioCaptureEngine {
         }
     }
 
-    /// A paused capture can never satisfy the health condition (`isRunning` is
-    /// false and no buffers arrive), so recovering one would restart the engine
-    /// behind the user's pause and burn the recovery budget until the session
-    /// aborts. `resumeRecording` owns the restart instead.
+    /// A paused capture can never satisfy the health condition, so recovering
+    /// one would restart the engine behind the user's pause; `resumeRecording`
+    /// owns that restart.
     func shouldRecoverAfterConfigurationChange(isEngineRunning: Bool, lastBufferAge: TimeInterval?) -> Bool {
         guard !isPaused else { return false }
         guard isEngineRunning, let lastBufferAge else { return true }
@@ -170,13 +169,11 @@ nonisolated extension AudioCaptureEngine {
             "\(self.mode.logLabel, privacy: .public) capture interrupted event=\(event.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)"
         )
 
-        // Teardown races the same route churn that triggered recovery; a
-        // guarded exception here just means the engine is already dead.
-        try? AudioEngineGuard.run("recovery-teardown") {
+        try? AudioEngineGuard.run("recovery-remove-tap") {
             oldEngine.inputNode.removeTap(onBus: 0)
-            oldEngine.stop()
-            oldEngine.reset()
         }
+        try? AudioEngineGuard.run("recovery-stop") { oldEngine.stop() }
+        try? AudioEngineGuard.run("recovery-reset") { oldEngine.reset() }
         audioEngine = nil
 
         guard attempt <= 2 else {
@@ -233,8 +230,8 @@ nonisolated extension AudioCaptureEngine {
         ) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
-        // Rebuilding behind a pause repairs the tap and the device binding, but
-        // starting the engine would capture audio the user asked to stop.
+        // Starting the rebuilt engine behind a pause would capture audio the
+        // user asked to stop.
         let paused = isPaused
         if paused {
             try AudioEngineGuard.run("\(mode.opPrefix)-rebuild-engine-prepare") { engine.prepare() }
