@@ -95,9 +95,8 @@ class HotkeyManager: ObservableObject {
     @Published var currentModifiers: UInt32
     @Published var currentDoubleTapModifier: UInt32
 
-    /// Carbon key codes and modifier masks are `UInt32`; a hand-edited or
-    /// truncated settings file can store a negative or oversized `Int`, and the
-    /// plain `UInt32(_:)` initializer TRAPS on those instead of throwing.
+    /// `UInt32(_:)` TRAPS on the negative or oversized `Int` a hand-edited or
+    /// truncated settings file can store.
     static func sanitizedKeyCode(_ value: Int, fallback: UInt32) -> UInt32 {
         UInt32(exactly: value) ?? fallback
     }

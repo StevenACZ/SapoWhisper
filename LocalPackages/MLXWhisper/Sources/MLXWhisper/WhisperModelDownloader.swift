@@ -28,10 +28,8 @@ public enum WhisperModelDownloadError: LocalizedError {
 
 public enum WhisperModelDownloader {
 
-    /// Every tokenizer file the loader may read locally. All of them are
-    /// present in the three pinned openai/whisper-* revisions; treating a
-    /// subset as "downloaded" leaves a tier permanently stuck, because the
-    /// download early-returns on that same check.
+    /// Treating a subset of these as "downloaded" leaves a tier permanently
+    /// stuck: the download early-returns on the same check.
     public static let tokenizerAssetFiles = [
         "tokenizer.json",
         "tokenizer_config.json",
@@ -59,7 +57,6 @@ public enum WhisperModelDownloader {
         return hasTokenizerAssets(in: dir)
     }
 
-    /// True only when every tokenizer asset exists and is non-empty.
     static func hasTokenizerAssets(in dir: URL) -> Bool {
         tokenizerAssetFiles.allSatisfy { name in
             let file = dir.appendingPathComponent(name)

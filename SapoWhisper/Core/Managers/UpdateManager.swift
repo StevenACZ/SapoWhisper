@@ -116,8 +116,6 @@ final class UpdateManager {
         updater.checkForUpdates()
     }
 
-    /// State half of the Install click, split out so the consent flag can be
-    /// exercised without a live Sparkle session.
     func beginRequestedInstall() {
         installRequested = true
         phase = .downloading(fraction: nil)

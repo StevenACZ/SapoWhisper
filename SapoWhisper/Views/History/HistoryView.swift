@@ -354,9 +354,6 @@ struct HistoryView: View {
 
             await MainActor.run {
                 aiPolishingEntryIDs.remove(entry.id)
-                // A polish rewrites its row in place and the reload keeps the
-                // current selection, so this must never move it: the user may
-                // have walked on to another entry while the request ran.
                 loadEntries()
 
                 if let errorMessage = result.errorMessage {

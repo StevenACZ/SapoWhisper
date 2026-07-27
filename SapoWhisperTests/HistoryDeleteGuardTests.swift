@@ -2,7 +2,7 @@
 //  HistoryDeleteGuardTests.swift
 //  SapoWhisperTests
 //
-//  P2-183: a pre-persisted "transcribing" row owns the only copy of the audio
+//  A pre-persisted "transcribing" row owns the only copy of the audio
 //  the engine is still consuming, so every History delete path must refuse it
 //  until the pipeline (or the launch sweep) resolves the row.
 //

@@ -18,9 +18,8 @@ struct ElevenLabsRealtimeAudioSenderStats {
     let maxBufferedBytes: Int
     let maxSendWaitMs: Int
     let timedOutSends: Int
-    /// The drain deadline expired and the socket was cancelled with sends
-    /// still in flight; those chunks never reach the server and never reach
-    /// `failedMessages` either, so the counters alone look healthy.
+    /// Sends still in flight when the drain deadline cancelled the socket.
+    /// They never reach `failedMessages`, so the counters alone look healthy.
     var drainTimedOut: Bool = false
 
     var pendingChunks: Int {
@@ -609,7 +608,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         )
     }
 
-    /// A degraded send path means the realtime transcript is missing audio.
     /// `pendingChunks` is deliberately not a signal here: `enqueuedChunks`
     /// counts capture callbacks while `sentMessages` counts 6400-byte
     /// messages, so their difference is noise.

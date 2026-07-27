@@ -661,10 +661,9 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Initial State
 
     private func checkInitialState() {
-        // Readiness is recomputed from `onAppear` of the engine settings cards,
-        // so this runs mid-dictation without any deliberate engine change; the
-        // resulting .idle/.noModel would broadcast a false `.ended` and drop the
-        // input-device override with the capture still live.
+        // Settings cards recompute readiness from `onAppear`, so mid-dictation
+        // the resulting .idle/.noModel would broadcast a false `.ended` and drop
+        // the input-device override with the capture still live.
         guard activeRecordingSessionID == nil, activeTranscriptionSessionID == nil else { return }
 
         // A usable backup means dictation still works, so an unconfigured
@@ -1541,11 +1540,6 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// Every rescue attempt — the skip-primary start, the batch failover and
-    /// the live-stream rescue — funnels through here, so the backup's own
-    /// verdict reaches the log from one place. Without it a backup that just
-    /// died still reads as reachable and wastes the next dictation.
-    ///
     /// Marked straight on the log rather than through `settleReachability`:
     /// the probe that call would cancel belongs to the PRIMARY, and a verdict
     /// about the backup says nothing about it.

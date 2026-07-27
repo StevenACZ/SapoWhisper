@@ -1,8 +1,8 @@
 //
-//  AudioCaptureP2179PauseRecoveryTests.swift
+//  AudioCapturePauseRecoveryTests.swift
 //  SapoWhisperTests
 //
-//  P2-179: a configuration change while the dictation is paused must never
+//  A configuration change while the dictation is paused must never
 //  drive capture recovery — recovery rebuilds and restarts the engine, which
 //  would keep recording audio the user asked to stop.
 //
@@ -12,7 +12,7 @@ import XCTest
 
 @testable import SapoWhisper
 
-final class AudioCaptureP2179PauseRecoveryTests: XCTestCase {
+final class AudioCapturePauseRecoveryTests: XCTestCase {
 
     private func makeEngine(paused: Bool) -> AudioCaptureEngine {
         let engine = AudioCaptureEngine(mode: .batch)

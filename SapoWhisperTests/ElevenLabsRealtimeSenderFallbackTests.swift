@@ -1,8 +1,8 @@
 //
-//  P1-060-ElevenLabsRealtimeSenderFallbackTests.swift
+//  ElevenLabsRealtimeSenderFallbackTests.swift
 //  SapoWhisperTests
 //
-//  P1-060: the drain deadline cancels the socket with sends still in flight.
+//  The drain deadline cancels the socket with sends still in flight.
 //  Those chunks never reach the server and never reach `failedMessages`, so a
 //  counter-only check ships a silently truncated transcript as a success.
 //
@@ -11,7 +11,7 @@ import XCTest
 
 @testable import SapoWhisper
 
-final class P1060ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
+final class ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
 
     private func stats(failedMessages: Int, drainTimedOut: Bool) -> ElevenLabsRealtimeAudioSenderStats {
         ElevenLabsRealtimeAudioSenderStats(
