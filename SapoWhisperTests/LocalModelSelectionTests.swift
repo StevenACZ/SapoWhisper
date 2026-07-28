@@ -59,10 +59,12 @@ final class LocalModelSelectionTests: XCTestCase {
 
     func testDeletingSelectedModelClearsSelection() throws {
         let viewModel = try makeViewModel(selecting: .largeV3)
+        viewModel.mlxWhisperTranscriber.isLoading = true
 
         viewModel.deleteMLXWhisperModel(.largeV3)
 
         XCTAssertNil(viewModel.currentMLXWhisperModel)
+        XCTAssertFalse(viewModel.mlxWhisperTranscriber.isLoading)
     }
 
     func testDeletingUnselectedModelKeepsSelection() throws {
@@ -107,6 +109,35 @@ final class LocalModelSelectionTests: XCTestCase {
         viewModel.selectedEngine = TranscriptionEngine.localAIServer.rawValue
 
         viewModel.setEngine(.localAIServer)
+
+        XCTAssertFalse(viewModel.mlxWhisperTranscriber.isModelLoaded)
+    }
+
+    func testRapidLocalEngineRoundTripDoesNotStartLateMLXLoad() async throws {
+        let model = MLXWhisperModel.largeV3
+        let viewModel = try makeViewModel(selecting: model)
+        viewModel.mlxWhisperTranscriber.downloadedModels.insert(model)
+        defer {
+            viewModel.mlxWhisperTranscriber.unloadModel()
+            viewModel.mlxWhisperTranscriber.cancelDownload(model)
+        }
+
+        viewModel.setEngine(.mlxWhisper)
+        viewModel.setEngine(.localAIServer)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertFalse(viewModel.mlxWhisperTranscriber.isLoading)
+        XCTAssertFalse(viewModel.mlxWhisperTranscriber.isAnyDownloadActive)
+        XCTAssertFalse(viewModel.mlxWhisperTranscriber.isModelLoaded)
+    }
+
+    func testMLXCompletionAfterEngineSwitchUnloadsLateModel() {
+        let viewModel = SapoWhisperViewModel()
+        viewModel.setEngine(.localAIServer)
+        viewModel.mlxWhisperTranscriber.isModelLoaded = true
+        viewModel.mlxWhisperTranscriber.isTranscribing = true
+
+        viewModel.mlxWhisperTranscriber.isTranscribing = false
 
         XCTAssertFalse(viewModel.mlxWhisperTranscriber.isModelLoaded)
     }

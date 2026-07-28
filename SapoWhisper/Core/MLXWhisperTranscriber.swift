@@ -185,6 +185,8 @@ class MLXWhisperTranscriber {
     /// Descarga (si hace falta) y carga un modelo MLX. Second calls for the
     /// model already in flight await it instead of restarting (R4 mirror).
     func loadModel(_ model: MLXWhisperModel) async throws {
+        try Task.checkCancellation()
+
         if currentModel == model, isModelLoaded, !isLoading {
             return
         }

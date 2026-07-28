@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.14.1] - 2026-07-28
+
 ### Changed
 
 - The accessibility announcement after a dictation now says "Text copied"
@@ -17,8 +19,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Switching away from Whisper (Local) now unloads its MLX model and clears the
-  memory cache even when the engine preference was already updated by the UI.
+- Switching away from Whisper (Local) now cancels pending model loads, unloads
+  the MLX model, and clears its memory cache, including rapid engine changes.
 - History entries that are still being transcribed can no longer be deleted
   from the sidebar, the detail view, "Delete older than 30 days", or "Clear
   all". Their recording is the only copy of the dictation the engine is still

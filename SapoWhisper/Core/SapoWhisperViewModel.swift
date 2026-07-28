@@ -122,6 +122,7 @@ class SapoWhisperViewModel: ObservableObject {
     private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
     private var startRecordingTask: Task<Void, Never>?
+    private var selectedMLXModelLoadTask: Task<Void, Never>?
     private var isStartPending = false
     private var recordingSessionCounter: UInt64 = 0
     private var toggleRecordingCount: UInt64 = 0
@@ -301,9 +302,7 @@ class SapoWhisperViewModel: ObservableObject {
         if currentEngine == .mlxWhisper, let model = currentMLXWhisperModel,
             mlxWhisperTranscriber.isModelDownloaded(model)
         {
-            Task {
-                await loadMLXWhisperModel()
-            }
+            scheduleSelectedMLXModelLoad()
         }
 
     }
@@ -412,10 +411,13 @@ class SapoWhisperViewModel: ObservableObject {
         // Hooks del motor MLX (transcripcion, carga, modelo listo) — callback
         // hooks on the @Observable transcriber replace the old Combine sinks.
         mlxWhisperTranscriber.onTranscribingChanged = { [weak self] isTranscribing in
-            guard let self, !self.isReprocessingHistory else { return }
-            if isTranscribing {
-                self.transition(to: .processing, reason: "mlx-transcribing")
+            guard let self else { return }
+            if !isTranscribing {
+                self.unloadMLXModelIfNotSelected()
+                return
             }
+            guard !self.isReprocessingHistory else { return }
+            self.transition(to: .processing, reason: "mlx-transcribing")
         }
         mlxWhisperTranscriber.onLoadingChanged = { [weak self] isLoading in
             guard let self else { return }
@@ -443,7 +445,7 @@ class SapoWhisperViewModel: ObservableObject {
                 model == self.currentMLXWhisperModel,
                 !self.mlxWhisperTranscriber.isModelLoaded
             else { return }
-            Task { await self.loadMLXWhisperModel() }
+            self.scheduleSelectedMLXModelLoad()
         }
 
         // Observar estado de transcripcion (ElevenLabs Scribe)
@@ -693,6 +695,26 @@ class SapoWhisperViewModel: ObservableObject {
 
     // MARK: - MLX Whisper Methods
 
+    private func cancelSelectedMLXModelLoad() {
+        selectedMLXModelLoadTask?.cancel()
+        selectedMLXModelLoadTask = nil
+    }
+
+    private func unloadMLXModelIfNotSelected() {
+        guard currentEngine != .mlxWhisper,
+            mlxWhisperTranscriber.isModelLoaded || mlxWhisperTranscriber.isLoading
+        else { return }
+        mlxWhisperTranscriber.unloadModel()
+    }
+
+    private func scheduleSelectedMLXModelLoad() {
+        cancelSelectedMLXModelLoad()
+        selectedMLXModelLoadTask = Task { [weak self] in
+            guard !Task.isCancelled else { return }
+            await self?.loadMLXWhisperModel()
+        }
+    }
+
     /// Carga el modelo MLX seleccionado (descarga si hace falta).
     func loadMLXWhisperModel() async {
         guard let model = currentMLXWhisperModel else { return }
@@ -727,19 +749,19 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Cambia el modelo del motor MLX
     func setMLXWhisperModel(_ model: MLXWhisperModel) {
+        cancelSelectedMLXModelLoad()
         selectedMLXWhisperModel = model.rawValue
 
         // Si el motor actual es MLX, recargar el modelo
         if currentEngine == .mlxWhisper {
             mlxWhisperTranscriber.unloadModel()
-            Task {
-                await loadMLXWhisperModel()
-            }
+            scheduleSelectedMLXModelLoad()
         }
     }
 
     /// Cambia el motor de transcripcion
     func setEngine(_ engine: TranscriptionEngine) {
+        cancelSelectedMLXModelLoad()
         selectedEngine = engine.rawValue
 
         if engine != .mlxWhisper {
@@ -754,9 +776,7 @@ class SapoWhisperViewModel: ObservableObject {
             let model = currentMLXWhisperModel,
             mlxWhisperTranscriber.isModelDownloaded(model)
         {
-            Task {
-                await loadMLXWhisperModel()
-            }
+            scheduleSelectedMLXModelLoad()
         }
     }
 
@@ -764,6 +784,10 @@ class SapoWhisperViewModel: ObservableObject {
     /// seleccion para que volver al motor local no lo re-descargue solo.
     func deleteMLXWhisperModel(_ model: MLXWhisperModel) {
         let wasSelected = currentMLXWhisperModel == model
+        if wasSelected {
+            cancelSelectedMLXModelLoad()
+            mlxWhisperTranscriber.unloadModel()
+        }
         mlxWhisperTranscriber.deleteDownloadedModel(model)
         if wasSelected {
             selectedMLXWhisperModel = ""
@@ -951,7 +975,10 @@ class SapoWhisperViewModel: ObservableObject {
 
         if engine == .mlxWhisper, !isEngineReady(.mlxWhisper) {
             SapoLog.recording.info("Local model reloading on demand after idle unload")
-            Task { await self.loadMLXWhisperModel() }
+            Task {
+                await self.loadMLXWhisperModel()
+                self.unloadMLXModelIfNotSelected()
+            }
         }
 
         // Probe the SELECTED primary while the user talks — whichever engine
@@ -2026,6 +2053,7 @@ class SapoWhisperViewModel: ObservableObject {
         let transcript: String
         switch engine {
         case .mlxWhisper:
+            defer { unloadMLXModelIfNotSelected() }
             // R4: after an idle unload the reload kicked off at recording
             // start may still be in flight — await it before transcribing.
             if !mlxWhisperTranscriber.isModelLoaded {
