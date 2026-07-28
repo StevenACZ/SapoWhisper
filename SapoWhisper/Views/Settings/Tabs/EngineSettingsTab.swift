@@ -64,7 +64,6 @@ struct EngineSettingsTab: View {
                             if currentEngine == engine, engine.hasInlineSettings {
                                 isSelectedEngineSettingsExpanded.toggle()
                             } else {
-                                selectedEngine = engine.rawValue
                                 isSelectedEngineSettingsExpanded = false
                                 viewModel.setEngine(engine)
                             }

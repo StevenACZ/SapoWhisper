@@ -34,6 +34,7 @@ addresses, and machine-specific workflow details.
 - Vocabulary metrics are read-only from recent history rows; do not add tracking columns for them.
 - Speech-mishearing brand tables and spoken-form helpers live in `SpeechConfusionCatalog`, shared by `VocabularyManager` and `AIPolishMemoryManager`. Add new mishearing variants there — do not re-add per-manager copies (they drift).
 - MLX model snapshots live under the app's own `Application Support/SapoWhisper/MLXModels/` (one folder per tier, `WhisperModelDownloader.modelDirectory`); a model counts as downloaded only when weights + config + tokenizer are all present and non-empty.
+- Selection- and session-driven MLX loads must have a bounded lifecycle: cancel pending selection loads before engine/model changes, and unload any model that finishes loading or transcribing after MLX is no longer selected. Keep rapid other → MLX → other and switch-away-during-use regressions tested.
 - Credentials live in Keychain with UserDefaults presence hints. Gate configuration checks on `KeychainStore.hasValue`, not by reading credential values.
 
 ## AI Polish
