@@ -740,10 +740,9 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Cambia el motor de transcripcion
     func setEngine(_ engine: TranscriptionEngine) {
-        let previousEngine = currentEngine
         selectedEngine = engine.rawValue
 
-        if previousEngine == .mlxWhisper && engine != .mlxWhisper {
+        if engine != .mlxWhisper {
             mlxWhisperTranscriber.unloadModel()
         }
 

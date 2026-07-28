@@ -17,6 +17,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Switching away from Whisper (Local) now unloads its MLX model and clears the
+  memory cache even when the engine preference was already updated by the UI.
 - History entries that are still being transcribed can no longer be deleted
   from the sidebar, the detail view, "Delete older than 30 days", or "Clear
   all". Their recording is the only copy of the dictation the engine is still

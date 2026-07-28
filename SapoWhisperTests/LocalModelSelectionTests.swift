@@ -100,4 +100,14 @@ final class LocalModelSelectionTests: XCTestCase {
         XCTAssertFalse(viewModel.mlxWhisperTranscriber.isAnyDownloadActive)
         XCTAssertFalse(viewModel.mlxWhisperTranscriber.isLoading)
     }
+
+    func testCloudEngineSelectionUnloadsMLXWhenAppStorageAlreadyChanged() {
+        let viewModel = SapoWhisperViewModel()
+        viewModel.mlxWhisperTranscriber.isModelLoaded = true
+        viewModel.selectedEngine = TranscriptionEngine.localAIServer.rawValue
+
+        viewModel.setEngine(.localAIServer)
+
+        XCTAssertFalse(viewModel.mlxWhisperTranscriber.isModelLoaded)
+    }
 }
