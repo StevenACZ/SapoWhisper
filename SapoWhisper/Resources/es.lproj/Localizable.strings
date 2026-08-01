@@ -642,6 +642,7 @@
 "overlay.a11y.recording_started" = "Grabación iniciada";
 "overlay.a11y.transcribing" = "Transcribiendo";
 "overlay.a11y.pasted" = "Texto copiado";
+"overlay.a11y.quick_history" = "Dictados recientes en pantalla";
 "overlay.a11y.error" = "El dictado falló";
 
 /* In-app updates (Sparkle) + retranscribe cancel */

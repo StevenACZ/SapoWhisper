@@ -89,7 +89,7 @@ final class ResumableDictationStoreTests: XCTestCase {
         let store = makeStore(offset: 60)
         store.offer(makeOffer())
 
-        store.clearOffer(forHistoryId: 7)
+        XCTAssertTrue(store.clearOffer(forHistoryId: 7))
         XCTAssertNil(store.validOffer, "a retranscribed take must stop being offered")
     }
 
@@ -97,7 +97,7 @@ final class ResumableDictationStoreTests: XCTestCase {
         let store = makeStore(offset: 60)
         store.offer(makeOffer())
 
-        store.clearOffer(forHistoryId: 8)
+        XCTAssertFalse(store.clearOffer(forHistoryId: 8))
         XCTAssertEqual(store.validOffer?.historyId, 7)
     }
 

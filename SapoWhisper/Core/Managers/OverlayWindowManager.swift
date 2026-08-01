@@ -507,6 +507,7 @@ class OverlayWindowManager: ObservableObject {
         case .recording: key = "overlay.a11y.recording_started"
         case .transcribing: key = "overlay.a11y.transcribing"
         case .copied: key = "overlay.a11y.pasted"
+        case .quickHistory: key = "overlay.a11y.quick_history"
         case .error: key = "overlay.a11y.error"
         default: key = nil
         }

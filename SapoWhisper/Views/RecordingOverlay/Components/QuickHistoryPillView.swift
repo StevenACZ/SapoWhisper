@@ -27,9 +27,16 @@ struct QuickHistoryPillView: View {
     @State private var reachedEnd = false
     @State private var isLoadingPage = false
     @State private var slideFromTrailing = true
+    /// Keyed by row so paging mid-flight never pins one entry's failure
+    /// under a different entry's footer.
+    private struct RegenerateError: Equatable {
+        let entryId: Int64
+        let message: String
+    }
+
     @State private var copiedFeedback = false
     @State private var regeneratingEntryId: Int64?
-    @State private var regenerateError: String?
+    @State private var regenerateError: RegenerateError?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var displayedEntry: HistoryEntry? {
@@ -167,8 +174,8 @@ struct QuickHistoryPillView: View {
             .disabled(index == 0)
             .opacity(index == 0 ? 0.35 : 1)
 
-            if let regenerateError {
-                Text(regenerateError)
+            if let regenerateError, regenerateError.entryId == entry.id {
+                Text(regenerateError.message)
                     .font(.system(size: 10))
                     .foregroundColor(.sapoError)
                     .lineLimit(1)
@@ -261,7 +268,6 @@ struct QuickHistoryPillView: View {
         withAnimation(reduceMotion ? nil : Constants.Animation.morph) {
             index = newIndex
             copiedFeedback = false
-            regenerateError = nil
         }
     }
 
@@ -312,7 +318,9 @@ struct QuickHistoryPillView: View {
                 if let refreshed, let position = entries.firstIndex(where: { $0.id == entry.id }) {
                     entries[position] = refreshed
                 }
-                regenerateError = errorMessage
+                regenerateError = errorMessage.map {
+                    RegenerateError(entryId: entry.id, message: $0)
+                }
                 regeneratingEntryId = nil
             }
         }
