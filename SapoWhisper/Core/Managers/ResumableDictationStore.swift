@@ -69,6 +69,14 @@ final class ResumableDictationStore {
         resumable = nil
     }
 
+    /// A retranscribed take is resolved: continuing it would duplicate a
+    /// transcript that already exists, and a later merge would delete the
+    /// completed row.
+    func clearOffer(forHistoryId id: Int64) {
+        guard resumable?.historyId == id else { return }
+        resumable = nil
+    }
+
     /// m:ss label for the resume chip.
     static func formatResumeDuration(_ duration: TimeInterval) -> String {
         let total = max(0, Int(duration.rounded()))

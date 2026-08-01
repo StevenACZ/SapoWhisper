@@ -8,7 +8,8 @@ addresses, and machine-specific workflow details.
 
 - macOS menu bar speech-to-text app.
 - Main flow: press `Option + Space`, speak, stop, then paste with clipboard + `Cmd+V`.
-- `Esc` cancels an active dictation without transcribing or pasting, but preserves captured audio as a cancelled History entry; pending-start cancels create no row. Esc also cancels an in-flight batch transcription (the pre-persisted row resolves to cancelled and is offered as continue-previous).
+- `Esc` twice within 2.5 s cancels an active dictation (the first press only arms: the pill heartbeats and shows "Esc again to cancel" — `EscapeCancelGate`) without transcribing or pasting, preserving captured audio as a cancelled History entry; pending-start cancels create no row. The same double press cancels an in-flight batch transcription (the pre-persisted row resolves to cancelled and is offered as continue-previous). Re-transcribing an entry clears its continue-previous offer.
+- The overlay dock chip opens an in-pill quick history (recent transcripts, copy, prev/next paging, current-engine re-transcribe, jump to the full History window). It is deliberately minimal — no pin, AI polish, audio download, or duration.
 - Minimum macOS: 14.0.
 - Release target: Apple Silicon only (`arm64`, M1 and newer).
 - Main target: `SapoWhisper` in `SapoWhisper.xcodeproj`.

@@ -178,6 +178,14 @@ struct RecordingOverlayView: View {
         } animation: { bounceScale in
             bounceScale > 1 ? Constants.Animation.microBounce : .spring(duration: 0.25, bounce: 0.3)
         }
+        // Armed-cancel heartbeat: a double "lub-dub" each time Esc arms the
+        // cancel, so the warning is felt even without reading the hint.
+        .keyframeAnimator(initialValue: 1.0, trigger: manager.cancelWarningPulse) {
+            [reduceMotion] content, beatScale in
+            content.scaleEffect(reduceMotion ? 1.0 : beatScale)
+        } keyframes: { _ in
+            HeartbeatKeyframes()
+        }
         // Pre-collapse "inhale": the manager arms this for a beat before the
         // absorb, so the pill puffs up a touch and is then swallowed by the
         // chip instead of vanishing from a standstill.
@@ -202,6 +210,7 @@ struct RecordingOverlayView: View {
                 audioLevelPublisher: manager.audioLevelPublisher,
                 showsNoSpeechHint: manager.showsNoSpeechHint,
                 connectingDeviceName: manager.micConnectingName,
+                cancelWarningActive: manager.isCancelWarningArmed,
                 resumeOffer: manager.resumeOffer,
                 onResumeToggle: { manager.toggleResumeOffer() },
                 onTranslationToggled: { manager.onQuickTranslationToggled?($0) },
@@ -216,11 +225,12 @@ struct RecordingOverlayView: View {
         case .paused(let duration):
             PausedPillView(
                 duration: duration,
+                cancelWarningActive: manager.isCancelWarningArmed,
                 onResume: { manager.onPauseToggle?() }
             )
 
         case .transcribing:
-            TranscribingPillView()
+            TranscribingPillView(cancelWarningActive: manager.isCancelWarningArmed)
 
         case .polishing(let timeoutSeconds, let compact):
             AIPolishingPillView(timeoutSeconds: timeoutSeconds, compact: compact)
@@ -239,6 +249,13 @@ struct RecordingOverlayView: View {
                 manager.setCompletedHover(hovering)
             }
 
+        case .quickHistory:
+            QuickHistoryPillView(
+                onOpenHistory: { manager.onOpenHistoryEntryRequested?($0) },
+                onRetranscribe: { await manager.onQuickHistoryRetranscribe?($0) ?? nil },
+                onClose: { manager.hide() }
+            )
+
         case .cancelled:
             CancelledPillView()
 
@@ -247,6 +264,18 @@ struct RecordingOverlayView: View {
 
         case .deviceChange(let announcement):
             DeviceChangePillView(announcement: announcement)
+        }
+    }
+}
+
+/// Double-beat "lub-dub" scale for the armed-cancel warning.
+private struct HeartbeatKeyframes: Keyframes {
+    var body: some Keyframes<Double> {
+        KeyframeTrack {
+            CubicKeyframe(1.07, duration: 0.12)
+            CubicKeyframe(0.99, duration: 0.11)
+            CubicKeyframe(1.05, duration: 0.12)
+            SpringKeyframe(1.0, duration: 0.35, spring: .bouncy)
         }
     }
 }

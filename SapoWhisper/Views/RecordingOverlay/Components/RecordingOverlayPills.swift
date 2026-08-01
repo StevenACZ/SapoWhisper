@@ -14,6 +14,8 @@ struct RecordingPillView: View {
     /// Non-nil while the input still delivers dead air (Bluetooth handshake):
     /// the pill explains the silence instead of showing a flat waveform.
     var connectingDeviceName: String? = nil
+    /// First Esc landed: the status swaps for the "Esc again" hint.
+    var cancelWarningActive: Bool = false
     /// "Continue previous dictation" chip: a recent cancelled/crashed take can
     /// be prepended to this recording at stop time.
     var resumeOffer: OverlayWindowManager.ResumeOffer? = nil
@@ -33,7 +35,9 @@ struct RecordingPillView: View {
                 barColor: compactModeActive ? .compactMode : .recording
             )
 
-            if let connectingDeviceName {
+            if cancelWarningActive {
+                CancelWarningHint()
+            } else if let connectingDeviceName {
                 Text("overlay.mic_connecting".localized(connectingDeviceName))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
@@ -126,6 +130,7 @@ struct ResumePreviousChip: View {
 
 struct PausedPillView: View {
     let duration: TimeInterval
+    var cancelWarningActive: Bool = false
     let onResume: () -> Void
 
     var body: some View {
@@ -133,14 +138,19 @@ struct PausedPillView: View {
             FloatingSapoIcon(state: .paused, size: 32)
             PillDivider()
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.processing)
-                    .frame(width: 7, height: 7)
+            if cancelWarningActive {
+                CancelWarningHint()
+            } else {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.processing)
+                        .frame(width: 7, height: 7)
 
-                Text("overlay.paused".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    Text("overlay.paused".localized)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                }
+                .transition(.opacity)
             }
 
             Spacer(minLength: 20)
@@ -160,16 +170,41 @@ struct PausedPillView: View {
 }
 
 struct TranscribingPillView: View {
+    var cancelWarningActive: Bool = false
+
     var body: some View {
         HStack(spacing: 10) {
             FloatingSapoIcon(state: .transcribing, size: 32)
             PillDivider()
             TranscribingIndicator()
 
-            Text("overlay.transcribing".localized)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
+            if cancelWarningActive {
+                CancelWarningHint()
+            } else {
+                Text("overlay.transcribing".localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .transition(.opacity)
+            }
         }
+    }
+}
+
+/// "Esc again to cancel" — swapped in for the status text while the armed
+/// cancel warning is live; the pill heartbeat carries the urgency.
+struct CancelWarningHint: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "escape")
+                .font(.system(size: 11, weight: .semibold))
+            Text("overlay.cancel_hint".localized)
+                .font(.system(size: 13, weight: .medium))
+        }
+        .foregroundColor(.sapoError)
+        // Mid-morph widths below ideal wrap the hint; the pill's Spacer
+        // absorbs pressure instead (same rule as the resume chip).
+        .fixedSize()
+        .transition(.opacity)
     }
 }
 
@@ -229,7 +264,7 @@ struct AIPolishingPillView: View {
 
 /// Compact post-dictation toast: the text already landed at the caret, so
 /// this only confirms the copy with the success icon pop + glow and then
-/// collapses into the dock chip, which reopens the full transcript on demand.
+/// collapses into the dock chip, which reopens it via quick history.
 struct CopiedPillView: View {
     var outcome: CopiedOutcome = .standard
 
@@ -459,7 +494,7 @@ struct CompletedPillView: View {
 
 /// Slim always-visible bar at the anchor position — the overlay's permanent
 /// resting fixture the droplet pill detaches from. Hover only highlights it
-/// as an affordance; a click toggles the last transcription open/closed, so a
+/// as an affordance; a click toggles the quick history open/closed, so a
 /// stray mouse pass at the screen edge does nothing.
 struct DockedChipView: View {
     /// True while a droplet pill floats detached above the chip.

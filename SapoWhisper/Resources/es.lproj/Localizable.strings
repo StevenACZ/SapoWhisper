@@ -627,8 +627,14 @@
 "overlay.open_history" = "Abrir en Historial";
 "overlay.close" = "Cerrar";
 "overlay.cancelled_saved" = "Cancelado — audio guardado en Historial";
+"overlay.cancel_hint" = "Esc otra vez para cancelar";
+"overlay.quick_history_title" = "Dictados recientes";
+"overlay.quick_history_empty" = "Aún no hay dictados";
+"overlay.quick_history_older" = "Anterior";
+"overlay.quick_history_newer" = "Siguiente";
+"overlay.quick_history_regenerate" = "Re-transcribir";
 "settings.welcome_tour_open" = "Abrir";
-"overlay.dock_last" = "Última transcripción";
+"overlay.dock_last" = "Dictados recientes";
 
 /* Overlay accessibility (VoiceOver) */
 "overlay.a11y.pause" = "Pausar la grabación";

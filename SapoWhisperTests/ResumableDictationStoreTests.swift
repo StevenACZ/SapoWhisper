@@ -85,6 +85,22 @@ final class ResumableDictationStoreTests: XCTestCase {
         XCTAssertNotNil(store.validOffer)
     }
 
+    func testClearOfferForMatchingHistoryIdClears() {
+        let store = makeStore(offset: 60)
+        store.offer(makeOffer())
+
+        store.clearOffer(forHistoryId: 7)
+        XCTAssertNil(store.validOffer, "a retranscribed take must stop being offered")
+    }
+
+    func testClearOfferForDifferentHistoryIdKeepsOffer() {
+        let store = makeStore(offset: 60)
+        store.offer(makeOffer())
+
+        store.clearOffer(forHistoryId: 8)
+        XCTAssertEqual(store.validOffer?.historyId, 7)
+    }
+
     func testFormatResumeDuration() {
         XCTAssertEqual(ResumableDictationStore.formatResumeDuration(0), "0:00")
         XCTAssertEqual(ResumableDictationStore.formatResumeDuration(9.4), "0:09")

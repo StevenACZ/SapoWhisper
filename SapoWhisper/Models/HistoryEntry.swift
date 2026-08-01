@@ -37,6 +37,21 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    /// Compact "now/5m/3h/2d" stamp shared by the history sidebar rows and
+    /// the overlay quick history.
+    @MainActor var compactRelativeTime: String {
+        let interval = Date().timeIntervalSince(timestamp)
+        let minutes = Int(interval) / 60
+        let hours = minutes / 60
+        let days = hours / 24
+
+        if minutes < 1 { return "history.relative_now".localized }
+        if minutes < 60 { return "\(minutes)m" }
+        if hours < 24 { return "\(hours)h" }
+        if days < 7 { return "\(days)d" }
+        return timestamp.formatted(.dateTime.month(.abbreviated).day())
+    }
+
     var audioFileExists: Bool {
         guard let path = audioPath else { return false }
         return FileManager.default.fileExists(atPath: path)

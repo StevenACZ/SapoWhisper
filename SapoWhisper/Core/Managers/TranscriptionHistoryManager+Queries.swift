@@ -97,6 +97,25 @@ nonisolated extension TranscriptionHistoryManager {
         ) ?? []
     }
 
+    /// Single-row lookup, shaped for the overlay quick history refresh after
+    /// a retranscription — materializing the whole table for one row is waste.
+    func entry(id: Int64) -> HistoryEntry? {
+        let sql = Self.entrySelect + " WHERE id = ?;"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        sqlite3_bind_int64(stmt, 1, id)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return makeEntry(from: stmt)
+    }
+
+    private static let entrySelect = """
+        SELECT id, timestamp, engine, language, duration_seconds, transcription, raw_transcription,
+               audio_path, status, is_favorite, ai_status, ai_model, ai_mode, ai_error,
+               failure_code, ai_first_status, ai_first_model, ai_first_mode
+        FROM transcriptions
+        """
+
     /// Builds the SELECT shared by the FTS and LIKE paths. Returns nil when
     /// the statement fails to prepare or step (so FTS errors can fall back).
     private func runFetch(
@@ -105,13 +124,7 @@ nonisolated extension TranscriptionHistoryManager {
         limit: Int?,
         offset: Int
     ) -> [HistoryEntry]? {
-        var sql =
-            """
-            SELECT id, timestamp, engine, language, duration_seconds, transcription, raw_transcription,
-                   audio_path, status, is_favorite, ai_status, ai_model, ai_mode, ai_error,
-                   failure_code, ai_first_status, ai_first_model, ai_first_mode
-            FROM transcriptions
-            """
+        var sql = Self.entrySelect
         var conditions: [String] = []
         var binders: [(OpaquePointer?, Int32) -> Void] = []
 

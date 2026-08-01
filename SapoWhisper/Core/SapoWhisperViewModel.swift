@@ -163,6 +163,27 @@ class SapoWhisperViewModel: ObservableObject {
         resumableStore.offer(resumable)
     }
 
+    // MARK: - Esc double-press cancel
+
+    /// First Esc only warns (heartbeat + hint on the pill); the second within
+    /// the window really cancels. Reset on every appState change and on
+    /// pause/resume so an armed press never crosses a phase boundary.
+    private var escapeCancelGate = EscapeCancelGate()
+
+    func handleCancelKeyPress() {
+        switch escapeCancelGate.registerPress() {
+        case .armed:
+            SapoLog.hotkey.info("Esc cancel armed, waiting for confirm")
+            overlayManager.warnCancelArmed()
+        case .confirmed:
+            if appState == .processing {
+                cancelActiveTranscription()
+            } else {
+                cancelActiveDictation()
+            }
+        }
+    }
+
     // MARK: - Computed Properties
 
     var currentEngine: TranscriptionEngine {
@@ -341,6 +362,24 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.openHistoryForLastTranscription()
             }
         }
+        overlayManager.onOpenHistoryEntryRequested = { [weak self] entryId in
+            Task { @MainActor in
+                self?.openHistory(focusedOn: entryId)
+            }
+        }
+        overlayManager.onQuickHistoryRetranscribe = { [weak self] entry in
+            guard let self else { return nil }
+            let result = await self.retranscribeHistoryEntry(entry, using: self.currentEngine)
+            return result.errorMessage
+        }
+    }
+
+    /// Quick history pill → History window focused on the browsed entry.
+    private func openHistory(focusedOn entryId: Int64) {
+        HistoryFocusRequest.pendingEntryID = entryId
+        overlayManager.hide()
+        NotificationCenter.default.post(name: HistoryFocusRequest.notification, object: nil)
+        SapoLog.overlay.info("Open history from quick history pill entryId=\(entryId, privacy: .public)")
     }
 
     /// Result pill → History window focused on the entry that was just
@@ -467,15 +506,12 @@ class SapoWhisperViewModel: ObservableObject {
                 // Auto-Ducking: reducir/restaurar volumen del sistema
                 AutoDuckingManager.shared.handleStateChange(state)
                 // Esc cancela el dictado mientras graba y también la
-                // transcripción en vuelo (la fila ya está pre-persistida)
+                // transcripción en vuelo (la fila ya está pre-persistida);
+                // requiere doble pulsación vía EscapeCancelGate.
+                self?.escapeCancelGate.reset()
                 self?.hotkeyManager.setCancelKeyActive(state == .recording || state == .processing) {
                     [weak self] in
-                    guard let self else { return }
-                    if self.appState == .processing {
-                        self.cancelActiveTranscription()
-                    } else {
-                        self.cancelActiveDictation()
-                    }
+                    self?.handleCancelKeyPress()
                 }
             }
             .store(in: &cancellables)
@@ -884,6 +920,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Toggle de pausa/resume (llamado por el botón del overlay)
     func togglePause() {
+        escapeCancelGate.reset()
         if let context = activeStreamingContext {
             let session = context.session
             if session.isPaused {
@@ -1792,6 +1829,10 @@ class SapoWhisperViewModel: ObservableObject {
                 aiMode: aiResult.mode,
                 aiError: aiResult.error
             )
+            // The row is resolved now — keeping the continue-previous offer
+            // would re-show the resume chip for a completed transcript and a
+            // later merge would delete it.
+            resumableStore.clearOffer(forHistoryId: entry.id)
 
             return HistoryRetranscriptionResult(entryId: entry.id, errorMessage: nil)
         } catch {
