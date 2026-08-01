@@ -6,6 +6,33 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-07-31
+
+### Added
+
+- The dock chip at the bottom of the screen now opens a quick history inside
+  the pill: browse your recent dictations, copy one, page back to older
+  takes, re-transcribe with the current engine, or jump into the full
+  History window — all without leaving the overlay. VoiceOver announces the
+  panel and every control.
+
+### Changed
+
+- Cancelling a dictation now takes two Esc presses within 2.5 seconds. The
+  first press makes the pill beat like a heart and show "Esc again to
+  cancel", so a stray Esc can no longer kill a take. The warning only arms
+  when a cancel can actually happen.
+- Re-transcribing a cancelled entry from History (or from the quick history
+  pill) now clears the "continue previous dictation" offer — including a
+  resume chip already showing on a live recording — so the next dictation
+  stops suggesting a merge that would discard the recovered transcript.
+
+### Fixed
+
+- Re-transcribing the same entry twice in a row (for example after closing
+  and reopening the quick history mid-run) no longer runs the engine twice
+  concurrently on the same audio.
+
 ## [2.14.1] - 2026-07-28
 
 ### Changed

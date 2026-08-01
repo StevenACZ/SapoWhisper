@@ -627,8 +627,14 @@
 "overlay.open_history" = "Open in History";
 "overlay.close" = "Close";
 "overlay.cancelled_saved" = "Cancelled — audio saved to History";
+"overlay.cancel_hint" = "Esc again to cancel";
+"overlay.quick_history_title" = "Recent dictations";
+"overlay.quick_history_empty" = "No dictations yet";
+"overlay.quick_history_older" = "Older";
+"overlay.quick_history_newer" = "Newer";
+"overlay.quick_history_regenerate" = "Re-transcribe";
 "settings.welcome_tour_open" = "Open";
-"overlay.dock_last" = "Last transcription";
+"overlay.dock_last" = "Recent dictations";
 
 /* Overlay accessibility (VoiceOver) */
 "overlay.a11y.pause" = "Pause recording";
@@ -636,6 +642,7 @@
 "overlay.a11y.recording_started" = "Recording started";
 "overlay.a11y.transcribing" = "Transcribing";
 "overlay.a11y.pasted" = "Text copied";
+"overlay.a11y.quick_history" = "Recent dictations shown";
 "overlay.a11y.error" = "Dictation failed";
 
 /* In-app updates (Sparkle) + retranscribe cancel */

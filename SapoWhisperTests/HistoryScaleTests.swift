@@ -133,6 +133,22 @@ final class HistoryScaleTests: XCTestCase {
         XCTAssertFalse(entry?.isUserCancelled == true)
     }
 
+    // MARK: - Single-row lookup
+
+    func testEntryByIdReturnsTheRowOrNil() {
+        manager.save(engine: "Deepgram", language: "es", duration: 2, text: "otra fila")
+        let id = manager.save(
+            engine: "Local AI Server", language: "es", duration: 6, text: "texto puntual",
+            status: "completed", failureCode: nil
+        )
+
+        let entry = manager.entry(id: id)
+        XCTAssertEqual(entry?.id, id)
+        XCTAssertEqual(entry?.text, "texto puntual")
+        XCTAssertEqual(entry?.engine, "Local AI Server")
+        XCTAssertNil(manager.entry(id: id + 999))
+    }
+
     // MARK: - H2: FTS search
 
     func testSearchFindsSavedTextByPrefix() {

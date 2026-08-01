@@ -50,6 +50,13 @@ class OverlayWindowManager: ObservableObject {
 
     @Published private(set) var resumeOffer: ResumeOffer?
 
+    /// Cancel-armed warning (first Esc while dictating): the pill heartbeats
+    /// and swaps its status for the "Esc again" hint until the confirm window
+    /// passes. The pulse is a trigger counter so every arm press beats again.
+    @Published private(set) var isCancelWarningArmed = false
+    @Published private(set) var cancelWarningPulse = 0
+    private var cancelWarningTask: Task<Void, Never>?
+
     /// True during the brief pre-collapse "inhale": the view puffs the active
     /// pill up a touch, then the delayed collapse lets the chip swallow it.
     @Published private(set) var hideAnticipation = false
@@ -88,16 +95,22 @@ class OverlayWindowManager: ObservableObject {
     /// just dictated.
     var onOpenHistoryRequested: (() -> Void)?
 
+    /// Quick history pill "open in History": jump to the browsed entry.
+    var onOpenHistoryEntryRequested: ((Int64) -> Void)?
+
+    /// Quick history pill re-transcribe: run the entry through the current
+    /// engine and return the error message, or nil on success.
+    var onQuickHistoryRetranscribe: ((HistoryEntry) async -> String?)?
+
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?
     private var hostingView: NSHostingView<RecordingOverlayView>?
     private var presentationRevision: UInt = 0
     private var completedDismissTask: Task<Void, Never>?
-    /// Last delivered transcription, reopened when the dock chip is clicked.
-    private var lastCompletedText: String?
-    /// Global+local mouse monitors active while the completed pill is open,
-    /// so a click anywhere outside collapses it back into the dock chip.
+    /// Global+local mouse monitors active while the completed or quick
+    /// history pill is open, so a click anywhere outside collapses it back
+    /// into the dock chip.
     private var outsideClickMonitors: [Any] = []
     private let audioLevelSubject = PassthroughSubject<Float, Never>()
     private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
@@ -192,6 +205,7 @@ class OverlayWindowManager: ObservableObject {
         displayedRecordingSecond = nil
         publishAudioLevel(0, force: true)
         showsNoSpeechHint = false
+        clearCancelWarning()
         // Committed to collapsing: the completed pill's outside-click
         // monitors must not fire again during the anticipation beat.
         removeOutsideClickMonitors()
@@ -226,37 +240,41 @@ class OverlayWindowManager: ObservableObject {
         }
     }
 
-    /// Dock chip click: toggle — reopen the last transcription when idle,
-    /// collapse the open result back into the chip otherwise.
+    /// Dock chip click: toggle — open the quick history browser when idle,
+    /// collapse the open pill back into the chip otherwise.
     func dockChipTapped() {
         switch state {
         case .docked:
-            expandDockToLastTranscription()
-        case .completed:
+            showQuickHistory()
+        case .completed, .quickHistory:
             hide()
         default:
             break
         }
     }
 
-    /// Reopen the last transcription from the dock chip.
-    func expandDockToLastTranscription() {
+    /// In-pill compact history from the dock chip. No auto-dismiss: the user
+    /// is browsing; outside clicks, the chip, or the close button collapse it.
+    func showQuickHistory() {
         guard case .docked = state else { return }
-        guard let text = lastCompletedText, !text.isEmpty else { return }
-        updateState(.completed(text: text))
-        // Fallback in case the pointer leaves before the pill registers its
-        // own hover; hovering the pill cancels and re-arms this.
-        scheduleCompletedDismiss(after: 4.0)
+        updateState(.quickHistory)
     }
 
     // MARK: - Outside-click collapse
 
-    /// While the completed pill is open, any click outside the overlay window
-    /// collapses it back into the dock chip — closing must not require
-    /// hunting the X button. Monitors exist only in that state so recording
-    /// and busy states are never dismissed by stray clicks.
+    /// While the completed or quick history pill is open, any click outside
+    /// the overlay window collapses it back into the dock chip — closing must
+    /// not require hunting the X button. Monitors exist only in those states
+    /// so recording and busy states are never dismissed by stray clicks.
+    private var stateAllowsOutsideClickCollapse: Bool {
+        switch state {
+        case .completed, .quickHistory: return true
+        default: return false
+        }
+    }
+
     private func syncOutsideClickMonitors() {
-        if case .completed = state {
+        if stateAllowsOutsideClickCollapse {
             installOutsideClickMonitors()
         } else {
             removeOutsideClickMonitors()
@@ -325,7 +343,7 @@ class OverlayWindowManager: ObservableObject {
     }
 
     private func collapseIfClickLandedOutside() {
-        guard case .completed = state else { return }
+        guard stateAllowsOutsideClickCollapse else { return }
         guard let window = overlayWindow, let contentView = window.contentView else { return }
 
         let screenPoint = NSEvent.mouseLocation
@@ -419,6 +437,12 @@ class OverlayWindowManager: ObservableObject {
         let leavingDock = previousCategory == "docked"
         lastPresentationLeftDock = leavingDock
 
+        // Any phase change resolves the armed cancel: the warning belongs to
+        // the exact moment it was armed in (recording→paused included).
+        if newState.stateCategory != previousCategory {
+            clearCancelWarning()
+        }
+
         // A fresh presentation (leaving the dock, or appearing from hidden)
         // opens on the screen the user is working on — the mouse screen. The
         // permanent dock chip keeps the window visible forever, so show()
@@ -483,6 +507,7 @@ class OverlayWindowManager: ObservableObject {
         case .recording: key = "overlay.a11y.recording_started"
         case .transcribing: key = "overlay.a11y.transcribing"
         case .copied: key = "overlay.a11y.pasted"
+        case .quickHistory: key = "overlay.a11y.quick_history"
         case .error: key = "overlay.a11y.error"
         default: key = nil
         }
@@ -521,9 +546,8 @@ class OverlayWindowManager: ObservableObject {
 
     /// Compact "Copied" toast after a dictation lands: the text is already at
     /// the caret (auto-paste) and on the clipboard, so the overlay only
-    /// confirms and collapses; the dock chip reopens the full transcript.
+    /// confirms and collapses; the dock chip reopens it via quick history.
     func showCopied(text: String, outcome: CopiedOutcome = .standard, autoDismissAfter delay: TimeInterval = 2.0) {
-        lastCompletedText = text
         updateState(.copied(outcome: outcome))
 
         // The raw-fallback notice carries real information ("nothing was
@@ -538,12 +562,11 @@ class OverlayWindowManager: ObservableObject {
     }
 
     /// Muestra el pill expandido con el texto final y las acciones de
-    /// re-polish — solo para flujos donde el usuario mira el overlay (dock
-    /// reopen, re-polish); un dictado normal usa `showCopied`. Hovering the
+    /// re-polish — solo para flujos donde el usuario mira el overlay
+    /// (re-polish); un dictado normal usa `showCopied`. Hovering the
     /// pill pauses the auto-dismiss so the user can read, copy, or re-polish;
     /// leaving re-arms a short countdown.
     func showCompleted(text: String, autoDismissAfter delay: TimeInterval = 5.0) {
-        lastCompletedText = text
         updateState(.completed(text: text))
         scheduleCompletedDismiss(after: delay)
     }
@@ -611,6 +634,40 @@ class OverlayWindowManager: ObservableObject {
             if case .deviceChange(let current) = self.state, current == announcement {
                 self.hide()
             }
+        }
+    }
+
+    /// First Esc landed: heartbeat the pill and show the "Esc again" hint for
+    /// the confirm window. VoiceOver hears the hint too — without it the
+    /// first press is invisible to a VO user and Esc feels dead.
+    func warnCancelArmed(clearAfter window: TimeInterval = EscapeCancelGate.confirmWindow) {
+        cancelWarningPulse += 1
+        withAnimation(Constants.Animation.chipReveal) {
+            isCancelWarningArmed = true
+        }
+        cancelWarningTask?.cancel()
+        cancelWarningTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.clearCancelWarning()
+        }
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: "overlay.cancel_hint".localized,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ]
+        )
+        SapoLog.overlay.info("Overlay cancel warning armed")
+    }
+
+    func clearCancelWarning() {
+        cancelWarningTask?.cancel()
+        cancelWarningTask = nil
+        guard isCancelWarningArmed else { return }
+        withAnimation(Constants.Animation.chipReveal) {
+            isCancelWarningArmed = false
         }
     }
 
