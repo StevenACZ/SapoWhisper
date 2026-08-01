@@ -81,6 +81,13 @@ addresses, and machine-specific workflow details.
 - An explicit AI polish output language must always run the polish step — polish has no skip gates of any kind, and silently skipping would ship the untranslated transcript.
 - Do not remove the MLX Whisper/Deepgram/ElevenLabs/Local AI Server engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, or retry UI.
 - Keep streaming paths resilient to device route changes.
+- Never surface an affordance (chip, hint, armed warning, menu item) whose
+  action cannot execute in the CURRENT state: derive its visibility from the
+  same predicate the action guards on, never from a coarser state summary.
+  This bit twice — the sibling-backup picker offered a rescue `decision`
+  could never hand over (v2.14.0), and the first double-Esc build armed
+  "Esc again to cancel" during streaming/post-stop windows where the confirm
+  was a guaranteed no-op (fixed via `escCancelCanAct` before v2.15.0).
 - Never gate live-session UI on "is this the SELECTED engine" — once the backup
   can start a dictation, the running session is not the selected one. Gate on
   the variant driving the dictation (`sessionVariant`). Gating the streaming
