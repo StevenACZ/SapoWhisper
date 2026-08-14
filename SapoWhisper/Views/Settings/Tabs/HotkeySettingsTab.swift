@@ -9,6 +9,7 @@ import SwiftUI
 
 /// Global hotkey settings tab.
 struct HotkeySettingsTab: View {
+    @Environment(\.settingsTabIsSelected) private var tabIsSelected
     @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) private var hotkeyTriggerKindRaw: String =
         Constants.Hotkey.defaultTriggerKind
     @AppStorage(Constants.StorageKeys.hotkeyKeyCode) private var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
@@ -142,7 +143,7 @@ struct HotkeySettingsTab: View {
                 .stroke(Color.sapoGreen, lineWidth: 2)
                 .blur(radius: 2.5)
                 // Reduce Motion holds the glow at a steady mid opacity.
-                .phaseAnimator(reduceMotion ? [0.6] : [0.35, 0.85]) { content, opacity in
+                .phaseAnimator(reduceMotion || !tabIsSelected ? [0.6] : [0.35, 0.85]) { content, opacity in
                     content.opacity(opacity)
                 } animation: { _ in
                     .easeInOut(duration: 0.7)
@@ -356,11 +357,15 @@ private struct DoubleTapKeycapDemo: View {
     let symbol: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // The settings tabs stay mounted at opacity 0 when unselected, so this
+    // loop must pin itself or it animates the whole window graph forever —
+    // ~40% CPU while (and after) the settings window is open (2026-08-14).
+    @Environment(\.settingsTabIsSelected) private var tabIsSelected
 
     var body: some View {
         KeycapView(label: symbol, width: 56)
             // Reduce Motion pins the loop to its resting phase.
-            .phaseAnimator(reduceMotion ? [0] : [0, 1, 2, 3]) { content, phase in
+            .phaseAnimator(reduceMotion || !tabIsSelected ? [0] : [0, 1, 2, 3]) { content, phase in
                 content.scaleEffect(phase == 1 || phase == 3 ? 0.92 : 1.0)
             } animation: { phase in
                 switch phase {

@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.15.1] - 2026-08-14
+
+### Fixed
+
+- Opening the Settings window once no longer leaves the app burning ~40% CPU
+  (with slowly growing memory) until the next relaunch. The animated
+  double-tap demo on the Hotkey tab kept running invisibly behind every other
+  tab, and the Settings, History, and About windows kept their interface
+  alive after being closed. Hidden tabs now pause their animations and closed
+  windows fully release their content, so the app sits back at 0% CPU.
+
 ## [2.15.0] - 2026-07-31
 
 ### Added

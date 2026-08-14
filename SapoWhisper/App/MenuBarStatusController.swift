@@ -41,6 +41,22 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         setupStatusItem()
         setupPopover()
         bindStatusImage()
+        // A retained-after-close hosting controller keeps its SwiftUI graph
+        // alive and animating (settings burned ~40% CPU forever once opened,
+        // 2026-08-14); closing a window must release its controller.
+        secureInputReleaseDelegate.onWillClose = { [weak self] window in
+            guard let self else { return }
+            window.contentViewController = nil
+            if window == self.settingsWindowController?.window {
+                self.settingsWindowController = nil
+            }
+            if window == self.historyWindowController?.window {
+                self.historyWindowController = nil
+            }
+            if window == self.aboutWindowController?.window {
+                self.aboutWindowController = nil
+            }
+        }
         // The overlay result pill lives outside any SwiftUI window scene, so
         // it requests the History window through this notification.
         historyFocusObserver = NotificationCenter.default.addObserver(
@@ -332,6 +348,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         )
         closePopover()
 
+        let reusedController = historyWindowController != nil
         let controller =
             historyWindowController
             ?? makeWindowController(
@@ -342,7 +359,11 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         historyWindowController = controller
         let wasVisible = controller.window?.isVisible == true
         show(controller)
-        if !wasVisible {
+        // A freshly built controller already loads and consumes the pending
+        // focus request in onAppear (inside show); re-posting would reset the
+        // selection to the newest entry. The post only wakes a still-mounted
+        // view (kept controller, window not visible, e.g. miniaturized).
+        if reusedController && !wasVisible {
             NotificationCenter.default.post(
                 name: HistoryFocusRequest.windowPresentedNotification, object: nil
             )
@@ -382,6 +403,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         window.isReleasedWhenClosed = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.delegate = secureInputReleaseDelegate
 
         let hostingController = NSHostingController(rootView: AboutWindowHost())
         window.contentViewController = hostingController
@@ -430,6 +452,10 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             // Must not undercut the SwiftUI root's minWidth/minHeight or the
             // window can shrink past its content and clip it.
             window.contentMinSize = Constants.Windows.historyMinSize
+            // The controller is released on close, so the user's window size
+            // must survive in defaults (set after setContentSize so a saved
+            // frame wins over the default size).
+            window.setFrameAutosaveName("SapoWhisperHistoryWindow")
         }
 
         return NSWindowController(window: window)
@@ -487,12 +513,16 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
 /// history window closes or resigns key releases it immediately.
 @MainActor
 final class SecureInputReleasingWindowDelegate: NSObject, NSWindowDelegate {
+    var onWillClose: ((NSWindow) -> Void)?
+
     func windowDidResignKey(_ notification: Notification) {
         (notification.object as? NSWindow)?.makeFirstResponder(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        (notification.object as? NSWindow)?.makeFirstResponder(nil)
+        guard let window = notification.object as? NSWindow else { return }
+        window.makeFirstResponder(nil)
         HotkeyManager.shared.assertHotkeyAlive(reason: "window-closed")
+        onWillClose?(window)
     }
 }
