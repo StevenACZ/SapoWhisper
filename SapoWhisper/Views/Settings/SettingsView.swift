@@ -90,7 +90,10 @@ struct SettingsView: View {
     /// Each tab is kept alive in a ZStack and toggled via opacity so SwiftUI does not
     /// rebuild the subtree when the user switches tabs. This preserves scroll positions,
     /// pickers, drafts, and avoids re-running heavy init paths (vocabulary search, prompt
-    /// editor state) every time the toolbar selection changes.
+    /// editor state) every time the toolbar selection changes — within one window
+    /// session only: closing the window releases the whole graph, and any continuous
+    /// animator inside a tab must pin its phases on `settingsTabIsSelected` because
+    /// hidden tabs keep rendering.
     private var selectedTabContent: some View {
         ZStack {
             tabContent(for: .general) {
