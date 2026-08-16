@@ -437,6 +437,15 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         KeychainStore.hasValue(for: .elevenLabsAPIKey)
     }
 
+    static func recognitionKeytermPayload(
+        from vocabularyManager: VocabularyManager
+    ) -> (terms: [String], droppedCount: Int) {
+        vocabularyManager.recognitionKeytermPayload(
+            maxCount: Self.maxRealtimeKeyterms,
+            maxLength: Self.maxRealtimeKeytermLength
+        )
+    }
+
     init() {
         bindCapture()
     }
@@ -450,11 +459,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
         resetSessionState()
         requestedLanguage = language
-        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
-            maxCount: Self.maxRealtimeKeyterms,
-            maxLength: Self.maxRealtimeKeytermLength,
-            includeReplacementValues: true
-        )
+        let keytermPayload = Self.recognitionKeytermPayload(from: .shared)
         let keyterms = keytermPayload.terms
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
         webSocketTask = task

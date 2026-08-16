@@ -31,6 +31,7 @@ class VocabularyManager {
 
     private(set) var keyterms: [String] = []
     private(set) var replacements: [String: String] = [:]
+    private(set) var includeReplacementTargetsInRecognitionHints = true
 
     private let fileURL: URL
 
@@ -57,10 +58,13 @@ class VocabularyManager {
 
         keyterms = (json["keyterms"] as? [String]) ?? []
         replacements = (json["replacements"] as? [String: String]) ?? [:]
+        includeReplacementTargetsInRecognitionHints =
+            (json["includeReplacementTargetsInRecognitionHints"] as? Bool) ?? true
     }
 
     private func save() {
         let json: [String: Any] = [
+            "includeReplacementTargetsInRecognitionHints": includeReplacementTargetsInRecognitionHints,
             "keyterms": keyterms,
             "replacements": replacements,
         ]
@@ -104,10 +108,19 @@ class VocabularyManager {
         save()
     }
 
+    func setIncludeReplacementTargetsInRecognitionHints(_ enabled: Bool) {
+        includeReplacementTargetsInRecognitionHints = enabled
+        save()
+    }
+
     // MARK: - Import / Export
 
     func snapshot() -> VocabularySnapshot {
-        VocabularySnapshot(keyterms: keyterms, replacements: replacements)
+        VocabularySnapshot(
+            keyterms: keyterms,
+            replacements: replacements,
+            includeReplacementTargetsInRecognitionHints: includeReplacementTargetsInRecognitionHints
+        )
     }
 
     func merge(snapshot: VocabularySnapshot) {
@@ -122,6 +135,10 @@ class VocabularyManager {
             let value = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty, !value.isEmpty else { continue }
             replacements[key] = value
+        }
+
+        if let includeReplacementTargets = snapshot.includeReplacementTargetsInRecognitionHints {
+            includeReplacementTargetsInRecognitionHints = includeReplacementTargets
         }
 
         save()
@@ -150,8 +167,7 @@ class VocabularyManager {
     func keytermQueryItems() -> [URLQueryItem] {
         let payload = recognitionKeytermPayload(
             maxCount: DeepgramKeytermLimits.maxCount,
-            maxLength: DeepgramKeytermLimits.maxLength,
-            includeReplacementValues: true
+            maxLength: DeepgramKeytermLimits.maxLength
         )
         var totalWords = 0
         return payload.terms.compactMap { term in
@@ -226,9 +242,12 @@ class VocabularyManager {
         maxCount: Int,
         maxLength: Int,
         maxWords: Int? = nil,
-        includeReplacementValues: Bool = false
+        includeReplacementValues: Bool? = nil
     ) -> (terms: [String], droppedCount: Int) {
-        let candidates = recognitionCandidates(includeReplacementValues: includeReplacementValues)
+        let candidates = recognitionCandidates(
+            includeReplacementValues: includeReplacementValues
+                ?? includeReplacementTargetsInRecognitionHints
+        )
         var seen = Set<String>()
         var canonicalTerms: [String] = []
 
@@ -269,13 +288,13 @@ class VocabularyManager {
         return "\(prefix)\(body)."
     }
 
-    /// Canonical vocabulary terms as the initial prompt sees them — the
-    /// hallucination filter matches glossary-echo transcripts against this
-    /// exact list.
+    /// Canonical vocabulary terms as the initial prompt sees them.
     func echoDetectionTerms() -> [String] {
         var seen = Set<String>()
         var terms: [String] = []
-        for candidate in recognitionCandidates(includeReplacementValues: true) {
+        for candidate in recognitionCandidates(
+            includeReplacementValues: includeReplacementTargetsInRecognitionHints
+        ) {
             let sanitized = Self.sanitizedRecognitionHint(candidate)
             let key = sanitized.lowercased()
             guard !sanitized.isEmpty, !seen.contains(key) else { continue }

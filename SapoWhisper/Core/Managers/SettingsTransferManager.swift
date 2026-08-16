@@ -8,6 +8,7 @@ import Foundation
 struct VocabularySnapshot: Codable, Equatable {
     var keyterms: [String]
     var replacements: [String: String]
+    var includeReplacementTargetsInRecognitionHints: Bool? = nil
 }
 
 struct SettingsTransferDocument: Codable, Identifiable {

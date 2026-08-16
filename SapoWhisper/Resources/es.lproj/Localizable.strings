@@ -461,6 +461,8 @@
 "config.replace_from" = "Original";
 "config.replace_to" = "Corregir a";
 "config.replacements_desc" = "Corrige automaticamente palabras en la transcripcion";
+"config.replacement_targets_as_hints" = "Usar términos corregidos como pistas de reconocimiento";
+"config.replacement_targets_as_hints_desc" = "Desactívalo para no incluir términos corregidos en los prompts de reconocimiento. Las correcciones posteriores no cambian.";
 "config.add" = "Agregar";
 "settings.vocabulary.desc" = "Mejora nombres propios, comandos, archivos y correcciones frecuentes. Las palabras clave son manuales; la IA solo sugiere correcciones automaticas.";
 "settings.vocabulary.search" = "Buscar vocabulario o correcciones";

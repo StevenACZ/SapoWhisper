@@ -371,6 +371,17 @@ struct VocabularySettingsCard: View {
                     )
             }
 
+            Toggle(isOn: replacementTargetsInRecognitionHintsBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("config.replacement_targets_as_hints".localized)
+                        .font(.caption.weight(.medium))
+                    Text("config.replacement_targets_as_hints_desc".localized)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+
             if normalizedSearchText.isEmpty, !polishMemory.pendingSuggestions.isEmpty {
                 learnedCorrectionsSection
             }
@@ -401,6 +412,13 @@ struct VocabularySettingsCard: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private var replacementTargetsInRecognitionHintsBinding: Binding<Bool> {
+        Binding(
+            get: { vocabularyManager.includeReplacementTargetsInRecognitionHints },
+            set: { vocabularyManager.setIncludeReplacementTargetsInRecognitionHints($0) }
+        )
     }
 
     private var learnedCorrectionsSection: some View {

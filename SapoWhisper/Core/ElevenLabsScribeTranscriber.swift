@@ -27,6 +27,16 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         KeychainStore.hasValue(for: .elevenLabsAPIKey)
     }
 
+    static func recognitionKeytermPayload(
+        from vocabularyManager: VocabularyManager
+    ) -> (terms: [String], droppedCount: Int) {
+        vocabularyManager.recognitionKeytermPayload(
+            maxCount: Self.maxKeyterms,
+            maxLength: Self.maxKeytermLength,
+            maxWords: Self.maxKeytermWords
+        )
+    }
+
     // MARK: - Transcription
 
     /// Transcribe an audio file using the ElevenLabs Scribe v2 batch endpoint.
@@ -46,12 +56,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         }
 
         let boundary = "----SapoWhisperBoundary\(UUID().uuidString)"
-        let keytermPayload = VocabularyManager.shared.recognitionKeytermPayload(
-            maxCount: Self.maxKeyterms,
-            maxLength: Self.maxKeytermLength,
-            maxWords: Self.maxKeytermWords,
-            includeReplacementValues: true
-        )
+        let keytermPayload = Self.recognitionKeytermPayload(from: .shared)
         let keyterms = keytermPayload.terms
 
         // Reading the WAV and copying it into the multipart body is heavy for

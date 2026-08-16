@@ -461,6 +461,8 @@
 "config.replace_from" = "Original";
 "config.replace_to" = "Replace with";
 "config.replacements_desc" = "Automatically correct words in the transcription output";
+"config.replacement_targets_as_hints" = "Use corrected terms as recognition hints";
+"config.replacement_targets_as_hints_desc" = "Turn off to keep corrected terms out of recognition prompts. Post-transcription correction behavior is unchanged.";
 "config.add" = "Add";
 "settings.vocabulary.desc" = "Improve proper names, commands, files, and recurring corrections. Keywords are manual; AI only suggests automatic corrections.";
 "settings.vocabulary.search" = "Search vocabulary or corrections";
