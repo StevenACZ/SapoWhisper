@@ -6,6 +6,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-08-16
+
+### Added
+
+- Automatic-correction targets can now be excluded from engine recognition
+  hints with a new Vocabulary setting, independently from existing
+  post-transcription correction behavior. The preference travels with
+  vocabulary exports while remaining compatible with older exports.
+
 ## [2.15.1] - 2026-08-14
 
 ### Fixed

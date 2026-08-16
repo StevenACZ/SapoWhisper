@@ -54,6 +54,79 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(makeManager().initialPromptText(), "")
     }
 
+    func testReplacementTargetsAreRecognitionHintsByDefaultAndPersist() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vocab-test-\(UUID().uuidString).json")
+        let manager = VocabularyManager(fileURL: url)
+        manager.addReplacement(from: "cloud code", to: "Claude Code")
+
+        XCTAssertTrue(manager.includeReplacementTargetsInRecognitionHints)
+        XCTAssertEqual(manager.initialPromptText(), "Glossary: Claude Code.")
+
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+
+        XCTAssertFalse(VocabularyManager(fileURL: url).includeReplacementTargetsInRecognitionHints)
+    }
+
+    func testRecognitionHintsCanExcludeReplacementTargetsWithoutDisablingCorrections() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addReplacement(from: "cloud code", to: "Claude Code")
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+
+        XCTAssertEqual(manager.initialPromptText(), "Glossary: SapoWhisper.")
+        XCTAssertEqual(manager.echoDetectionTerms(), ["SapoWhisper"])
+        XCTAssertEqual(manager.keytermQueryItems().compactMap(\.value), ["SapoWhisper"])
+        XCTAssertEqual(
+            manager.recognitionKeytermPayload(maxCount: 10, maxLength: 50).terms,
+            ["SapoWhisper"]
+        )
+        XCTAssertEqual(manager.replaceQueryItems().compactMap(\.value), ["cloud code:Claude Code"])
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(to: "abre cloud code"),
+            "abre Claude Code"
+        )
+    }
+
+    func testElevenLabsBuildersRespectReplacementHintPreference() {
+        let manager = makeManager()
+        manager.addKeyterm("SapoWhisper")
+        manager.addReplacement(from: "cloud code", to: "Claude Code")
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+
+        XCTAssertEqual(
+            ElevenLabsScribeTranscriber.recognitionKeytermPayload(from: manager).terms,
+            ["SapoWhisper"]
+        )
+        XCTAssertEqual(
+            ElevenLabsScribeRealtimeTranscriber.recognitionKeytermPayload(from: manager).terms,
+            ["SapoWhisper"]
+        )
+    }
+
+    func testVocabularySnapshotRoundTripPreservesRecognitionHintPreference() throws {
+        let source = makeManager()
+        source.setIncludeReplacementTargetsInRecognitionHints(false)
+        let data = try JSONEncoder().encode(source.snapshot())
+        let snapshot = try JSONDecoder().decode(VocabularySnapshot.self, from: data)
+
+        let destination = makeManager()
+        destination.merge(snapshot: snapshot)
+
+        XCTAssertFalse(destination.includeReplacementTargetsInRecognitionHints)
+    }
+
+    func testLegacyVocabularySnapshotDoesNotOverrideRecognitionHintPreference() throws {
+        let data = #"{"keyterms":[],"replacements":{}}"#.data(using: .utf8)!
+        let snapshot = try JSONDecoder().decode(VocabularySnapshot.self, from: data)
+        let manager = makeManager()
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+
+        manager.merge(snapshot: snapshot)
+
+        XCTAssertFalse(manager.includeReplacementTargetsInRecognitionHints)
+    }
+
     // MARK: - Replacements
 
     func testApplyingReplacementsIsWholeWordCaseInsensitive() {
@@ -100,6 +173,10 @@ final class VocabularyManagerTests: XCTestCase {
             manager.replaceQueryItems().compactMap(\.value),
             ["get push:git push"]
         )
+
+        let outputWithHints = manager.applyingRecognitionCorrections(to: "haz push")
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+        XCTAssertEqual(manager.applyingRecognitionCorrections(to: "haz push"), outputWithHints)
     }
 
     /// Case-normalization ("kubernetes" -> "Kubernetes") and spoken-dot pairs
