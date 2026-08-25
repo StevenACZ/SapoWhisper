@@ -144,7 +144,7 @@ make release-check
 - Read `DMG/README.md` before creating a DMG.
 - For release-like local testing, keep app name `SapoWhisper.app`, bundle id `oli.SapoWhisper`, and Release `arm64`.
 - Use the repo Release build from `make release-check`.
-- Verify DMGs with `hdiutil verify`, readonly mount checks, `Info.plist`, code signing, and binary architecture checks.
-- A notarized DMG does not transfer its ticket to the separate Sparkle ZIP.
-  Before upload, require the app's own staple, extract the ZIP with `ditto`,
-  and validate both `stapler` and strict `codesign` on the extracted app.
+- Every distributed container and app needs its own ticket: notarize and staple
+  the app before creating the DMG, then notarize/staple the DMG and ZIP that app.
+  Validate mounted/extracted apps with `stapler` + strict `codesign`; use `ditto`
+  for ZIP extraction, and keep readonly DMG/plist/architecture checks.

@@ -6,6 +6,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Release packaging now notarizes and staples the app before creating the DMG,
+  then validates the app again from a read-only mount. The DMG no longer relies
+  on its container ticket to cover an unstapled embedded app.
+
 ## [2.16.1] - 2026-08-24
 
 ### Fixed
