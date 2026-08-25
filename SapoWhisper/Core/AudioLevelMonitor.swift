@@ -27,6 +27,20 @@ struct SampleMetadata {
     }
 }
 
+nonisolated enum AudioLevelMonitorRouteAction: Equatable {
+    case ignore
+    case restart(String)
+}
+
+nonisolated func audioLevelMonitorRouteAction(
+    monitoringRequested: Bool,
+    resumeAfterRecorder: Bool,
+    selectedDeviceUID: String
+) -> AudioLevelMonitorRouteAction {
+    guard monitoringRequested, !resumeAfterRecorder else { return .ignore }
+    return .restart(selectedDeviceUID)
+}
+
 /// Monitor de nivel de audio en tiempo real para el micrófono
 ///
 /// Concurrency: engine lifecycle is confined to `monitorQueue` (those members
@@ -86,6 +100,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     private var sampleStartTime: Date?
 
     private var peakDecayTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
     private let monitorQueue = DispatchQueue(label: "com.sapowhisper.audioMonitor.control", qos: .userInitiated)
     // nonisolated(unsafe): confined to monitorQueue.
     private nonisolated(unsafe) var selectedDeviceUID: String = "default"
@@ -98,6 +113,13 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         let initialGain = savedGain > 0 ? Float(savedGain) : 1.0
         self.gain = initialGain
         self.tapGain = initialGain
+
+        AudioDeviceManager.shared.inputRouteChanges
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                self?.handleAudioRouteChange()
+            }
+            .store(in: &cancellables)
     }
 
     /// Inicia el monitoreo del micrófono
@@ -107,10 +129,16 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     /// Inicia el AVAudioEngine y bindea el dispositivo directamente al AudioUnit
     private nonisolated func startAudioEngineOnQueue(deviceUID: String) {
-        let audioEngine = AVAudioEngine()
-
         selectedDeviceUID = deviceUID
+        if deviceUID != AudioDevice.systemDefault.uid {
+            AudioDeviceManager.shared.refreshDevices()
+            guard AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) != nil else {
+                setError(RecordingError.inputDeviceUnavailable.localizedDescription)
+                return
+            }
+        }
 
+        let audioEngine = AVAudioEngine()
         do {
             // AudioEngineGuard: device switches mid-setup raise uncatchable
             // NSExceptions inside AVFAudio; route them into this catch.
@@ -157,8 +185,12 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         guard selectedDeviceUID != "default" else { return nil }
 
         let deviceManager = AudioDeviceManager.shared
-        guard let deviceID = deviceManager.getDeviceID(for: selectedDeviceUID) else { return nil }
-        guard let audioUnit = inputNode.audioUnit else { return nil }
+        guard let deviceID = deviceManager.getDeviceID(for: selectedDeviceUID) else {
+            throw RecordingError.inputDeviceUnavailable
+        }
+        guard let audioUnit = inputNode.audioUnit else {
+            throw RecordingError.deviceSelectionFailed(-1)
+        }
 
         var targetDeviceID = deviceID
         let status = AudioUnitSetProperty(
@@ -174,7 +206,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
             SapoLog.audioRoute.warning(
                 "Monitor bind failed status=\(status, privacy: .public)"
             )
-            return nil
+            throw RecordingError.deviceSelectionFailed(status)
         }
 
         // Query actual hardware format via Core Audio
@@ -257,27 +289,56 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         restartMonitoring(deviceUID: resumeContext.deviceUID)
     }
 
-    private func scheduleMonitoringStart(deviceUID: String, minimumDelay: TimeInterval) {
+    private func handleAudioRouteChange() {
+        restartMonitorAfterInputRouteChange()
+        if isRecordingSample {
+            stopSampleRecording()
+        }
+    }
+
+    private nonisolated func restartMonitorAfterInputRouteChange() {
         monitorQueue.async { [weak self] in
             guard let self else { return }
-            self.monitoringRequested = true
-            self.selectedDeviceUID = deviceUID
-            self.resumeAfterRecorder = false
-            let generation = self.bumpRestartGeneration()
-            self.stopMonitoringOnQueue(clearIntent: false, logStop: false)
-
-            let settleDelay = max(0, minimumDelay)
-            if settleDelay > 0 {
-                SapoLog.audioRoute.info(
-                    "Monitor waiting for route settle delayMs=\(Int(settleDelay * 1000), privacy: .public)"
+            switch audioLevelMonitorRouteAction(
+                monitoringRequested: self.monitoringRequested,
+                resumeAfterRecorder: self.resumeAfterRecorder,
+                selectedDeviceUID: self.selectedDeviceUID
+            ) {
+            case .ignore:
+                return
+            case .restart(let deviceUID):
+                self.scheduleMonitoringStartOnQueue(
+                    deviceUID: deviceUID,
+                    minimumDelay: AudioDeviceManager.shared.captureRouteSettleDelay()
                 )
             }
+        }
+    }
 
-            self.monitorQueue.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
-                guard let self else { return }
-                guard self.monitoringRequested, self.restartGeneration == generation else { return }
-                self.startAudioEngineOnQueue(deviceUID: deviceUID)
-            }
+    private func scheduleMonitoringStart(deviceUID: String, minimumDelay: TimeInterval) {
+        monitorQueue.async { [weak self] in
+            self?.scheduleMonitoringStartOnQueue(deviceUID: deviceUID, minimumDelay: minimumDelay)
+        }
+    }
+
+    private nonisolated func scheduleMonitoringStartOnQueue(deviceUID: String, minimumDelay: TimeInterval) {
+        monitoringRequested = true
+        selectedDeviceUID = deviceUID
+        resumeAfterRecorder = false
+        let generation = bumpRestartGeneration()
+        stopMonitoringOnQueue(clearIntent: false, logStop: false)
+
+        let settleDelay = max(0, minimumDelay)
+        if settleDelay > 0 {
+            SapoLog.audioRoute.info(
+                "Monitor waiting for route settle delayMs=\(Int(settleDelay * 1000), privacy: .public)"
+            )
+        }
+
+        monitorQueue.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
+            guard let self else { return }
+            guard self.monitoringRequested, self.restartGeneration == generation else { return }
+            self.startAudioEngineOnQueue(deviceUID: deviceUID)
         }
     }
 

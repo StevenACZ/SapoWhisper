@@ -159,11 +159,9 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
             return settleDelay
         }
 
-        if deviceManager.getDeviceID(for: selectedDeviceUID) == nil {
-            deviceManager.refreshDevices()
-        }
+        deviceManager.refreshDevices()
 
-        guard deviceManager.getDeviceID(for: selectedDeviceUID) != nil else {
+        guard deviceManager.resolveSelectedInputDeviceID(for: selectedDeviceUID) != nil else {
             SapoLog.recording.warning("Selected input was missing during capture preparation")
             return 0
         }
@@ -188,6 +186,13 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
         // Snapshot configuration on the calling thread before dispatching to background
         let deviceUID = selectedDeviceUID
+        if deviceUID != AudioDevice.systemDefault.uid {
+            AudioDeviceManager.shared.refreshDevices()
+            guard AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) != nil else {
+                SapoLog.recording.warning("Selected input unavailable; capture start skipped")
+                throw RecordingError.inputDeviceUnavailable
+            }
+        }
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
         let uploadQuality = AudioUploadQuality.stored()
         let setupGeneration = beginSetupGeneration()
@@ -220,6 +225,13 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
                 do {
                     let t0 = CFAbsoluteTimeGetCurrent()
+
+                    if deviceUID != AudioDevice.systemDefault.uid {
+                        AudioDeviceManager.shared.refreshDevices()
+                        guard AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) != nil else {
+                            throw RecordingError.inputDeviceUnavailable
+                        }
+                    }
 
                     let localEngine = AVAudioEngine()
                     engine = localEngine
@@ -605,6 +617,7 @@ enum RecordingError: LocalizedError {
     case fileCreationFailed
     case converterCreationFailed
     case permissionDenied
+    case inputDeviceUnavailable
     case deviceSelectionFailed(OSStatus)
     case noInputAfterDeviceSwitch
     case invalidFormat
@@ -619,6 +632,8 @@ enum RecordingError: LocalizedError {
             return "No se pudo crear el conversor de audio"
         case .permissionDenied:
             return "Permiso de micrófono denegado"
+        case .inputDeviceUnavailable:
+            return "El micrófono configurado no está disponible"
         case .deviceSelectionFailed:
             return "No se pudo seleccionar el microfono configurado"
         case .noInputAfterDeviceSwitch:
@@ -664,7 +679,8 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
                 isTransient: isTransient,
                 reason: "deviceSelectionFailed(\(status))"
             )
-        case .engineCreationFailed, .fileCreationFailed, .converterCreationFailed, .permissionDenied:
+        case .engineCreationFailed, .fileCreationFailed, .converterCreationFailed, .permissionDenied,
+            .inputDeviceUnavailable:
             return RecordingStartFailureClassification(isTransient: false, reason: "\(recordingError)")
         }
     }

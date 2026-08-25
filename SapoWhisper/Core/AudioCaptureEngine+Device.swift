@@ -13,13 +13,13 @@ nonisolated extension AudioCaptureEngine {
     /// Binds the preferred input device. Returns the device's actual hardware format if bound.
     /// Accepts `deviceUID` as a parameter so it can be called safely from a background queue
     /// without reading `self.selectedDeviceUID` across thread boundaries.
-    /// A missing selected device is not an error: capture falls through to the
-    /// system default input instead of failing the whole take.
     func bindPreferredInputDevice(to inputNode: AVAudioInputNode, deviceUID: String) throws -> AVAudioFormat? {
         guard deviceUID != AudioDevice.systemDefault.uid else { return nil }
 
         let deviceManager = AudioDeviceManager.shared
-        guard let deviceID = deviceManager.getDeviceID(for: deviceUID) else { return nil }
+        guard let deviceID = deviceManager.getDeviceID(for: deviceUID) else {
+            throw RecordingError.inputDeviceUnavailable
+        }
         guard let audioUnit = inputNode.audioUnit else {
             throw RecordingError.deviceSelectionFailed(-1)
         }
@@ -155,8 +155,7 @@ nonisolated extension AudioCaptureEngine {
     }
 
     /// Runs on `audioSetupQueue`. Rebuilds the engine after a device death or
-    /// a dead post-change stream (rebinding the selected device, or falling
-    /// back to the system default when it is gone). Streaming chunks keep
+    /// a dead post-change stream. Streaming chunks keep
     /// flowing to the same handler; a failed rebuild reports a terminal
     /// interruption so the owner can abort preserving the WAV.
     private func recoverCapture(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
@@ -182,7 +181,7 @@ nonisolated extension AudioCaptureEngine {
         }
 
         do {
-            try rebuildCaptureEngine(afterEvent: event, generation: generation)
+            try rebuildCaptureEngine(generation: generation)
         } catch {
             SapoLog.recording.error(
                 "\(self.mode.logLabel, privacy: .public) capture recovery failed error=\(error.localizedDescription, privacy: .public)"
@@ -191,30 +190,21 @@ nonisolated extension AudioCaptureEngine {
         }
     }
 
-    private func rebuildCaptureEngine(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) throws {
-        let engine = AVAudioEngine()
-        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "\(mode.opPrefix)-rebuild-input-node")
-
-        var deviceUID = currentCaptureDeviceUID()
+    private func rebuildCaptureEngine(generation: UInt64) throws {
+        let deviceUID = currentCaptureDeviceUID()
         var boundDeviceID: AudioDeviceID?
-        var hwFormat: AVAudioFormat?
 
         if deviceUID != AudioDevice.systemDefault.uid {
             AudioDeviceManager.shared.refreshDevices()
-            if event != .deviceDied,
-                let format = try? bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
-            {
-                hwFormat = format
-                boundDeviceID = AudioDeviceManager.shared.getDeviceID(for: deviceUID)
-            } else {
-                // The selected device is gone: keep capturing on the system
-                // default instead of recording silence for the rest of the take.
-                deviceUID = AudioDevice.systemDefault.uid
-                setCaptureDeviceUID(deviceUID)
-                SapoLog.recording.warning(
-                    "\(self.mode.logLabel, privacy: .public) falling back to system default input")
+            guard let deviceID = AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) else {
+                throw RecordingError.inputDeviceUnavailable
             }
+            boundDeviceID = deviceID
         }
+
+        let engine = AVAudioEngine()
+        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "\(mode.opPrefix)-rebuild-input-node")
+        let hwFormat = try bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
 
         let tapFormat = hwFormat ?? inputNode.outputFormat(forBus: 0)
         guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {

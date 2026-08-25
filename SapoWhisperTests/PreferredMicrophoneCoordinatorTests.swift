@@ -21,10 +21,40 @@ struct PreferredMicrophoneCoordinatorTests {
             userDefaults: defaults
         )
 
-        coordinator.reconcileNow(announceFinalDevice: false)
+        coordinator.reconcileNow()
 
         #expect(defaults.string(forKey: Constants.StorageKeys.selectedMicrophone) == "razer")
         #expect(devices.defaultInputSetRequests.isEmpty)
+        #expect(devices.announcements.isEmpty)
+    }
+
+    @Test("A missing explicit microphone never resolves to the system default")
+    func missingExplicitInputDoesNotFallback() {
+        #expect(
+            AudioDeviceManager.resolveSelectedInputDeviceID(
+                selectedUID: "razer",
+                preferredDeviceID: nil,
+                systemDefaultDeviceID: 2
+            ) == nil
+        )
+    }
+
+    @Test("The system-default and available explicit selections resolve normally")
+    func resolvesAvailableSelections() {
+        #expect(
+            AudioDeviceManager.resolveSelectedInputDeviceID(
+                selectedUID: AudioDevice.systemDefault.uid,
+                preferredDeviceID: nil,
+                systemDefaultDeviceID: 2
+            ) == 2
+        )
+        #expect(
+            AudioDeviceManager.resolveSelectedInputDeviceID(
+                selectedUID: "razer",
+                preferredDeviceID: 1,
+                systemDefaultDeviceID: 2
+            ) == 1
+        )
     }
 
     @Test("The preferred microphone is restored when it becomes available")

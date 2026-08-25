@@ -1,10 +1,6 @@
 //
 //  RecordingOverlayView.swift
 //  SapoWhisper
-//
-//  Created by Claude on 9/12/24.
-//
-
 import SwiftUI
 
 /// Window-relative frame of the pill + chip stack inside the fixed

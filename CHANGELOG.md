@@ -6,6 +6,22 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.16.1] - 2026-08-24
+
+### Fixed
+
+- When an explicitly selected microphone is disconnected, SapoWhisper now
+  waits for that same device instead of warming, announcing, or recording from
+  the system default, including an iPhone Continuity microphone. Reconnecting
+  the preferred microphone restores it automatically.
+- Starting a dictation while the preferred microphone is unavailable reports
+  the problem once without retrying another input. If the device disappears
+  during a take, the captured audio is preserved and the session ends instead
+  of silently changing microphones.
+- The microphone tester in Settings now closes its active route and sample on
+  input changes, then resumes only with the same selected device when it
+  returns.
+
 ## [2.16.0] - 2026-08-16
 
 ### Added

@@ -1,10 +1,6 @@
 //
 //  PreferredMicrophoneCoordinator.swift
 //  SapoWhisper
-//
-//  Created by Codex on 9/4/26.
-//
-
 import Combine
 import CoreAudio
 import Foundation
@@ -77,6 +73,11 @@ final class PreferredMicrophoneCoordinator {
             currentDefaultID != lastResolvedInputDeviceID,
             let deviceName = deviceManager.getDeviceName(for: currentDefaultID)
         else { return }
+
+        let preferredUID = selectedMicrophoneUID()
+        if preferredUID != AudioDevice.systemDefault.uid {
+            guard deviceManager.getDeviceID(for: preferredUID) == currentDefaultID else { return }
+        }
 
         deviceManager.publishDeviceChange(
             DeviceChangeAnnouncement(
@@ -218,24 +219,6 @@ final class PreferredMicrophoneCoordinator {
         guard let preferredDeviceID = deviceManager.getDeviceID(for: preferredUID) else {
             SapoLog.audioRoute.warning(
                 "Preferred input temporarily unavailable; preserving selection"
-            )
-            if announceFinalDevice, let currentDefaultDeviceID,
-                let fallbackName = deviceManager.getDeviceName(for: currentDefaultDeviceID)
-            {
-                deviceManager.publishDeviceChange(
-                    DeviceChangeAnnouncement(
-                        deviceName: fallbackName,
-                        transport: deviceManager.transportType(for: currentDefaultDeviceID),
-                        phase: .fallback
-                    )
-                )
-                lastResolvedInputDeviceID = currentDefaultDeviceID
-                return
-            }
-            updateResolvedInputDevice(
-                currentDefaultDeviceID,
-                announceFinalDevice: announceFinalDevice,
-                forceAnnouncement: false
             )
             return
         }

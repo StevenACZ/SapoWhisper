@@ -1,10 +1,6 @@
 //
 //  RecordingOverlayState.swift
 //  SapoWhisper
-//
-//  Created by Claude on 9/12/24.
-//
-
 import Foundation
 
 /// What the post-dictation "Copied" toast should confirm beyond the copy
