@@ -10,6 +10,19 @@ ICON_PATH="${ICON_PATH:-SapoWhisper/Assets.xcassets/AppIcon.appiconset/icon_512x
 BACKGROUND_PATH="${BACKGROUND_PATH:-DMG/dmg_bg_final.png}"
 OUTPUT_DMG="${OUTPUT_DMG:-}"
 NOTARY_PROFILE="${SAPOWHISPER_NOTARY_PROFILE:-${NOTARY_PROFILE:-notarytool-dmg}}"
+APP_NOTARY_TEMP=""
+MOUNT_POINT=""
+
+cleanup() {
+  if [[ -n "$MOUNT_POINT" && -d "$MOUNT_POINT" ]]; then
+    hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true
+    rmdir "$MOUNT_POINT" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$APP_NOTARY_TEMP" && -d "$APP_NOTARY_TEMP" ]]; then
+    rm -rf "$APP_NOTARY_TEMP"
+  fi
+}
+trap cleanup EXIT
 
 usage() {
   echo "Usage: $0 [--output <path>]"
@@ -152,6 +165,21 @@ if grep -q "get-task-allow" <<<"$ENTITLEMENTS"; then
   exit 65
 fi
 
+APP_NOTARY_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-app-notary.XXXXXX")"
+APP_NOTARY_ARCHIVE="$APP_NOTARY_TEMP/$APP_NAME.zip"
+echo "==> Archiving app for notarization"
+ditto -c -k --keepParent "$BUILT_APP" "$APP_NOTARY_ARCHIVE"
+
+echo "==> Notarizing app"
+xcrun notarytool submit "$APP_NOTARY_ARCHIVE" --keychain-profile "$NOTARY_PROFILE" --wait
+
+echo "==> Stapling app"
+xcrun stapler staple "$BUILT_APP"
+xcrun stapler validate "$BUILT_APP"
+codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
+rm -rf "$APP_NOTARY_TEMP"
+APP_NOTARY_TEMP=""
+
 echo "==> Creating $OUTPUT_DMG"
 rm -f "$OUTPUT_DMG"
 DMG_ARGS=(
@@ -180,26 +208,12 @@ hdiutil verify "$OUTPUT_DMG"
 echo "==> Notarizing DMG"
 xcrun notarytool submit "$OUTPUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 
-echo "==> Stapling app"
-xcrun stapler staple "$BUILT_APP"
-xcrun stapler validate "$BUILT_APP"
-codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
-
 echo "==> Stapling DMG"
 xcrun stapler staple "$OUTPUT_DMG"
 xcrun stapler validate "$OUTPUT_DMG"
 
 echo "==> Gatekeeper DMG assessment"
 spctl -a -t open --context context:primary-signature -vv "$OUTPUT_DMG"
-
-MOUNT_POINT=""
-cleanup() {
-  if [[ -n "$MOUNT_POINT" && -d "$MOUNT_POINT" ]]; then
-    hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || true
-    rmdir "$MOUNT_POINT" >/dev/null 2>&1 || true
-  fi
-}
-trap cleanup EXIT
 
 MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-dmg.XXXXXX")"
 echo "==> Mounting DMG readonly"
@@ -221,6 +235,7 @@ if [[ "$MOUNTED_VERSION" != "$VERSION" ]]; then
 fi
 
 echo "==> Verifying mounted app"
+xcrun stapler validate "$MOUNTED_APP"
 codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
 spctl -a -t execute -vv "$MOUNTED_APP"
 
