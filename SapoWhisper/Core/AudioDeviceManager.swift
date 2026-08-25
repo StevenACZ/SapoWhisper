@@ -86,10 +86,15 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
     var routeChanges: AnyPublisher<Void, Never> {
         routeChangeSubject.eraseToAnyPublisher()
     }
+    var inputRouteChanges: AnyPublisher<Void, Never> {
+        inputRouteChangeSubject.eraseToAnyPublisher()
+    }
 
     private nonisolated let stateQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.state", qos: .userInitiated)
+    private nonisolated let refreshQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.refresh", qos: .userInitiated)
     private nonisolated let listenerQueue = DispatchQueue(label: "com.sapowhisper.audioDevice.listeners", qos: .userInitiated)
     private nonisolated let routeChangeSubject = PassthroughSubject<Void, Never>()
+    private nonisolated let inputRouteChangeSubject = PassthroughSubject<Void, Never>()
     // nonisolated(unsafe): guarded by stateQueue via readState/writeState.
     private nonisolated(unsafe) var state = StateSnapshot()
 
@@ -108,9 +113,11 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
 
     /// Refresca la lista de dispositivos de audio disponibles
     nonisolated func refreshDevices() {
-        let devices = loadAvailableInputDevices()
-        updateAvailableDevicesSnapshot(devices)
-        publishAvailableDevices(devices)
+        refreshQueue.sync {
+            let devices = loadAvailableInputDevices()
+            updateAvailableDevicesSnapshot(devices)
+            publishAvailableDevices(devices)
+        }
     }
 
     /// Obtiene información de un dispositivo de entrada
@@ -270,7 +277,7 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
         SapoLog.audioRoute.info("Default input changed to \(deviceName, privacy: .public)")
-        notifyRouteChange()
+        notifyInputRouteChange()
     }
 
     private nonisolated func checkDefaultOutputDeviceChange() {
@@ -339,6 +346,22 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         return readState { state in
             state.devicesByUID[uid]
         }
+    }
+
+    nonisolated func resolveSelectedInputDeviceID(for uid: String) -> AudioDeviceID? {
+        Self.resolveSelectedInputDeviceID(
+            selectedUID: uid,
+            preferredDeviceID: uid == AudioDevice.systemDefault.uid ? nil : getDeviceID(for: uid),
+            systemDefaultDeviceID: uid == AudioDevice.systemDefault.uid ? getSystemDefaultInputDevice() : nil
+        )
+    }
+
+    nonisolated static func resolveSelectedInputDeviceID(
+        selectedUID: String,
+        preferredDeviceID: AudioDeviceID?,
+        systemDefaultDeviceID: AudioDeviceID?
+    ) -> AudioDeviceID? {
+        selectedUID == AudioDevice.systemDefault.uid ? systemDefaultDeviceID : preferredDeviceID
     }
 
     /// Obtiene el dispositivo de entrada por defecto del sistema
@@ -468,7 +491,7 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
             state.lastDeviceListChangeTime = timestamp
         }
         SapoLog.audioRoute.info("Audio device list changed")
-        notifyRouteChange()
+        notifyInputRouteChange()
     }
 
     nonisolated func publishDeviceChange(_ announcement: DeviceChangeAnnouncement) {
@@ -551,6 +574,13 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
 
     private nonisolated func notifyRouteChange() {
         DispatchQueue.main.async { [weak self] in
+            self?.routeChangeSubject.send()
+        }
+    }
+
+    private nonisolated func notifyInputRouteChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.inputRouteChangeSubject.send()
             self?.routeChangeSubject.send()
         }
     }

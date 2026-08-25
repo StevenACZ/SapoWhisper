@@ -1,10 +1,6 @@
 //
 //  OverlayWindowManager.swift
 //  SapoWhisper
-//
-//  Created by Claude on 9/12/24.
-//
-
 import AppKit
 import Combine
 import OSLog

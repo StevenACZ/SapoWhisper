@@ -159,6 +159,7 @@ final class CaptureStartSupervisor {
         case .engineCreationFailed,
             .fileCreationFailed,
             .converterCreationFailed,
+            .inputDeviceUnavailable,
             .deviceSelectionFailed,
             .permissionDenied:
             return false

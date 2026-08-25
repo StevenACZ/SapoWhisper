@@ -103,10 +103,13 @@ final class AudioInputPreflightManager {
             ?? AudioDevice.systemDefault.uid
 
         deviceManager.refreshDevices()
-        let deviceID =
-            selectedUID == AudioDevice.systemDefault.uid
-            ? deviceManager.getSystemDefaultInputDevice()
-            : deviceManager.getDeviceID(for: selectedUID)
+        let deviceID = deviceManager.resolveSelectedInputDeviceID(for: selectedUID)
+        if selectedUID != AudioDevice.systemDefault.uid, deviceID == nil {
+            SapoLog.audioRoute.info(
+                "Audio input preflight skipped reason=\(reason, privacy: .public) selected-input-unavailable"
+            )
+            return
+        }
 
         let hardwareFormat = deviceID.flatMap { queryInputFormat(deviceID: $0) }
         warmAVAudioInputNode(deviceID: deviceID, selectedUID: selectedUID, hardwareFormat: hardwareFormat)
@@ -127,12 +130,15 @@ final class AudioInputPreflightManager {
         do {
             let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "preflight-input-node")
 
-            if selectedUID != AudioDevice.systemDefault.uid,
-                let deviceID,
-                let audioUnit = inputNode.audioUnit
-            {
+            if selectedUID != AudioDevice.systemDefault.uid {
+                guard let deviceID else {
+                    throw RecordingError.inputDeviceUnavailable
+                }
+                guard let audioUnit = inputNode.audioUnit else {
+                    throw RecordingError.deviceSelectionFailed(-1)
+                }
                 var targetDeviceID = deviceID
-                AudioUnitSetProperty(
+                let status = AudioUnitSetProperty(
                     audioUnit,
                     kAudioOutputUnitProperty_CurrentDevice,
                     kAudioUnitScope_Global,
@@ -140,6 +146,9 @@ final class AudioInputPreflightManager {
                     &targetDeviceID,
                     UInt32(MemoryLayout<AudioObjectID>.size)
                 )
+                guard status == noErr else {
+                    throw RecordingError.deviceSelectionFailed(status)
+                }
             }
 
             let tapFormat = hardwareFormat ?? inputNode.outputFormat(forBus: 0)

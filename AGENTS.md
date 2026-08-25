@@ -99,9 +99,9 @@ addresses, and machine-specific workflow details.
   that was recording fine sat on "connecting" at 00:00 until the 6 s timeout.
 - Keep the three SapoWhisper distributed notification names and the Mirador
   microphone UID stable; Mirador depends on them as a companion-app contract.
-- Never replace an explicit saved microphone UID merely because the device is
-  temporarily unavailable. The primary-microphone pin must preserve it and
-  reassert it after launch, wake, device changes, and companion sessions.
+- Treat an explicit saved microphone UID as fail-closed while absent: preflight,
+  monitor, capture start/recovery must not touch, announce, or use system default.
+  Preserve the UID and restore that same device on lifecycle and route events.
 - Route every AVAudioEngine call that can assert (`inputNode`, `installTap`,
   `prepare`/`start`) through `AudioEngineGuard`: AVFAudio throws uncatchable
   Objective-C NSExceptions mid route transition, which killed the app before
