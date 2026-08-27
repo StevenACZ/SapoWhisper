@@ -168,11 +168,11 @@ nonisolated extension AudioCaptureEngine {
             "\(self.mode.logLabel, privacy: .public) capture interrupted event=\(event.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)"
         )
 
-        try? AudioEngineGuard.run("recovery-remove-tap") {
-            oldEngine.inputNode.removeTap(onBus: 0)
-        }
-        try? AudioEngineGuard.run("recovery-stop") { oldEngine.stop() }
-        try? AudioEngineGuard.run("recovery-reset") { oldEngine.reset() }
+        AudioEngineGuard.teardownAndRetire(
+            oldEngine,
+            removeInputTap: true,
+            operation: "recovery"
+        )
         audioEngine = nil
 
         guard attempt <= 2 else {
@@ -203,6 +203,16 @@ nonisolated extension AudioCaptureEngine {
         }
 
         let engine = AVAudioEngine()
+        var adoptedEngine = false
+        defer {
+            if !adoptedEngine {
+                AudioEngineGuard.teardownAndRetire(
+                    engine,
+                    removeInputTap: true,
+                    operation: "rebuild-failure"
+                )
+            }
+        }
         let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "\(mode.opPrefix)-rebuild-input-node")
         let hwFormat = try bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
 
@@ -230,6 +240,7 @@ nonisolated extension AudioCaptureEngine {
         }
 
         audioEngine = engine
+        adoptedEngine = true
         beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
         let inputDescription = deviceUID == AudioDevice.systemDefault.uid ? "system-default" : deviceUID
         SapoLog.recording.info(

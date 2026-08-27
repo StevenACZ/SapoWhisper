@@ -687,7 +687,7 @@ class OverlayWindowManager: ObservableObject {
 
     /// True while a "connecting <mic>" phase is armed, whether or not the
     /// label is visible yet (the grace delay below may still be running).
-    /// The first real audio buffer must cancel BOTH.
+    /// The first real buffer or confirmed input readiness must cancel BOTH.
     var micConnectingInProgress: Bool {
         micConnectingName != nil || micConnectingGraceTask != nil
     }

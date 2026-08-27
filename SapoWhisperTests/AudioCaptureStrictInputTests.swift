@@ -25,28 +25,122 @@ struct AudioCaptureStrictInputTests {
         #expect(!engine.isRecording)
     }
 
-    @Test("A requested monitor restarts the same input after route changes")
+    @Test("An explicit healthy monitor ignores unrelated routes and never changes UID")
     func monitorRouteDecisionKeepsTheSelectedInput() {
         #expect(
             audioLevelMonitorRouteAction(
                 monitoringRequested: true,
                 resumeAfterRecorder: false,
-                selectedDeviceUID: "preferred-mic"
+                selectedDeviceUID: "preferred-mic",
+                selectedDeviceMatchesBoundRoute: true,
+                engineIsRunning: true
+            ) == .probe("preferred-mic")
+        )
+        #expect(
+            audioLevelMonitorRouteAction(
+                monitoringRequested: true,
+                resumeAfterRecorder: false,
+                selectedDeviceUID: "preferred-mic",
+                selectedDeviceMatchesBoundRoute: false,
+                engineIsRunning: true
             ) == .restart("preferred-mic")
+        )
+        #expect(
+            audioLevelMonitorRouteAction(
+                monitoringRequested: true,
+                resumeAfterRecorder: false,
+                selectedDeviceUID: AudioDevice.systemDefault.uid,
+                selectedDeviceMatchesBoundRoute: true,
+                engineIsRunning: true
+            ) == .restart(AudioDevice.systemDefault.uid)
         )
         #expect(
             audioLevelMonitorRouteAction(
                 monitoringRequested: false,
                 resumeAfterRecorder: false,
-                selectedDeviceUID: "preferred-mic"
+                selectedDeviceUID: "preferred-mic",
+                selectedDeviceMatchesBoundRoute: true,
+                engineIsRunning: true
             ) == .ignore
         )
         #expect(
             audioLevelMonitorRouteAction(
                 monitoringRequested: true,
                 resumeAfterRecorder: true,
-                selectedDeviceUID: "preferred-mic"
+                selectedDeviceUID: "preferred-mic",
+                selectedDeviceMatchesBoundRoute: true,
+                engineIsRunning: false
             ) == .ignore
+        )
+    }
+
+    @Test("Only system default is warmed in the background")
+    func explicitPreflightNeverOpensAnAudioEngine() {
+        #expect(
+            audioInputPreflightDecision(
+                selectedUID: AudioDevice.systemDefault.uid,
+                resolvedDeviceID: 2
+            ) == .warmSystemDefault
+        )
+        #expect(
+            audioInputPreflightDecision(
+                selectedUID: "preferred-mic",
+                resolvedDeviceID: 1
+            ) == .skipExplicitAvailable
+        )
+        #expect(
+            audioInputPreflightDecision(
+                selectedUID: "preferred-mic",
+                resolvedDeviceID: nil
+            ) == .waitForExplicitInput
+        )
+    }
+
+    @Test("Permission probing never opens a fallback for an explicit microphone")
+    func permissionProbeHonorsExplicitSelection() {
+        #expect(microphonePermissionShouldProbeAudioInput(selectedUID: AudioDevice.systemDefault.uid))
+        #expect(!microphonePermissionShouldProbeAudioInput(selectedUID: "preferred-mic"))
+        #expect(
+            microphonePermissionShouldInvalidateCache(
+                capturePermissionDenied: true,
+                recordPermissionDenied: true
+            )
+        )
+        #expect(
+            !microphonePermissionShouldInvalidateCache(
+                capturePermissionDenied: true,
+                recordPermissionDenied: false
+            )
+        )
+    }
+
+    @Test("An explicit monitor probes real buffer health before keeping its engine")
+    func explicitMonitorRequiresFreshBuffers() {
+        #expect(
+            audioLevelMonitorRouteIsHealthy(
+                engineIsRunning: true,
+                selectedDeviceMatchesBoundRoute: true,
+                lastBufferAge: 0.1
+            )
+        )
+        #expect(
+            !audioLevelMonitorRouteIsHealthy(
+                engineIsRunning: true,
+                selectedDeviceMatchesBoundRoute: true,
+                lastBufferAge: 0.75
+            )
+        )
+        #expect(
+            !audioLevelMonitorRouteIsHealthy(
+                engineIsRunning: true,
+                selectedDeviceMatchesBoundRoute: false,
+                lastBufferAge: 0.1
+            )
+        )
+        #expect(audioLevelMonitorHealthProbeDelay(transport: .bluetooth) == 3.0)
+        #expect(
+            audioLevelMonitorHealthProbeDelay(transport: .usb)
+                > AudioCaptureEngine.captureHealthyBufferMaxAge
         )
     }
 
@@ -74,11 +168,22 @@ struct AudioCaptureStrictInputTests {
             start: "private func handleAudioRouteChange",
             end: "private nonisolated func restartMonitorAfterInputRouteChange"
         )
-        try expectOrder(
-            "restartMonitorAfterInputRouteChange()",
-            before: "stopSampleRecording()",
-            in: monitorRouteBody
+        #expect(monitorRouteBody.contains("restartMonitorAfterInputRouteChange()"))
+        #expect(!monitorRouteBody.contains("stopSampleRecording()"))
+        let monitorRestartBody = try functionBody(
+            in: monitor,
+            start: "private nonisolated func restartMonitorAfterInputRouteChange",
+            end: "private func scheduleMonitoringStart"
         )
+        #expect(monitorRestartBody.contains("stopSampleForRouteRestart()"))
+
+        let monitorSuspendBody = try functionBody(
+            in: monitor,
+            start: "func suspendForRecorder",
+            end: "func resumeAfterRecorderIfNeeded"
+        )
+        #expect(monitorSuspendBody.contains("monitorQueue.sync"))
+        #expect(!monitorSuspendBody.contains("monitorQueue.async"))
 
         let recovery = try String(
             contentsOf: sourceRoot.appendingPathComponent("AudioCaptureEngine+Device.swift"), encoding: .utf8)
@@ -101,8 +206,13 @@ struct AudioCaptureStrictInputTests {
             end: "private func warmAVAudioInputNode"
         )
         try expectOrder(
-            "selected-input-unavailable",
-            before: "warmAVAudioInputNode(deviceID:",
+            "audioInputPreflightDecision(",
+            before: "warmAVAudioInputNode(hardwareFormat:",
+            in: preflightBody
+        )
+        try expectOrder(
+            "currentSelectedUID",
+            before: "warmAVAudioInputNode(hardwareFormat:",
             in: preflightBody
         )
 
@@ -111,10 +221,19 @@ struct AudioCaptureStrictInputTests {
             start: "private func warmAVAudioInputNode",
             end: "private func queryInputFormat"
         )
+        #expect(!warmupBody.contains("AudioUnitSetProperty"))
+
+        let permission = try String(
+            contentsOf: sourceRoot.appendingPathComponent("Permissions/MicrophonePermission.swift"), encoding: .utf8)
+        let permissionRefreshBody = try functionBody(
+            in: permission,
+            start: "static func refreshFromAudioInputProbeIfNeeded",
+            end: "private static var isCachedGranted"
+        )
         try expectOrder(
-            "guard status == noErr",
-            before: "AudioEngineGuard.prepareAndStart",
-            in: warmupBody
+            "microphonePermissionShouldProbeAudioInput",
+            before: "probeAudioInput()",
+            in: permissionRefreshBody
         )
 
         let capture = try String(
@@ -131,6 +250,13 @@ struct AudioCaptureStrictInputTests {
             in: captureBody
         )
 
+        let resumeBody = try functionBody(
+            in: capture,
+            start: "func resumeRecording()",
+            end: "func waitForFirstInputBuffer"
+        )
+        try expectOrder("teardownAndRetire", before: "audioEngine = nil", in: resumeBody)
+
         let deviceManager = try String(
             contentsOf: sourceRoot.appendingPathComponent("AudioDeviceManager.swift"), encoding: .utf8)
         let refreshBody = try functionBody(
@@ -139,6 +265,41 @@ struct AudioCaptureStrictInputTests {
             end: "private nonisolated func loadAvailableInputDevices"
         )
         #expect(refreshBody.contains("refreshQueue.sync"))
+
+        let viewModel = try String(
+            contentsOf: sourceRoot.appendingPathComponent("SapoWhisperViewModel.swift"), encoding: .utf8)
+        let wakeBody = try functionBody(
+            in: viewModel,
+            start: "func handleSystemDidWake()",
+            end: "var statusText"
+        )
+        try expectOrder("noteSystemWake()", before: "preflightSoon(reason: \"wake\")", in: wakeBody)
+        let sleepBody = try functionBody(
+            in: viewModel,
+            start: "func handleSystemWillSleep()",
+            end: "func handleApplicationWillTerminate()"
+        )
+        try expectOrder("noteSystemWillSleep()", before: "if isStartPending", in: sleepBody)
+
+        let startSessionBody = try functionBody(
+            in: viewModel,
+            start: "private func startCaptureSession",
+            end: "// MARK: - No-speech handling"
+        )
+        try expectOrder(
+            "recorderDidStart = true",
+            before: "setMicConnecting(deviceName: nil)",
+            in: startSessionBody
+        )
+
+        let englishStrings = try String(
+            contentsOf:
+                sourceRoot
+                .deletingLastPathComponent()
+                .appendingPathComponent("Resources/en.lproj/Localizable.strings"),
+            encoding: .utf8
+        )
+        #expect(englishStrings.contains("error.configured_microphone_unavailable"))
     }
 
     private func functionBody(in source: String, start: String, end: String) throws -> String {

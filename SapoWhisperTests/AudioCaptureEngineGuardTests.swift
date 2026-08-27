@@ -30,6 +30,19 @@ final class AudioCaptureEngineGuardTests: XCTestCase {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    private static var audioEngineLifecycleSources: [URL] {
+        let coreDirectory = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("SapoWhisper")
+            .appendingPathComponent("Core")
+        return captureEngineSources + [
+            coreDirectory.appendingPathComponent("AudioLevelMonitor.swift"),
+            coreDirectory.appendingPathComponent("Managers/AudioInputPreflightManager.swift"),
+            coreDirectory.appendingPathComponent("Permissions/MicrophonePermission.swift"),
+        ]
+    }
+
     func testCaptureEngineSourcesAreReachable() {
         XCTAssertEqual(
             Self.captureEngineSources.map(\.lastPathComponent),
@@ -44,7 +57,7 @@ final class AudioCaptureEngineGuardTests: XCTestCase {
 
     func testEveryEngineTeardownRunsInsideAudioEngineGuard() throws {
         var violations: [String] = []
-        for source in Self.captureEngineSources {
+        for source in Self.audioEngineLifecycleSources {
             let text = try String(contentsOf: source, encoding: .utf8)
             violations += Self.unguardedTeardowns(in: text, file: source.lastPathComponent)
         }
@@ -54,7 +67,7 @@ final class AudioCaptureEngineGuardTests: XCTestCase {
 
     func testEveryTeardownCallOwnsItsGuardBlock() throws {
         var violations: [String] = []
-        for source in Self.captureEngineSources {
+        for source in Self.audioEngineLifecycleSources {
             let text = try String(contentsOf: source, encoding: .utf8)
             violations += Self.teardownsSharingAGuard(in: text, file: source.lastPathComponent)
         }
@@ -62,6 +75,30 @@ final class AudioCaptureEngineGuardTests: XCTestCase {
         XCTAssertEqual(
             violations, [],
             "a raised removeTap would skip the stop/reset sharing its guard at \(violations.joined(separator: ", "))"
+        )
+    }
+
+    func testRetirementWaitsForEngineAndRouteQuiescence() {
+        XCTAssertEqual(
+            AudioEngineRetirementPool.releaseDelay(
+                elapsedSinceRetirement: 0,
+                routeSettleDelay: 0
+            ),
+            AudioEngineRetirementPool.quietPeriod
+        )
+        XCTAssertEqual(
+            AudioEngineRetirementPool.releaseDelay(
+                elapsedSinceRetirement: AudioEngineRetirementPool.quietPeriod + 1,
+                routeSettleDelay: 1.25
+            ),
+            1.25
+        )
+        XCTAssertEqual(
+            AudioEngineRetirementPool.releaseDelay(
+                elapsedSinceRetirement: AudioEngineRetirementPool.quietPeriod + 1,
+                routeSettleDelay: 0
+            ),
+            0
         )
     }
 

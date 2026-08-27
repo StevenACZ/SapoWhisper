@@ -4,11 +4,24 @@
 //
 
 import AVFoundation
-import AudioToolbox
 import Combine
 import CoreAudio
 import Foundation
 import os
+
+nonisolated enum AudioInputPreflightDecision: Equatable {
+    case warmSystemDefault
+    case skipExplicitAvailable
+    case waitForExplicitInput
+}
+
+nonisolated func audioInputPreflightDecision(
+    selectedUID: String,
+    resolvedDeviceID: AudioDeviceID?
+) -> AudioInputPreflightDecision {
+    guard selectedUID != AudioDevice.systemDefault.uid else { return .warmSystemDefault }
+    return resolvedDeviceID == nil ? .waitForExplicitInput : .skipExplicitAvailable
+}
 
 /// Warms Core Audio route metadata after device changes so hotkey recording starts faster.
 final class AudioInputPreflightManager {
@@ -104,15 +117,45 @@ final class AudioInputPreflightManager {
 
         deviceManager.refreshDevices()
         let deviceID = deviceManager.resolveSelectedInputDeviceID(for: selectedUID)
-        if selectedUID != AudioDevice.systemDefault.uid, deviceID == nil {
+        switch audioInputPreflightDecision(selectedUID: selectedUID, resolvedDeviceID: deviceID) {
+        case .waitForExplicitInput:
             SapoLog.audioRoute.info(
                 "Audio input preflight skipped reason=\(reason, privacy: .public) selected-input-unavailable"
             )
             return
+        case .skipExplicitAvailable:
+            SapoLog.audioRoute.info(
+                "Audio input preflight skipped reason=\(reason, privacy: .public) explicit-input-owned-by-capture"
+            )
+            return
+        case .warmSystemDefault:
+            break
         }
 
-        let hardwareFormat = deviceID.flatMap { queryInputFormat(deviceID: $0) }
-        warmAVAudioInputNode(deviceID: deviceID, selectedUID: selectedUID, hardwareFormat: hardwareFormat)
+        guard AudioInputActivityGate.shared.beginPreflightIfIdle() else {
+            SapoLog.audioRoute.info(
+                "Audio input preflight deferred reason=\(reason, privacy: .public) input-busy"
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.schedulePreflight(reason: "\(reason)-deferred", delayOverride: 1.0)
+            }
+            return
+        }
+        defer { AudioInputActivityGate.shared.endPreflight() }
+
+        let currentSelectedUID =
+            UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
+            ?? AudioDevice.systemDefault.uid
+        guard currentSelectedUID == AudioDevice.systemDefault.uid else {
+            SapoLog.audioRoute.info(
+                "Audio input preflight skipped reason=\(reason, privacy: .public) selection-changed"
+            )
+            return
+        }
+        deviceManager.refreshDevices()
+        let currentDeviceID = deviceManager.resolveSelectedInputDeviceID(for: currentSelectedUID)
+        let hardwareFormat = currentDeviceID.flatMap { queryInputFormat(deviceID: $0) }
+        warmAVAudioInputNode(hardwareFormat: hardwareFormat)
 
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         SapoLog.audioRoute.info(
@@ -125,31 +168,17 @@ final class AudioInputPreflightManager {
     /// when the hardware format shifts mid-transition — exactly when this
     /// warm-up fires (AirPods connecting, headset swaps). A caught exception
     /// only means the route was still settling; retry once shortly after.
-    private func warmAVAudioInputNode(deviceID: AudioDeviceID?, selectedUID: String, hardwareFormat: AVAudioFormat?) {
+    private func warmAVAudioInputNode(hardwareFormat: AVAudioFormat?) {
         let engine = AVAudioEngine()
+        defer {
+            AudioEngineGuard.teardownAndRetire(
+                engine,
+                removeInputTap: true,
+                operation: "preflight-teardown"
+            )
+        }
         do {
             let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "preflight-input-node")
-
-            if selectedUID != AudioDevice.systemDefault.uid {
-                guard let deviceID else {
-                    throw RecordingError.inputDeviceUnavailable
-                }
-                guard let audioUnit = inputNode.audioUnit else {
-                    throw RecordingError.deviceSelectionFailed(-1)
-                }
-                var targetDeviceID = deviceID
-                let status = AudioUnitSetProperty(
-                    audioUnit,
-                    kAudioOutputUnitProperty_CurrentDevice,
-                    kAudioUnitScope_Global,
-                    0,
-                    &targetDeviceID,
-                    UInt32(MemoryLayout<AudioObjectID>.size)
-                )
-                guard status == noErr else {
-                    throw RecordingError.deviceSelectionFailed(status)
-                }
-            }
 
             let tapFormat = hardwareFormat ?? inputNode.outputFormat(forBus: 0)
             guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else { return }
@@ -162,17 +191,8 @@ final class AudioInputPreflightManager {
             ) { _, _ in }
             inputNode.volume = 0
             try AudioEngineGuard.prepareAndStart(engine, operation: "preflight-engine-start")
-            try? AudioEngineGuard.run("preflight-teardown") {
-                engine.stop()
-                inputNode.removeTap(onBus: 0)
-                engine.reset()
-            }
             consecutiveWarmupFailures = 0
         } catch {
-            try? AudioEngineGuard.run("preflight-failure-teardown") {
-                engine.stop()
-                engine.reset()
-            }
             SapoLog.audioRoute.warning(
                 "Audio input preflight warm-up failed error=\(error.localizedDescription, privacy: .public)"
             )

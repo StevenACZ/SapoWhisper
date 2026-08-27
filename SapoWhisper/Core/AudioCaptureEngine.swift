@@ -268,8 +268,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                         SapoLog.recording.error(
                             "\(self.mode.logLabel, privacy: .public) setup failed: invalid sampleRate=\(tapFormat.sampleRate, privacy: .public)"
                         )
-                        continuation.resume(throwing: RecordingError.invalidFormat)
-                        return
+                        throw RecordingError.invalidFormat
                     }
 
                     let outputFormat: AVAudioFormat
@@ -422,11 +421,11 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     private func finalizeCaptureOnQueue() -> URL? {
         deviceSentinel.end()
         if let engine = audioEngine {
-            try? AudioEngineGuard.run("finalize-capture-remove-tap") {
-                engine.inputNode.removeTap(onBus: 0)
-            }
-            try? AudioEngineGuard.run("finalize-capture-stop") { engine.stop() }
-            try? AudioEngineGuard.run("finalize-capture-reset") { engine.reset() }
+            AudioEngineGuard.teardownAndRetire(
+                engine,
+                removeInputTap: true,
+                operation: "finalize-capture"
+            )
         }
 
         _ = flushRemainingConvertedAudio()
@@ -522,7 +521,17 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         // with an uncatchable NSException if the route changed while paused.
         try audioSetupQueue.sync {
             guard let engine = audioEngine else { return }
-            try AudioEngineGuard.run("\(mode.opPrefix)-resume-engine-start") { try engine.start() }
+            do {
+                try AudioEngineGuard.run("\(mode.opPrefix)-resume-engine-start") { try engine.start() }
+            } catch {
+                AudioEngineGuard.teardownAndRetire(
+                    engine,
+                    removeInputTap: true,
+                    operation: "\(mode.opPrefix)-resume-failure"
+                )
+                audioEngine = nil
+                throw error
+            }
         }
         MicrophonePermission.noteAudioInputGranted()
         isPaused = false
@@ -633,7 +642,7 @@ enum RecordingError: LocalizedError {
         case .permissionDenied:
             return "Permiso de micrófono denegado"
         case .inputDeviceUnavailable:
-            return "El micrófono configurado no está disponible"
+            return "error.configured_microphone_unavailable".localized
         case .deviceSelectionFailed:
             return "No se pudo seleccionar el microfono configurado"
         case .noInputAfterDeviceSwitch:

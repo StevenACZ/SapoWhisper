@@ -107,7 +107,7 @@
 "settings.microphone" = "Micrófono";
 "settings.microphone_desc" = "Dispositivo de entrada de audio";
 "settings.pin_primary_mic" = "Usar siempre como micrófono principal";
-"settings.pin_primary_mic_desc_on" = "SapoWhisper restaura este micrófono después de conectar AirPods, despertar, reiniciar o terminar una sesión de Mirador. Si se desconecta temporalmente, la preferencia se conserva.";
+"settings.pin_primary_mic_desc_on" = "SapoWhisper mantiene únicamente este micrófono como entrada principal. Si no está disponible, espera su regreso y nunca cambia a otro micrófono.";
 "settings.pin_primary_mic_desc_off" = "El sistema puede cambiar la entrada al conectar dispositivos; los micrófonos Bluetooth pueden tardar unos segundos en arrancar.";
 "settings.language_header" = "Idioma";
 "settings.input_language" = "Idioma de transcripción";
@@ -537,6 +537,7 @@
 
 /* Errors */
 "error.input_not_ready" = "Microfono no disponible. Reintenta o elige otro.";
+"error.configured_microphone_unavailable" = "El micrófono configurado no está disponible.";
 "overlay.retry" = "Reintentar";
 
 /* Transcription failures (unified, engine-agnostic) */

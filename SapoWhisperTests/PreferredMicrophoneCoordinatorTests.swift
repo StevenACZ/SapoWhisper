@@ -66,17 +66,51 @@ struct PreferredMicrophoneCoordinatorTests {
         defaults.set(true, forKey: Constants.StorageKeys.pinPrimaryMicrophone)
 
         let devices = FakePreferredMicrophoneDeviceManager(defaultInputID: 2)
-        devices.devicesByUID["razer"] = 1
-        devices.namesByID[1] = "Razer Seiren Mini"
         let coordinator = PreferredMicrophoneCoordinator(
             deviceManager: devices,
             userDefaults: defaults
         )
 
-        coordinator.reconcileNow(announceFinalDevice: false)
+        coordinator.reconcileNow()
+        devices.devicesByUID["razer"] = 1
+        devices.namesByID[1] = "Razer Seiren Mini"
+        coordinator.reconcileNow()
 
         #expect(devices.defaultInputSetRequests == [1])
         #expect(devices.defaultInputID == 1)
+        #expect(
+            devices.announcements == [
+                DeviceChangeAnnouncement(
+                    deviceName: "Razer Seiren Mini",
+                    transport: .usb,
+                    phase: .ready
+                )
+            ]
+        )
+    }
+
+    @Test("An available pinned microphone silently defeats an unrelated route steal")
+    func restoresPinnedPreferenceSilently() throws {
+        let fixture = try makeDefaults()
+        let defaults = fixture.defaults
+        defer { defaults.removePersistentDomain(forName: fixture.suiteName) }
+        defaults.set("preferred-mic", forKey: Constants.StorageKeys.selectedMicrophone)
+        defaults.set(true, forKey: Constants.StorageKeys.pinPrimaryMicrophone)
+
+        let devices = FakePreferredMicrophoneDeviceManager(defaultInputID: 1)
+        devices.devicesByUID["preferred-mic"] = 1
+        devices.namesByID[1] = "Preferred Microphone"
+        let coordinator = PreferredMicrophoneCoordinator(
+            deviceManager: devices,
+            userDefaults: defaults
+        )
+
+        devices.defaultInputID = 2
+        coordinator.reconcileNow()
+
+        #expect(devices.defaultInputSetRequests == [1])
+        #expect(devices.defaultInputID == 1)
+        #expect(devices.announcements.isEmpty)
     }
 
     @Test("An unpinned explicit microphone does not change the system default")
@@ -94,11 +128,12 @@ struct PreferredMicrophoneCoordinatorTests {
             userDefaults: defaults
         )
 
-        coordinator.reconcileNow(announceFinalDevice: false)
+        coordinator.reconcileNow()
 
         #expect(devices.defaultInputSetRequests.isEmpty)
         #expect(devices.defaultInputID == 2)
         #expect(defaults.string(forKey: Constants.StorageKeys.selectedMicrophone) == "razer")
+        #expect(devices.announcements.isEmpty)
     }
 
     @Test("A transient Core Audio failure retries the primary microphone restore")

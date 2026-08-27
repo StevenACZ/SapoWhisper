@@ -85,4 +85,97 @@ nonisolated enum AudioEngineGuard {
             try engine.start()
         }
     }
+
+    static func teardownAndRetire(
+        _ engine: AVAudioEngine,
+        removeInputTap: Bool,
+        operation: String
+    ) {
+        if removeInputTap {
+            try? run("\(operation)-remove-tap") {
+                engine.inputNode.removeTap(onBus: 0)
+            }
+        }
+        try? run("\(operation)-stop") { engine.stop() }
+        try? run("\(operation)-reset") { engine.reset() }
+        AudioEngineRetirementPool.shared.retire(engine)
+    }
+}
+
+nonisolated final class AudioEngineRetirementPool: @unchecked Sendable {
+    private final class EngineBox: @unchecked Sendable {
+        let engine: AVAudioEngine
+
+        init(_ engine: AVAudioEngine) {
+            self.engine = engine
+        }
+    }
+
+    static let shared = AudioEngineRetirementPool()
+    static let quietPeriod: TimeInterval = 3.0
+
+    private let queue = DispatchQueue(label: "com.sapowhisper.audioEngine.retirement", qos: .utility)
+    private var engines: [EngineBox] = []
+    private var latestRetirement: CFAbsoluteTime = 0
+    private var generation: UInt64 = 0
+    private var systemSleeping = false
+
+    func retire(_ engine: AVAudioEngine) {
+        let engineBox = EngineBox(engine)
+        queue.async { [self] in
+            engines.append(engineBox)
+            latestRetirement = CFAbsoluteTimeGetCurrent()
+            generation &+= 1
+            scheduleDrain(generation: generation, after: Self.quietPeriod)
+        }
+    }
+
+    func noteSystemWillSleep() {
+        queue.sync { [self] in
+            systemSleeping = true
+            generation &+= 1
+        }
+    }
+
+    func noteSystemWake() {
+        queue.async { [self] in
+            systemSleeping = false
+            guard !engines.isEmpty else { return }
+            latestRetirement = CFAbsoluteTimeGetCurrent()
+            generation &+= 1
+            scheduleDrain(generation: generation, after: Self.quietPeriod)
+        }
+    }
+
+    static func releaseDelay(
+        elapsedSinceRetirement: TimeInterval,
+        routeSettleDelay: TimeInterval
+    ) -> TimeInterval {
+        max(0, max(quietPeriod - elapsedSinceRetirement, routeSettleDelay))
+    }
+
+    private func scheduleDrain(generation: UInt64, after delay: TimeInterval) {
+        queue.asyncAfter(deadline: .now() + max(0.05, delay)) { [weak self] in
+            self?.drainIfStable(generation: generation)
+        }
+    }
+
+    private func drainIfStable(generation: UInt64) {
+        guard generation == self.generation else { return }
+        guard !systemSleeping else {
+            scheduleDrain(generation: generation, after: Self.quietPeriod)
+            return
+        }
+        let delay = Self.releaseDelay(
+            elapsedSinceRetirement: CFAbsoluteTimeGetCurrent() - latestRetirement,
+            routeSettleDelay: AudioDeviceManager.shared.routeSettleDelay(window: Self.quietPeriod)
+        )
+        guard delay == 0 else {
+            scheduleDrain(generation: generation, after: delay)
+            return
+        }
+        let count = engines.count
+        engines.removeAll()
+        SapoLog.audioRoute.debug("Retired audio engines released count=\(count, privacy: .public)")
+    }
 }

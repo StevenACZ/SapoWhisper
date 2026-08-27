@@ -99,13 +99,13 @@ addresses, and machine-specific workflow details.
   that was recording fine sat on "connecting" at 00:00 until the 6 s timeout.
 - Keep the three SapoWhisper distributed notification names and the Mirador
   microphone UID stable; Mirador depends on them as a companion-app contract.
-- Treat an explicit saved microphone UID as fail-closed while absent: preflight,
-  monitor, capture start/recovery must not touch, announce, or use system default.
-  Preserve the UID and restore that same device on lifecycle and route events.
-- Route every AVAudioEngine call that can assert (`inputNode`, `installTap`,
-  `prepare`/`start`) through `AudioEngineGuard`: AVFAudio throws uncatchable
-  Objective-C NSExceptions mid route transition, which killed the app before
-  the guard existed. Treat the guarded error as transient and retry.
+- Treat an explicit microphone UID as exclusive: restore it silently after route
+  changes and never warm/restart it while healthy. If absent, wait without a
+  fallback; only system-default mode follows the current input.
+- Route asserting AVAudioEngine calls through `AudioEngineGuard` and every
+  teardown through `teardownAndRetire`: Swift catches neither Objective-C setup
+  exceptions nor late `AVAudioIOUnit` teardown callbacks. Retry the former only
+  after route settle; release retired engines only after route quiescence.
 - Never use a zero-length read as the EOF signal on `AVAudioFile` — reading at
   exact EOF throws; gate reads on `framePosition < length`.
 - Whisper-family engines hallucinate on silent/short takes ("Thank you.",

@@ -35,6 +35,7 @@ final class PreferredMicrophoneCoordinator {
     private var hasStarted = false
     private var externalDefaultInputSessionIsActive = false
     private var lastResolvedInputDeviceID: AudioDeviceID?
+    private var preferredInputWasUnavailable = false
 
     init(
         deviceManager: any PreferredMicrophoneDeviceManaging = AudioDeviceManager.shared,
@@ -208,6 +209,7 @@ final class PreferredMicrophoneCoordinator {
         let currentDefaultDeviceID = deviceManager.getSystemDefaultInputDevice()
 
         guard preferredUID != AudioDevice.systemDefault.uid else {
+            preferredInputWasUnavailable = false
             updateResolvedInputDevice(
                 currentDefaultDeviceID,
                 announceFinalDevice: announceFinalDevice,
@@ -217,21 +219,19 @@ final class PreferredMicrophoneCoordinator {
         }
 
         guard let preferredDeviceID = deviceManager.getDeviceID(for: preferredUID) else {
+            preferredInputWasUnavailable = true
             SapoLog.audioRoute.warning(
                 "Preferred input temporarily unavailable; preserving selection"
             )
             return
         }
 
-        var finalDefaultDeviceID = currentDefaultDeviceID
+        let returnedAfterAbsence = preferredInputWasUnavailable
+        preferredInputWasUnavailable = false
         var restoredPreferredInput = false
 
         if currentDefaultDeviceID != preferredDeviceID, isPrimaryMicPinned {
             restoredPreferredInput = deviceManager.setSystemDefaultInputDevice(preferredDeviceID)
-            finalDefaultDeviceID =
-                restoredPreferredInput
-                ? preferredDeviceID
-                : deviceManager.getSystemDefaultInputDevice()
 
             let preferredDeviceName = deviceManager.getDeviceName(for: preferredDeviceID) ?? preferredUID
             if restoredPreferredInput {
@@ -247,14 +247,12 @@ final class PreferredMicrophoneCoordinator {
                     restoreAttempt: restoreAttempt
                 )
             }
-        } else if currentDefaultDeviceID == preferredDeviceID {
-            finalDefaultDeviceID = preferredDeviceID
         }
 
         updateResolvedInputDevice(
-            finalDefaultDeviceID,
+            preferredDeviceID,
             announceFinalDevice: announceFinalDevice,
-            forceAnnouncement: restoredPreferredInput
+            forceAnnouncement: returnedAfterAbsence
         )
     }
 
