@@ -949,6 +949,7 @@ class SapoWhisperViewModel: ObservableObject {
                     context.logger.error(
                         "\(context.logLabel, privacy: .public) resume failed error=\(error.localizedDescription, privacy: .public)"
                     )
+                    handleCaptureDeviceFailure(reason: "\(context.snapshotPrefix)-resume-failed")
                 }
             } else {
                 session.pauseRecording()
@@ -967,6 +968,7 @@ class SapoWhisperViewModel: ObservableObject {
                 overlayManager.updateState(.recording(duration: audioRecorder.recordingDuration))
             } catch {
                 SapoLog.recording.error("Capture resume failed error=\(error.localizedDescription, privacy: .public)")
+                handleCaptureDeviceFailure(reason: "recording-resume-failed")
             }
         } else {
             // Pause
@@ -1989,20 +1991,23 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            self.captureCoordinator.beginCapture(owner)
+            guard let captureToken = await self.captureCoordinator.beginCapture(owner) else { return }
             var recorderDidStart = false
 
             defer {
                 self.isStartPending = false
                 self.startRecordingTask = nil
                 if !recorderDidStart {
-                    self.captureCoordinator.endCapture(owner)
+                    self.captureCoordinator.endCapture(captureToken)
                 }
             }
+
+            guard !Task.isCancelled else { return }
 
             do {
                 try await start()
                 recorderDidStart = true
+                self.overlayManager.setMicConnecting(deviceName: nil)
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
                 SapoLog.recording.info("\(logLabel, privacy: .public) input ready in \(readyMs, privacy: .public)ms")
                 PerformanceDiagnostics.logRuntimeSnapshot(
@@ -2318,6 +2323,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// network request is started against a dying connection.
     func handleSystemWillSleep() {
         SapoLog.lifecycle.info("System will sleep \(self.diagnosticContext(), privacy: .public)")
+        AudioEngineRetirementPool.shared.noteSystemWillSleep()
 
         if isStartPending {
             cancelPendingRecordingStart()
@@ -2442,6 +2448,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// event tap and the audio device/preflight caches.
     func handleSystemDidWake() {
         SapoLog.lifecycle.info("System did wake \(self.diagnosticContext(), privacy: .public)")
+        AudioEngineRetirementPool.shared.noteSystemWake()
         hotkeyManager.assertHotkeyAlive(reason: "wake")
         PreferredMicrophoneCoordinator.shared.requestReconciliation(reason: "wake")
         AudioInputPreflightManager.shared.preflightSoon(reason: "wake")

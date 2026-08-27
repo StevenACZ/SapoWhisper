@@ -8,6 +8,17 @@
 import AVFoundation
 import Foundation
 
+nonisolated func microphonePermissionShouldProbeAudioInput(selectedUID: String) -> Bool {
+    selectedUID == AudioDevice.systemDefault.uid
+}
+
+nonisolated func microphonePermissionShouldInvalidateCache(
+    capturePermissionDenied: Bool,
+    recordPermissionDenied: Bool
+) -> Bool {
+    capturePermissionDenied && recordPermissionDenied
+}
+
 /// Concurrency: nonisolated — checks run from capture queues too; the cached
 /// flag sits behind `cacheLock`. UI-driven priming flows stay `@MainActor`.
 nonisolated enum MicrophonePermission {
@@ -15,15 +26,24 @@ nonisolated enum MicrophonePermission {
     private static nonisolated(unsafe) var cachedGranted = false
 
     static var isGranted: Bool {
-        if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+        let captureStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if captureStatus == .authorized {
             noteAudioInputGranted()
             return true
         }
 
         if #available(macOS 14.0, *) {
-            if AVAudioApplication.shared.recordPermission == .granted {
+            let recordPermission = AVAudioApplication.shared.recordPermission
+            if recordPermission == .granted {
                 noteAudioInputGranted()
                 return true
+            }
+            if microphonePermissionShouldInvalidateCache(
+                capturePermissionDenied: captureStatus == .denied || captureStatus == .restricted,
+                recordPermissionDenied: recordPermission == .denied
+            ) {
+                setCachedGranted(false)
+                return false
             }
         }
 
@@ -31,8 +51,12 @@ nonisolated enum MicrophonePermission {
     }
 
     static func noteAudioInputGranted() {
+        setCachedGranted(true)
+    }
+
+    private static func setCachedGranted(_ granted: Bool) {
         cacheLock.lock()
-        cachedGranted = true
+        cachedGranted = granted
         cacheLock.unlock()
     }
 
@@ -94,10 +118,21 @@ nonisolated enum MicrophonePermission {
         guard shouldProbeAudioInput else {
             return false
         }
-
+        let selectedUID =
+            UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
+            ?? AudioDevice.systemDefault.uid
+        guard microphonePermissionShouldProbeAudioInput(selectedUID: selectedUID) else {
+            return false
+        }
         let canStartInput = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: probeAudioInput())
+                guard AudioInputActivityGate.shared.beginPreflightIfIdle() else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                let result = probeAudioInput()
+                AudioInputActivityGate.shared.endPreflight()
+                continuation.resume(returning: result)
             }
         }
 
@@ -129,6 +164,13 @@ nonisolated enum MicrophonePermission {
 
     private static func probeAudioInput() -> Bool {
         let engine = AVAudioEngine()
+        defer {
+            AudioEngineGuard.teardownAndRetire(
+                engine,
+                removeInputTap: true,
+                operation: "probe-cleanup"
+            )
+        }
         do {
             // AudioEngineGuard: AVFAudio asserts with uncatchable NSExceptions
             // mid route transition; a guarded throw means "cannot start input".
@@ -142,17 +184,6 @@ nonisolated enum MicrophonePermission {
             try AudioEngineGuard.installTap(
                 on: inputNode, bufferSize: 64, format: format, operation: "probe-install-tap"
             ) { _, _ in }
-            defer {
-                // Best-effort teardown; the probe engine is discarded either way.
-                try? AudioEngineGuard.run("probe-cleanup") {
-                    inputNode.removeTap(onBus: 0)
-                    if engine.isRunning {
-                        engine.stop()
-                    }
-                    engine.reset()
-                }
-            }
-
             try AudioEngineGuard.prepareAndStart(engine, operation: "probe-engine-start")
             return engine.isRunning
         } catch {

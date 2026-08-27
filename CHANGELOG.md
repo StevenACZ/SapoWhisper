@@ -8,6 +8,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An explicitly selected microphone now remains exclusive during headphone and
+  output-route changes. SapoWhisper restores it silently, avoids background
+  warm-ups and unnecessary Settings-meter restarts, and waits for that exact
+  device when it is unavailable; system-default mode still follows macOS.
+- The recording pill now clears “Connecting…” as soon as the first input buffer
+  is confirmed instead of waiting for the user’s voice to cross a level threshold.
+- Audio engines are retained until Core Audio has been quiet after teardown,
+  preventing late `AVAudioIOUnit` route callbacks from crashing the app while a
+  failed or interrupted capture is being discarded.
 - Release packaging now notarizes and staples the app before creating the DMG,
   then validates the app again from a read-only mount. The DMG no longer relies
   on its container ticket to cover an unstapled embedded app.

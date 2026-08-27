@@ -11,11 +11,20 @@ nonisolated extension AudioCaptureEngine {
     func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
         deviceSentinel.end()
         if let engine {
-            try? AudioEngineGuard.run("cleanup-setup-remove-tap") {
-                engine.inputNode.removeTap(onBus: 0)
-            }
-            try? AudioEngineGuard.run("cleanup-setup-stop") { engine.stop() }
-            try? AudioEngineGuard.run("cleanup-setup-reset") { engine.reset() }
+            AudioEngineGuard.teardownAndRetire(
+                engine,
+                removeInputTap: true,
+                operation: "cleanup-setup"
+            )
+        }
+        if let ownedEngine = audioEngine,
+            engine.map({ ownedEngine !== $0 }) ?? true
+        {
+            AudioEngineGuard.teardownAndRetire(
+                ownedEngine,
+                removeInputTap: true,
+                operation: "cleanup-owned"
+            )
         }
 
         audioWriteQueue.sync {}

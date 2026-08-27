@@ -449,13 +449,17 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
     }
 
     nonisolated func captureRouteSettleDelay() -> TimeInterval {
+        routeSettleDelay(window: Self.recorderInputSettleWindow)
+    }
+
+    nonisolated func routeSettleDelay(window: TimeInterval) -> TimeInterval {
         let latestTransition = readState { state in
             max(state.lastDefaultInputTransitionTime, max(state.lastDefaultOutputTransitionTime, state.lastDeviceListChangeTime))
         }
 
         guard latestTransition > 0 else { return 0 }
         let elapsed = CFAbsoluteTimeGetCurrent() - latestTransition
-        return max(0, Self.recorderInputSettleWindow - elapsed)
+        return max(0, window - elapsed)
     }
 
     /// Settle delay accounting for any device transition (list change OR default input change).

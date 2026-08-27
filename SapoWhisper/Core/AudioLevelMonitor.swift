@@ -29,16 +29,39 @@ struct SampleMetadata {
 
 nonisolated enum AudioLevelMonitorRouteAction: Equatable {
     case ignore
+    case probe(String)
     case restart(String)
 }
 
 nonisolated func audioLevelMonitorRouteAction(
     monitoringRequested: Bool,
     resumeAfterRecorder: Bool,
-    selectedDeviceUID: String
+    selectedDeviceUID: String,
+    selectedDeviceMatchesBoundRoute: Bool,
+    engineIsRunning: Bool
 ) -> AudioLevelMonitorRouteAction {
     guard monitoringRequested, !resumeAfterRecorder else { return .ignore }
+    if selectedDeviceUID != AudioDevice.systemDefault.uid,
+        selectedDeviceMatchesBoundRoute,
+        engineIsRunning
+    {
+        return .probe(selectedDeviceUID)
+    }
     return .restart(selectedDeviceUID)
+}
+
+nonisolated func audioLevelMonitorRouteIsHealthy(
+    engineIsRunning: Bool,
+    selectedDeviceMatchesBoundRoute: Bool,
+    lastBufferAge: TimeInterval
+) -> Bool {
+    engineIsRunning
+        && selectedDeviceMatchesBoundRoute
+        && lastBufferAge <= AudioCaptureEngine.captureHealthyBufferMaxAge
+}
+
+nonisolated func audioLevelMonitorHealthProbeDelay(transport: AudioDeviceTransport) -> TimeInterval {
+    transport == .bluetooth ? 3.0 : AudioCaptureEngine.captureHealthyBufferMaxAge + 0.1
 }
 
 /// Monitor de nivel de audio en tiempo real para el micrófono
@@ -107,6 +130,10 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     private nonisolated(unsafe) var restartGeneration: UInt64 = 0
     private nonisolated(unsafe) var monitoringRequested = false
     private nonisolated(unsafe) var resumeAfterRecorder = false
+    private nonisolated(unsafe) var boundDeviceID: AudioDeviceID?
+    private nonisolated(unsafe) var routeProbeGeneration: UInt64 = 0
+    private nonisolated(unsafe) var monitorLeaseHeld = false
+    private nonisolated let monitorHealthLock = OSAllocatedUnfairLock(initialState: CFAbsoluteTime(0))
 
     private init() {
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
@@ -138,7 +165,35 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
             }
         }
 
+        guard AudioInputActivityGate.shared.beginMonitorIfIdle() else {
+            let generation = restartGeneration
+            monitorQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self,
+                    self.monitoringRequested,
+                    !self.resumeAfterRecorder,
+                    self.restartGeneration == generation
+                else { return }
+                self.startAudioEngineOnQueue(deviceUID: deviceUID)
+            }
+            return
+        }
+        monitorLeaseHeld = true
         let audioEngine = AVAudioEngine()
+        setLastMonitorBufferTime(0)
+        boundDeviceID =
+            deviceUID == AudioDevice.systemDefault.uid
+            ? AudioDeviceManager.shared.getSystemDefaultInputDevice() : nil
+        var adoptedEngine = false
+        defer {
+            if !adoptedEngine {
+                AudioEngineGuard.teardownAndRetire(
+                    audioEngine,
+                    removeInputTap: true,
+                    operation: "monitor-start-failure"
+                )
+                releaseMonitorLeaseIfNeeded()
+            }
+        }
         do {
             // AudioEngineGuard: device switches mid-setup raise uncatchable
             // NSExceptions inside AVFAudio; route them into this catch.
@@ -163,6 +218,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
             try AudioEngineGuard.prepareAndStart(audioEngine, operation: "monitor-engine-start")
             MicrophonePermission.noteAudioInputGranted()
             self.audioEngine = audioEngine
+            adoptedEngine = true
             isMonitoring = true
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
@@ -176,7 +232,6 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
             }
         } catch {
             setError("Error al iniciar: \(error.localizedDescription)")
-            cleanupEngineOnQueue()
         }
     }
 
@@ -208,6 +263,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
             )
             throw RecordingError.deviceSelectionFailed(status)
         }
+        boundDeviceID = deviceID
 
         // Query actual hardware format via Core Audio
         var propertyAddress = AudioObjectPropertyAddress(
@@ -236,15 +292,16 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     /// Limpia recursos sin cambiar el estado de monitoreo
     private nonisolated func cleanupEngineOnQueue() {
         if let engine = audioEngine {
-            try? AudioEngineGuard.run("monitor-cleanup-teardown") {
-                if engine.isRunning {
-                    engine.inputNode.removeTap(onBus: 0)
-                    engine.stop()
-                }
-                engine.reset()
-            }
+            AudioEngineGuard.teardownAndRetire(
+                engine,
+                removeInputTap: true,
+                operation: "monitor-cleanup"
+            )
         }
         audioEngine = nil
+        releaseMonitorLeaseIfNeeded()
+        boundDeviceID = nil
+        setLastMonitorBufferTime(0)
         sampleTapFormat = nil
         isMonitoring = false
     }
@@ -268,13 +325,12 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         if isRecordingSample { stopSampleRecording() }
         clearSampleRecording()
 
-        monitorQueue.async { [weak self] in
-            guard let self else { return }
+        monitorQueue.sync {
             self.resumeAfterRecorder = self.monitoringRequested
             self.bumpRestartGeneration()
             self.stopMonitoringOnQueue(clearIntent: false, logStop: false)
-            SapoLog.audioRoute.info("Monitor suspended for recorder")
         }
+        SapoLog.audioRoute.info("Monitor suspended for recorder")
         return true
     }
 
@@ -291,22 +347,61 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     private func handleAudioRouteChange() {
         restartMonitorAfterInputRouteChange()
-        if isRecordingSample {
-            stopSampleRecording()
-        }
     }
 
     private nonisolated func restartMonitorAfterInputRouteChange() {
         monitorQueue.async { [weak self] in
             guard let self else { return }
+            self.routeProbeGeneration &+= 1
+            let probeGeneration = self.routeProbeGeneration
+            let selectedDeviceMatchesBoundRoute: Bool
+            if self.selectedDeviceUID == AudioDevice.systemDefault.uid {
+                selectedDeviceMatchesBoundRoute = false
+            } else {
+                AudioDeviceManager.shared.refreshDevices()
+                selectedDeviceMatchesBoundRoute =
+                    AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: self.selectedDeviceUID)
+                    == self.boundDeviceID
+            }
             switch audioLevelMonitorRouteAction(
                 monitoringRequested: self.monitoringRequested,
                 resumeAfterRecorder: self.resumeAfterRecorder,
-                selectedDeviceUID: self.selectedDeviceUID
+                selectedDeviceUID: self.selectedDeviceUID,
+                selectedDeviceMatchesBoundRoute: selectedDeviceMatchesBoundRoute,
+                engineIsRunning: self.audioEngine?.isRunning == true
             ) {
             case .ignore:
                 return
+            case .probe(let deviceUID):
+                let transport = self.boundDeviceID.map { AudioDeviceManager.shared.transportType(for: $0) } ?? .other
+                let probeDelay = audioLevelMonitorHealthProbeDelay(transport: transport)
+                self.monitorQueue.asyncAfter(deadline: .now() + probeDelay) {
+                    [weak self] in
+                    guard let self, self.routeProbeGeneration == probeGeneration else { return }
+                    guard self.monitoringRequested, !self.resumeAfterRecorder else { return }
+                    AudioDeviceManager.shared.refreshDevices()
+                    let stillBound =
+                        AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID)
+                        == self.boundDeviceID
+                    let lastBuffer = self.lastMonitorBufferTime()
+                    let bufferAge = lastBuffer > 0 ? CFAbsoluteTimeGetCurrent() - lastBuffer : .infinity
+                    guard
+                        audioLevelMonitorRouteIsHealthy(
+                            engineIsRunning: self.audioEngine?.isRunning == true,
+                            selectedDeviceMatchesBoundRoute: stillBound,
+                            lastBufferAge: bufferAge
+                        )
+                    else {
+                        self.stopSampleForRouteRestart()
+                        self.scheduleMonitoringStartOnQueue(
+                            deviceUID: deviceUID,
+                            minimumDelay: AudioDeviceManager.shared.captureRouteSettleDelay()
+                        )
+                        return
+                    }
+                }
             case .restart(let deviceUID):
+                self.stopSampleForRouteRestart()
                 self.scheduleMonitoringStartOnQueue(
                     deviceUID: deviceUID,
                     minimumDelay: AudioDeviceManager.shared.captureRouteSettleDelay()
@@ -322,6 +417,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     }
 
     private nonisolated func scheduleMonitoringStartOnQueue(deviceUID: String, minimumDelay: TimeInterval) {
+        routeProbeGeneration &+= 1
         monitoringRequested = true
         selectedDeviceUID = deviceUID
         resumeAfterRecorder = false
@@ -343,6 +439,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     }
 
     private nonisolated func stopMonitoringOnQueue(clearIntent: Bool, logStop: Bool) {
+        routeProbeGeneration &+= 1
         if clearIntent {
             monitoringRequested = false
             resumeAfterRecorder = false
@@ -371,6 +468,29 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     private nonisolated func bumpRestartGeneration() -> UInt64 {
         restartGeneration &+= 1
         return restartGeneration
+    }
+
+    private nonisolated func stopSampleForRouteRestart() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.isRecordingSample else { return }
+                self.stopSampleRecording()
+            }
+        }
+    }
+
+    private nonisolated func setLastMonitorBufferTime(_ value: CFAbsoluteTime) {
+        monitorHealthLock.withLock { $0 = value }
+    }
+
+    private nonisolated func lastMonitorBufferTime() -> CFAbsoluteTime {
+        monitorHealthLock.withLock { $0 }
+    }
+
+    private nonisolated func releaseMonitorLeaseIfNeeded() {
+        guard monitorLeaseHeld else { return }
+        monitorLeaseHeld = false
+        AudioInputActivityGate.shared.endMonitor()
     }
 
     private func startPeakDecayTimer() {
@@ -620,6 +740,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     /// Procesa el buffer de audio y extrae el nivel
     private nonisolated func processBuffer(_ buffer: AVAudioPCMBuffer) {
+        setLastMonitorBufferTime(CFAbsoluteTimeGetCurrent())
         // Write to the sample file if mic-test recording is active (guarded).
         writeSampleBuffer(buffer)
 
