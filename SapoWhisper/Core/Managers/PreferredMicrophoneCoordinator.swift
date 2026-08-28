@@ -142,7 +142,7 @@ final class PreferredMicrophoneCoordinator {
             lastResolvedInputDeviceID = preferredDeviceID
             let deviceName = deviceManager.getDeviceName(for: preferredDeviceID) ?? preferredUID
             SapoLog.audioRoute.info(
-                "System default input synced to selection device=\(deviceName, privacy: .public)"
+                "System default input synced to selection device=\(deviceName, privacy: .private(mask: .hash))"
             )
         } else {
             scheduleRestoreRetry(announceFinalDevice: false, restoreAttempt: 0)
@@ -236,11 +236,11 @@ final class PreferredMicrophoneCoordinator {
             let preferredDeviceName = deviceManager.getDeviceName(for: preferredDeviceID) ?? preferredUID
             if restoredPreferredInput {
                 SapoLog.audioRoute.info(
-                    "Preferred input restored device=\(preferredDeviceName, privacy: .public)"
+                    "Preferred input restored device=\(preferredDeviceName, privacy: .private(mask: .hash))"
                 )
             } else {
                 SapoLog.audioRoute.warning(
-                    "Preferred input restore failed device=\(preferredDeviceName, privacy: .public)"
+                    "Preferred input restore failed device=\(preferredDeviceName, privacy: .private(mask: .hash))"
                 )
                 scheduleRestoreRetry(
                     announceFinalDevice: announceFinalDevice,

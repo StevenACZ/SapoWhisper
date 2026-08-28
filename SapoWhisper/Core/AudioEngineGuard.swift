@@ -6,6 +6,7 @@
 // AVFAudio tap blocks predate Sendable annotations (same discipline as the
 // capture files that pass them through this guard).
 @preconcurrency import AVFAudio
+@preconcurrency import Combine
 import Foundation
 import os
 
@@ -39,6 +40,25 @@ nonisolated struct AudioEngineObjCException: LocalizedError {
 /// call must be discarded and rebuilt — the exception may leave it half-configured.
 nonisolated enum AudioEngineGuard {
 
+    static func inputSetupDeadline(
+        inputTransport: AudioDeviceTransport,
+        outputTransport: AudioDeviceTransport
+    ) -> TimeInterval {
+        inputTransport == .bluetooth || outputTransport == .bluetooth ? 5 : 3
+    }
+
+    final class MaterializedInput: @unchecked Sendable {
+        let engine: AVAudioEngine
+        let node: AVAudioInputNode
+        let tapFormat: AVAudioFormat
+
+        init(engine: AVAudioEngine, node: AVAudioInputNode, tapFormat: AVAudioFormat) {
+            self.engine = engine
+            self.node = node
+            self.tapFormat = tapFormat
+        }
+    }
+
     static func run<T>(_ operation: String, _ body: () throws -> T) throws -> T {
         var result: Result<T, Error>?
         let exception = SapoWhisperCatchObjCException {
@@ -48,7 +68,7 @@ nonisolated enum AudioEngineGuard {
             let name = exception.name.rawValue
             let reason = exception.reason ?? "unknown"
             SapoLog.recording.error(
-                "AVFAudio ObjC exception caught operation=\(operation, privacy: .public) name=\(name, privacy: .public) reason=\(reason, privacy: .public)"
+                "AVFAudio ObjC exception caught operation=\(operation, privacy: .public) name=\(name, privacy: .public) reason=\(reason, privacy: .private(mask: .hash))"
             )
             throw AudioEngineObjCException(operation: operation, name: name, reason: reason)
         }
@@ -62,6 +82,58 @@ nonisolated enum AudioEngineGuard {
     /// device is available mid-transition.
     static func inputNode(of engine: AVAudioEngine, operation: String) throws -> AVAudioInputNode {
         try run(operation) { engine.inputNode }
+    }
+
+    static func materializeInputNode(
+        deadline: TimeInterval,
+        inputTransport: AudioDeviceTransport,
+        outputTransport: AudioDeviceTransport,
+        operation: String,
+        prepare: @escaping @Sendable (AVAudioInputNode) throws -> AVAudioFormat
+    ) async throws -> MaterializedInput {
+        let epoch = AudioInputSetupQuarantine.shared.currentEpoch
+        guard AudioInputSetupQuarantine.shared.canAttempt(epoch: epoch) else {
+            SapoLog.recording.error(
+                "Audio input setup quarantined phase=materialize inputTransport=\(inputTransport.rawValue, privacy: .public) outputTransport=\(outputTransport.rawValue, privacy: .public)"
+            )
+            throw RecordingError.inputSetupTimedOut
+        }
+
+        let request = AudioDeadlineRequest<MaterializedInput>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let attempt = AudioDeadlineAttempt(
+                    timeout: deadline,
+                    operation: operation,
+                    work: {
+                        let engine = AVAudioEngine()
+                        do {
+                            let node = try inputNode(of: engine, operation: operation)
+                            let tapFormat = try prepare(node)
+                            return MaterializedInput(engine: engine, node: node, tapFormat: tapFormat)
+                        } catch {
+                            teardownAndRetire(engine, removeInputTap: false, operation: "\(operation)-failure")
+                            throw error
+                        }
+                    },
+                    cleanup: {
+                        teardownAndRetire($0.engine, removeInputTap: false, operation: "\(operation)-late")
+                    },
+                    onQuarantine: { timedOut in
+                        AudioInputSetupQuarantine.shared.quarantineCurrentEpoch()
+                        let reason = timedOut ? "timeout" : "cancel-in-flight"
+                        SapoLog.recording.error(
+                            "Audio input setup quarantined phase=materialize reason=\(reason, privacy: .public) inputTransport=\(inputTransport.rawValue, privacy: .public) outputTransport=\(outputTransport.rawValue, privacy: .public) timeoutMs=\(Int(deadline * 1000), privacy: .public)"
+                        )
+                    },
+                    completion: { continuation.resume(with: $0) }
+                )
+                request.install(attempt)
+                attempt.start()
+            }
+        } onCancel: {
+            request.cancel()
+        }
     }
 
     /// `installTap` throws NSException when the requested format disagrees
@@ -99,6 +171,195 @@ nonisolated enum AudioEngineGuard {
         try? run("\(operation)-stop") { engine.stop() }
         try? run("\(operation)-reset") { engine.reset() }
         AudioEngineRetirementPool.shared.retire(engine)
+    }
+}
+
+nonisolated final class AudioDeadlineRequest<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var attempt: AudioDeadlineAttempt<Value>?
+    private var cancelled = false
+
+    func install(_ attempt: AudioDeadlineAttempt<Value>) {
+        lock.lock()
+        self.attempt = attempt
+        let shouldCancel = cancelled
+        lock.unlock()
+        if shouldCancel {
+            attempt.cancel()
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let attempt = self.attempt
+        lock.unlock()
+        attempt?.cancel()
+    }
+}
+
+nonisolated final class AudioDeadlineAttempt<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private let timeout: TimeInterval
+    private let operation: String
+    private let worker: DispatchQueue
+    private let timer: DispatchQueue
+    private let work: @Sendable () throws -> Value
+    private let cleanup: @Sendable (Value) -> Void
+    private let onQuarantine: @Sendable (Bool) -> Void
+    private let completion: @Sendable (Result<Value, Error>) -> Void
+    private var started = false
+    private var workStarted = false
+    private var workerFinished = false
+    private var completionDelivered = false
+    private var quarantineDelivered = false
+
+    init(
+        timeout: TimeInterval,
+        operation: String,
+        worker: DispatchQueue = DispatchQueue(label: "com.sapowhisper.audioInput.deadline", qos: .userInitiated),
+        timer: DispatchQueue = DispatchQueue(label: "com.sapowhisper.audioInput.deadline.timer", qos: .userInitiated),
+        work: @escaping @Sendable () throws -> Value,
+        cleanup: @escaping @Sendable (Value) -> Void,
+        onQuarantine: @escaping @Sendable (Bool) -> Void = { _ in },
+        completion: @escaping @Sendable (Result<Value, Error>) -> Void
+    ) {
+        self.timeout = timeout
+        self.operation = operation
+        self.worker = worker
+        self.timer = timer
+        self.work = work
+        self.cleanup = cleanup
+        self.onQuarantine = onQuarantine
+        self.completion = completion
+    }
+
+    func start() {
+        lock.lock()
+        guard !started else {
+            lock.unlock()
+            return
+        }
+        started = true
+        if completionDelivered {
+            workerFinished = true
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+
+        worker.async { [self] in
+            lock.lock()
+            guard !completionDelivered else {
+                workerFinished = true
+                lock.unlock()
+                return
+            }
+            workStarted = true
+            lock.unlock()
+
+            let result = Result(catching: work)
+            lock.lock()
+            workerFinished = true
+            let shouldComplete = !completionDelivered
+            if shouldComplete {
+                completionDelivered = true
+            }
+            lock.unlock()
+
+            if shouldComplete {
+                completion(result)
+            } else if case .success(let value) = result {
+                cleanup(value)
+            }
+        }
+
+        timer.asyncAfter(deadline: .now() + timeout) { [self] in
+            timeoutIfNeeded()
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        guard !completionDelivered else {
+            lock.unlock()
+            return
+        }
+        completionDelivered = true
+        lock.unlock()
+        completion(.failure(CancellationError()))
+    }
+
+    private func timeoutIfNeeded() {
+        lock.lock()
+        guard !workerFinished, !completionDelivered || workStarted else {
+            lock.unlock()
+            return
+        }
+        let shouldComplete = !completionDelivered
+        completionDelivered = true
+        let shouldQuarantine = workStarted && !quarantineDelivered
+        if shouldQuarantine {
+            quarantineDelivered = true
+        }
+        lock.unlock()
+        if shouldQuarantine {
+            onQuarantine(true)
+        }
+        SapoLog.recording.error("Audio input setup timed out operation=\(self.operation, privacy: .public)")
+        if shouldComplete {
+            completion(.failure(RecordingError.inputSetupTimedOut))
+        }
+    }
+}
+
+nonisolated final class AudioInputSetupQuarantine: @unchecked Sendable {
+    static let shared = AudioInputSetupQuarantine()
+
+    private let lock = NSLock()
+    private var epoch: UInt64 = 0
+    private var quarantinedEpoch: UInt64?
+    private var routeSubscription: AnyCancellable?
+
+    var currentEpoch: UInt64 {
+        lock.withLock { epoch }
+    }
+
+    func canAttempt(epoch: UInt64) -> Bool {
+        lock.withLock { quarantinedEpoch != epoch }
+    }
+
+    func quarantine(epoch: UInt64) {
+        lock.withLock {
+            guard self.epoch == epoch else { return }
+            quarantinedEpoch = epoch
+        }
+    }
+
+    func quarantineCurrentEpoch() {
+        lock.withLock {
+            quarantinedEpoch = epoch
+        }
+    }
+
+    func advanceRouteEpoch() {
+        lock.withLock {
+            epoch &+= 1
+            quarantinedEpoch = nil
+        }
+    }
+
+    @MainActor
+    func observeRouteChanges() {
+        observeRouteChanges(AudioDeviceManager.shared.routeChanges)
+    }
+
+    @MainActor
+    func observeRouteChanges(_ routeChanges: AnyPublisher<Void, Never>) {
+        guard routeSubscription == nil else { return }
+        routeSubscription = routeChanges.sink { [weak self] in
+            self?.advanceRouteEpoch()
+        }
     }
 }
 

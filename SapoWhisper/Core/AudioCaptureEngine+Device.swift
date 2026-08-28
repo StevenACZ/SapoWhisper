@@ -38,7 +38,7 @@ nonisolated extension AudioCaptureEngine {
         let deviceName = deviceManager.getDeviceName(for: deviceID) ?? deviceUID
         if getStatus == noErr, currentDeviceID == deviceID {
             SapoLog.recording.info(
-                "\(self.mode.logLabel, privacy: .public) input already bound device=\(deviceName, privacy: .public)"
+                "\(self.mode.logLabel, privacy: .public) input already bound device=\(deviceName, privacy: .private(mask: .hash))"
             )
             return queryDeviceInputFormat(deviceID: deviceID)
         }
@@ -55,13 +55,13 @@ nonisolated extension AudioCaptureEngine {
 
         guard setStatus == noErr else {
             SapoLog.recording.error(
-                "\(self.mode.logLabel, privacy: .public) bind failed device=\(deviceName, privacy: .public) status=\(setStatus, privacy: .public)"
+                "\(self.mode.logLabel, privacy: .public) bind failed device=\(deviceName, privacy: .private(mask: .hash)) status=\(setStatus, privacy: .public)"
             )
             throw RecordingError.deviceSelectionFailed(setStatus)
         }
 
         SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) bound input device=\(deviceName, privacy: .public)")
+            "\(self.mode.logLabel, privacy: .public) bound input device=\(deviceName, privacy: .private(mask: .hash))")
         return queryDeviceInputFormat(deviceID: deviceID)
     }
 
@@ -244,7 +244,7 @@ nonisolated extension AudioCaptureEngine {
         beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
         let inputDescription = deviceUID == AudioDevice.systemDefault.uid ? "system-default" : deviceUID
         SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .public) hz=\(Int(tapFormat.sampleRate), privacy: .public) paused=\(paused, privacy: .public)"
+            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .private(mask: .hash)) hz=\(Int(tapFormat.sampleRate), privacy: .public) paused=\(paused, privacy: .public)"
         )
     }
 

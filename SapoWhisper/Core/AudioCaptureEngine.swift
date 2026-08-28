@@ -177,12 +177,14 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         SapoLog.recording.info("Waiting \(delayMs, privacy: .public)ms for input route to settle")
     }
 
-    /// Inicia la grabación de audio. Toda la configuración del HAL de Core Audio se ejecuta
-    /// en `audioSetupQueue` para no bloquear el hilo principal durante transiciones de dispositivo.
+    /// Input materialization uses a disposable deadline queue; the remaining
+    /// engine lifecycle stays serialized on `audioSetupQueue`.
     /// `targetEngine` (solo batch) permite capturar directo a 16 kHz para los
     /// engines whisper-family en vez de resamplear dos veces.
     func startRecording(targetEngine: TranscriptionEngine? = nil, onPCMChunk: PCMChunkHandler? = nil) async throws {
         assert(onPCMChunk == nil || mode == .streaming, "chunk emission is a streaming-mode capability")
+
+        await AudioInputSetupQuarantine.shared.observeRouteChanges()
 
         // Snapshot configuration on the calling thread before dispatching to background
         let deviceUID = selectedDeviceUID
@@ -196,6 +198,15 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
         let uploadQuality = AudioUploadQuality.stored()
         let setupGeneration = beginSetupGeneration()
+        let inputTransport = AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: deviceUID)
+        let outputTransport =
+            AudioDeviceManager.shared.getSystemDefaultOutputDevice().map {
+                AudioDeviceManager.shared.transportType(for: $0)
+            } ?? .other
+        let inputDeadline = AudioEngineGuard.inputSetupDeadline(
+            inputTransport: inputTransport,
+            outputTransport: outputTransport
+        )
 
         // Reset per-recording state before background work begins
         converter = nil
@@ -208,154 +219,142 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         lastAudioLevelPublishTime = 0
         activeGain = Float(savedGain > 0 ? savedGain : 1)
 
-        // Move all Core Audio HAL operations off the main thread. During device
-        // transitions these calls can block 200ms–2000ms+, freezing the UI.
-        // A4: engine/file/url are assigned ONCE inside audioSetupQueue below; the
-        // continuation returns Void so the caller never re-writes those reference
-        // vars off-queue (that off-queue write raced recoverCapture on the queue).
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            audioSetupQueue.async { [weak self] in
-                guard let self else {
-                    continuation.resume(throwing: RecordingError.engineCreationFailed)
-                    return
-                }
+        let materializedInput = try await AudioEngineGuard.materializeInputNode(
+            deadline: inputDeadline,
+            inputTransport: inputTransport,
+            outputTransport: outputTransport,
+            operation: "\(mode.opPrefix)-input-node"
+        ) { [weak self] inputNode in
+            guard let self else { throw RecordingError.engineCreationFailed }
+            let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
+            let cachedFormat = inputNode.outputFormat(forBus: 0)
+            let tapFormat = hwFormat ?? cachedFormat
+            guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
+                throw RecordingError.invalidFormat
+            }
+            return tapFormat
+        }
 
-                var engine: AVAudioEngine?
-                var pendingRecordingURL: URL?
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                audioSetupQueue.async { [weak self] in
+                    guard let self else {
+                        AudioEngineGuard.teardownAndRetire(
+                            materializedInput.engine,
+                            removeInputTap: false,
+                            operation: "capture-owner-released"
+                        )
+                        continuation.resume(throwing: RecordingError.engineCreationFailed)
+                        return
+                    }
 
-                do {
-                    let t0 = CFAbsoluteTimeGetCurrent()
+                    let localEngine = materializedInput.engine
+                    let inputNode = materializedInput.node
+                    let tapFormat = materializedInput.tapFormat
+                    let engine: AVAudioEngine? = localEngine
+                    var pendingRecordingURL: URL?
 
-                    if deviceUID != AudioDevice.systemDefault.uid {
-                        AudioDeviceManager.shared.refreshDevices()
-                        guard AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) != nil else {
-                            throw RecordingError.inputDeviceUnavailable
+                    do {
+                        let t0 = CFAbsoluteTimeGetCurrent()
+
+                        guard self.isSetupGenerationCurrent(setupGeneration) else {
+                            AudioEngineGuard.teardownAndRetire(
+                                localEngine,
+                                removeInputTap: false,
+                                operation: "stale-materialized-input"
+                            )
+                            continuation.resume(throwing: CancellationError())
+                            return
                         }
-                    }
 
-                    let localEngine = AVAudioEngine()
-                    engine = localEngine
-                    // AudioEngineGuard: AVFAudio asserts with uncatchable
-                    // NSException when the route changes under it (AirPods
-                    // handshake); the guard turns that into a transient error
-                    // the start-retry path already knows how to recover from.
-                    let inputNode = try AudioEngineGuard.inputNode(
-                        of: localEngine, operation: "\(self.mode.opPrefix)-input-node")
+                        let outputFormat: AVAudioFormat
+                        switch self.mode {
+                        case .batch:
+                            outputFormat = uploadQuality.audioFormat(matching: tapFormat, for: targetEngine)
+                            SapoLog.recording.info(
+                                "Recorder upload quality=\(uploadQuality.rawValue, privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public) format=\(String(describing: outputFormat.commonFormat), privacy: .public)"
+                            )
+                        case .streaming:
+                            outputFormat = Self.streamingOutputFormat
+                        }
 
-                    let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
+                        // Crear archivo temporal para guardar el audio
+                        let recordingURL = TemporaryAudioStorage.makeWAVURL(prefix: self.mode.wavPrefix)
+                        pendingRecordingURL = recordingURL
 
-                    // Use actual hardware format from Core Audio to avoid stale format in inputNode.outputFormat
-                    let cachedFormat = inputNode.outputFormat(forBus: 0)
-                    let tapFormat: AVAudioFormat
-                    if let hwFormat, hwFormat.sampleRate != cachedFormat.sampleRate {
-                        tapFormat = hwFormat
-                        SapoLog.recording.info(
-                            "\(self.mode.logLabel, privacy: .public) format override cachedHz=\(Int(cachedFormat.sampleRate), privacy: .public) hwHz=\(Int(hwFormat.sampleRate), privacy: .public)"
+                        // AVAudioFile(forWriting:settings:) always uses float32 as processing format.
+                        // We need the client format to match the converted buffers we write.
+                        let audioFile = try AVAudioFile(
+                            forWriting: recordingURL,
+                            settings: outputFormat.settings,
+                            commonFormat: outputFormat.commonFormat,
+                            interleaved: outputFormat.isInterleaved
                         )
-                    } else if let hwFormat {
-                        tapFormat = hwFormat
-                        SapoLog.recording.info(
-                            "\(self.mode.logLabel, privacy: .public) format hwHz=\(Int(hwFormat.sampleRate), privacy: .public) channels=\(hwFormat.channelCount, privacy: .public)"
-                        )
-                    } else {
-                        tapFormat = cachedFormat
-                        SapoLog.recording.info(
-                            "\(self.mode.logLabel, privacy: .public) format defaultHz=\(Int(cachedFormat.sampleRate), privacy: .public) channels=\(cachedFormat.channelCount, privacy: .public)"
-                        )
-                    }
 
-                    guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
+                        guard self.isSetupGenerationCurrent(setupGeneration) else {
+                            self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
+                            continuation.resume(throwing: CancellationError())
+                            return
+                        }
+
+                        self.audioFile = audioFile
+                        self.converterOutputFormat = outputFormat
+                        self.recordingURL = recordingURL
+                        // Sidecar marker: lets a relaunch after crash/force-quit
+                        // recover this WAV instantly instead of after the 60 s
+                        // orphan age gate.
+                        ActiveRecordingMarker.mark(recordingURL)
+
+                        // Install tap with actual hardware format (queried via Core Audio, not the stale inputNode cache)
+                        try AudioEngineGuard.installTap(
+                            on: inputNode, bufferSize: self.tapBufferSize, format: tapFormat,
+                            operation: "\(self.mode.opPrefix)-install-tap"
+                        ) { [weak self] buffer, _ in
+                            self?.processAudioBuffer(buffer)
+                        }
+
+                        guard self.isSetupGenerationCurrent(setupGeneration) else {
+                            self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
+                            continuation.resume(throwing: CancellationError())
+                            return
+                        }
+
+                        // Record start time just before engine.start() so the audio tap sees the correct value
+                        self.startRecordingTime = CFAbsoluteTimeGetCurrent()
+                        try AudioEngineGuard.prepareAndStart(localEngine, operation: "\(self.mode.opPrefix)-engine-start")
+                        MicrophonePermission.noteAudioInputGranted()
+
+                        guard self.isSetupGenerationCurrent(setupGeneration) else {
+                            self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
+                            continuation.resume(throwing: CancellationError())
+                            return
+                        }
+
+                        // A2: keep the engine reachable from the setup queue and watch
+                        // the bound device + engine configuration for the whole capture.
+                        self.audioEngine = localEngine
+                        self.captureRecoveryAttempts = 0
+                        let boundDeviceID =
+                            deviceUID == AudioDevice.systemDefault.uid
+                            ? nil : AudioDeviceManager.shared.getDeviceID(for: deviceUID)
+                        self.beginDeviceSentinel(engine: localEngine, deviceID: boundDeviceID, generation: setupGeneration)
+
+                        let setupMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                        SapoLog.recording.info(
+                            "\(self.mode.logLabel, privacy: .public) setup completed in \(setupMs, privacy: .public)ms")
+
+                        continuation.resume(returning: ())
+                    } catch {
+                        self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingRecordingURL, deleteTemporaryFile: true)
                         SapoLog.recording.error(
-                            "\(self.mode.logLabel, privacy: .public) setup failed: invalid sampleRate=\(tapFormat.sampleRate, privacy: .public)"
+                            "\(self.mode.logLabel, privacy: .public) setup failed error=\(error.localizedDescription, privacy: .public)"
                         )
-                        throw RecordingError.invalidFormat
+                        continuation.resume(throwing: error)
                     }
-
-                    let outputFormat: AVAudioFormat
-                    switch self.mode {
-                    case .batch:
-                        outputFormat = uploadQuality.audioFormat(matching: tapFormat, for: targetEngine)
-                        SapoLog.recording.info(
-                            "Recorder upload quality=\(uploadQuality.rawValue, privacy: .public) outHz=\(Int(outputFormat.sampleRate), privacy: .public) format=\(String(describing: outputFormat.commonFormat), privacy: .public)"
-                        )
-                    case .streaming:
-                        outputFormat = Self.streamingOutputFormat
-                    }
-
-                    // Crear archivo temporal para guardar el audio
-                    let recordingURL = TemporaryAudioStorage.makeWAVURL(prefix: self.mode.wavPrefix)
-                    pendingRecordingURL = recordingURL
-
-                    // AVAudioFile(forWriting:settings:) always uses float32 as processing format.
-                    // We need the client format to match the converted buffers we write.
-                    let audioFile = try AVAudioFile(
-                        forWriting: recordingURL,
-                        settings: outputFormat.settings,
-                        commonFormat: outputFormat.commonFormat,
-                        interleaved: outputFormat.isInterleaved
-                    )
-
-                    guard self.isSetupGenerationCurrent(setupGeneration) else {
-                        self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
-                        continuation.resume(throwing: CancellationError())
-                        return
-                    }
-
-                    self.audioFile = audioFile
-                    self.converterOutputFormat = outputFormat
-                    self.recordingURL = recordingURL
-                    // Sidecar marker: lets a relaunch after crash/force-quit
-                    // recover this WAV instantly instead of after the 60 s
-                    // orphan age gate.
-                    ActiveRecordingMarker.mark(recordingURL)
-
-                    // Install tap with actual hardware format (queried via Core Audio, not the stale inputNode cache)
-                    try AudioEngineGuard.installTap(
-                        on: inputNode, bufferSize: self.tapBufferSize, format: tapFormat,
-                        operation: "\(self.mode.opPrefix)-install-tap"
-                    ) { [weak self] buffer, _ in
-                        self?.processAudioBuffer(buffer)
-                    }
-
-                    guard self.isSetupGenerationCurrent(setupGeneration) else {
-                        self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
-                        continuation.resume(throwing: CancellationError())
-                        return
-                    }
-
-                    // Record start time just before engine.start() so the audio tap sees the correct value
-                    self.startRecordingTime = CFAbsoluteTimeGetCurrent()
-                    try AudioEngineGuard.prepareAndStart(localEngine, operation: "\(self.mode.opPrefix)-engine-start")
-                    MicrophonePermission.noteAudioInputGranted()
-
-                    guard self.isSetupGenerationCurrent(setupGeneration) else {
-                        self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
-                        continuation.resume(throwing: CancellationError())
-                        return
-                    }
-
-                    // A2: keep the engine reachable from the setup queue and watch
-                    // the bound device + engine configuration for the whole capture.
-                    self.audioEngine = localEngine
-                    self.captureRecoveryAttempts = 0
-                    let boundDeviceID =
-                        deviceUID == AudioDevice.systemDefault.uid
-                        ? nil : AudioDeviceManager.shared.getDeviceID(for: deviceUID)
-                    self.beginDeviceSentinel(engine: localEngine, deviceID: boundDeviceID, generation: setupGeneration)
-
-                    let setupMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    SapoLog.recording.info(
-                        "\(self.mode.logLabel, privacy: .public) setup completed in \(setupMs, privacy: .public)ms")
-
-                    continuation.resume(returning: ())
-                } catch {
-                    self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingRecordingURL, deleteTemporaryFile: true)
-                    SapoLog.recording.error(
-                        "\(self.mode.logLabel, privacy: .public) setup failed error=\(error.localizedDescription, privacy: .public)"
-                    )
-                    continuation.resume(throwing: error)
                 }
             }
+        } onCancel: {
+            self.invalidateSetupGeneration()
         }
 
         guard !Task.isCancelled, isSetupGenerationCurrent(setupGeneration) else {
@@ -629,6 +628,7 @@ enum RecordingError: LocalizedError {
     case inputDeviceUnavailable
     case deviceSelectionFailed(OSStatus)
     case noInputAfterDeviceSwitch
+    case inputSetupTimedOut
     case invalidFormat
 
     var errorDescription: String? {
@@ -646,6 +646,8 @@ enum RecordingError: LocalizedError {
         case .deviceSelectionFailed:
             return "No se pudo seleccionar el microfono configurado"
         case .noInputAfterDeviceSwitch:
+            return "error.input_not_ready".localized
+        case .inputSetupTimedOut:
             return "error.input_not_ready".localized
         case .invalidFormat:
             return "Formato de audio del dispositivo no disponible. Intenta de nuevo."
@@ -689,7 +691,7 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
                 reason: "deviceSelectionFailed(\(status))"
             )
         case .engineCreationFailed, .fileCreationFailed, .converterCreationFailed, .permissionDenied,
-            .inputDeviceUnavailable:
+            .inputDeviceUnavailable, .inputSetupTimedOut:
             return RecordingStartFailureClassification(isTransient: false, reason: "\(recordingError)")
         }
     }

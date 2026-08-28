@@ -6,11 +6,8 @@ import os
 /// outgoing system-audio stream, which taps app audio before the device-volume
 /// stage and therefore never hears AutoDuckingManager's local ducking.
 ///
-/// The notification names are a stable public contract; no payload is ever
-/// attached (nothing private leaves the app).
 enum DictationStateBroadcaster {
     static let remoteInputDeviceUID = "MiradorMicrophone_UID"
-    static let toggleRequestedNotification = Notification.Name("oli.SapoWhisper.dictation.toggle")
     static let recordingBeganNotification = Notification.Name("oli.SapoWhisper.dictation.began")
     static let recordingEndedNotification = Notification.Name("oli.SapoWhisper.dictation.ended")
 

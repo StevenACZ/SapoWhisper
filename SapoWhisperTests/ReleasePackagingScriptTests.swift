@@ -31,6 +31,65 @@ struct ReleasePackagingScriptTests {
         #expect(appStaple < appValidate)
         #expect(appValidate < createDMG)
         #expect(activeLines.contains("xcrun stapler validate \"$MOUNTED_APP\""))
+        #expect(
+            activeLines.contains(
+                "scripts/verify_release_app.sh \"$BUILT_APP\" \"Developer ID Application\""
+            )
+        )
+        #expect(
+            activeLines.contains(
+                "scripts/verify_release_app.sh \"$MOUNTED_APP\" \"Developer ID Application\""
+            )
+        )
+    }
+
+    @Test("Private path scanning rejects a contaminated artifact")
+    func privatePathScannerRejectsContamination() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let script = repository.appendingPathComponent("scripts/verify_no_private_paths.sh")
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+
+        try Data("safe artifact".utf8).write(to: fixture)
+        #expect(try run(script, argument: fixture) == 0)
+
+        let contaminatedPath = ["", "Users", "example", "private", "source.cpp"]
+            .joined(separator: "/")
+        try Data("compiled from \(contaminatedPath)".utf8).write(to: fixture)
+        #expect(try run(script, argument: fixture) != 0)
+    }
+
+    @Test("The release verifier pins identity and artifact shape")
+    func verifierPinsIdentityAndArtifactShape() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let script = try String(
+            contentsOf: repository.appendingPathComponent("scripts/verify_release_app.sh"),
+            encoding: .utf8
+        )
+        #expect(script.contains("EXPECTED_TEAM_ID=\"NXT93S55FY\""))
+        #expect(script.contains("BUNDLE_ID\" != \"oli.SapoWhisper"))
+        #expect(script.contains("ARCHITECTURES\" != \"arm64"))
+        #expect(
+            script.contains(
+                "certificate leaf[subject.OU] = $EXPECTED_TEAM_ID"
+            )
+        )
+        #expect(script.contains("scripts/verify_no_private_paths.sh"))
+    }
+
+    private func run(_ executable: URL, argument: URL) throws -> Int32 {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = [argument.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
     }
 
     private func lineIndex(_ command: String, in lines: [String]) throws -> Int {

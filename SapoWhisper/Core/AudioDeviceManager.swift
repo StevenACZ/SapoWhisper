@@ -276,7 +276,9 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         guard changed else { return }
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
-        SapoLog.audioRoute.info("Default input changed to \(deviceName, privacy: .public)")
+        SapoLog.audioRoute.info(
+            "Default input changed to \(deviceName, privacy: .private(mask: .hash))"
+        )
         notifyInputRouteChange()
     }
 
@@ -294,7 +296,9 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         guard changed else { return }
 
         let deviceName = getDeviceName(for: currentDeviceID) ?? "Unknown"
-        SapoLog.audioRoute.info("Default output changed to \(deviceName, privacy: .public)")
+        SapoLog.audioRoute.info(
+            "Default output changed to \(deviceName, privacy: .private(mask: .hash))"
+        )
         notifyRouteChange()
     }
 
