@@ -33,6 +33,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Audio engines are retained until Core Audio has been quiet after teardown,
   preventing late `AVAudioIOUnit` route callbacks from crashing the app while a
   failed or interrupted capture is being discarded.
+- Sparkle release ZIPs no longer contain macOS AppleDouble sidecar entries.
 - Release packaging now notarizes and staples the app before creating the DMG,
   then validates the app again from a read-only mount. The DMG no longer relies
   on its container ticket to cover an unstapled embedded app.
