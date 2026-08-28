@@ -157,6 +157,26 @@ final class CaptureStartSupervisorTests: XCTestCase {
         XCTAssertEqual(recorder.discardCount, 1)
     }
 
+    func testInputSetupTimeoutFailsWithoutRetrying() async {
+        let recorder = RecorderFake()
+        recorder.startErrors = [RecordingError.inputSetupTimedOut]
+        let supervisor = makeSupervisor(recorder: recorder)
+
+        do {
+            try await supervisor.start(microphone: "mic-uid", targetEngine: .mlxWhisper)
+            XCTFail("expected inputSetupTimedOut")
+        } catch let error as RecordingError {
+            guard case .inputSetupTimedOut = error else {
+                return XCTFail("unexpected recording error: \(error)")
+            }
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(recorder.startCallCount, 1)
+        XCTAssertEqual(recorder.discardCount, 1)
+    }
+
     func testCancellationAbortsWithoutSideEffects() async {
         let recorder = RecorderFake()
         recorder.waitSuspendsUntilCancelled = true

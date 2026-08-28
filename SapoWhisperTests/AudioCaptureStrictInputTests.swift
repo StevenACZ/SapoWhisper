@@ -238,15 +238,31 @@ struct AudioCaptureStrictInputTests {
 
         let capture = try String(
             contentsOf: sourceRoot.appendingPathComponent("AudioCaptureEngine.swift"), encoding: .utf8)
+
+        for (fileName, className) in [
+            ("DeepgramFluxLiveTranscriber.swift", "final class DeepgramFluxLiveTranscriber"),
+            ("ElevenLabsScribeRealtimeTranscriber.swift", "final class ElevenLabsScribeRealtimeTranscriber"),
+        ] {
+            let streaming = try String(
+                contentsOf: sourceRoot.appendingPathComponent(fileName), encoding: .utf8)
+            let classStart = try #require(streaming.range(of: className))
+            let sessionSource = String(streaming[classStart.lowerBound...])
+            let cancelBody = try functionBody(
+                in: sessionSource,
+                start: "func cancel()",
+                end: "func abortPreservingAudio()"
+            )
+            try expectOrder("cancelPendingSetup()", before: "discardRecording()", in: cancelBody)
+        }
         let captureBody = try functionBody(
             in: capture,
             start: "func startRecording(targetEngine:",
             end: "func waitForFirstInputBuffer"
         )
-        try expectOrder("refreshDevices()", before: "let localEngine = AVAudioEngine()", in: captureBody)
+        try expectOrder("refreshDevices()", before: "AudioEngineGuard.materializeInputNode", in: captureBody)
         try expectOrder(
             "resolveSelectedInputDeviceID",
-            before: "let localEngine = AVAudioEngine()",
+            before: "AudioEngineGuard.materializeInputNode",
             in: captureBody
         )
 

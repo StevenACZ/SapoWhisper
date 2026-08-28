@@ -1209,8 +1209,9 @@ class SapoWhisperViewModel: ObservableObject {
         let transcriptionSession = activeTranscriptionSessionID.map(String.init) ?? "none"
         let suffix = extra.isEmpty ? "" : " \(extra)"
 
+        let microphoneKind = selectedMicrophone == AudioDevice.systemDefault.uid ? "system-default" : "explicit"
         return
-            "state=\(appState.diagnosticName) engine=\(currentEngine.rawValue) deepgramMode=\(currentDeepgramMode.rawValue) elevenLabsMode=\(currentElevenLabsMode.rawValue) startPending=\(isStartPending) stopPending=\(isStopPending) audioRecording=\(audioRecorder.isRecording) fluxStreaming=\(deepgramFluxTranscriber.isStreaming) elevenLabsRealtimeStreaming=\(elevenLabsRealtimeTranscriber.isStreaming) audioPaused=\(audioRecorder.isPaused) fluxPaused=\(deepgramFluxTranscriber.isPaused) elevenLabsRealtimePaused=\(elevenLabsRealtimeTranscriber.isPaused) duration=\(Int(recordingDuration)) recordingSession=\(recordingSession) transcriptionSession=\(transcriptionSession) mic=\(selectedMicrophone)\(suffix)"
+            "state=\(appState.diagnosticName) engine=\(currentEngine.rawValue) deepgramMode=\(currentDeepgramMode.rawValue) elevenLabsMode=\(currentElevenLabsMode.rawValue) startPending=\(isStartPending) stopPending=\(isStopPending) audioRecording=\(audioRecorder.isRecording) fluxStreaming=\(deepgramFluxTranscriber.isStreaming) elevenLabsRealtimeStreaming=\(elevenLabsRealtimeTranscriber.isStreaming) audioPaused=\(audioRecorder.isPaused) fluxPaused=\(deepgramFluxTranscriber.isPaused) elevenLabsRealtimePaused=\(elevenLabsRealtimeTranscriber.isPaused) duration=\(Int(recordingDuration)) recordingSession=\(recordingSession) transcriptionSession=\(transcriptionSession) mic=\(microphoneKind)\(suffix)"
     }
 
     func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64) {
@@ -2370,7 +2371,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// surfaces a clear retryable error instead of hiding the overlay.
     private func handleCaptureDeviceFailure(reason: String) {
         SapoLog.recording.error(
-            "Capture device failure reason=\(reason, privacy: .public) \(self.diagnosticContext(), privacy: .public)"
+            "Capture device failure reason=\(reason, privacy: .private(mask: .hash)) \(self.diagnosticContext(), privacy: .public)"
         )
         guard !isStopPending, activeTranscriptionSessionID == nil else { return }
         guard abortActiveCapturePreservingAudio(reasonLog: reason).aborted else { return }

@@ -145,7 +145,7 @@ final class CaptureStartSupervisor {
         let diagnostics = recorder.currentCaptureDiagnostics()
         let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
         SapoLog.recording.warning(
-            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .public)"
+            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .private(mask: .hash))"
         )
         return false
     }
@@ -161,7 +161,8 @@ final class CaptureStartSupervisor {
             .converterCreationFailed,
             .inputDeviceUnavailable,
             .deviceSelectionFailed,
-            .permissionDenied:
+            .permissionDenied,
+            .inputSetupTimedOut:
             return false
         }
     }

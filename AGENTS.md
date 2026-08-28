@@ -23,7 +23,7 @@ addresses, and machine-specific workflow details.
 - Engines: MLX Whisper local (default; vendored `LocalPackages/MLXWhisper`), Deepgram Nova-3 batch, Deepgram Flux Live, ElevenLabs Scribe batch/realtime, and Local AI Server batch STT through OpenAI-style endpoints. WhisperKit was removed deliberately (2026-07-06; MLX runs the same weights ~6x faster) — do not reintroduce it, and keep `EnginePortfolioMigration` mapping stored `whisper` selections to `mlx_whisper` and purging the CoreML caches.
 - `LocalPackages/MLXWhisper` is vendored from mlx-audio-swift (MIT, pinned commit in its Package.swift header) trimmed to the Whisper model. Local additions: initial-prompt (`<|startofprev|>`) vocabulary support, real auto language detection, a downloader with progress, quantized-checkpoint loading (4-bit), a Task-cancellation hook in the decode loop, and HF snapshots pinned to commit shas (bump revisions in `MLXWhisperModel.revision` + `WhisperModelDownloader.tokenizerRepo`); sync upstream fixes manually and keep the pin comment current. Its sources are exempt from repo swift-format lint. Building anything that links mlx-swift needs the Xcode Metal Toolchain component (`xcodebuild -downloadComponent MetalToolchain`) and `-skipPackagePluginValidation` on headless xcodebuild (already in the Makefile); plain `swift build` produces a binary without Metal shaders that dies at MLX init — bench with the package's `mlxwhisper-cli` built via xcodebuild instead (XCTest-host numbers are not representative for the GPU path).
 - Audio capture: one class, `AudioCaptureEngine`, serves every engine. `.batch` records a WAV at `AudioUploadQuality`, except whisper-family targets (MLX Whisper, Local AI Server) on the STT-oriented qualities (ultra-fast, medium), which capture 16 kHz directly — whisper decodes at 16 kHz and a higher-rate capture only adds a second resample. `.streaming` keeps fixed 16 kHz mono int16 for WebSocket compatibility and emits PCM chunks (batch is streaming with a nil chunk handler). Do not reintroduce per-path capture classes.
-- Companion control uses payload-free distributed notifications: `oli.SapoWhisper.dictation.toggle` requests a toggle, while `.began`/`.ended` publish real recording state. A remote request opens `MiradorMicrophone_UID` explicitly and temporarily suspends preferred-default reconciliation without changing the saved microphone selection.
+- Companion control accepts toggles and state queries only through a same-user Unix socket that validates the peer audit token and code signature; payload-free `.began`/`.ended` distributed notifications are hints that companions verify through that socket. A remote request opens `MiradorMicrophone_UID` explicitly and temporarily suspends preferred-default reconciliation without changing the saved microphone selection.
 - Streaming engines (Flux, ElevenLabs realtime) are driven through `StreamingDictationSession` plus one shared start/stop/pause/abort/binding path in the ViewModel (`StreamingEngineContext`). Do not add per-engine copies of that flow.
 - Observation: `MLXWhisperTranscriber` and the vocabulary/AI-memory/prompt-context managers are `@Observable` — views read them directly; do not reintroduce `@Published` mirrors in the ViewModel. High-frequency tickers (recording duration) stay OFF ObservableObject state: publish through a subject and subscribe locally in the one view that renders them.
 - History persists through SQLite and local audio storage. Use atomic history persistence helpers; do not split audio save and row save.
@@ -97,15 +97,15 @@ addresses, and machine-specific workflow details.
   meter and timer on the selection starved `registerSessionAudioLevel`, the only
   path that clears the "connecting <mic>" label, so a backup-driven dictation
   that was recording fine sat on "connecting" at 00:00 until the 6 s timeout.
-- Keep the three SapoWhisper distributed notification names and the Mirador
-  microphone UID stable; Mirador depends on them as a companion-app contract.
+- Keep the two lifecycle notification names, authenticated socket contract, and
+  Mirador microphone UID stable; Mirador depends on them.
 - Treat an explicit microphone UID as exclusive: restore it silently after route
   changes and never warm/restart it while healthy. If absent, wait without a
   fallback; only system-default mode follows the current input.
-- Route asserting AVAudioEngine calls through `AudioEngineGuard` and every
-  teardown through `teardownAndRetire`: Swift catches neither Objective-C setup
-  exceptions nor late `AVAudioIOUnit` teardown callbacks. Retry the former only
-  after route settle; release retired engines only after route quiescence.
+- Route asserting AVAudioEngine calls through `AudioEngineGuard`; materialize,
+  bind and read formats on the disposable deadline queue, quarantining the same
+  route epoch on a HAL hang. Teardown only through `teardownAndRetire`; release
+  retired engines after route quiescence and retry exceptions after route settle.
 - Never use a zero-length read as the EOF signal on `AVAudioFile` — reading at
   exact EOF throws; gate reads on `framePosition < length`.
 - Whisper-family engines hallucinate on silent/short takes ("Thank you.",

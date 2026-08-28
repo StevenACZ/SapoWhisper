@@ -65,7 +65,15 @@ fi
 
 SIGN_IDENTITY="${SAPOWHISPER_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}"
 if [[ -z "$SIGN_IDENTITY" ]]; then
-  SIGN_IDENTITY="$(security find-identity -p codesigning -v | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+  IDENTITIES=()
+  while IFS= read -r identity; do
+    IDENTITIES+=("$identity")
+  done < <(security find-identity -p codesigning -v | awk -F '"' '/Developer ID Application/ { print $2 }')
+  if [[ ${#IDENTITIES[@]} -ne 1 ]]; then
+    echo "Expected exactly one Developer ID Application identity; set SAPOWHISPER_SIGN_IDENTITY explicitly." >&2
+    exit 65
+  fi
+  SIGN_IDENTITY="${IDENTITIES[0]}"
 fi
 if [[ -z "$SIGN_IDENTITY" ]]; then
   echo "No Developer ID Application signing identity found." >&2
@@ -73,16 +81,17 @@ if [[ -z "$SIGN_IDENTITY" ]]; then
   exit 65
 fi
 
-TEAM_ID="${SAPOWHISPER_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-}}"
-if [[ -z "$TEAM_ID" ]]; then
-  TEAM_ID="$(security find-certificate -c "$SIGN_IDENTITY" -p \
-    | openssl x509 -noout -subject -nameopt RFC2253 \
-    | sed -n 's/.*OU=\([^,]*\).*/\1/p' \
-    | head -n 1)"
-fi
-if [[ -z "$TEAM_ID" ]]; then
+IDENTITY_TEAM_ID="$(security find-certificate -c "$SIGN_IDENTITY" -p \
+  | openssl x509 -noout -subject -nameopt RFC2253 \
+  | sed -n 's/.*OU=\([^,]*\).*/\1/p' \
+  | head -n 1)"
+if [[ -z "$IDENTITY_TEAM_ID" ]]; then
   echo "Could not detect a development team from the signing certificate." >&2
-  echo "Set SAPOWHISPER_DEVELOPMENT_TEAM or DEVELOPMENT_TEAM and retry." >&2
+  exit 65
+fi
+TEAM_ID="${SAPOWHISPER_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-$IDENTITY_TEAM_ID}}"
+if [[ "$TEAM_ID" != "$IDENTITY_TEAM_ID" ]]; then
+  echo "Configured development team does not match the signing certificate." >&2
   exit 65
 fi
 
@@ -90,6 +99,8 @@ echo "==> Validating notary profile: $NOTARY_PROFILE"
 xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null
 
 echo "==> Building $APP_NAME ($CONFIGURATION)"
+SOURCE_ROOT="$(pwd)"
+C_PATH_FLAGS="-fmacro-prefix-map=$SOURCE_ROOT=."
 xcodebuild \
   -quiet \
   -project SapoWhisper.xcodeproj \
@@ -105,6 +116,8 @@ xcodebuild \
   CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   ENABLE_HARDENED_RUNTIME=YES \
+  OTHER_CFLAGS="\$(inherited) $C_PATH_FLAGS" \
+  OTHER_CPLUSPLUSFLAGS="\$(inherited) $C_PATH_FLAGS" \
   OTHER_CODE_SIGN_FLAGS="--timestamp" \
   clean build
 
@@ -141,7 +154,7 @@ if [[ -d "$SPARKLE_FW" ]]; then
 fi
 
 echo "==> Verifying app signature"
-codesign --verify --deep --strict --verbose=2 "$BUILT_APP"
+scripts/verify_release_app.sh "$BUILT_APP" "Developer ID Application"
 SIGNING_DETAILS="$(codesign -dvv "$BUILT_APP" 2>&1)"
 if ! grep -q "Authority=Developer ID Application" <<<"$SIGNING_DETAILS"; then
   echo "App is not signed with Developer ID Application." >&2
@@ -236,7 +249,7 @@ fi
 
 echo "==> Verifying mounted app"
 xcrun stapler validate "$MOUNTED_APP"
-codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
+scripts/verify_release_app.sh "$MOUNTED_APP" "Developer ID Application"
 spctl -a -t execute -vv "$MOUNTED_APP"
 
 echo "==> SHA-256"

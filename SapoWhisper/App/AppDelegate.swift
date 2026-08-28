@@ -15,7 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeObserver: NSObjectProtocol?
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
-    private var remoteDictationObserver: NSObjectProtocol?
+    private var remoteDictationCommandServer: RemoteDictationCommandServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
@@ -26,7 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarStatusController.start()
         observeScreenChanges()
         observeSleepWake()
-        observeRemoteDictationCommands()
+        startRemoteDictationControl()
         scheduleInitialOnboardingCheck()
         Task.detached(priority: .utility) {
             // Rows stuck in "transcribing" (the app died mid-transcription)
@@ -93,25 +93,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let wakeObserver {
             workspaceCenter.removeObserver(wakeObserver)
         }
-        if let remoteDictationObserver {
-            DistributedNotificationCenter.default().removeObserver(remoteDictationObserver)
-        }
+        remoteDictationCommandServer?.stop()
         AutoDuckingManager.shared.forceRestore()
         DictationStateBroadcaster.broadcastRecordingEnded()
     }
 
-    private func observeRemoteDictationCommands() {
-        remoteDictationObserver = DistributedNotificationCenter.default().addObserver(
-            forName: DictationStateBroadcaster.toggleRequestedNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            MainActor.assumeIsolated {
-                SapoLog.recording.info("Remote dictation toggle received")
-                SapoWhisperAppEnvironment.shared.viewModel.toggleRecording(
-                    inputDeviceUID: DictationStateBroadcaster.remoteInputDeviceUID
-                )
-            }
+    private func startRemoteDictationControl() {
+        let server = RemoteDictationCommandServer()
+        do {
+            try server.start(
+                onToggle: {
+                    SapoLog.recording.info("Authenticated remote dictation toggle received")
+                    SapoWhisperAppEnvironment.shared.viewModel.toggleRecording(
+                        inputDeviceUID: DictationStateBroadcaster.remoteInputDeviceUID
+                    )
+                },
+                isRecording: {
+                    SapoWhisperAppEnvironment.shared.viewModel.appState == .recording
+                }
+            )
+            remoteDictationCommandServer = server
+        } catch {
+            SapoLog.recording.error("Authenticated remote dictation control unavailable")
         }
     }
 

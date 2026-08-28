@@ -672,6 +672,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     // batch endpoint — the old WebSocket replay path was dead code and is gone.
 
     func cancel() {
+        capture.cancelPendingSetup()
         capture.discardRecording()
         cleanupWebSocket()
         lastCaptureResult = nil

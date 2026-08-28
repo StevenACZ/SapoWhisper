@@ -173,6 +173,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     func cancel() {
+        capture.cancelPendingSetup()
         capture.discardRecording()
         cleanupWebSocket()
         lastCaptureResult = nil

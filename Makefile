@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build test release install-dev size-check secrets-scan ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
+.PHONY: help tools format format-all lint lint-all build test release install-dev size-check artifact-check secrets-scan ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
 
 .DEFAULT_GOAL := help
 
@@ -10,6 +10,7 @@ SWIFT_SOURCE_DIR := SapoWhisper
 DEBUG_DERIVED_DATA := ./build/audit-debug
 RELEASE_DERIVED_DATA := ./build/audit-release
 RELEASE_APP := $(RELEASE_DERIVED_DATA)/Build/Products/Release/SapoWhisper.app
+RELEASE_C_PATH_FLAGS := -fmacro-prefix-map=$(CURDIR)=.
 # mlx-swift ships a build plugin (CudaBuild); headless xcodebuild cannot
 # answer the interactive plugin-trust prompt, so validation is skipped here.
 XCODE_FLAGS := -skipPackagePluginValidation -skipMacroValidation
@@ -26,6 +27,7 @@ help:
 	@printf "  make release       Build Release for Apple Silicon\n"
 	@printf "  make install-dev   Reinstall signed Release build to /Applications\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
+	@printf "  make artifact-check Verify identity, architecture, paths, and contents\n"
 	@printf "  make secrets-scan  Scan the working tree for leaked secrets\n"
 	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
 	@printf "  make release-check Release gate: lint + Release build + size check\n"
@@ -82,7 +84,9 @@ test:
 release:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
-		-derivedDataPath $(RELEASE_DERIVED_DATA) $(XCODE_FLAGS) clean build
+		-derivedDataPath $(RELEASE_DERIVED_DATA) $(XCODE_FLAGS) \
+		OTHER_CFLAGS='$$(inherited) $(RELEASE_C_PATH_FLAGS)' \
+		OTHER_CPLUSPLUSFLAGS='$$(inherited) $(RELEASE_C_PATH_FLAGS)' clean build
 
 install-dev:
 	@chmod +x scripts/install_dev.sh
@@ -91,13 +95,16 @@ install-dev:
 size-check:
 	@scripts/measure_release_bundle.sh $(RELEASE_APP)
 
+artifact-check:
+	@scripts/verify_release_app.sh $(RELEASE_APP)
+
 secrets-scan:
 	@scripts/secrets_scan.sh tree
 
 ci-check: lint secrets-scan build test
 	@printf "ci-check: passed\n"
 
-release-check: lint release size-check
+release-check: lint release size-check artifact-check
 	@printf "release-check: passed\n"
 
 notarized-dmg:

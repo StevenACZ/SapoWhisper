@@ -177,7 +177,7 @@ nonisolated extension AudioCaptureEngine {
         let effectiveDevice =
             captureDeviceUID == AudioDevice.systemDefault.uid ? "system-default" : captureDeviceUID
         SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) first input buffer in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public) sampleRate=\(Int(buffer.format.sampleRate), privacy: .public) input=\(effectiveDevice, privacy: .public)"
+            "\(self.mode.logLabel, privacy: .public) first input buffer in \(elapsedMs, privacy: .public)ms frames=\(buffer.frameLength, privacy: .public) sampleRate=\(Int(buffer.format.sampleRate), privacy: .public) input=\(effectiveDevice, privacy: .private(mask: .hash))"
         )
     }
 }

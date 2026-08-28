@@ -6,6 +6,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.16.2] - 2026-08-27
+
+### Security
+
+- Remote dictation requests now use a same-user local socket that verifies the
+  Mirador Host audit token, bundle identifier, and Apple signing team, instead
+  of an unauthenticated distributed notification that any process could
+  imitate. The socket also lets companions verify lifecycle hints before
+  changing audio state.
+- Release artifacts now remove private build paths, redact microphone names
+  and UIDs from logs, and verify the expected signing team, bundle identifier,
+  designated requirement, architecture, and bundled contents.
+
 ### Fixed
 
 - An explicitly selected microphone now remains exclusive during headphone and
@@ -14,6 +27,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   device when it is unavailable; system-default mode still follows macOS.
 - The recording pill now clears “Connecting…” as soon as the first input buffer
   is confirmed instead of waiting for the user’s voice to cross a level threshold.
+- A Core Audio format query that never returns now times out on a disposable
+  setup queue, exits “Connecting…”, and quarantines that route so retries cannot
+  accumulate stuck audio threads; an actual route change enables one new try.
 - Audio engines are retained until Core Audio has been quiet after teardown,
   preventing late `AVAudioIOUnit` route callbacks from crashing the app while a
   failed or interrupted capture is being discarded.
