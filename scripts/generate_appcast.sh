@@ -36,19 +36,26 @@ ZIP_NAME="SapoWhisper-$VERSION.zip"
 ZIP_PATH="$OUTPUT_DIR/$ZIP_NAME"
 APPCAST_PATH="$OUTPUT_DIR/appcast.xml"
 
+VALIDATION_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-appcast.XXXXXX")"
+cleanup() {
+  rm -rf "$VALIDATION_DIR"
+}
+trap cleanup EXIT
+
 echo "==> Verifying stapled app"
 codesign --verify --deep --strict "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
 
 echo "==> Zipping $APP_PATH -> $ZIP_PATH"
 rm -f "$ZIP_PATH"
-ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 
-VALIDATION_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-appcast.XXXXXX")"
-cleanup() {
-  rm -rf "$VALIDATION_DIR"
-}
-trap cleanup EXIT
+ZIP_ENTRIES="$VALIDATION_DIR/zip-entries.txt"
+unzip -Z1 "$ZIP_PATH" >"$ZIP_ENTRIES"
+if LC_ALL=C grep -E -q '(^|/)\._' "$ZIP_ENTRIES"; then
+  echo "Sparkle archive contains AppleDouble sidecar entries." >&2
+  exit 65
+fi
 
 echo "==> Verifying archived app"
 ditto -x -k "$ZIP_PATH" "$VALIDATION_DIR"

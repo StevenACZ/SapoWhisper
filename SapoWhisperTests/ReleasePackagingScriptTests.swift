@@ -81,6 +81,20 @@ struct ReleasePackagingScriptTests {
         #expect(script.contains("scripts/verify_no_private_paths.sh"))
     }
 
+    @Test("Sparkle archives strip and reject AppleDouble sidecars")
+    func sparkleArchiveRejectsAppleDouble() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let script = try String(
+            contentsOf: repository.appendingPathComponent("scripts/generate_appcast.sh"),
+            encoding: .utf8
+        )
+        #expect(script.contains("COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent"))
+        #expect(script.contains("unzip -Z1 \"$ZIP_PATH\" >\"$ZIP_ENTRIES\""))
+        #expect(script.contains("grep -E -q '(^|/)\\._' \"$ZIP_ENTRIES\""))
+    }
+
     private func run(_ executable: URL, argument: URL) throws -> Int32 {
         let process = Process()
         process.executableURL = executable
