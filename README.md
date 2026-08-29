@@ -39,9 +39,9 @@ The model field always accepts a custom ID. The menu adds tested starting points
 | Tier | OpenRouter model | Guidance |
 |---|---|---|
 | Best tested | `anthropic/claude-opus-5` | Only model to pass the current 16/16 short four-route screen, including translation. Highest cost; 14/40-minute qualification is still pending. |
-| Same-language value | `qwen/qwen3.8-flash` | Low-cost cleanup candidate when output stays in the spoken language. It failed every translation route. |
+| Same-language value | `qwen/qwen3.8-flash` | Low-cost cleanup when output stays in the spoken language. It failed every translation record and showed runtime instability, so it is not a universal default. |
 | Fast budget | `openai/gpt-5.4-nano` | Fastest tested budget option. Hard Compact and translation cases may safely fall back to the source text. |
-| Economy | `qwen/qwen3.5-flash-02-23` | Very low cost but lower fidelity; avoid for important instructions and translation. |
+| Economy | `qwen/qwen3.5-flash-02-23` | Cheapest offered option, but it failed the fidelity, translation, runtime, and stability gates; use only for low-stakes same-language cleanup. |
 
 No small local AI-polish model has qualified yet, so Local Server polish is labeled experimental. This is separate from local speech-to-text: MLX Large V3 Turbo remains the recommended offline transcription model.
 
@@ -148,7 +148,7 @@ Tracked and public-safe:
 
 Ignored and local/private:
 
-- `DMG/`, `docs/`, `.agents/`, `.claude/`, `.codex/`, `skills-lock.json`, `xcuserdata/`, `build/`, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
+- `DMG/`, `docs/`, `.agents/`, `.claude/`, `.codex/`, `skills/`, `skills-lock.json`, `scripts/local_polish_model_benchmark.py`, `xcuserdata/`, `build/`, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
 
 Before opening a PR:
 
