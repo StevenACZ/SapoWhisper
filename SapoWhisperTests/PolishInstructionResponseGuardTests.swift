@@ -239,6 +239,93 @@ final class PolishInstructionResponseGuardTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
+    func testCompactKeepsSpanishInstructionVoiceDespiteDroppedFillerNegations() {
+        let raw = """
+            Dale, al finalizar esto quisiera que hagas una prueba con el modelo nuevo, ya que como puedes ver es \
+            súper barato, mucho más que el anterior, así que ahí me gustaría que lo probemos, porque también lee \
+            imágenes y eso antes no había, no sé si se pueda, pero sería bueno que lo revises también con el \
+            harness nuevo, ya que ese no lo uso yo en mi día a día, y al final anota los resultados en el reporte, \
+            ahí dale por favor.
+            """
+        let polished = """
+            Al terminar, haz 2 tareas en orden. Primero, prueba el modelo nuevo: es mucho más barato que el \
+            anterior y ahora lee imágenes. Segundo, revísalo también con el harness nuevo, que no uso a diario, y \
+            anota los resultados en el reporte.
+            """
+
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: raw,
+            polished: polished,
+            compactionExpected: true
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testCompactKeepsEnglishInstructionVoiceDespiteDroppedFillerNegations() {
+        let raw = """
+            Alright, when you finish this, test the new model, it is much cheaper than the previous one and now it \
+            reads images, no rush there, and I am not sure it works without the extra flag, so check that too, \
+            then write the results in the report, please.
+            """
+        let polished = """
+            When you finish, do 2 tasks in order. First, test the new model: it is much cheaper than the previous \
+            one and now reads images. Second, check whether it works without the extra flag, then write the \
+            results in the report.
+            """
+
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: raw,
+            polished: polished,
+            compactionExpected: true
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testCompactRejectsSpanishAnswerReportingCompletedWork() {
+        let raw = """
+            Dale, al finalizar esto quisiera que hagas una prueba con el modelo nuevo y que anotes los resultados \
+            en el reporte, ahí dale por favor.
+            """
+        let polished = """
+            Ya probé el modelo nuevo y he actualizado el reporte con los resultados; revisa el informe cuando \
+            quieras.
+            """
+
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: raw,
+            polished: polished,
+            compactionExpected: true
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testCompactRejectsEnglishAnswerReportingCompletedWork() {
+        let raw = """
+            Alright, when you finish this, test the new model with the new harness and write the results in the \
+            report, please.
+            """
+        let polished = """
+            I have tested the new model with the new harness and I updated the report with the results. Let me \
+            know if you need anything else.
+            """
+
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: raw,
+            polished: polished,
+            compactionExpected: true
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testDirectiveRestrictionStillSurvivesFillerNegations() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "No sé si se pueda, pero actualiza el servicio y no borres el cache de producción.",
+            polished: "Actualiza el servicio y borra el cache de producción.",
+            compactionExpected: true
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
     func testSelfCorrectionNoDoesNotBecomeARestriction() {
         let verdict = PolishInstructionResponseGuard.evaluate(
             raw: "actualiza cache no espera usa storage",

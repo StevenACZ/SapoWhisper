@@ -194,6 +194,8 @@
 "ai.polish.reasoning_low" = "Low";
 "ai.polish.reasoning_medium" = "Medium";
 "ai.polish.reasoning_high" = "High";
+"ai.polish.reasoning_minimum_note" = "This model cannot run without reasoning; Low is the minimum.";
+"ai.polish.reasoning_benchmarked_off_note" = "Benchmarked with reasoning off.";
 "ai.provider.section" = "Provider";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Local Server";

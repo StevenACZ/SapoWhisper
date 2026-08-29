@@ -23,9 +23,44 @@ nonisolated struct PolishModelRecommendation: Identifiable, Hashable {
     let tier: PolishModelEvidenceTier
     let detailKey: String
     let isSuggested: Bool
+    var benchmarkedReasoning: PolishReasoningEffort = .off
+    var minimumReasoning: PolishReasoningEffort? = nil
 
     var id: String { model }
     var detail: String { detailKey.localized }
+}
+
+enum PolishModelCatalog {
+    /// Verified on OpenRouter 2026-08-29: these reject `reasoning: none` with
+    /// HTTP 400 "Reasoning is mandatory for this endpoint and cannot be
+    /// disabled", so the request retries without the field and runs with the
+    /// model's own (slow) default budget.
+    static let reasoningMandatoryModels: Set<String> = [
+        "x-ai/grok-4.6",
+        "qwen/qwen3.8-max",
+        "z-ai/glm-5.3-flash",
+        "google/gemini-3.7-flash",
+    ]
+
+    static func requiresReasoning(_ modelID: String) -> Bool {
+        let normalized = modelID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        if reasoningMandatoryModels.contains(normalized) { return true }
+        return reasoningMandatoryModels.contains { $0.split(separator: "/").last.map(String.init) == normalized }
+    }
+
+    static func reasoningPolicy(
+        for modelID: String,
+        provider: PolishEndpoint
+    ) -> (benchmarked: PolishReasoningEffort, minimum: PolishReasoningEffort?) {
+        let normalized = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mandatoryMinimum: PolishReasoningEffort? = requiresReasoning(normalized) ? .low : nil
+
+        guard let recommendation = provider.modelRecommendation(for: normalized) else {
+            return (.automatic, mandatoryMinimum)
+        }
+        return (recommendation.benchmarkedReasoning, recommendation.minimumReasoning ?? mandatoryMinimum)
+    }
 }
 
 /// Endpoint presets for the OpenAI-compatible polish provider. Every preset
@@ -148,7 +183,9 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
                     model: "z-ai/glm-5.3-flash",
                     tier: .notRecommended,
                     detailKey: "ai.provider.model_detail_failed_gates",
-                    isSuggested: false
+                    isSuggested: false,
+                    benchmarkedReasoning: .automatic,
+                    minimumReasoning: .low
                 ),
                 PolishModelRecommendation(
                     model: "deepseek/deepseek-v4-flash-0731",
@@ -293,6 +330,21 @@ enum PolishReasoningEffort: String, CaseIterable, Identifiable {
 
     nonisolated var displayName: String {
         "ai.polish.reasoning_\(rawValue)".localized
+    }
+
+    nonisolated func coerced(toMinimum minimum: PolishReasoningEffort?) -> PolishReasoningEffort {
+        switch minimum {
+        case .low, .medium, .high:
+            break
+        case .automatic, .off, nil:
+            return self
+        }
+        switch self {
+        case .automatic, .off:
+            return minimum ?? self
+        case .low, .medium, .high:
+            return self
+        }
     }
 
     static func current(defaults: UserDefaults = .standard) -> PolishReasoningEffort {

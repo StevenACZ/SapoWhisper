@@ -12,6 +12,7 @@ import SwiftUI
 struct PolishModelPicker: View {
     let endpoint: PolishEndpoint
     @Binding var model: String
+    var defaults: UserDefaults = .standard
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -27,6 +28,7 @@ struct PolishModelPicker: View {
                             ForEach(suggestions) { recommendation in
                                 Button {
                                     model = recommendation.model
+                                    applyBenchmarkedReasoning(for: recommendation)
                                 } label: {
                                     let title =
                                         "\(recommendation.tier.displayName) · \(recommendation.model)"
@@ -75,6 +77,14 @@ struct PolishModelPicker: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// Picking a ranked model also restores the reasoning budget its published
+    /// numbers were measured with; free-text IDs never touch the setting.
+    private func applyBenchmarkedReasoning(for recommendation: PolishModelRecommendation) {
+        let policy = PolishModelCatalog.reasoningPolicy(for: recommendation.model, provider: endpoint)
+        let effort = policy.benchmarked.coerced(toMinimum: policy.minimum)
+        defaults.set(effort.rawValue, forKey: Constants.StorageKeys.aiPolishReasoningEffort)
     }
 
     private func recommendationIcon(for tier: PolishModelEvidenceTier) -> String {

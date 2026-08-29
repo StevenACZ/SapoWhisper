@@ -60,6 +60,38 @@ struct AIPolishSettingsCard: View {
         PolishMode(rawValue: aiPolishModeValue) ?? .default
     }
 
+    private var currentReasoningEffort: PolishReasoningEffort {
+        PolishReasoningEffort(rawValue: reasoningEffortValue) ?? .default
+    }
+
+    private var reasoningPolicy: (benchmarked: PolishReasoningEffort, minimum: PolishReasoningEffort?) {
+        PolishModelCatalog.reasoningPolicy(for: model, provider: endpoint)
+    }
+
+    private var requiresReasoning: Bool {
+        reasoningPolicy.minimum?.reservesReasoningTokens == true
+    }
+
+    private var availableReasoningEfforts: [PolishReasoningEffort] {
+        requiresReasoning
+            ? PolishReasoningEffort.allCases.filter { $0 != .off }
+            : PolishReasoningEffort.allCases
+    }
+
+    private var showsBenchmarkedReasoningNote: Bool {
+        guard let recommendation = endpoint.modelRecommendation(for: model), recommendation.isSuggested else {
+            return false
+        }
+        return recommendation.benchmarkedReasoning == .off && currentReasoningEffort != .off
+    }
+
+    private func enforceReasoningMinimum() {
+        let coerced = currentReasoningEffort.coerced(toMinimum: reasoningPolicy.minimum)
+        if coerced.rawValue != reasoningEffortValue {
+            reasoningEffortValue = coerced.rawValue
+        }
+    }
+
     var body: some View {
         SettingsCard(icon: "sparkles", title: "ai.polish.title".localized) {
             VStack(alignment: .leading, spacing: 12) {
@@ -131,6 +163,7 @@ struct AIPolishSettingsCard: View {
             if isProviderExpanded {
                 loadAPIKeyIfNeeded()
             }
+            enforceReasoningMinimum()
         }
         .onChange(of: apiKey) { _, newValue in
             guard !isLoadingProviderFields else { return }
@@ -145,10 +178,12 @@ struct AIPolishSettingsCard: View {
             if previous != endpoint {
                 keychainReadDenied = false
             }
+            enforceReasoningMinimum()
             testState = .idle
         }
         .onChange(of: model) { _, newValue in
             PolishProviderConfiguration.setStoredModel(newValue, for: endpoint)
+            enforceReasoningMinimum()
             testState = .idle
         }
         .onChange(of: baseURL) { _, newValue in
@@ -357,7 +392,7 @@ struct AIPolishSettingsCard: View {
                 Spacer(minLength: 8)
 
                 Picker("ai.polish.reasoning".localized, selection: $reasoningEffortValue) {
-                    ForEach(PolishReasoningEffort.allCases) { effort in
+                    ForEach(availableReasoningEfforts) { effort in
                         Text(effort.displayName).tag(effort.rawValue)
                     }
                 }
@@ -371,7 +406,20 @@ struct AIPolishSettingsCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if requiresReasoning {
+                Label("ai.polish.reasoning_minimum_note".localized, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if showsBenchmarkedReasoningNote {
+                Label("ai.polish.reasoning_benchmarked_off_note".localized, systemImage: "chart.bar.doc.horizontal")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .animation(Constants.Animation.reveal, value: requiresReasoning)
     }
 }
 

@@ -238,6 +238,25 @@ final class PolishProviderTests: XCTestCase {
         )
     }
 
+    func testReasoningPolicyReportsBenchmarkedAndMandatoryEfforts() {
+        let recommended = PolishModelCatalog.reasoningPolicy(
+            for: "anthropic/claude-opus-5",
+            provider: .openRouter
+        )
+        XCTAssertEqual(recommended.benchmarked, .off)
+        XCTAssertNil(recommended.minimum)
+
+        let grok = PolishModelCatalog.reasoningPolicy(for: "x-ai/grok-4.6", provider: .openRouter)
+        XCTAssertEqual(grok.minimum, .low)
+        XCTAssertEqual(PolishReasoningEffort.off.coerced(toMinimum: grok.minimum), .low)
+        XCTAssertEqual(PolishReasoningEffort.automatic.coerced(toMinimum: grok.minimum), .low)
+        XCTAssertEqual(PolishReasoningEffort.high.coerced(toMinimum: grok.minimum), .high)
+
+        let unknown = PolishModelCatalog.reasoningPolicy(for: "future/provider-model", provider: .openRouter)
+        XCTAssertEqual(unknown.benchmarked, .automatic)
+        XCTAssertNil(unknown.minimum)
+    }
+
     func testLocalPolishHasNoQualifiedOrSuggestedModel() {
         XCTAssertTrue(PolishEndpoint.localServer.modelRecommendations.isEmpty)
         XCTAssertTrue(PolishEndpoint.localServer.suggestedModels.isEmpty)

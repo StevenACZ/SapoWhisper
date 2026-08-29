@@ -8,6 +8,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Recommended models carry their benchmarked reasoning effort: picking a ranked model applies it, models that reject `reasoning: none` (Grok 4.6, Qwen 3.8 Max, GLM 5.3 Flash, Gemini 3.7 Flash) hide the Off option and coerce to Low with a note.
+- The polish tester ships a long, realistic developer dictation with fillers, self-corrections, numbers, a path, a branch and a negation, in English or Spanish following the app language.
+
 - Settings now presents evidence-based AI model tiers while preserving the
   free-text model field. The public benchmark scorecard records the dated
   short-screen results, rejected candidates, pricing snapshot, and promotion
@@ -40,6 +43,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   explicit private-output opt-in.
 
 ### Fixed
+
+- Compact polish no longer rejects valid rewrites as instruction responses when the dictation contains descriptive negations ("no sé si se pueda"); only directive restrictions must survive, and first-person completion reports are still rejected.
 
 - Deepgram Flux Live now keeps a one-second capture tail, atomically flushes
   the final PCM remainder, and waits for the provider to finish its

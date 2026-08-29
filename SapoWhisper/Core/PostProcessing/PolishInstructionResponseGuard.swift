@@ -90,6 +90,10 @@ enum PolishInstructionResponseGuard {
             return rejected()
         }
 
+        if introducedMatch(of: assistantSelfReportPatterns, raw: rawNormalized, polished: polishedNormalized) {
+            return rejected()
+        }
+
         // Weak phrases ("no puedo", "claro,", "here's") open normal sentences
         // too, so beyond being introduced they must also sit where an
         // assistant reply starts: the leading characters of the output.
@@ -108,10 +112,8 @@ enum PolishInstructionResponseGuard {
             !rawActions.isEmpty
             || containsAnyPattern(genericRequestCuePatterns, in: rawNormalized)
             || containsNegativeDirectiveCue(in: rawForPreservation)
-        let rawHasRestriction = restrictionPatternGroups.contains {
-            containsAnyPattern($0, in: rawForPreservation)
-        }
-        if rawHasRequestCue, rawHasRestriction {
+        let rawRestrictedObjects = restrictionObjects(in: rawForPreservation, directiveOnly: true)
+        if rawHasRequestCue, !rawRestrictedObjects.isEmpty {
             let polishedHasRestriction = restrictionPatternGroups.contains {
                 containsAnyPattern($0, in: polishedNormalized)
             }
@@ -119,7 +121,7 @@ enum PolishInstructionResponseGuard {
                 return rejected()
             }
             let polishedRestrictedObjects = restrictionObjects(in: polishedNormalized)
-            if restrictionObjects(in: rawForPreservation).contains(where: { rawObject in
+            if rawRestrictedObjects.contains(where: { rawObject in
                 !polishedRestrictedObjects.contains(where: { objectTokensMatch(rawObject, $0) })
             }) {
                 return rejected()
@@ -182,6 +184,17 @@ enum PolishInstructionResponseGuard {
     /// acceso al server"), so they only reject when the model introduced them.
     private static let capabilityRefusalPatterns: [String] = [
         #"\b(no tengo acceso|no tengo conexion|no cuento con conexion|no puedo acceder|no puedo navegar|no puedo buscar|no puedo ejecutar|no puedo correr|i do not have access|i don'?t have access|cannot browse|can'?t browse|cannot access|unable to access|i am unable to|i'?m unable to)\b"#
+    ]
+
+    private static let assistantSelfReportPatterns: [String] = [
+        #"\b(ya )?(he|hemos) (completado|terminado|hecho|probado|testeado|ejecutado|corrido|revisado|analizado|comprobado|verificado|creado|generado|agregado|actualizado|cambiado|eliminado|borrado|quitado|movido|renombrado|reemplazado|corregido|arreglado|configurado|instalado|desplegado|publicado|subido|guardado|copiado|documentado|escrito|redactado|resumido|encontrado|preparado|anotado|iniciado|detenido|reiniciado)\b"#,
+        #"\bya (lo |la |los |las )?(probe|teste|ejecute|corri|revise|analice|comprobe|verifique|genere|actualice|cambie|elimine|borre|quite|movi|renombre|reemplace|corregi|arregle|configure|instale|despliegue|publique|subi|guarde|copie|documente|escribi|redacte|resumi|encontre|prepare|anote|inicie|detuve|reinicie|complete|termine|hice)\b"#,
+        #"\b(como (me )?(lo )?(pediste|solicitaste|indicaste|habias pedido)|segun lo solicitado)\b"#,
+        #"\bespero que (esto |eso )?(te )?(sirva|ayude|funcione)\b"#,
+        #"\b(avisame|dime|hazme saber) si (necesitas|quieres|deseas|hay algo)\b"#,
+        #"\bi(?: have| had|['’]ve)? (completed|finished|tested|ran|run|reviewed|checked|analyzed|analysed|verified|created|generated|added|updated|changed|deleted|removed|moved|renamed|replaced|fixed|configured|installed|deployed|published|uploaded|saved|copied|documented|wrote|written|drafted|summarized|summarised|found|prepared|noted|started|stopped|restarted)\b"#,
+        #"\b(as|per) (you )?(requested|asked|instructed)\b"#,
+        #"\b(let me know if|hope (this|that) helps|anything else i can)\b"#,
     ]
 
     /// Assistant reply openers that are also common in everyday speech;
@@ -409,9 +422,8 @@ enum PolishInstructionResponseGuard {
         return tagger.tag(at: follower.lowerBound, unit: .word, scheme: .lexicalClass).0 == .verb
     }
 
-    private static func restrictionObjects(in text: String) -> [Set<String>] {
-        let pattern = #"\b(no|nunca|jamas|sin|excepto|salvo|do not|don'?t|must not|mustn'?t|never|without|except|but not)\b"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    private static func restrictionObjects(in text: String, directiveOnly: Bool = false) -> [Set<String>] {
+        guard let regex = try? NSRegularExpression(pattern: restrictionMarkerPattern) else { return [] }
         let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.matches(in: text, range: fullRange).compactMap { match in
             guard let range = Range(match.range, in: text) else { return nil }
@@ -419,9 +431,25 @@ enum PolishInstructionResponseGuard {
             if let delimiter = firstClauseDelimiter(in: text[range.upperBound...]) {
                 end = delimiter
             }
-            let tokens = Set(significantTokens(in: text[range.upperBound..<end]))
+            let clause = text[range.upperBound..<end]
+            if directiveOnly, !isDirectiveRestriction(marker: String(text[range]), clause: clause) {
+                return nil
+            }
+            let tokens = Set(significantTokens(in: clause))
             return tokens.isEmpty ? nil : tokens
         }
+    }
+
+    private static let restrictionMarkerPattern =
+        #"\b(no|nunca|jamas|sin|excepto|salvo|do not|don'?t|must not|mustn'?t|never|without|except|but not)\b"#
+
+    private static let exclusionMarkers: Set<String> = ["excepto", "salvo", "except", "but not"]
+
+    private static func isDirectiveRestriction(marker: String, clause: Substring) -> Bool {
+        if exclusionMarkers.contains(marker) { return true }
+        let clauseText = String(clause)
+        if containsAnyPattern(assistantDirectedCuePatterns, in: clauseText) { return true }
+        return containsNegativeDirectiveCue(in: marker + " " + clauseText)
     }
 
     private static func objectTokensMatch(_ raw: Set<String>, _ polished: Set<String>) -> Bool {
