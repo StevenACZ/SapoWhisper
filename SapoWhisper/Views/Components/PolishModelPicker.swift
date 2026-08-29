@@ -69,11 +69,23 @@ struct PolishModelPicker: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if recommendation.tier.carriesFidelityRisk {
+                        Text("ai.provider.model_risk_note".localized)
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             } else if endpoint == .localServer {
                 Label("ai.provider.model_local_experimental".localized, systemImage: "exclamationmark.triangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("ai.provider.model_untested_note".localized)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

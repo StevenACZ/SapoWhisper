@@ -221,6 +221,8 @@
 "ai.provider.model_detail_qwen35" = "Very low cost, but lower fidelity; avoid it for important instructions or translation.";
 "ai.provider.model_detail_failed_gates" = "Failed one or more critical fidelity, translation, runtime, or stability gates.";
 "ai.provider.model_local_experimental" = "Local AI-polish models are experimental; no small local model qualified in the current public screen.";
+"ai.provider.model_risk_note" = "Cheaper models can drop content, numbers or negations. SapoWhisper does not block their output; the benchmark is your guide.";
+"ai.provider.model_untested_note" = "Untested model. Output is pasted as returned; run \"Try the polish\" before relying on it.";
 "ai.provider.api_key" = "API key";
 "ai.provider.api_key_optional" = "API key (optional)";
 "ai.provider.api_key_placeholder" = "Paste your API key";

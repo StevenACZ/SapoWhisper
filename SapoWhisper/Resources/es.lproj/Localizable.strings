@@ -221,6 +221,8 @@
 "ai.provider.model_detail_qwen35" = "Costo muy bajo, pero menor fidelidad; evítalo para instrucciones importantes o traducción.";
 "ai.provider.model_detail_failed_gates" = "Falló uno o más gates críticos de fidelidad, traducción, runtime o estabilidad.";
 "ai.provider.model_local_experimental" = "Los modelos locales de mejora por IA son experimentales; ningún modelo local pequeño calificó en la prueba pública actual.";
+"ai.provider.model_risk_note" = "Los modelos económicos pueden perder contenido, números o negaciones. SapoWhisper no bloquea su salida; el benchmark es tu guía.";
+"ai.provider.model_untested_note" = "Modelo sin probar. La salida se pega tal cual; usa \"Probar el polish\" antes de confiar en él.";
 "ai.provider.api_key" = "API key";
 "ai.provider.api_key_optional" = "API key (opcional)";
 "ai.provider.api_key_placeholder" = "Pega tu API key";

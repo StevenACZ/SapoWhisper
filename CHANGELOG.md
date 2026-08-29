@@ -44,7 +44,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Compact polish no longer rejects valid rewrites as instruction responses when the dictation contains descriptive negations ("no sé si se pueda"); only directive restrictions must survive, and first-person completion reports are still rejected.
+- AI polish no longer enforces strict fidelity rejection. The instruction-response guard now rejects only output where the model clearly answered instead of rewriting (introduced openers, first-person completion reports, refusals, sign-offs); negation, anchor, URL and drift checks remain retry-only hints. Lower tiers and untested models show a fidelity-risk note in Settings.
 
 - Deepgram Flux Live now keeps a one-second capture tail, atomically flushes
   the final PCM remainder, and waits for the provider to finish its

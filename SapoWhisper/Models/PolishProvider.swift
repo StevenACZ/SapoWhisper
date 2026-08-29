@@ -16,6 +16,13 @@ enum PolishModelEvidenceTier: String {
     nonisolated var displayName: String {
         "ai.provider.model_tier_\(rawValue)".localized
     }
+
+    nonisolated var carriesFidelityRisk: Bool {
+        switch self {
+        case .bestTested, .bestValue: return false
+        case .sameLanguageValue, .fastBudget, .economy, .notRecommended: return true
+        }
+    }
 }
 
 nonisolated struct PolishModelRecommendation: Identifiable, Hashable {

@@ -413,15 +413,6 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testInstructionGuardRejectsMathAnswer() {
-        let raw = "dime cinco más cinco y explícalo"
-        let polished = "Cinco más cinco es 10."
-        let verdict = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
-
-        XCTAssertFalse(verdict.isAcceptable)
-        XCTAssertNotNil(verdict.retryInstruction)
-    }
-
     func testInstructionGuardRejectsAssistantRefusal() {
         let raw = "investígame por internet qué es WebRTC y dime las fuentes"
         let polished = "No puedo acceder a internet para buscar fuentes sobre WebRTC."
@@ -434,7 +425,9 @@ final class PolishFidelityTests: XCTestCase {
     /// Real regression: a Spanish dictation containing a cue verb ("genera")
     /// translated to English loses that cue ("generates" matches no EN
     /// pattern), so the cross-language cue-preservation check rejected every
-    /// faithful translation and the untranslated text shipped.
+    /// faithful translation and the untranslated text shipped. Cue
+    /// preservation is gone (2026-08-29): the output carries no introduced
+    /// assistant marker, so it is acceptable in every mode.
     func testInstructionGuardAcceptsFaithfulTranslationLosingSourceCue() {
         let raw = "sería bueno que la ventana que genera el resumen se cierre cuando doy clic afuera"
         let polished = "It would be good if the window that generates the summary closed when I click outside."
@@ -443,17 +436,16 @@ final class PolishFidelityTests: XCTestCase {
             raw: raw, polished: polished, translationExpected: true)
         XCTAssertTrue(translated.isAcceptable, translated.diagnosticSummary)
 
-        // Without a translation target the cue check still applies.
         let sameLanguage = PolishInstructionResponseGuard.evaluate(
             raw: raw, polished: polished, translationExpected: false)
-        XCTAssertFalse(sameLanguage.isAcceptable)
+        XCTAssertTrue(sameLanguage.isAcceptable, sameLanguage.diagnosticSummary)
     }
 
-    /// Direct answer/refusal detection must survive the translation
-    /// relaxation — those patterns match the polished text itself.
+    /// Introduced assistant markers must survive the translation relaxation —
+    /// they match the polished text itself.
     func testInstructionGuardStillRejectsAnswersWhenTranslating() {
         let raw = "dime cuánto es cinco más cinco"
-        let polished = "Cinco más cinco es 10."
+        let polished = "Claro, aquí tienes la traducción: five plus five is 10."
         let verdict = PolishInstructionResponseGuard.evaluate(
             raw: raw, polished: polished, translationExpected: true)
 
@@ -507,6 +499,7 @@ final class PolishFidelityTests: XCTestCase {
     /// dictation rephrases imperative cues into requirement wording, so the
     /// cue-preservation check found none of the literal cue verbs and rejected
     /// every attempt (3/3, raw shipped) even though the compaction was good.
+    /// Cue preservation is gone (2026-08-29): both modes accept it.
     func testInstructionGuardAcceptsCompactRewriteLosingCueVerbs() {
         let raw =
             "ya elimina el motor local antiguo y haz una mejor componentización revisa que los modelos se guarden bien y analiza el espacio usado"
@@ -517,25 +510,8 @@ final class PolishFidelityTests: XCTestCase {
             raw: raw, polished: polished, compactionExpected: true)
         XCTAssertTrue(compact.isAcceptable, compact.diagnosticSummary)
 
-        // Normal mode keeps demanding the cues — only compact relaxes it.
         let normal = PolishInstructionResponseGuard.evaluate(raw: raw, polished: polished)
-        XCTAssertFalse(normal.isAcceptable)
-    }
-
-    /// Answer/refusal drift must survive the compact relaxation — those
-    /// patterns match wording the model introduced, not preserved cues.
-    func testInstructionGuardStillRejectsDriftInCompactMode() {
-        let refusal = PolishInstructionResponseGuard.evaluate(
-            raw: "investígame por internet qué es WebRTC y dime las fuentes",
-            polished: "No puedo acceder a internet para buscar fuentes sobre WebRTC.",
-            compactionExpected: true)
-        XCTAssertFalse(refusal.isAcceptable)
-
-        let mathAnswer = PolishInstructionResponseGuard.evaluate(
-            raw: "dime cuánto es cinco más cinco",
-            polished: "Cinco más cinco es 10.",
-            compactionExpected: true)
-        XCTAssertFalse(mathAnswer.isAcceptable)
+        XCTAssertTrue(normal.isAcceptable, normal.diagnosticSummary)
     }
 
     func testInstructionGuardRejectsIntroducedRefusalOpener() {
@@ -546,24 +522,6 @@ final class PolishFidelityTests: XCTestCase {
 
         XCTAssertFalse(verdict.isAcceptable)
         XCTAssertNotNil(verdict.retryInstruction)
-    }
-
-    func testInstructionGuardRejectsStandaloneSpanishNegationFlip() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "No hagas merge todavía.",
-            polished: "Haz merge ahora."
-        )
-
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testInstructionGuardRejectsStandaloneEnglishNegationFlip() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Do not delete the cache.",
-            polished: "Delete the cache."
-        )
-
-        XCTAssertFalse(verdict.isAcceptable)
     }
 
     func testInstructionGuardAllowsSpokenFilenamePunctuationCorrection() {

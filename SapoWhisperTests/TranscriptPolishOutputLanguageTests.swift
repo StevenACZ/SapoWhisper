@@ -405,9 +405,9 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         let result = await processEnglishTranslation(
             rawText: raw,
             responses: [
-                .success("I cannot access the internet to research WebRTC."),
-                .success("No puedo acceder a internet para investigar WebRTC."),
-                .success("Todavía no puedo acceder a internet."),
+                .success("Sure, here is the polished text: research WebRTC and list the sources."),
+                .success("Claro, aquí tienes: investiga WebRTC y dime las fuentes."),
+                .success("Claro, aquí tienes de nuevo: investiga WebRTC y dime las fuentes."),
             ]
         )
 
@@ -422,7 +422,7 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
             rawText: raw,
             responses: [
                 .success(#"{"filler_scan":[],"polished":"invalid schema"}"#),
-                .success("I cannot access the internet to research WebRTC."),
+                .success("Sure, here is the polished text: research WebRTC and list the sources."),
                 .success(#"{"filler_scan":"none","polished":}"#),
                 .success(#"{"filler_scan":"none","polished":"Research WebRTC and list the sources."}"#),
             ],

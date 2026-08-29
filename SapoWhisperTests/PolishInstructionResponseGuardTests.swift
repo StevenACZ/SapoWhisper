@@ -3,333 +3,132 @@ import XCTest
 @testable import SapoWhisper
 
 final class PolishInstructionResponseGuardTests: XCTestCase {
-    func testRejectsDroppedCommonTechnicalImperativesInNormalMode() {
-        let cases = [
-            ("actualiza la API antes del viernes", "La API estará lista antes del viernes."),
-            ("elimina el cache cuando termine", "El cache queda disponible cuando termine."),
-            ("deploy the service after review", "The service is ready after review."),
-            ("restart the worker after the build", "The worker is ready after the build."),
-        ]
-
-        for testCase in cases {
-            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.0, polished: testCase.1)
-            XCTAssertFalse(verdict.isAcceptable, testCase.0)
-        }
-    }
-
-    func testPreservedImperativeIsAcceptedWhenAnotherCueAppearsAsContent() {
+    func testAcceptsSpanishCompactRewriteWithDroppedNegationAndChangedVoice() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "deploy the service after review",
-            polished: "Deploy the service after review."
+            raw: "actualiza el servicio pero no borres el cache, no sé si se pueda, ahí dale por favor",
+            polished: "Actualizar el servicio y borrar el cache.",
+            compactionExpected: true
         )
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testNounCuesDoNotBecomeRequiredActions() {
+    func testAcceptsEnglishCompactRewriteWithRewordedCommandPathAndURL() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Review the logs after the build, then deploy the service.",
-            polished: "Review the logs after the build, then deploy the service."
+            raw: "run npm run build in /srv/app and then check https://example.com/status, do not restart the database",
+            polished: "The build must run in the application directory and the status page must be checked afterwards.",
+            compactionExpected: true
         )
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testFaithfulRequestVerbParaphraseIsAccepted() {
+    func testAcceptsCompactRewriteThatRephrasesAFileInstruction() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Por favor revisa el reporte.",
-            polished: "Por favor verifica el reporte."
+            raw: "borra el archivo punto env del server, no, mejor solo revísalo",
+            polished: "Revisar el archivo .env del servidor.",
+            compactionExpected: true
         )
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testDroppingOneOfMultipleActionsIsRejected() {
+    func testAcceptsTranslationOfAnInstructionDictation() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Review the logs, then deploy the service.",
-            polished: "Review the logs."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testDroppingOneOfTwoObjectsWithTheSameActionIsRejected() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Revisa los logs y revisa el deploy.",
-            polished: "Revisa los logs."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testCombiningEquivalentReviewActionsPreservesBothObjects() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Revisa logs y verifica métricas.",
-            polished: "Comprueba logs y métricas."
-        )
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testActionObjectsCannotSwapBetweenDestructiveAndUpdateVerbs() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Delete cache. Update docs.",
-            polished: "Delete docs. Update cache."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testActionObjectsCannotSwapBetweenCopyAndOpen() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Copia el archivo y abre la carpeta.",
-            polished: "Copia la carpeta y abre el archivo."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testUncategorizedActionCannotBecomeDestructive() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Review logs.",
-            polished: "Delete logs."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testLeadingEnglishNounIsNotAnImperative() {
-        let cases = [
-            ("Review begins tomorrow.", "The review begins tomorrow."),
-            ("Review failed yesterday.", "The review failed yesterday."),
-        ]
-        for testCase in cases {
-            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.0, polished: testCase.1)
-            XCTAssertTrue(verdict.isAcceptable, testCase.0)
-        }
-    }
-
-    func testMergingARepeatedRequestIsAccepted() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Revisa el reporte, o sea, revisa el reporte.",
-            polished: "Revisa el reporte."
-        )
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testStandaloneActionWithoutObjectIsAccepted() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Reinicia.",
-            polished: "Reinicia."
-        )
-
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testRestrictionInSupersededClauseIsIgnored() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "No borres cache, no espera, borra cache.",
-            polished: "Borra cache."
-        )
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testCorrectionKeepsEarlierUnrelatedRestriction() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "No borres cache y actualiza logs, no espera, actualiza métricas.",
-            polished: "Borra cache y actualiza métricas."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testRestrictionMustStayAttachedToItsObject() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Actualiza el servicio, pero no actualiza el cache.",
-            polished: "Actualiza el cache, pero no actualiza el servicio."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testRestrictionQualifierCannotChangeEnvironment() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "No borres cache de producción.",
-            polished: "No borres cache de staging."
-        )
-
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testCommonUseCuePreservesRestriction() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Usa el servidor sin reiniciar la base.",
-            polished: "Usa el servidor y reinicia la base."
-        )
-        XCTAssertFalse(verdict.isAcceptable)
-    }
-
-    func testRejectsDroppedSpanishRestrictionsInNormalMode() {
-        let cases = [
-            ("actualiza el servicio pero no borres el cache", "Actualiza el servicio y borra el cache."),
-            ("reinicia el servicio pero nunca uses force", "Reinicia el servicio usando force."),
-            ("despliega el cambio sin reiniciar la base", "Despliega el cambio y reinicia la base."),
-            ("borra los archivos excepto el env", "Borra los archivos y el env."),
-        ]
-
-        for testCase in cases {
-            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.0, polished: testCase.1)
-            XCTAssertFalse(verdict.isAcceptable, testCase.0)
-        }
-    }
-
-    func testRejectsDroppedEnglishRestrictionsInNormalMode() {
-        let cases = [
-            ("update the service but do not delete the cache", "Update the service and delete the cache."),
-            ("restart the service but never use force", "Restart the service using force."),
-            ("deploy without restarting the database", "Deploy and restart the database."),
-            ("delete every file except env", "Delete every file including env."),
-        ]
-
-        for testCase in cases {
-            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.0, polished: testCase.1)
-            XCTAssertFalse(verdict.isAcceptable, testCase.0)
-        }
-    }
-
-    func testRestrictionPreservationIsExemptForTranslationButNotCompact() {
-        let raw = "actualiza el servicio sin reiniciar la base"
-        let polished = "Service update with database availability."
-
-        XCTAssertTrue(
-            PolishInstructionResponseGuard.evaluate(
-                raw: raw,
-                polished: polished,
-                translationExpected: true
-            ).isAcceptable)
-        XCTAssertFalse(
-            PolishInstructionResponseGuard.evaluate(
-                raw: raw,
-                polished: polished,
-                compactionExpected: true
-            ).isAcceptable)
-
-        XCTAssertTrue(
-            PolishInstructionResponseGuard.evaluate(
-                raw: raw,
-                polished: "Actualizar servicio sin reiniciar base.",
-                compactionExpected: true
-            ).isAcceptable)
-    }
-
-    func testTranslationRejectsIntroducedCapabilityRefusal() {
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Investiga WebRTC.",
-            polished: "I cannot access the internet.",
+            raw: "revisa el reporte y avísame el resultado antes del viernes",
+            polished: "Review the report and share the result before Friday.",
             translationExpected: true
         )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRejectsIntroducedAssistantOpener() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "explícame cómo funciona el deploy",
+            polished: "Claro, aquí tienes una explicación del deploy."
+        )
         XCTAssertFalse(verdict.isAcceptable)
     }
 
-    func testTranslationAcceptsEquivalentResponseLikeWordingFromSource() {
-        for raw in ["Aquí está el plan.", "Acá está el plan.", "Ahí está el plan."] {
+    func testRejectsIntroducedFirstPersonCompletionReport() {
+        let cases = [
+            (
+                "prueba el modelo nuevo y anota los resultados en el reporte",
+                "Ya probé el modelo nuevo y he actualizado el reporte."
+            ),
+            (
+                "test the new model with the new harness and write the results in the report",
+                "I have tested the new model and updated the report."
+            ),
+        ]
+
+        for testCase in cases {
             let verdict = PolishInstructionResponseGuard.evaluate(
-                raw: raw,
-                polished: "Here is the plan.",
-                translationExpected: true
+                raw: testCase.0,
+                polished: testCase.1,
+                compactionExpected: true
             )
-            XCTAssertTrue(verdict.isAcceptable, raw)
+            XCTAssertFalse(verdict.isAcceptable, testCase.0)
         }
     }
 
-    func testEquivalentUncategorizedRequestParaphraseIsAccepted() {
+    func testRejectsIntroducedSignOff() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "Dime las fuentes.",
-            polished: "Cuéntame las fuentes."
-        )
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testCompactKeepsSpanishInstructionVoiceDespiteDroppedFillerNegations() {
-        let raw = """
-            Dale, al finalizar esto quisiera que hagas una prueba con el modelo nuevo, ya que como puedes ver es \
-            súper barato, mucho más que el anterior, así que ahí me gustaría que lo probemos, porque también lee \
-            imágenes y eso antes no había, no sé si se pueda, pero sería bueno que lo revises también con el \
-            harness nuevo, ya que ese no lo uso yo en mi día a día, y al final anota los resultados en el reporte, \
-            ahí dale por favor.
-            """
-        let polished = """
-            Al terminar, haz 2 tareas en orden. Primero, prueba el modelo nuevo: es mucho más barato que el \
-            anterior y ahora lee imágenes. Segundo, revísalo también con el harness nuevo, que no uso a diario, y \
-            anota los resultados en el reporte.
-            """
-
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: raw,
-            polished: polished,
-            compactionExpected: true
-        )
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testCompactKeepsEnglishInstructionVoiceDespiteDroppedFillerNegations() {
-        let raw = """
-            Alright, when you finish this, test the new model, it is much cheaper than the previous one and now it \
-            reads images, no rush there, and I am not sure it works without the extra flag, so check that too, \
-            then write the results in the report, please.
-            """
-        let polished = """
-            When you finish, do 2 tasks in order. First, test the new model: it is much cheaper than the previous \
-            one and now reads images. Second, check whether it works without the extra flag, then write the \
-            results in the report.
-            """
-
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: raw,
-            polished: polished,
-            compactionExpected: true
-        )
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
-    }
-
-    func testCompactRejectsSpanishAnswerReportingCompletedWork() {
-        let raw = """
-            Dale, al finalizar esto quisiera que hagas una prueba con el modelo nuevo y que anotes los resultados \
-            en el reporte, ahí dale por favor.
-            """
-        let polished = """
-            Ya probé el modelo nuevo y he actualizado el reporte con los resultados; revisa el informe cuando \
-            quieras.
-            """
-
-        let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: raw,
-            polished: polished,
-            compactionExpected: true
+            raw: "revisa el reporte del sprint",
+            polished: "Revisa el reporte del sprint. Espero que te sirva."
         )
         XCTAssertFalse(verdict.isAcceptable)
     }
 
-    func testCompactRejectsEnglishAnswerReportingCompletedWork() {
-        let raw = """
-            Alright, when you finish this, test the new model with the new harness and write the results in the \
-            report, please.
-            """
-        let polished = """
-            I have tested the new model with the new harness and I updated the report with the results. Let me \
-            know if you need anything else.
-            """
-
+    func testRejectsSummaryOfWorkFramedAsRequested() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: raw,
-            polished: polished,
-            compactionExpected: true
+            raw: "actualiza el readme con los pasos del deploy",
+            polished: "Actualicé el readme con los pasos del deploy, como me pediste."
         )
         XCTAssertFalse(verdict.isAcceptable)
     }
 
-    func testDirectiveRestrictionStillSurvivesFillerNegations() {
+    func testRejectsReplyShapedAnswerToADictatedQuestion() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "No sé si se pueda, pero actualiza el servicio y no borres el cache de producción.",
-            polished: "Actualiza el servicio y borra el cache de producción.",
-            compactionExpected: true
+            raw: "¿el deploy del viernes ya está listo?",
+            polished: "Sí, el deploy del viernes ya está listo y el servicio quedó estable."
         )
         XCTAssertFalse(verdict.isAcceptable)
     }
 
-    func testSelfCorrectionNoDoesNotBecomeARestriction() {
+    func testRejectsIntroducedRefusalOrApology() {
+        let cases = [
+            ("investiga WebRTC y dime las fuentes", "Lo siento, no puedo acceder a internet."),
+            ("resume el documento de arquitectura para el equipo", "No puedo resumir documentos que no me diste."),
+            ("research WebRTC and list the sources", "I'm sorry, I can't help with that request."),
+            ("summarize the architecture document for the team", "As an AI, I am unable to read your files."),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.0, polished: testCase.1)
+            XCTAssertFalse(verdict.isAcceptable, testCase.1)
+        }
+    }
+
+    func testAcceptsRefusalWordingThatCameFromTheSource() {
+        let cases = [
+            (
+                "lo siento pero no puedo ayudar con la mudanza el sábado",
+                "Lo siento, pero no puedo ayudar con la mudanza el sábado."
+            ),
+            (
+                "i'm sorry i can't help with the migration this week",
+                "I'm sorry, I can't help with the migration this week."
+            ),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishInstructionResponseGuard.evaluate(raw: testCase.0, polished: testCase.1)
+            XCTAssertTrue(verdict.isAcceptable, testCase.1)
+        }
+    }
+
+    func testAcceptsMarkersThatCameFromTheSourceItself() {
         let verdict = PolishInstructionResponseGuard.evaluate(
-            raw: "actualiza cache no espera usa storage",
-            polished: "Usa storage."
+            raw: "claro, ya probé el harness, entonces actualiza el reporte con eso",
+            polished: "Claro, ya probé el harness; actualiza el reporte con eso."
         )
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
