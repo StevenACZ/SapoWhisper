@@ -21,7 +21,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Configurar la app para que no aparezca en el Dock
         NSApp.setActivationPolicy(.accessory)
         APIKeyKeychainMigration.run()
+        LocalAIServerConfiguration.sanitizeStoredBaseURL()
+        PolishProviderConfiguration.sanitizeStoredBaseURLs()
         EnginePortfolioMigration.run()
+        PolishProviderConfiguration.migrateExplicitModelSelection()
         UpdateManager.shared.start()
         menuBarStatusController.start()
         observeScreenChanges()

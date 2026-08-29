@@ -35,7 +35,12 @@ struct LocalAIServerSettingsCard: View {
             apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
             keychainReadDenied = KeychainStore.isReadDenied
         }
-        .onChange(of: baseURL) { _, _ in
+        .onChange(of: baseURL) { _, newValue in
+            let sanitized = LocalAIServerConfiguration.sanitizedBaseURLForStorage(newValue)
+            if sanitized != newValue {
+                baseURL = sanitized
+                return
+            }
             testState = .idle
             viewModel.setEngine(.localAIServer)
         }
@@ -60,7 +65,7 @@ struct LocalAIServerSettingsCard: View {
                 Text("config.local_ai_base_url".localized)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextField("config.local_ai_base_url_placeholder".localized, text: $baseURL)
+                TextField("config.local_ai_base_url_placeholder".localized, text: baseURLBinding)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
             }
@@ -159,8 +164,15 @@ struct LocalAIServerSettingsCard: View {
     }
 
     private var canTest: Bool {
-        LocalAIServerConfiguration.normalizedBaseURL(from: baseURL) != nil
+        LocalAIServerConfiguration.normalizedBaseURL(from: baseURL, apiKey: apiKey) != nil
             && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var baseURLBinding: Binding<String> {
+        Binding(
+            get: { baseURL },
+            set: { baseURL = LocalAIServerConfiguration.sanitizedBaseURLForStorage($0) }
+        )
     }
 
     private func testConnection() {

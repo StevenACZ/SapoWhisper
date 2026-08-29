@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import NaturalLanguage
 
 struct PolishInstructionResponseVerdict {
     let isAcceptable: Bool
@@ -71,7 +72,17 @@ enum PolishInstructionResponseGuard {
             return rejected()
         }
 
-        guard !translationExpected else { return acceptable() }
+        if translationExpected {
+            if containsAnyPattern(capabilityRefusalPatterns, in: polishedNormalized),
+                !containsAnyPattern(capabilityRefusalPatterns, in: rawNormalized)
+            {
+                return rejected()
+            }
+            if introducesResponseOpenerAcrossTranslation(raw: rawNormalized, polished: polishedNormalized) {
+                return rejected()
+            }
+            return acceptable()
+        }
 
         if introducedMatch(of: capabilityRefusalPatterns, raw: rawNormalized, polished: polishedNormalized),
             !polishedPreservesRequestCue
@@ -91,10 +102,41 @@ enum PolishInstructionResponseGuard {
             return rejected()
         }
 
+        let rawForPreservation = removingCorrectedClauses(from: rawNormalized)
+        let rawActions = actionRequirements(in: rawForPreservation)
+        let rawHasRequestCue =
+            !rawActions.isEmpty
+            || containsAnyPattern(genericRequestCuePatterns, in: rawNormalized)
+            || containsNegativeDirectiveCue(in: rawForPreservation)
+        let rawHasRestriction = restrictionPatternGroups.contains {
+            containsAnyPattern($0, in: rawForPreservation)
+        }
+        if rawHasRequestCue, rawHasRestriction {
+            let polishedHasRestriction = restrictionPatternGroups.contains {
+                containsAnyPattern($0, in: polishedNormalized)
+            }
+            if !polishedHasRestriction {
+                return rejected()
+            }
+            let polishedRestrictedObjects = restrictionObjects(in: polishedNormalized)
+            if restrictionObjects(in: rawForPreservation).contains(where: { rawObject in
+                !polishedRestrictedObjects.contains(where: { objectTokensMatch(rawObject, $0) })
+            }) {
+                return rejected()
+            }
+        }
+
         guard !compactionExpected else { return acceptable() }
 
-        let rawHasAssistantDirectedCue = containsAnyPattern(assistantDirectedCuePatterns, in: rawNormalized)
-        if rawHasAssistantDirectedCue, !polishedPreservesRequestCue {
+        let polishedActions = actionRequirements(in: polishedNormalized)
+        if rawActions.contains(where: { rawAction in
+            !polishedActions.contains(where: { polishedAction in
+                let categoryMatches =
+                    rawAction.category.map { $0 == polishedAction.category }
+                    ?? (polishedAction.category == nil && rawAction.cue == polishedAction.cue)
+                return categoryMatches && objectTokensMatch(rawAction.object, polishedAction.object)
+            })
+        }) {
             return rejected()
         }
 
@@ -115,12 +157,19 @@ enum PolishInstructionResponseGuard {
     }
 
     private static let assistantDirectedCuePatterns: [String] = [
-        #"\b(dime|cuentame|explicame|explica|respondeme|responde|investigame|investiga|buscame|busca|consulta|analizame|analiza|revisame|revisa|haz|crea|genera|calcula|corre|ejecuta|abre|instala|soluciona|arregla|ayudame|dame|preparame|escribe|redacta|que es|cuanto es)\b"#,
-        #"\b(tell me|explain|answer|research|search|look up|analyze|analyse|review|run|execute|open|install|fix|create|generate|calculate|what is|how much is|how many|write|draft|summarize|summarise)\b"#,
+        #"\b(dime|cuentame|explicame|explica|respondeme|responde|investigame|investiga|buscame|busca|consulta|analizame|analiza|revisame|revisa|haz|crea|genera|calcula|corre|ejecuta|abre|instala|soluciona|arregla|ayudame|dame|preparame|escribe|redacta|resume|elimina|borra|borres|mueve|cambia|actualiza|actualices|configura|guarda|copia|pega|sube|publica|despliega|prueba|verifica|comprueba|confirma|documenta|agrega|anade|incluye|excluye|quita|remueve|renombra|reemplaza|compila|construye|inicia|deten|reinicia|reiniciar|reinicies|usa|uses|utiliza|manten|conserva|preserva|evita|asegurate|avisale|recuerdale|mandale|deja|que es|cuanto es)\b"#,
+        #"\b(tell me|explain|answer|research|search|look up|analyze|analyse|review|run|execute|open|install|fix|create|generate|calculate|what is|how much is|how many|write|draft|summarize|summarise|delete|deleting|remove|removing|move|change|update|updating|configure|save|copy|paste|upload|publish|deploy|test|verify|document|add|rename|replace|build|start|stop|restart|restarting|use|using|keep|preserve|avoid|ensure)\b"#,
     ]
 
     private static let genericRequestCuePatterns: [String] = [
-        #"\b(necesito que|quiero que|puedes|podrias|tienes que|por favor|please|can you|could you|i need you to|i want you to)\b"#
+        #"\b(necesito que|quiero que|puedes|podrias|tienes que|hay que|asegurate de|por favor|please|can you|could you|i need you to|i want you to|make sure to|make sure that)\b"#
+    ]
+
+    private static let restrictionPatternGroups: [[String]] = [
+        [#"\bno\b"#, #"\b(do not|don'?t|must not|mustn'?t)\b"#],
+        [#"\b(nunca|jamas|never)\b"#],
+        [#"\b(sin|without)\b"#],
+        [#"\b(excepto|salvo|except|but not)\b"#],
     ]
 
     /// Nobody dictates these about themselves; they stay active even for
@@ -141,6 +190,22 @@ enum PolishInstructionResponseGuard {
         #"\b(no puedo|no encontre|no pude encontrar|i cannot|i can'?t)\b"#,
         #"\b(aqui tienes|here'?s|here is|por supuesto[,!]|claro[,!]|la respuesta es|the answer is|el resultado es|the result is)\b"#,
     ]
+
+    private static let responseOpenerEquivalentGroups: [[String]] = [
+        [#"\b(aca esta|aca tienes|ahi esta|ahi tienes|aqui esta|aqui tienes|here is|here'?s)\b"#],
+        [#"\b(por supuesto|of course)\b"#],
+        [#"\b(claro|sure)\b"#],
+        [#"\b(la respuesta es|the answer is)\b"#],
+        [#"\b(el resultado es|the result is)\b"#],
+        [#"\b(no puedo|i cannot|i can'?t)\b"#],
+    ]
+
+    private static func introducesResponseOpenerAcrossTranslation(raw: String, polished: String) -> Bool {
+        responseOpenerEquivalentGroups.contains { group in
+            containsLeadingPattern(group, in: polished, limit: 30)
+                && !containsAnyPattern(group, in: raw)
+        }
+    }
 
     private static func looksLikeMathAnswer(raw: String, polished: String) -> Bool {
         let rawMentionsMath =
@@ -217,6 +282,222 @@ enum PolishInstructionResponseGuard {
         patterns.contains { pattern in
             text.range(of: pattern, options: .regularExpression) != nil
         }
+    }
+
+    private static func containsLeadingPattern(_ patterns: [String], in text: String, limit: Int) -> Bool {
+        patterns.contains { pattern in
+            guard let range = text.range(of: pattern, options: .regularExpression) else { return false }
+            return text.distance(from: text.startIndex, to: range.lowerBound) < limit
+        }
+    }
+
+    private static let ambiguousEnglishNounCues: Set<String> = [
+        "answer", "build", "change", "draft", "fix", "research", "restart", "review", "run", "search", "start",
+        "stop", "test", "update", "use",
+    ]
+
+    private static let nounCuePredecessors: Set<String> = [
+        "a", "after", "an", "at", "before", "during", "for", "from", "in", "its", "my", "of", "on", "our",
+        "he", "i", "it", "que", "she", "that", "the", "these", "they", "this", "those", "we", "with",
+        "without", "your",
+    ]
+
+    private static let nounCueFollowers: Set<String> = [
+        "began", "begins", "ended", "ends", "has", "is", "remains", "seems", "started", "starts", "was",
+        "will",
+    ]
+
+    private struct ActionCue {
+        let phrase: String
+        let range: Range<String.Index>
+    }
+
+    private struct ActionRequirement {
+        let category: String?
+        let cue: String
+        let object: Set<String>
+    }
+
+    private static let actionObjectStopWords: Set<String> = [
+        "a", "al", "and", "after", "antes", "before", "con", "de", "del", "despues", "el", "en", "for",
+        "la", "las", "luego", "los", "of", "o", "para", "por", "the", "then", "un", "una", "y",
+    ]
+
+    private static let restrictionWords: Set<String> = [
+        "but", "do", "don", "except", "excepto", "jamas", "must", "never", "no", "not", "nunca", "salvo", "sin",
+        "without",
+    ]
+
+    private static func matchingAssistantDirectedCues(in text: String) -> [ActionCue] {
+        var cues: [ActionCue] = []
+        for pattern in assistantDirectedCuePatterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+            for match in regex.matches(in: text, range: fullRange) {
+                guard let range = Range(match.range, in: text) else { continue }
+                let phrase = String(text[range])
+                let predecessor = text[..<range.lowerBound].split(whereSeparator: { !$0.isLetter }).last.map(String.init)
+                if ambiguousEnglishNounCues.contains(phrase) {
+                    let follower = text[range.upperBound...].split(whereSeparator: { !$0.isLetter }).first.map(String.init)
+                    if predecessor.map(nounCuePredecessors.contains) == true
+                        || follower.map(nounCueFollowers.contains) == true
+                        || isFollowedByPredicateVerb(cueRange: range, in: text)
+                    {
+                        continue
+                    }
+                }
+                cues.append(ActionCue(phrase: phrase, range: range))
+            }
+        }
+        return cues.sorted { $0.range.lowerBound < $1.range.lowerBound }
+    }
+
+    private static func actionRequirements(in text: String) -> [ActionRequirement] {
+        let cues = matchingAssistantDirectedCues(in: text)
+        return cues.enumerated().map { index, cue in
+            var end = index + 1 < cues.count ? cues[index + 1].range.lowerBound : text.endIndex
+            if let delimiter = firstClauseDelimiter(in: text[cue.range.upperBound..<end]) {
+                end = delimiter
+            }
+            return ActionRequirement(
+                category: sensitiveActionCategory(for: cue.phrase),
+                cue: cue.phrase,
+                object: Set(significantTokens(in: text[cue.range.upperBound..<end]).prefix(8))
+            )
+        }
+    }
+
+    private static func sensitiveActionCategory(for cue: String) -> String? {
+        let groups: [(String, Set<String>)] = [
+            ("delete", ["borra", "borres", "delete", "deleting", "elimina", "quita", "remove", "removing", "remueve"]),
+            ("update", ["actualiza", "actualices", "cambia", "change", "replace", "reemplaza", "update", "updating"]),
+            ("create", ["add", "agrega", "anade", "crea", "create", "genera", "generate", "incluye"]),
+            ("deploy", ["deploy", "despliega", "publica", "publish", "sube", "upload"]),
+            ("start", ["inicia", "start"]),
+            ("stop", ["deten", "stop"]),
+            ("restart", ["reinicia", "reiniciar", "reinicies", "restart", "restarting"]),
+            ("configure", ["configura", "configure"]),
+            ("run", ["corre", "ejecuta", "execute", "run"]),
+            ("move", ["move", "mueve"]),
+            ("keep", ["conserva", "keep", "manten", "preserva", "preserve"]),
+            ("avoid", ["avoid", "evita"]),
+            ("review", ["analiza", "analyse", "analyze", "comprueba", "confirma", "revisa", "review", "verifica", "verify"]),
+            ("copy", ["copia", "copy"]),
+            ("open", ["abre", "open"]),
+            ("install", ["instala", "install"]),
+            ("save", ["guarda", "save"]),
+            ("paste", ["paste", "pega"]),
+            ("write", ["draft", "escribe", "redacta", "write"]),
+            ("rename", ["rename", "renombra"]),
+            ("document", ["document", "documenta"]),
+            ("test", ["prueba", "test"]),
+            ("tell", ["answer", "cuentame", "dime", "explica", "explicame", "responde", "respondeme", "tell me"]),
+        ]
+        return groups.first(where: { $0.1.contains(cue) })?.0
+    }
+
+    private static func isFollowedByPredicateVerb(cueRange: Range<String.Index>, in text: String) -> Bool {
+        guard
+            let follower = text.range(
+                of: #"\p{L}+"#,
+                options: .regularExpression,
+                range: cueRange.upperBound..<text.endIndex
+            )
+        else { return false }
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = text
+        return tagger.tag(at: follower.lowerBound, unit: .word, scheme: .lexicalClass).0 == .verb
+    }
+
+    private static func restrictionObjects(in text: String) -> [Set<String>] {
+        let pattern = #"\b(no|nunca|jamas|sin|excepto|salvo|do not|don'?t|must not|mustn'?t|never|without|except|but not)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: fullRange).compactMap { match in
+            guard let range = Range(match.range, in: text) else { return nil }
+            var end = text.endIndex
+            if let delimiter = firstClauseDelimiter(in: text[range.upperBound...]) {
+                end = delimiter
+            }
+            let tokens = Set(significantTokens(in: text[range.upperBound..<end]))
+            return tokens.isEmpty ? nil : tokens
+        }
+    }
+
+    private static func objectTokensMatch(_ raw: Set<String>, _ polished: Set<String>) -> Bool {
+        raw.isEmpty || raw.isSubset(of: polished)
+    }
+
+    private static func firstClauseDelimiter(in text: Substring) -> String.Index? {
+        for index in text.indices {
+            let character = text[index]
+            if ",;!?".contains(character) { return index }
+            guard character == "." else { continue }
+            let next = text.index(after: index)
+            if next == text.endIndex || text[next].isWhitespace { return index }
+        }
+        return nil
+    }
+
+    private static func containsNegativeDirectiveCue(in text: String) -> Bool {
+        let patterns = [
+            #"\bno\s+(?:hagas|haga|borres|borre|elimines|elimine|actualices|actualice|cambies|cambie|muevas|mueva|uses|use|instales|instale|abras|abra|copies|copie|pegues|pegue|guardes|guarde|subas|suba|publiques|publique|despliegues|despliegue|reinicies|reinicie|inicies|inicie|detengas|detenga|renombres|renombre|reemplaces|reemplace|compiles|compile|construyas|construya|quites|quite|remuevas|remueva|toques|toque)\b"#,
+            #"\b(?:do not|don'?t|must not|mustn'?t|never)\s+(?:delete|remove|change|update|move|use|install|open|copy|paste|save|upload|publish|deploy|restart|start|stop|rename|replace|build|touch)\b"#,
+        ]
+        return containsAnyPattern(patterns, in: text)
+    }
+
+    private static func significantTokens(in text: Substring) -> [String] {
+        let fragment = String(text).replacingOccurrences(
+            of: #"\b(?:punto|dot)\s+(json|md|env|yaml|yml|txt|swift|py|js|sh|plist|xcconfig|toml|xml|csv)\b"#,
+            with: "$1",
+            options: .regularExpression
+        )
+        let actionWords = Set(
+            matchingAssistantDirectedCues(in: fragment).flatMap { cue in
+                cue.phrase.split(separator: " ").map(String.init)
+            })
+        return fragment.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter {
+                $0.count >= 2 && !actionObjectStopWords.contains($0) && !restrictionWords.contains($0)
+                    && !actionWords.contains($0)
+            }
+    }
+
+    private static func removingCorrectedClauses(from text: String) -> String {
+        let markerPattern =
+            #"\b(no espera|espera no|quise decir|quiero decir|mejor dicho|me equivoque|no wait|wait no|i mean|i meant|scratch that|correction)\b"#
+        guard let regex = try? NSRegularExpression(pattern: markerPattern) else { return text }
+        var result = text
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
+        for match in matches.reversed() {
+            guard let marker = Range(match.range, in: result) else { continue }
+            var contentEnd = marker.lowerBound
+            while contentEnd > result.startIndex {
+                let previous = result.index(before: contentEnd)
+                if result[previous].isWhitespace || result[previous] == "," {
+                    contentEnd = previous
+                } else {
+                    break
+                }
+            }
+            let windowStart = result.index(contentEnd, offsetBy: -160, limitedBy: result.startIndex) ?? result.startIndex
+            var clauseStart = windowStart
+            let window = result[windowStart..<contentEnd]
+            for index in window.indices where ".!?;,".contains(window[index]) {
+                clauseStart = window.index(after: index)
+            }
+            for conjunction in [" y ", " and ", " then ", " luego ", " despues "] {
+                var searchStart = window.startIndex
+                while let found = window.range(of: conjunction, range: searchStart..<window.endIndex) {
+                    if found.upperBound > clauseStart { clauseStart = found.upperBound }
+                    searchStart = found.upperBound
+                }
+            }
+            result.replaceSubrange(clauseStart..<marker.upperBound, with: " ")
+        }
+        return result
     }
 
     private static func normalize(_ text: String) -> String {

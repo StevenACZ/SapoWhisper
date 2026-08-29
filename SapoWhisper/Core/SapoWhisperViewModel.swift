@@ -118,7 +118,6 @@ class SapoWhisperViewModel: ObservableObject {
     // paste the same audio twice. Set before the Task, cleared in its defer.
     private var isRetryInFlight = false
 
-    private static let stopTailPadding: TimeInterval = 0.12
     private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
     private var startRecordingTask: Task<Void, Never>?
@@ -1239,7 +1238,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
         isStopPending = true
 
-        let tailPadding = Self.stopTailPadding
+        let tailPadding = Self.stopTailPadding(for: sessionVariant)
         let stopRequestTime = CFAbsoluteTimeGetCurrent()
         let perf = DictationPerfTimeline(engine: perfEngine)
         logger.info(
@@ -1262,6 +1261,10 @@ class SapoWhisperViewModel: ObservableObject {
             perf.markTailDone()
             stop(perf)
         }
+    }
+
+    nonisolated static func stopTailPadding(for variant: TranscriptionEngineVariant) -> TimeInterval {
+        variant == .deepgramFluxLive ? 1.0 : 0.12
     }
 
     private func requestStopRecordingAndTranscribe() {

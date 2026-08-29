@@ -8,7 +8,7 @@ import Foundation
 /// How the AI polish rewrites the dictation. `normal` cleans fillers and keeps
 /// every sentence; `compact` extracts the ideas and instructions and rewrites
 /// them as the shortest faithful text (for pasting into AI chats without
-/// burning tokens). Benched against real history on OpenRouter, 2026-07-05.
+/// burning tokens).
 enum PolishMode: String, CaseIterable, Identifiable {
     case normal
     case compact

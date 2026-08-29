@@ -43,8 +43,8 @@ addresses, and machine-specific workflow details.
 - AI polish is optional and must never block dictation: provider failure, timeout, missing configuration, or empty output keeps the transcript usable.
 - Never run AI polish when `aiPolishEnabled` is false, including manual, retry, history, or language-selection paths.
 - There are exactly TWO polish modes (`PolishMode`): Normal, a single adaptive prompt that deletes filler and duplicated ideas, keeps every instruction/name/number, respects tone, and never converts prose into invented lists; and Compact (2026-07-05), which extracts requirements and rewrites the whole transcript in ONE call as the shortest faithful text (own timeout curve — never the per-chunk Normal budget). No prompt profiles, no SILENT skip gates ("the AI didn't work"); the one sanctioned gate is the user-chosen `PolishMinimumDuration` (default Always), enforced for live dictations only — manual History re-polish always runs.
-- The prompt is dictionary-first: keyterms plus correction targets are canonical spellings that map mishearings, are never translated, and are never injected into text that does not mention them. Benchmark prompt changes case-by-case against real dictation history on the PRODUCTION model (OpenRouter `gpt-5.4-nano`) before shipping; never tune by feel.
-- Filler deletion is two-tier by evidence, not by vibe: pure fillers are always-delete, but dual-use words ("la verdad", "equis", "tal", "y ya") are contextual — real history shows they usually carry meaning ("la verdad es que…", "equis cosas"). Do not move dual-use words back into the always-delete list without a bench run proving it.
+- The prompt is dictionary-first: keyterms plus correction targets are canonical spellings that map mishearings, are never translated, and are never injected into text that does not mention them. Benchmark prompt changes against the frozen four-route contract in `BENCHMARKS.md`; publish aggregate evidence only and never tune by feel.
+- Filler deletion is two-tier by evidence, not by vibe: pure fillers are always-delete, but dual-use words ("la verdad", "equis", "tal", "y ya") are contextual and often carry meaning ("la verdad es que…", "equis cosas"). Do not move dual-use words back into the always-delete list without a bench run proving it.
 - Reasoning effort is a single global setting (`PolishReasoningEffort`, default Off) sent with every polish request — OpenRouter gets `reasoning: {effort, exclude}`, everyone else `reasoning_effort`. Off exists because reasoning models otherwise think away the output token cap and the polish arrives truncated (Mercury 2, 2026-07-05). Explicit levels add `reasoningTokenHeadroom` to the cap; a provider that rejects the parameter gets one retry without it. Do not add per-endpoint or per-model reasoning knobs.
 - On endpoints that support structured outputs (OpenAI, OpenRouter) the polish uses a strict JSON schema with a leading `filler_scan` field — forcing the model to enumerate fillers before writing `polished` measurably cuts leftovers on long chunks. Groq/local/custom keep the plain-text contract, and a rejected structured request falls back to plain automatically. Never log or persist `filler_scan`.
 - Long transcripts are polished in sentence-boundary chunks (`TranscriptPostProcessor.splitIntoChunks`): past ~2k characters small models under-clean or summarize, and chunking restores medium-length quality. Keep the chunk seams on sentence boundaries. Chunks 2+ receive the RAW tail of their predecessor as continuity context (raw, not polished, so hosted chunks keep running in parallel).
@@ -109,13 +109,13 @@ addresses, and machine-specific workflow details.
 - Never use a zero-length read as the EOF signal on `AVAudioFile` — reading at
   exact EOF throws; gate reads on `framePosition < length`.
 - Whisper-family engines hallucinate on silent/short takes ("Thank you.",
-  repetition loops, glossary echo — all reproduced from real history audio).
+  repetition loops, glossary echo — covered by public regression tests).
   Two layers stop this and both must stay: the Local AI Server request always
   sends `vad_filter=true` (kills silence hallucinations AND trailing-silence
   repetition loops), and every batch engine result passes through
   `WhisperHallucinationFilter` (punctuation debris, loop collapse, vocabulary
   echo → the no-speech flow). Keep the vocabulary in `prompt`: hotwords-only
-  requests measurably lose punctuation/casing on real dictations.
+  requests measurably lose punctuation/casing in regression fixtures.
 - Local AI Server transcriptions preflight `GET /health` (3 s timeout) before uploading: any HTTP response — including 404 on servers without that endpoint — counts as alive; only transport failures throw. Do not remove it — without the preflight a powered-off server hangs the dictation for the full scaled request timeout (2–10 min).
 - Skip synthetic `Cmd+V` when Secure Keyboard Entry is active; leave text on the clipboard.
 - The history retranscribe/re-polish path must not drive live `appState` or overlay.

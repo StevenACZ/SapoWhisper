@@ -250,6 +250,159 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertGreaterThan(verdict.missingAnchors, 0)
     }
 
+    func testRejectsDroppedLowercaseTechnicalAnchors() {
+        let cases = [
+            ("copia /tmp/cache antes de continuar", "Copia el cache antes de continuar."),
+            ("carga el archivo .env antes de iniciar", "Carga el archivo antes de iniciar."),
+            ("abre settings.json y revisa su contenido", "Abre la configuración y revisa su contenido."),
+            ("ejecuta el comando con --force al final", "Ejecuta el comando al final."),
+            ("haz git push origin main cuando termine", "Publica los cambios cuando termine."),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishFidelityGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1,
+                vocabularyTerms: []
+            )
+            XCTAssertFalse(verdict.isAcceptable, testCase.0)
+            XCTAssertGreaterThan(verdict.missingAnchors, 0, testCase.0)
+        }
+    }
+
+    func testTechnicalAnchorsRequireExactBoundaries() {
+        let cases = [
+            ("usa -f al terminar", "Usa --force al terminar."),
+            ("borra /tmp/cache al terminar", "Borra /tmp/cache-old al terminar."),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishFidelityGuard.evaluate(raw: testCase.0, polished: testCase.1, vocabularyTerms: [])
+            XCTAssertFalse(verdict.isAcceptable, testCase.0)
+        }
+    }
+
+    func testAlphanumericIdentifiersStayExact() {
+        XCTAssertFalse(
+            PolishFidelityGuard.evaluate(raw: "usa api2 con H264", polished: "Usa api3 con H265.", vocabularyTerms: [])
+                .isAcceptable)
+        XCTAssertFalse(
+            PolishFidelityGuard.evaluate(
+                raw: "usa api2", polished: "Use api3.", vocabularyTerms: [], translationExpected: true
+            ).isAcceptable)
+    }
+
+    func testGeneralShellCommandVerbStaysExact() {
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: "ejecuta rm -rf /tmp/cache",
+            polished: "Ejecuta cp -rf /tmp/cache.",
+            vocabularyTerms: []
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testCapitalizedShellCommandIsExtracted() {
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: "Git push origin main when ready.",
+            polished: "Publish origin main when ready.",
+            vocabularyTerms: []
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testTechnicalTokensPreserveCase() {
+        let cases = [
+            ("abre README.md", "Abre readme.md."),
+            ("ejecuta con --force", "Ejecuta con --FORCE."),
+        ]
+        for testCase in cases {
+            let verdict = PolishFidelityGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1,
+                vocabularyTerms: []
+            )
+            XCTAssertFalse(verdict.isAcceptable, testCase.0)
+        }
+    }
+
+    func testNaturalLanguageMakeIsNotACommandAnchor() {
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: "I need to make dinner before the meeting.",
+            polished: "I need to prepare dinner before the meeting.",
+            vocabularyTerms: []
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testContextualCommandIsNotPrunedByContainingPath() {
+        let cases = [
+            ("usa /tmp/makefile y ejecuta make", "Usa /tmp/makefile y ejecuta rm."),
+            ("Keep /tmp/make; command make.", "Keep /tmp/make; command rm."),
+        ]
+        for testCase in cases {
+            let verdict = PolishFidelityGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1,
+                vocabularyTerms: []
+            )
+            XCTAssertFalse(verdict.isAcceptable, testCase.0)
+        }
+    }
+
+    func testLiteralAnchorsRejectPrefixAndSuffixMutations() {
+        let cases = [
+            ("abre https://acme.test/foo", "Abre https://acme.test/foo-old."),
+            ("escribe a@b.test", "Escribe xa@b.test."),
+        ]
+        for testCase in cases {
+            let verdict = PolishFidelityGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1,
+                vocabularyTerms: []
+            )
+            XCTAssertFalse(verdict.isAcceptable, testCase.0)
+        }
+    }
+
+    func testCorrectionMarkerDoesNotMatchInsideLongerWord() {
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: "en el código usa /tmp/cache",
+            polished: "En el código usa cache.",
+            vocabularyTerms: []
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testProtectsTechnicalAnchorAfterMoreThanSixtyEarlierAnchors() {
+        let prefix = (0..<65).map { "config\($0).json" }.joined(separator: " ")
+        let raw = "revisa \(prefix) y después elimina /tmp/cache"
+        let polished = "Revisa \(prefix) y después elimina el cache."
+        let verdict = PolishFidelityGuard.evaluate(raw: raw, polished: polished, vocabularyTerms: [])
+
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.totalAnchors, 60)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
+    func testAllowsRemovingOneSelfCorrectedTechnicalAnchor() {
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: "actualiza /tmp/old no espera usa /tmp/new para terminar",
+            polished: "Actualiza /tmp/new para terminar.",
+            vocabularyTerms: []
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testRepeatedTechnicalAnchorOutsideCorrectionRemainsProtected() {
+        let verdict = PolishFidelityGuard.evaluate(
+            raw: "actualiza /tmp/old no espera usa /tmp/new y luego compara /tmp/old",
+            polished: "Actualiza /tmp/new y termina.",
+            vocabularyTerms: []
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertGreaterThan(verdict.missingAnchors, 0)
+    }
+
     // MARK: - Instruction-response guard
 
     func testInstructionGuardAcceptsPolishedAssistantRequest() {
@@ -395,6 +548,33 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertNotNil(verdict.retryInstruction)
     }
 
+    func testInstructionGuardRejectsStandaloneSpanishNegationFlip() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "No hagas merge todavía.",
+            polished: "Haz merge ahora."
+        )
+
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testInstructionGuardRejectsStandaloneEnglishNegationFlip() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Do not delete the cache.",
+            polished: "Delete the cache."
+        )
+
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testInstructionGuardAllowsSpokenFilenamePunctuationCorrection() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "No borres settings punto json.",
+            polished: "No borres settings.json."
+        )
+
+        XCTAssertTrue(verdict.isAcceptable)
+    }
+
     func testTranslationAcceptsDroppedDuplicateNumbers() {
         let raw = "avísale a ventas que enviamos 5 cajas el lunes y 5 cajas el martes a la bodega"
         let polished = "Tell sales we shipped 5 boxes on Monday and some boxes on Tuesday to the warehouse."
@@ -433,22 +613,24 @@ final class PolishFidelityTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
-    func testAcceptsTruncatedChineseTranslation() {
+    func testRejectsTruncatedChineseTranslation() {
         let raw = "necesito que revises el informe de ventas y me cuentes si todo quedó listo para la tarde"
         let polished = "好的"
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true)
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertTrue(verdict.translationShapeMismatch)
     }
 
-    func testAcceptsRunawayChineseTranslation() {
+    func testRejectsRunawayChineseTranslation() {
         let raw = "hola equipo"
         let polished = String(repeating: "通知", count: 12)
         let verdict = PolishFidelityGuard.evaluate(
             raw: raw, polished: polished, vocabularyTerms: [],
             translationExpected: true)
-        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertFalse(verdict.isAcceptable, verdict.diagnosticSummary)
+        XCTAssertTrue(verdict.translationShapeMismatch)
     }
 
     func testMixedScriptOutputIsNotRejected() {

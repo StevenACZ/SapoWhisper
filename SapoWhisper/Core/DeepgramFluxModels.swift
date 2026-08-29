@@ -38,3 +38,35 @@ struct DeepgramFluxTranscriptAccumulator {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+enum DeepgramFluxFinalizationCompletion: Equatable {
+    case pending
+    case succeeded
+    case failed
+}
+
+struct DeepgramFluxFinalizationGate {
+    private(set) var closeStreamStarted = false
+    private(set) var receiveCompleted = false
+    private var receiveCloseCode: URLSessionWebSocketTask.CloseCode = .invalid
+    private var receiveCompletedBeforeClose = false
+
+    mutating func beginCloseStream() {
+        closeStreamStarted = true
+    }
+
+    mutating func completeReceive(closeCode: URLSessionWebSocketTask.CloseCode) {
+        receiveCompleted = true
+        receiveCloseCode = closeCode
+        receiveCompletedBeforeClose = !closeStreamStarted
+    }
+
+    var completion: DeepgramFluxFinalizationCompletion {
+        guard closeStreamStarted, receiveCompleted else { return .pending }
+        return !receiveCompletedBeforeClose && receiveCloseCode == .normalClosure ? .succeeded : .failed
+    }
+
+    var canFinish: Bool {
+        completion == .succeeded
+    }
+}

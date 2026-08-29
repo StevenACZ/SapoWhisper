@@ -100,8 +100,8 @@ struct LocalModelRow: View {
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
 
-                if model.isRecommended {
-                    Text(model.badgeText)
+                if let badgeText = model.badgeText {
+                    Text(badgeText)
                         .font(.caption2)
                         .foregroundColor(.white)
                         .padding(.horizontal, 5)

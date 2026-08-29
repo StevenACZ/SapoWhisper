@@ -15,6 +15,8 @@ nonisolated struct DeepgramFluxAudioSenderStats {
     let maxQueueDepth: Int
     let maxSendWaitMs: Int
     let timedOutSends: Int
+    let rejectedChunks: Int
+    let rejectedBytes: Int
 
     var pendingChunks: Int {
         max(0, enqueuedChunks - sentChunks - failedChunks)
@@ -25,6 +27,8 @@ nonisolated struct DeepgramFluxAudioSenderStats {
 /// queue, every counter sits behind `statsLock`/`stateLock`, and sub-chunk
 /// audio accumulates behind `pendingAudioLock`.
 nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
+    typealias SendOperation = @Sendable (Data, @escaping @Sendable (Error?) -> Void) -> Void
+
     /// Flux strongly recommends ~80 ms audio chunks, but the capture tap
     /// emits ~21 ms blocks — coalesce to 2560 bytes (80 ms @ 16 kHz mono
     /// int16) before sending.
@@ -36,8 +40,10 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
     private let pendingAudioLock = NSLock()
 
     private var pendingAudio: [UInt8] = []
+    private var acceptingAudio = false
 
     private var task: URLSessionWebSocketTask?
+    private var sendOperation: SendOperation?
     private var isActive = false
     private var enqueuedChunks = 0
     private var sentChunks = 0
@@ -47,46 +53,58 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
     private var maxQueueDepth = 0
     private var maxSendWaitMs = 0
     private var timedOutSends = 0
+    private var rejectedChunks = 0
+    private var rejectedBytes = 0
 
     func start(task: URLSessionWebSocketTask) {
+        start(task: task) { data, completion in
+            task.send(.data(data), completionHandler: completion)
+        }
+    }
+
+    func start(send: @escaping SendOperation) {
+        start(task: nil, send: send)
+    }
+
+    private func start(task: URLSessionWebSocketTask?, send: @escaping SendOperation) {
         resetStats()
         pendingAudioLock.lock()
         pendingAudio.removeAll(keepingCapacity: true)
+        acceptingAudio = true
         pendingAudioLock.unlock()
         stateLock.lock()
         self.task = task
+        sendOperation = send
         isActive = true
         stateLock.unlock()
         SapoLog.flux.info("Flux audio sender started")
     }
 
-    func enqueue(_ data: Data) {
-        guard !data.isEmpty else { return }
+    @discardableResult
+    func enqueue(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return true }
 
-        var chunks: [Data] = []
         pendingAudioLock.lock()
+        guard acceptingAudio else {
+            pendingAudioLock.unlock()
+            registerRejectedChunk(byteCount: data.count)
+            return false
+        }
+
         pendingAudio.append(contentsOf: data)
         while pendingAudio.count >= Self.targetChunkBytes {
             let chunk = pendingAudio.prefix(Self.targetChunkBytes)
             pendingAudio.removeFirst(Self.targetChunkBytes)
-            chunks.append(Data(chunk))
+            enqueueForSending(Data(chunk))
         }
         pendingAudioLock.unlock()
-
-        for chunk in chunks {
-            let chunkIndex = registerEnqueuedChunk(byteCount: chunk.count)
-            queue.async { [weak self] in
-                self?.send(chunk, chunkIndex: chunkIndex)
-            }
-        }
+        return true
     }
 
     func finishAndWait(timeout: TimeInterval) async -> DeepgramFluxAudioSenderStats {
         let startedAt = CFAbsoluteTimeGetCurrent()
 
-        // Ship the sub-80 ms remainder before draining so the tail of the
-        // dictation reaches the server ahead of CloseStream.
-        flushPendingAudio()
+        sealAndFlushPendingAudio()
 
         return await withCheckedContinuation { continuation in
             let resumeGate = OSAllocatedUnfairLock(initialState: false)
@@ -115,7 +133,7 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
                 let stats = self.snapshot()
                 if resumeOnce(returning: stats) {
                     SapoLog.flux.info(
-                        "Flux audio sender drained elapsed=\(elapsedMs, privacy: .public)ms enqueued=\(stats.enqueuedChunks, privacy: .public) sent=\(stats.sentChunks, privacy: .public) failed=\(stats.failedChunks, privacy: .public) pending=\(stats.pendingChunks, privacy: .public) bytes=\(stats.sentBytes, privacy: .public) maxQueue=\(stats.maxQueueDepth, privacy: .public) maxSendWait=\(stats.maxSendWaitMs, privacy: .public)ms timeouts=\(stats.timedOutSends, privacy: .public)"
+                        "Flux audio sender drained elapsed=\(elapsedMs, privacy: .public)ms enqueued=\(stats.enqueuedChunks, privacy: .public) sent=\(stats.sentChunks, privacy: .public) failed=\(stats.failedChunks, privacy: .public) pending=\(stats.pendingChunks, privacy: .public) rejected=\(stats.rejectedChunks, privacy: .public) bytes=\(stats.sentBytes, privacy: .public) maxQueue=\(stats.maxQueueDepth, privacy: .public) maxSendWait=\(stats.maxSendWaitMs, privacy: .public)ms timeouts=\(stats.timedOutSends, privacy: .public)"
                     )
                 }
             }
@@ -138,6 +156,7 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
 
     func cancel() {
         pendingAudioLock.lock()
+        acceptingAudio = false
         pendingAudio.removeAll(keepingCapacity: true)
         pendingAudioLock.unlock()
         abortPendingSends()
@@ -161,23 +180,27 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
             sentBytes: sentBytes,
             maxQueueDepth: maxQueueDepth,
             maxSendWaitMs: maxSendWaitMs,
-            timedOutSends: timedOutSends
+            timedOutSends: timedOutSends,
+            rejectedChunks: rejectedChunks,
+            rejectedBytes: rejectedBytes
         )
     }
 
-    /// Enqueues whatever sub-chunk audio is still buffered. The serial queue
-    /// keeps FIFO order, so a remainder posted before the drain block in
-    /// `finishAndWait` is sent before the stats snapshot resolves.
-    private func flushPendingAudio() {
+    func sealAndFlushPendingAudio() {
         pendingAudioLock.lock()
+        acceptingAudio = false
         let remainder = Data(pendingAudio)
         pendingAudio.removeAll(keepingCapacity: true)
+        if !remainder.isEmpty {
+            enqueueForSending(remainder)
+        }
         pendingAudioLock.unlock()
+    }
 
-        guard !remainder.isEmpty else { return }
-        let chunkIndex = registerEnqueuedChunk(byteCount: remainder.count)
+    private func enqueueForSending(_ data: Data) {
+        let chunkIndex = registerEnqueuedChunk(byteCount: data.count)
         queue.async { [weak self] in
-            self?.send(remainder, chunkIndex: chunkIndex)
+            self?.send(data, chunkIndex: chunkIndex)
         }
     }
 
@@ -186,7 +209,7 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
         // the session (failed chunks trigger the batch fallback upstream).
         // The serial queue keeps chunk order intact while retrying.
         for attempt in 1...2 {
-            guard let task = currentTaskIfActive() else {
+            guard let sendOperation = currentSendOperationIfActive() else {
                 registerFailedChunk()
                 return
             }
@@ -195,7 +218,7 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
             let semaphore = DispatchSemaphore(value: 0)
             let sendErrorBox = OSAllocatedUnfairLock<Error?>(initialState: nil)
 
-            task.send(.data(data)) { error in
+            sendOperation(data) { error in
                 sendErrorBox.withLock { $0 = error }
                 semaphore.signal()
             }
@@ -243,6 +266,8 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
         maxQueueDepth = 0
         maxSendWaitMs = 0
         timedOutSends = 0
+        rejectedChunks = 0
+        rejectedBytes = 0
         statsLock.unlock()
     }
 
@@ -274,11 +299,18 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
         statsLock.unlock()
     }
 
-    private func currentTaskIfActive() -> URLSessionWebSocketTask? {
+    private func registerRejectedChunk(byteCount: Int) {
+        statsLock.lock()
+        rejectedChunks += 1
+        rejectedBytes += byteCount
+        statsLock.unlock()
+    }
+
+    private func currentSendOperationIfActive() -> SendOperation? {
         stateLock.lock()
         defer { stateLock.unlock() }
         guard isActive else { return nil }
-        return task
+        return sendOperation
     }
 
     private func setActive(_ active: Bool) {
@@ -292,6 +324,7 @@ nonisolated final class DeepgramFluxAudioSender: @unchecked Sendable {
         isActive = false
         let task = task
         self.task = nil
+        sendOperation = nil
         stateLock.unlock()
         task?.cancel(with: .goingAway, reason: nil)
     }
@@ -306,6 +339,8 @@ nonisolated extension DeepgramFluxAudioSenderStats {
         sentBytes: 0,
         maxQueueDepth: 0,
         maxSendWaitMs: 0,
-        timedOutSends: 0
+        timedOutSends: 0,
+        rejectedChunks: 0,
+        rejectedBytes: 0
     )
 }

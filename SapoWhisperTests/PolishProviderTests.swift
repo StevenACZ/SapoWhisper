@@ -9,6 +9,170 @@ import XCTest
 
 final class PolishProviderTests: XCTestCase {
 
+    private final class StubURLProtocol: URLProtocol {
+        nonisolated(unsafe) static var responsesByHost: [String: [Result<String, URLError>]] = [:]
+        nonisolated(unsafe) static var requestCountsByHost: [String: Int] = [:]
+        private static let lock = NSLock()
+
+        static func configure(_ responses: [Result<String, URLError>], for host: String) {
+            lock.lock()
+            responsesByHost[host] = responses
+            requestCountsByHost[host] = 0
+            lock.unlock()
+        }
+
+        static func requestCount(for host: String) -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return requestCountsByHost[host, default: 0]
+        }
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func stopLoading() {}
+
+        override func startLoading() {
+            Self.lock.lock()
+            let host = request.url?.host ?? ""
+            Self.requestCountsByHost[host, default: 0] += 1
+            var responses = Self.responsesByHost[host, default: []]
+            let response: Result<String, URLError> =
+                responses.isEmpty
+                ? .failure(URLError(.badServerResponse)) : responses.removeFirst()
+            Self.responsesByHost[host] = responses
+            Self.lock.unlock()
+
+            switch response {
+            case .success(let content):
+                let body = try! JSONSerialization.data(withJSONObject: [
+                    "choices": [["message": ["content": content], "finish_reason": "stop"]]
+                ])
+                let http = HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil
+                )!
+                client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: body)
+                client?.urlProtocolDidFinishLoading(self)
+            case .failure(let error):
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+    }
+
+    private func makeStructuredPolisher(responses: [Result<String, URLError>]) -> (
+        OpenAICompatiblePolisher, PolishProviderConfiguration, String
+    ) {
+        let host = "\(UUID().uuidString.lowercased()).provider.test"
+        StubURLProtocol.configure(responses, for: host)
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [StubURLProtocol.self]
+        let polisher = OpenAICompatiblePolisher(session: URLSession(configuration: sessionConfiguration))
+        let provider = PolishProviderConfiguration(
+            endpoint: .openAI,
+            baseURL: URL(string: "https://\(host)/v1")!,
+            model: "test-model",
+            apiKey: "test-key"
+        )
+        return (polisher, provider, host)
+    }
+
+    private func polish(
+        content: String,
+        contract: OpenAICompatiblePolisher.StructuredContract = .polish
+    ) async throws -> PolishResponse {
+        try await polish(contents: [content], contract: contract)
+    }
+
+    private func polish(
+        contents: [String],
+        contract: OpenAICompatiblePolisher.StructuredContract = .polish,
+        maximumResponses: Int? = nil
+    ) async throws -> PolishResponse {
+        let (polisher, provider, _) = makeStructuredPolisher(responses: contents.map { .success($0) })
+        return try await polisher.polish(
+            system: "system",
+            user: "user",
+            configuration: provider,
+            contract: contract,
+            maximumResponses: maximumResponses
+        )
+    }
+
+    func testStructuredPolishExtractsExpectedKey() async throws {
+        let response = try await polish(
+            content: #"{"filler_scan":"eh x1","polished":"Texto limpio."}"#
+        )
+
+        XCTAssertEqual(response.text, "Texto limpio.")
+    }
+
+    func testStructuredCompactExtractsExpectedKeyFromFencedJSON() async throws {
+        let response = try await polish(
+            content: """
+                ```json
+                {"requirements_scan":"deploy","compact":"Deploy now."}
+                ```
+                """,
+            contract: .compact
+        )
+
+        XCTAssertEqual(response.text, "Deploy now.")
+    }
+
+    func testStructuredResponseKeepsGenuinePlainTextWhenSchemaWasIgnored() async throws {
+        let response = try await polish(content: "Texto limpio sin JSON.")
+
+        XCTAssertEqual(response.text, "Texto limpio sin JSON.")
+    }
+
+    func testStructuredResponseMissingExpectedKeyRetriesPlain() async throws {
+        let response = try await polish(contents: [
+            #"{"filler_scan":"none","compact":"Wrong contract."}"#,
+            "Recovered plain text.",
+        ])
+        XCTAssertEqual(response.text, "Recovered plain text.")
+        XCTAssertEqual(response.responseCount, 2)
+    }
+
+    func testMalformedJSONEnvelopeRetriesAndKeepsPlainJSONDictation() async throws {
+        let response = try await polish(contents: [
+            #"{"filler_scan":"none","polished":}"#,
+            #"{"enabled": true}"#,
+        ])
+        XCTAssertEqual(response.text, #"{"enabled": true}"#)
+        XCTAssertEqual(response.responseCount, 2)
+    }
+
+    func testMalformedSchemaRetriesAndKeepsPlainListMarker() async throws {
+        let response = try await polish(contents: [
+            #"{"filler_scan":[],"polished":"Text","extra":"unsafe"}"#,
+            "[TODO] revisa la configuración.",
+        ])
+        XCTAssertEqual(response.text, "[TODO] revisa la configuración.")
+        XCTAssertEqual(response.responseCount, 2)
+    }
+
+    func testStructuredFallbackRespectsResponseBudget() async throws {
+        let (polisher, provider, host) = makeStructuredPolisher(responses: [
+            .success(#"{"filler_scan":"none","polished":}"#),
+            .success("This response must not be consumed."),
+        ])
+
+        do {
+            _ = try await polisher.polish(
+                system: "system",
+                user: "user",
+                configuration: provider,
+                maximumResponses: 1
+            )
+            XCTFail("Expected invalid structured output at the response limit")
+        } catch PolishProviderError.invalidStructuredResponse {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(StubURLProtocol.requestCount(for: host), 1)
+    }
+
     func testHostedPresetsRequireKeyAndModel() {
         XCTAssertTrue(
             PolishProviderConfiguration.isUsable(
@@ -21,6 +185,88 @@ final class PolishProviderTests: XCTestCase {
                 endpoint: .openAI, model: "", customBaseURL: "", apiKey: "sk-123"))
     }
 
+    func testOpenRouterRecommendationsExposeEvidenceWithoutRemovingFreeText() {
+        let recommendations = PolishEndpoint.openRouter.modelRecommendations
+
+        XCTAssertEqual(PolishEndpoint.openRouter.defaultModel, "")
+        XCTAssertEqual(
+            recommendations.filter(\.isSuggested).map(\.model),
+            [
+                "anthropic/claude-opus-5",
+                "qwen/qwen3.8-flash",
+                "openai/gpt-5.4-nano",
+                "qwen/qwen3.5-flash-02-23",
+            ]
+        )
+        XCTAssertEqual(
+            PolishEndpoint.openRouter.modelRecommendation(for: " anthropic/claude-opus-5 ")?.tier,
+            .bestTested
+        )
+        XCTAssertEqual(
+            PolishEndpoint.openRouter.modelRecommendation(for: "deepseek/deepseek-v4-flash-0731")?.tier,
+            .notRecommended
+        )
+        XCTAssertNil(PolishEndpoint.openRouter.modelRecommendation(for: "future/provider-model"))
+        XCTAssertTrue(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .openRouter,
+                model: "future/provider-model",
+                customBaseURL: "",
+                apiKey: "sk-or-future"
+            )
+        )
+    }
+
+    func testLocalPolishHasNoQualifiedOrSuggestedModel() {
+        XCTAssertTrue(PolishEndpoint.localServer.modelRecommendations.isEmpty)
+        XCTAssertTrue(PolishEndpoint.localServer.suggestedModels.isEmpty)
+    }
+
+    func testExistingInstallKeepsLegacyDefaultModelOnce() throws {
+        let suiteName = "test.sapowhisper.polish-model-migration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
+        defaults.set(PolishEndpoint.openRouter.rawValue, forKey: Constants.StorageKeys.aiPolishEndpoint)
+
+        PolishProviderConfiguration.migrateExplicitModelSelection(defaults: defaults)
+        XCTAssertEqual(
+            PolishProviderConfiguration.storedModel(for: .openRouter, defaults: defaults),
+            "openai/gpt-5.4-nano"
+        )
+
+        PolishProviderConfiguration.setStoredModel("", for: .openRouter, defaults: defaults)
+        PolishProviderConfiguration.migrateExplicitModelSelection(defaults: defaults)
+        XCTAssertEqual(PolishProviderConfiguration.storedModel(for: .openRouter, defaults: defaults), "")
+    }
+
+    func testNewInstallRequiresExplicitModelSelection() throws {
+        let suiteName = "test.sapowhisper.polish-new-install.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        PolishProviderConfiguration.migrateExplicitModelSelection(defaults: defaults)
+        defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
+
+        XCTAssertEqual(PolishProviderConfiguration.storedModel(for: .openRouter, defaults: defaults), "")
+    }
+
+    func testExistingExplicitModelWinsMigration() throws {
+        let suiteName = "test.sapowhisper.polish-existing-model.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
+        defaults.set(PolishEndpoint.openRouter.rawValue, forKey: Constants.StorageKeys.aiPolishEndpoint)
+        PolishProviderConfiguration.setStoredModel("deepseek/custom", for: .openRouter, defaults: defaults)
+
+        PolishProviderConfiguration.migrateExplicitModelSelection(defaults: defaults)
+
+        XCTAssertEqual(
+            PolishProviderConfiguration.storedModel(for: .openRouter, defaults: defaults),
+            "deepseek/custom"
+        )
+    }
+
     func testCustomEndpointAllowsLocalServerWithoutKey() {
         XCTAssertTrue(
             PolishProviderConfiguration.isUsable(
@@ -28,6 +274,95 @@ final class PolishProviderTests: XCTestCase {
         XCTAssertFalse(
             PolishProviderConfiguration.isUsable(
                 endpoint: .custom, model: "llama3.2", customBaseURL: "not a url", apiKey: ""))
+    }
+
+    func testProviderBaseURLRejectsCredentialsAndPlaintextRemoteBearerTokens() {
+        XCTAssertFalse(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .custom,
+                model: "test-model",
+                customBaseURL: "http://user:secret@example.com/v1",
+                apiKey: ""
+            )
+        )
+        XCTAssertFalse(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .custom,
+                model: "test-model",
+                customBaseURL: "https://example.com/v1?token=secret",
+                apiKey: ""
+            )
+        )
+        XCTAssertFalse(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .custom,
+                model: "test-model",
+                customBaseURL: "http://192.168.1.20:8080/v1",
+                apiKey: "local-token"
+            )
+        )
+        XCTAssertTrue(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .custom,
+                model: "test-model",
+                customBaseURL: "http://192.168.1.20:8080/v1",
+                apiKey: ""
+            )
+        )
+        XCTAssertTrue(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .custom,
+                model: "test-model",
+                customBaseURL: "http://127.0.0.1:8080/v1",
+                apiKey: "local-token"
+            )
+        )
+        XCTAssertTrue(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .custom,
+                model: "test-model",
+                customBaseURL: "https://example.com/v1",
+                apiKey: "hosted-token"
+            )
+        )
+    }
+
+    func testStoredBaseURLDropsEmbeddedCredentialsQueryAndFragment() throws {
+        let suiteName = "test.sapowhisper.polish-base-url-sanitization.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        PolishProviderConfiguration.setStoredBaseURLInput(
+            "https://user:secret@example.com/v1?token=private#fragment",
+            for: .custom,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(
+            PolishProviderConfiguration.storedBaseURLInput(for: .custom, defaults: defaults),
+            "https://example.com/v1"
+        )
+    }
+
+    func testStoredBaseURLMigrationSanitizesScopedAndLegacyValuesIdempotently() throws {
+        let suiteName = "test.sapowhisper.polish-base-url-migration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let scopedKey = Constants.StorageKeys.aiPolishEndpointBaseURLPrefix + PolishEndpoint.localServer.rawValue
+        defaults.set("http://user:secret@localhost:8081/v1?token=private", forKey: scopedKey)
+        defaults.set(
+            "https://user:secret@provider.example/v1#private",
+            forKey: Constants.StorageKeys.aiPolishCustomBaseURL
+        )
+
+        PolishProviderConfiguration.sanitizeStoredBaseURLs(defaults: defaults)
+        PolishProviderConfiguration.sanitizeStoredBaseURLs(defaults: defaults)
+
+        XCTAssertEqual(defaults.string(forKey: scopedKey), "http://localhost:8081/v1")
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL),
+            "https://provider.example/v1"
+        )
     }
 
     func testLANCustomEndpointUsesLocalTimeoutBudget() {
@@ -108,21 +443,24 @@ final class PolishProviderTests: XCTestCase {
         XCTAssertTrue(
             PolishProviderConfiguration.isUsable(
                 endpoint: .localServer,
-                model: PolishEndpoint.localServer.defaultModel,
+                model: "local-model",
                 customBaseURL: "http://local-ai.local:8081/v1",
                 apiKey: ""
             )
         )
     }
 
-    func testLocalServerPresetUsesLANDefaultsWithoutKey() {
+    func testLocalServerPresetRequiresExplicitModelWithoutKey() {
         XCTAssertEqual(PolishEndpoint.localServer.presetBaseURL, "http://localhost:8081/v1")
-        XCTAssertEqual(PolishEndpoint.localServer.defaultModel, "qwen3.6-35b-a3b")
+        XCTAssertEqual(PolishEndpoint.localServer.defaultModel, "")
         XCTAssertFalse(PolishEndpoint.localServer.requiresAPIKey)
         XCTAssertFalse(PolishEndpoint.localServer.requiresInternet)
-        XCTAssertTrue(
+        XCTAssertFalse(
             PolishProviderConfiguration.isUsable(
                 endpoint: .localServer, model: PolishEndpoint.localServer.defaultModel, customBaseURL: "", apiKey: ""))
+        XCTAssertTrue(
+            PolishProviderConfiguration.isUsable(
+                endpoint: .localServer, model: "local-model", customBaseURL: "", apiKey: ""))
     }
 
     func testHostedPolishPausesOfflineButCustomDoesNot() throws {

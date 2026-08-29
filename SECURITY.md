@@ -18,11 +18,15 @@ Do not commit:
 - Google ADC or service account JSON files
 - Refresh tokens
 - `.env*` files
-- Local recordings, except the synthetic public fixtures under `TestAssets/LocalAITranscription/`
+- Local recordings; the only tracked audio is the reviewed, hash-pinned public fixture and app-sound allowlist
 - Logs, crash reports, DMGs, archives, or notarization/signing files
 - Signing private keys, certificates, provisioning profiles, notarization credentials, or local Xcode user data
 
 The app stores user-provided cloud credentials and optional local-server bearer tokens in the macOS Keychain (one consolidated item); only non-secret presence hints (key names) are mirrored to UserDefaults. Credentials should never appear in source control.
+
+Provider base URLs cannot contain embedded usernames, passwords, query strings, or fragments. A bearer token is sent over plain HTTP only to loopback (`localhost`, `127.0.0.1`, or `::1`); remote and LAN endpoints must use HTTPS when a token is configured. An unauthenticated LAN server may still use HTTP, so users should trust and secure that network because transcript content is not transport-encrypted in that configuration.
+
+Stored, imported, and exported provider URLs are sanitized before use or sharing. Launch migration also cleans legacy URL preferences without reading credential values from the Keychain.
 
 ## Reporting
 
@@ -52,3 +56,5 @@ device payload.
 ## Public Repo Boundary
 
 The public repo should contain source code, app assets, shared Xcode metadata, dependency lockfiles, build scripts, formatting config, and contributor docs. Local maintainer notes and release artwork stay ignored unless they are scrubbed and intentionally published.
+
+Public benchmark and history-replay scripts emit aggregate counts by default. Exact transcripts, vocabulary terms, digit values, local paths, provider bodies, and content fingerprints require an explicit private-output opt-in and must never be pasted into public issues or committed.

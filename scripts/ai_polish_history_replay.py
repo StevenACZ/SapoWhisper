@@ -32,7 +32,6 @@ DEFAULT_APP_SUPPORT = pathlib.Path.home() / "Library/Application Support/SapoWhi
 DEFAULT_DB = DEFAULT_APP_SUPPORT / "history.db"
 DEFAULT_VOCABULARY = DEFAULT_APP_SUPPORT / "vocabulary.json"
 DEFAULT_POLISH_BASE_URL = "http://localhost:8081/v1"
-DEFAULT_POLISH_MODEL = "qwen3.6-35b-a3b"
 DEFAULT_STT_BASE_URL = "http://localhost:8000"
 DEFAULT_STT_MODEL = "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo"
 
@@ -73,6 +72,15 @@ DEFAULT_CORRECTION_TARGETS = [
 ]
 
 
+class ReplayInputError(Exception):
+    """An input failure with a private detail that is opt-in to display."""
+
+    def __init__(self, public_message: str, private_detail: str):
+        super().__init__(public_message)
+        self.public_message = public_message
+        self.private_detail = private_detail
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=pathlib.Path, default=DEFAULT_DB)
@@ -83,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--since", default="", help="Inclusive ISO timestamp lower bound, e.g. 2026-06-20T00:00:00Z")
     parser.add_argument("--until", default="", help="Exclusive ISO timestamp upper bound, e.g. 2026-06-21T00:00:00Z")
     parser.add_argument("--polish-base-url", default=DEFAULT_POLISH_BASE_URL)
-    parser.add_argument("--polish-model", default=DEFAULT_POLISH_MODEL)
+    parser.add_argument("--polish-model", required=True, help="Model identifier; required to avoid an implicit model choice")
     parser.add_argument("--stt-base-url", default=DEFAULT_STT_BASE_URL)
     parser.add_argument("--stt-model", default=DEFAULT_STT_MODEL)
     parser.add_argument("--timeout", type=float, default=35)
@@ -102,7 +110,7 @@ def fetch_rows(
     until: str,
 ) -> list[sqlite3.Row]:
     if not db_path.exists():
-        raise SystemExit(f"History DB not found: {db_path}")
+        raise ReplayInputError("Unable to read local replay inputs.", f"History DB not found: {db_path}")
 
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
@@ -339,8 +347,22 @@ def relative_audio_path(value: str | None) -> pathlib.Path | None:
 
 def main() -> int:
     args = parse_args()
-    keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
-    rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains, args.since, args.until)
+    try:
+        keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
+        rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains, args.since, args.until)
+    except ReplayInputError as error:
+        print(
+            f"Error: {error.private_detail if args.print_samples else error.public_message}",
+            file=sys.stderr,
+        )
+        return 1
+    except Exception as error:
+        private_detail = f"Could not load replay inputs (vocabulary={args.vocabulary}, db={args.db}): {error}"
+        print(
+            f"Error: {private_detail if args.print_samples else 'Unable to read local replay inputs.'}",
+            file=sys.stderr,
+        )
+        return 1
     correction_suggestions = collections.Counter()
     metrics = collections.Counter()
     latencies: list[float] = []
@@ -371,7 +393,7 @@ def main() -> int:
                 replacements,
                 args.timeout,
             )
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, json.JSONDecodeError) as error:
+        except Exception as error:
             metrics["provider_errors"] += 1
             if args.print_samples:
                 samples.append({"id": row["id"], "error": str(error)})
@@ -403,18 +425,22 @@ def main() -> int:
                 }
             )
 
+    suggestions = [
+        {"from": source, "to": target, "count": count}
+        for (source, target), count in correction_suggestions.most_common(20)
+        if count > 0
+    ]
     result = {
-        "history_db": str(args.db),
+        "history_source": "local",
         "rows_requested": args.limit,
         "metrics": dict(metrics),
         "avg_polish_seconds": round(sum(latencies) / len(latencies), 3) if latencies else None,
-        "suggestions": [
-            {"from": source, "to": target, "count": count}
-            for (source, target), count in correction_suggestions.most_common(20)
-            if count > 0
-        ],
+        "suggestion_pair_count": len(suggestions),
+        "suggestion_occurrence_count": sum(item["count"] for item in suggestions),
     }
     if args.print_samples:
+        result["history_db"] = str(args.db)
+        result["suggestions"] = suggestions
         result["samples"] = samples
 
     if args.json:
@@ -430,9 +456,14 @@ def main() -> int:
             print(f"Audio missing/failed: {metrics['audio_missing_or_failed']}")
         print(f"Average polish seconds: {result['avg_polish_seconds']}")
         print(
-            "Correction suggestions:",
-            "; ".join(f"{item['from']} -> {item['to']} x{item['count']}" for item in result["suggestions"]) or "none",
+            "Correction candidates:",
+            f"{result['suggestion_pair_count']} pair(s), {result['suggestion_occurrence_count']} occurrence(s)",
         )
+        if args.print_samples:
+            print(
+                "Private suggestions:",
+                "; ".join(f"{item['from']} -> {item['to']} x{item['count']}" for item in suggestions) or "none",
+            )
     return 0 if metrics["provider_errors"] == 0 else 1
 
 

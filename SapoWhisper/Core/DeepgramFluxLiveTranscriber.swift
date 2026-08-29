@@ -26,16 +26,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     private var receiveTask: Task<Void, Never>?
     private var stopTimeoutTask: Task<Void, Never>?
     private var stopContinuation: CheckedContinuation<String, Error>?
-    /// A4 (stop race): armed the instant the CloseStream send begins — before
-    /// the await, because the server can process CloseStream and emit the final
-    /// EndOfTurn while this actor is still suspended inside `task.send`. With it
-    /// armed, that post-close flush is recognized even if it lands before
-    /// `waitForFinalTranscript` installs its continuation, instead of being
-    /// dropped into the 4s timeout. Mirrors the ElevenLabs `committedCount >
-    /// before` guard: armed only after `finishAndWait`/CloseStream begins, so an
-    /// earlier in-speech EndOfTurn cannot short-circuit the wait.
-    private var closeStreamRequested = false
-    private var receivedFinalTurnAfterClose = false
+    private var finalizationGate = DeepgramFluxFinalizationGate()
     private var transcriptAccumulator = DeepgramFluxTranscriptAccumulator()
     private var lastStreamingError: Error?
     private let audioSender = DeepgramFluxAudioSender()
@@ -123,9 +114,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
         let senderStats = await audioSender.finishAndWait(timeout: 2.0)
         defer { cleanupWebSocket() }
-        if senderStats.failedChunks > 0 || senderStats.pendingChunks > 0 {
+        if senderStats.failedChunks > 0 || senderStats.pendingChunks > 0 || senderStats.rejectedChunks > 0 {
             SapoLog.flux.warning(
-                "Flux stream incomplete; falling back to full local audio failedChunks=\(senderStats.failedChunks, privacy: .public) pendingChunks=\(senderStats.pendingChunks, privacy: .public)"
+                "Flux stream incomplete; falling back to full local audio failedChunks=\(senderStats.failedChunks, privacy: .public) pendingChunks=\(senderStats.pendingChunks, privacy: .public) rejectedChunks=\(senderStats.rejectedChunks, privacy: .public)"
             )
             return try await transcribeFullCaptureFallback(
                 captureResult,
@@ -231,12 +222,14 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func sendCloseStream() async throws {
-        guard let task = webSocketTask else { return }
-        // Arm BEFORE the await: the server can process CloseStream and emit the
-        // final EndOfTurn while this actor is still suspended in `task.send`, so
-        // marking after the send would miss that flush. A send failure falls
-        // through to the batch fallback in stop(), so arming early is safe.
-        closeStreamRequested = true
+        guard let task = webSocketTask else {
+            throw TranscriptionFailure(
+                kind: .network,
+                engine: Self.engineName,
+                technicalDetail: "Flux WebSocket disappeared before CloseStream"
+            )
+        }
+        finalizationGate.beginCloseStream()
         try await task.send(.string(#"{"type":"CloseStream"}"#))
     }
 
@@ -276,13 +269,6 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         switch type {
         case "TurnInfo":
             transcriptAccumulator.update(with: json)
-            // After CloseStream the server flushes a final TurnInfo with
-            // event=EndOfTurn — resume immediately instead of riding the
-            // stop timeout or waiting for the socket to close.
-            if isStopping, (json["event"] as? String) == "EndOfTurn" {
-                if closeStreamRequested { receivedFinalTurnAfterClose = true }
-                finishStopIfNeeded(error: nil)
-            }
         case "FatalError":
             let description = (json["description"] as? String) ?? "Unknown Flux error"
             let error = TranscriptionFailure(
@@ -296,8 +282,24 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func handleReceiveCompletion(_ error: Error) {
+        let closeCode = webSocketTask?.closeCode ?? .invalid
+        finalizationGate.completeReceive(closeCode: closeCode)
         if isStopping {
-            finishStopIfNeeded(error: nil)
+            switch finalizationGate.completion {
+            case .succeeded:
+                finishStopIfNeeded(error: nil)
+            case .failed:
+                let failure = TranscriptionFailure(
+                    kind: .network,
+                    engine: Self.engineName,
+                    technicalDetail:
+                        "Flux WebSocket ended without confirmed finalization closeCode=\(closeCode.rawValue): \(error.localizedDescription)"
+                )
+                lastStreamingError = failure
+                finishStopIfNeeded(error: failure)
+            case .pending:
+                break
+            }
             return
         }
 
@@ -309,23 +311,29 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
     }
 
     private func waitForFinalTranscript(timeout: TimeInterval) async throws -> String {
-        if let lastStreamingError, transcriptAccumulator.transcript.isEmpty {
+        if let lastStreamingError {
             throw lastStreamingError
         }
 
-        // A4: the post-close EndOfTurn may have already landed before we got
-        // here (it was dropped by finishStopIfNeeded because no continuation
-        // was installed yet). Return the accumulated transcript instead of
-        // riding the full timeout.
-        if receivedFinalTurnAfterClose {
+        if finalizationGate.canFinish {
             return transcriptAccumulator.transcript
         }
 
         return try await withCheckedThrowingContinuation { continuation in
             stopContinuation = continuation
             stopTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                self?.finishStopIfNeeded(error: nil)
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                } catch {
+                    return
+                }
+                self?.finishStopIfNeeded(
+                    error: TranscriptionFailure(
+                        kind: .timedOut,
+                        engine: Self.engineName,
+                        technicalDetail: "Flux CloseStream response timed out"
+                    )
+                )
             }
         }
     }
@@ -367,11 +375,10 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         stopTimeoutTask?.cancel()
         stopTimeoutTask = nil
 
-        let transcript = transcriptAccumulator.transcript
-        if let error, transcript.isEmpty {
+        if let error {
             continuation.resume(throwing: error)
         } else {
-            continuation.resume(returning: transcript)
+            continuation.resume(returning: transcriptAccumulator.transcript)
         }
     }
 
@@ -380,8 +387,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         lastStreamingError = nil
         lastCaptureResult = nil
         isStopping = false
-        closeStreamRequested = false
-        receivedFinalTurnAfterClose = false
+        finalizationGate = DeepgramFluxFinalizationGate()
         sessionStartedAt = 0
         stopStartedAt = 0
         currentLanguage = "auto"

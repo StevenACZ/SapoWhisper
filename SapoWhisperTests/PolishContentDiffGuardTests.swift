@@ -21,9 +21,7 @@ final class PolishContentDiffGuardTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable)
     }
 
-    func testStutterRunAbsorbedByLongerSurvivingRunIsNotALoss() {
-        // "la rama 14 ca-- eh, 1440": deleting the restart loses run "14",
-        // but it survives inside "1440" (real history case 2995).
+    func testStutterRunMayBeAbsorbedByLongerSurvivingRun() {
         let verdict = PolishContentDiffGuard.evaluate(
             raw: "en la rama 14 ca-- eh, 1440 hicimos mejoras",
             polished: "En la rama 1440 hicimos mejoras."
@@ -39,6 +37,38 @@ final class PolishContentDiffGuardTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable)
     }
 
+    func testSeparatorRepairPreservesOneNumericOccurrence() {
+        let verdict = PolishContentDiffGuard.evaluate(
+            raw: "el precio final es 12,50 por cada licencia",
+            polished: "El precio final es 12.50 por cada licencia."
+        )
+        XCTAssertTrue(verdict.isAcceptable)
+    }
+
+    func testRemovingASeparatorPreservesTheDigitRun() {
+        let verdict = PolishContentDiffGuard.evaluate(
+            raw: "el precio final es 12.50 por cada licencia",
+            polished: "El precio final es 1250 por cada licencia."
+        )
+        XCTAssertTrue(verdict.isAcceptable)
+    }
+
+    func testCombinedLargerRunMaySatisfySourceRuns() {
+        let verdict = PolishContentDiffGuard.evaluate(
+            raw: "usa 12 unidades ahora y 50 unidades después",
+            polished: "Usa 1250 unidades después."
+        )
+        XCTAssertTrue(verdict.isAcceptable)
+    }
+
+    func testNumericOrderDoesNotRawFallbackPolish() {
+        let verdict = PolishContentDiffGuard.evaluate(
+            raw: "mueve 5 tickets al sprint 6",
+            polished: "Mueve 6 tickets al sprint 5."
+        )
+        XCTAssertTrue(verdict.isAcceptable)
+    }
+
     func testVanishedDigitsAreALoss() {
         let verdict = PolishContentDiffGuard.evaluate(
             raw: "la reunión es a las 10 y dura 3 horas",
@@ -47,6 +77,14 @@ final class PolishContentDiffGuardTests: XCTestCase {
         XCTAssertFalse(verdict.isAcceptable)
         XCTAssertEqual(verdict.lostDigitRuns, 2)
         XCTAssertNotNil(verdict.retryInstruction)
+    }
+
+    func testNumericSignIsLeftToPromptAndReview() {
+        let verdict = PolishContentDiffGuard.evaluate(
+            raw: "el ajuste es -5 dólares",
+            polished: "El ajuste es 5 dólares."
+        )
+        XCTAssertTrue(verdict.isAcceptable)
     }
 
     func testDigitLossIsCheckedEvenWhenTranslationExpected() {
@@ -93,6 +131,28 @@ final class PolishContentDiffGuardTests: XCTestCase {
             polished: "Quiero que el botón de guardar se vea bien en pantallas chicas del iPhone sin romperse."
         )
         XCTAssertTrue(verdict.isAcceptable)
+    }
+
+    func testDroppedInstructionIsDetectedWhenOneWordSurvivesElsewhere() {
+        let raw = """
+            Revisa el estado general del cache antes del despliegue. \
+            Elimina por completo el directorio temporal del cache antes de ejecutar la publicación.
+            """
+        let verdict = PolishContentDiffGuard.evaluate(
+            raw: raw,
+            polished: "Revisa el estado general del cache antes del despliegue."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+        XCTAssertEqual(verdict.droppedClusters, 1)
+    }
+
+    func testDroppedInstructionClusterCheckRemainsExemptForCompactAndTranslation() {
+        let raw = "Elimina por completo el directorio temporal del cache antes de ejecutar la publicación."
+        let polished = "Publicación limpia."
+        XCTAssertTrue(
+            PolishContentDiffGuard.evaluate(raw: raw, polished: polished, translationExpected: true).isAcceptable)
+        XCTAssertTrue(
+            PolishContentDiffGuard.evaluate(raw: raw, polished: polished, compactionExpected: true).isAcceptable)
     }
 
     func testClusterCheckSkippedWhenTranslationExpected() {

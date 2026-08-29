@@ -58,16 +58,12 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
         XCTAssertTrue(system.contains("ALWAYS delete"))
         XCTAssertTrue(system.contains("como se dice"))
         XCTAssertTrue(system.contains("MERGE repetition"))
-        XCTAssertTrue(system.contains("Dual-use words — delete only the filler use"))
+        XCTAssertTrue(system.contains("Dual-use words — delete only the filler or discourse use"))
         XCTAssertTrue(system.contains("Numbers are sacred"))
         XCTAssertTrue(system.contains("NEVER turn speech into bullet lists"))
         XCTAssertFalse(system.contains("Mode —"))
     }
 
-    /// "la verdad" and "equis" moved OUT of the always-delete list on the
-    /// 2026-07-04 recalibration: real history shows they usually carry
-    /// meaning ("la verdad es que…", "equis cosas"). The dictionary example
-    /// must also exist in same-language form, not only as ES→EN.
     func testDualUseRecalibrationAndSameLanguageDictionaryExample() {
         let system = makeSystem()
 
@@ -80,6 +76,35 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
         XCTAssertTrue(system.contains("la verdad es que ya funciona"))
         XCTAssertTrue(system.contains("Output (same language, dictionary has PeekOCR, BuenMouse, CHANGELOG)"))
         XCTAssertTrue(system.contains("Output (English, dictionary has PeekOCR, BuenMouse, CHANGELOG)"))
+    }
+
+    func testContextualFillersAreExcludedFromAlwaysDeleteRule() {
+        let system = makeSystem()
+
+        guard let alwaysRule = system.components(separatedBy: "\n").first(where: { $0.contains("ALWAYS delete") })
+        else {
+            return XCTFail("ALWAYS delete rule missing")
+        }
+        XCTAssertFalse(alwaysRule.contains("pues"))
+        XCTAssertFalse(alwaysRule.contains("digamos"))
+        XCTAssertFalse(alwaysRule.contains("se puede decir"))
+    }
+
+    func testContextualFillerContractIncludesDeleteExamples() {
+        let system = makeSystem()
+
+        XCTAssertTrue(system.contains("DELETE discourse \"Pues, seguimos con el tema\" → \"Seguimos con el tema\""))
+        XCTAssertTrue(system.contains("DELETE hesitation \"El botón, digamos, debe verse bien\" → \"El botón debe verse bien\""))
+        XCTAssertTrue(system.contains("DELETE speech-search \"El resultado es, se puede decir, estable\" → \"El resultado es estable\""))
+    }
+
+    func testContextualFillerContractIncludesKeepExamples() {
+        let system = makeSystem()
+
+        XCTAssertTrue(system.contains("KEEP causal \"No fui, pues estaba enfermo\""))
+        XCTAssertTrue(system.contains("KEEP hypothetical \"Digamos que falla la red\""))
+        XCTAssertTrue(system.contains("imperative \"Digamos la verdad\""))
+        XCTAssertTrue(system.contains("KEEP epistemic qualification \"Se puede decir que mejoró, aunque falta medirlo\""))
     }
 
     /// Chunks 2+ of a long dictation carry the raw tail of their predecessor

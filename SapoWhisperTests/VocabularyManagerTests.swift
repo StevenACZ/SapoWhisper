@@ -50,6 +50,22 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertFalse(prompt.contains("VeryLongTechnicalTerm79WithPadding"))
     }
 
+    func testInitialPromptTextBenchmarkParityFixture() {
+        let manager = makeManager()
+        manager.addKeyterm("AlphaTool")
+        manager.addKeyterm("alphatool")
+        manager.addKeyterm("BetaCLI")
+        manager.addReplacement(from: "heard beta", to: "BetaCLI")
+        manager.addReplacement(from: "heard gamma", to: "GammaAPI")
+
+        XCTAssertEqual(manager.initialPromptText(), "Glossary: AlphaTool, BetaCLI, GammaAPI.")
+        XCTAssertEqual(manager.initialPromptText(maxLength: 24), "Glossary: AlphaTool.")
+
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+
+        XCTAssertEqual(manager.initialPromptText(), "Glossary: AlphaTool, BetaCLI.")
+    }
+
     func testInitialPromptTextEmptyWithoutVocabulary() {
         XCTAssertEqual(makeManager().initialPromptText(), "")
     }

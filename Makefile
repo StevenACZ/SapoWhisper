@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build test release install-dev size-check artifact-check secrets-scan ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
+.PHONY: help tools format format-all lint lint-all build test script-tests release install-dev size-check artifact-check secrets-scan ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
 
 .DEFAULT_GOAL := help
 
@@ -24,6 +24,7 @@ help:
 	@printf "  make lint-all      Check all Swift sources explicitly\n"
 	@printf "  make build         Build Debug for Apple Silicon\n"
 	@printf "  make test          Run unit tests\n"
+	@printf "  make script-tests  Run benchmark script contract tests\n"
 	@printf "  make release       Build Release for Apple Silicon\n"
 	@printf "  make install-dev   Reinstall signed Release build to /Applications\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
@@ -53,7 +54,8 @@ idle-cpu-note:
 tools:
 	@xcrun --find swift-format >/dev/null
 	@xcodebuild -version >/dev/null
-	@printf "tools: xcodebuild and swift-format are available\n"
+	@command -v gitleaks >/dev/null || { printf "gitleaks is required (brew install gitleaks)\n" >&2; exit 69; }
+	@printf "tools: xcodebuild, swift-format, and gitleaks are available\n"
 
 format: tools
 	@scripts/swift_format_changed.sh format
@@ -81,6 +83,11 @@ test:
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
 		-derivedDataPath $(DEBUG_DERIVED_DATA) $(XCODE_FLAGS) test
 
+script-tests:
+	bash -n scripts/local_stt_benchmark.sh
+	python3 scripts/test_stt_benchmark_vocabulary.py
+	python3 scripts/test_ai_polish_history_replay.py
+
 release:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
@@ -100,8 +107,9 @@ artifact-check:
 
 secrets-scan:
 	@scripts/secrets_scan.sh tree
+	@bash scripts/verify_public_audio_allowlist.sh
 
-ci-check: lint secrets-scan build test
+ci-check: lint secrets-scan script-tests build test
 	@printf "ci-check: passed\n"
 
 release-check: lint release size-check artifact-check

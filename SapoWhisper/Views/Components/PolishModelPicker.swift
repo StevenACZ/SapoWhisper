@@ -14,34 +14,78 @@ struct PolishModelPicker: View {
     @Binding var model: String
 
     var body: some View {
-        HStack(spacing: 6) {
-            TextField("ai.provider.model_placeholder".localized, text: $model)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, design: .monospaced))
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                TextField("ai.provider.model_placeholder".localized, text: $model)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
 
-            if !endpoint.suggestedModels.isEmpty {
-                Menu {
-                    ForEach(endpoint.suggestedModels, id: \.self) { suggestion in
-                        Button {
-                            model = suggestion
-                        } label: {
-                            if suggestion == model.trimmingCharacters(in: .whitespacesAndNewlines) {
-                                Label(suggestion, systemImage: "checkmark")
-                            } else {
-                                Text(suggestion)
+                let suggestions = endpoint.modelRecommendations.filter(\.isSuggested)
+                if !suggestions.isEmpty {
+                    Menu {
+                        ForEach(suggestions) { recommendation in
+                            Button {
+                                model = recommendation.model
+                            } label: {
+                                let title =
+                                    "\(recommendation.tier.displayName) · \(recommendation.model)"
+                                if recommendation.model
+                                    == model.trimmingCharacters(in: .whitespacesAndNewlines)
+                                {
+                                    Label(title, systemImage: "checkmark")
+                                } else {
+                                    Text(title)
+                                }
                             }
                         }
+                    } label: {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
                     }
-                } label: {
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 22)
+                    .help("ai.provider.model_suggestions_help".localized)
+                    .accessibilityLabel("ai.provider.model_recommendations".localized)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 22)
-                .help("ai.provider.model_suggestions_help".localized)
             }
+
+            if let recommendation = endpoint.modelRecommendation(for: model) {
+                Label {
+                    Text("\(recommendation.tier.displayName): \(recommendation.detail)")
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: recommendationIcon(for: recommendation.tier))
+                }
+                .font(.caption2)
+                .foregroundStyle(recommendationColor(for: recommendation.tier))
+            } else if endpoint == .localServer {
+                Label("ai.provider.model_local_experimental".localized, systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func recommendationIcon(for tier: PolishModelEvidenceTier) -> String {
+        switch tier {
+        case .bestTested: return "checkmark.seal.fill"
+        case .sameLanguageValue: return "equal.circle.fill"
+        case .fastBudget: return "bolt.circle.fill"
+        case .economy: return "dollarsign.circle.fill"
+        case .notRecommended: return "xmark.octagon.fill"
+        }
+    }
+
+    private func recommendationColor(for tier: PolishModelEvidenceTier) -> Color {
+        switch tier {
+        case .bestTested: return .sapoGreenText
+        case .sameLanguageValue: return .blue
+        case .fastBudget: return .orange
+        case .economy: return .secondary
+        case .notRecommended: return .sapoError
         }
     }
 }

@@ -88,7 +88,7 @@ struct AIPolishSettingsCard: View {
                 .opacity(aiPolishEnabled ? 1 : 0.62)
 
                 if aiPolishEnabled && !isProviderUsable {
-                    Label("ai.provider.needs_key".localized, systemImage: "key.fill")
+                    Label("ai.provider.needs_configuration".localized, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(Color.sapoError)
                 }

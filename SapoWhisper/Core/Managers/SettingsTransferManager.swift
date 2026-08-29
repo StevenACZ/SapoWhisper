@@ -286,7 +286,8 @@ struct SettingsTransferManager {
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
             elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
                 ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
-            localAIServerBaseURL: defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL),
+            localAIServerBaseURL: defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL)
+                .flatMap(ProviderURLSecurity.sanitizedValidURLString),
             localAIServerModel: defaults.string(forKey: Constants.StorageKeys.localAIServerModel)
                 ?? LocalAIServerConfiguration.defaultModel,
             hotkeyTriggerKind: defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
@@ -306,6 +307,7 @@ struct SettingsTransferManager {
                 ?? PolishEndpoint.default.rawValue,
             aiPolishModel: defaults.string(forKey: Constants.StorageKeys.aiPolishModel),
             aiPolishCustomBaseURL: defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+                .flatMap(ProviderURLSecurity.sanitizedValidURLString)
         )
     }
 
@@ -343,8 +345,10 @@ struct SettingsTransferManager {
                 preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
                 forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
             )
-            if let baseURL = preferences.localAIServerBaseURL {
-                defaults.set(baseURL, forKey: Constants.StorageKeys.localAIServerBaseURL)
+            if let baseURL = preferences.localAIServerBaseURL,
+                let sanitized = ProviderURLSecurity.sanitizedValidURLString(baseURL)
+            {
+                LocalAIServerConfiguration.setStoredBaseURL(sanitized, defaults: defaults)
             }
             defaults.set(
                 preferences.localAIServerModel ?? LocalAIServerConfiguration.defaultModel,
@@ -386,8 +390,14 @@ struct SettingsTransferManager {
             if let model = preferences.aiPolishModel {
                 defaults.set(model, forKey: Constants.StorageKeys.aiPolishModel)
             }
-            if let customBaseURL = preferences.aiPolishCustomBaseURL {
-                defaults.set(customBaseURL, forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+            if let customBaseURL = preferences.aiPolishCustomBaseURL,
+                let sanitized = ProviderURLSecurity.sanitizedValidURLString(customBaseURL)
+            {
+                PolishProviderConfiguration.setStoredBaseURLInput(
+                    sanitized,
+                    for: .custom,
+                    defaults: defaults
+                )
             }
         }
     }

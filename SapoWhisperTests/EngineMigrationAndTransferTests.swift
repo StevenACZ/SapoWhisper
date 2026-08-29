@@ -261,6 +261,100 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertEqual(document.preferences?.audioUploadQuality, AudioUploadQuality.high.rawValue)
     }
 
+    func testSettingsExportSanitizesProviderURLs() throws {
+        let suiteName = "test.sapowhisper.transfer-url-export.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            "https://user:secret@transcription.example/v1?token=private#fragment",
+            forKey: Constants.StorageKeys.localAIServerBaseURL
+        )
+        defaults.set(
+            "https://user:secret@polish.example/v1?token=private#fragment",
+            forKey: Constants.StorageKeys.aiPolishCustomBaseURL
+        )
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in true }
+        )
+        let document = try manager.decodedDocument(from: manager.encodedSettings())
+
+        XCTAssertEqual(document.preferences?.localAIServerBaseURL, "https://transcription.example/v1")
+        XCTAssertEqual(document.preferences?.aiPolishCustomBaseURL, "https://polish.example/v1")
+        let encoded = try manager.encodedSettings()
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("secret"))
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("private"))
+    }
+
+    func testSettingsImportSanitizesProviderURLs() throws {
+        let suiteName = "test.sapowhisper.transfer-url-import.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in true }
+        )
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.preferences?.localAIServerBaseURL =
+            "https://user:secret@transcription.example/v1?token=private#fragment"
+        document.preferences?.aiPolishCustomBaseURL =
+            "https://user:secret@polish.example/v1?token=private#fragment"
+
+        try manager.importDocument(document, sections: [.engine, .aiPolish])
+
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL),
+            "https://transcription.example/v1"
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL),
+            "https://polish.example/v1"
+        )
+        XCTAssertEqual(
+            PolishProviderConfiguration.storedBaseURLInput(
+                for: .custom,
+                defaults: defaults,
+                allowLegacyFallback: false
+            ),
+            "https://polish.example/v1"
+        )
+    }
+
+    func testSettingsTransferOmitsInvalidProviderURLValues() throws {
+        let suiteName = "test.sapowhisper.transfer-invalid-urls.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("private-value-that-is-not-a-url", forKey: Constants.StorageKeys.localAIServerBaseURL)
+        defaults.set("another-private-value", forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in true }
+        )
+
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        XCTAssertNil(document.preferences?.localAIServerBaseURL)
+        XCTAssertNil(document.preferences?.aiPolishCustomBaseURL)
+
+        defaults.set("https://safe.example/v1", forKey: Constants.StorageKeys.localAIServerBaseURL)
+        defaults.set("https://safe-polish.example/v1", forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+        document.preferences?.localAIServerBaseURL = "not a provider URL"
+        document.preferences?.aiPolishCustomBaseURL = "still not a provider URL"
+        try manager.importDocument(document, sections: [.engine, .aiPolish])
+
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL),
+            "https://safe.example/v1"
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL),
+            "https://safe-polish.example/v1"
+        )
+    }
+
     // MARK: - Hotkey import hardening
 
     /// A hand-edited or truncated export file can carry an out-of-range hotkey.

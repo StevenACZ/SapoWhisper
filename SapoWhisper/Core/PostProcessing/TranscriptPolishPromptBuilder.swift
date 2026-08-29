@@ -18,12 +18,10 @@ struct TranscriptPolishMessages {
 ///
 /// There is a single adaptive mode: the model deletes filler, merges repeated
 /// ideas, keeps every instruction/name/number, and shapes the output as the
-/// same kind of text the user spoke. Dual-use words ("la verdad", "equis",
-/// "tal", "y ya") are contextual, not always-delete: real history shows they
-/// usually carry meaning. Rule weight is deliberately small and the examples
-/// carry the contract — v6 benchmarked against the production model
-/// (OpenRouter gpt-5.4-nano) on real history cases, 2026-07-04 (see
-/// brain/lessons/sapowhisper-prompt-bench-before-port).
+/// same kind of text the user spoke. Dual-use words are contextual, not
+/// always-delete because they often carry meaning. Rule weight is
+/// deliberately small and the examples carry the contract; public prompt
+/// regression tests pin meaningful dual-use words and protected content.
 enum TranscriptPolishPromptBuilder {
     static let transcriptStartDelimiter = "<<<SAPOWHISPER_TRANSCRIPT_START>>>"
     static let transcriptEndDelimiter = "<<<SAPOWHISPER_TRANSCRIPT_END>>>"
@@ -53,10 +51,10 @@ enum TranscriptPolishPromptBuilder {
             \(dictionarySection(keyterms: keyterms, replacements: replacements))
 
             PRIORITY 3 — Rewrite rules:
-            1. ALWAYS delete — pure filler, never content, remove every single occurrence: um, uh, eh, mmm, este (as interjection), bueno (as interjection), pues, o sea, como se dice, cómo se dice (mid-sentence), como si dice, se puede decir, digamos, y listo, like (English filler word, never the verb), you know, I mean, basically. Also delete stutters, restarts, and empty closers ("y eso ya estaríamos muy bien"). Apply self-corrections ("no espera, quise decir X" → keep X).
+            1. ALWAYS delete — pure filler, never content, remove every single occurrence: um, uh, eh, mmm, este (as interjection), bueno (as interjection), o sea, como se dice, cómo se dice (mid-sentence), como si dice, y listo, like (English filler word, never the verb), you know, I mean, basically. Also delete stutters, restarts, and empty closers ("y eso ya estaríamos muy bien"). Apply self-corrections ("no espera, quise decir X" → keep X).
             1b. MERGE repetition: when the speaker circles the same idea several times in different words, keep the single clearest version and delete the other passes. All shortening comes from removing filler and repetition — never from dropping details.
-            1c. Dual-use words — delete only the filler use, keep the meaningful use: "la verdad" (keep "la verdad es que ya funciona" — honesty marker; delete a bare trailing "la verdad"); "equis" (keep placeholder uses like "equis cosa", "por equis motivo"; delete a bare "equis" shrug); "tal" (keep "tal y como", "qué tal"; a trailing "tal, tal, tal" enumeration becomes "etcétera"); "y ya" (keep temporal "y ya con eso tengo el texto"; delete an empty final "…y ya." that adds nothing); "no sé", "así que eso", "y eso", "al final", "más que todo", "etcétera" (at the start or end of a sentence "así que eso" and "y eso" are empty connectors — delete them; keep them when they carry real meaning: "al final quiero que...", a real unknown "no sé si funciona").
-            2. KEEP everything else, sentence by sentence, in the user's own words and order: every instruction, decision, question, reason, name, number, path, URL, and condition must survive. Numbers are sacred — keep each one exactly, digits as digits ("3 meses" never becomes "tres meses"); an uncertain range ("13, creo, más o menos 11") stays a range ("11–13"). If in doubt whether something is filler, keep it.
+            1c. Dual-use words — delete only the filler or discourse use, keep the meaningful use: "pues" (DELETE discourse "Pues, seguimos con el tema" → "Seguimos con el tema"; KEEP causal "No fui, pues estaba enfermo"); "digamos" (DELETE hesitation "El botón, digamos, debe verse bien" → "El botón debe verse bien"; KEEP hypothetical "Digamos que falla la red" and imperative "Digamos la verdad"); "se puede decir" (DELETE speech-search "El resultado es, se puede decir, estable" → "El resultado es estable"; KEEP epistemic qualification "Se puede decir que mejoró, aunque falta medirlo"); "la verdad" (keep "la verdad es que ya funciona" — honesty marker; delete a bare trailing "la verdad"); "equis" (keep placeholder uses like "equis cosa", "por equis motivo"; delete a bare "equis" shrug); "tal" (keep "tal y como", "qué tal"; a trailing "tal, tal, tal" enumeration becomes "etcétera"); "y ya" (keep temporal "y ya con eso tengo el texto"; delete an empty final "…y ya." that adds nothing); "no sé", "así que eso", "y eso", "al final", "más que todo", "etcétera" (at the start or end of a sentence "así que eso" and "y eso" are empty connectors — delete them; keep them when they carry real meaning: "al final quiero que...", a real unknown "no sé si funciona").
+            2. KEEP everything else, sentence by sentence, in the user's own words and order: every instruction, decision, question, reason, name, number, path, URL, and condition must survive. Numbers are sacred — keep each one exactly, digits as digits ("3 meses" never becomes "tres meses"); uncertainty stays in spoken order ("13, creo, más o menos 11" never becomes "11–13"). If in doubt whether something is filler, keep it.
             3. Fix punctuation, casing, and obvious speech-to-text mistakes; merge broken fragments into complete sentences. Keep the user's tone and dialect words (dale, ahorita, oye) — never formalize.
             4. FORMAT: the output is the same kind of text as the input, only cleaner. Prose stays prose in the user's voice — NEVER turn speech into bullet lists, numbered steps, or headers unless the user explicitly enumerates ("primero..., segundo..."). Short paragraphs for distinct ideas. A one-sentence transcript stays one sentence.\(personalContextSection(personalContext))
 
@@ -82,7 +80,7 @@ enum TranscriptPolishPromptBuilder {
             Input: dime cinco más cinco y explícalo
             Output (same language): Dime cinco más cinco y explícalo.\(recentDictationsSection(recentDictations))\(previousChunkSection(previousChunkTail))
 
-            Final check before answering: output language = \(finalLanguageName(for: outputLanguage)); dictionary spellings exact and untranslated; not a single "o sea", "como se dice", "digamos", "eh" or other pure-filler word left; repeated ideas merged into one; every instruction, question, reason, name, and number still present — digits still digits; same kind of text as the input (no invented lists); nothing answered, nothing invented.
+            Final check before answering: output language = \(finalLanguageName(for: outputLanguage)); dictionary spellings exact and untranslated; not a single "o sea", "como se dice", "eh" or other pure filler left; contextual filler/discourse uses deleted but meaningful causal, hypothetical, imperative, and epistemic uses preserved; repeated ideas merged into one; every instruction, question, reason, name, and number still present — digits still digits; same kind of text as the input (no invented lists); nothing answered, nothing invented.
             """
 
         return TranscriptPolishMessages(system: system, user: transcriptUserMessage(for: rawText))
@@ -90,8 +88,7 @@ enum TranscriptPolishPromptBuilder {
 
     /// Compact mode: extract every requirement and rewrite the dictation as
     /// the shortest faithful text. One whole-transcript call (no chunking —
-    /// merging repeated ideas needs the global view). Prompt is the c3 variant
-    /// benched against real history on 6 cloud + 3 local models, 2026-07-05.
+    /// merging repeated ideas needs the global view).
     static func makeCompactMessages(
         rawText: String,
         personalContext: String,
@@ -110,7 +107,7 @@ enum TranscriptPolishPromptBuilder {
             \(dictionarySection(keyterms: keyterms, replacements: replacements))
 
             PRIORITY 3 — COMPACT rewrite rules (this is compact mode: the user wants the shortest faithful version of what they said):
-            1. EXTRACT, then rewrite. Identify the main idea, the secondary ideas, and EVERY instruction, decision, question, condition, reason that changes a decision, name, number, path, URL, and code identifier. These must ALL appear in the output — numbers exactly as digits, dictionary terms exactly as spelled. An illustrative number enumeration may collapse into a compact range that keeps every digit ("100 o 20 o 40 palabras" → "20/40/100 palabras"), but a number tied to an instruction ("12 píxeles", "menos de 10.000 tokens") is untouchable.
+            1. EXTRACT, then rewrite. Identify the main idea, the secondary ideas, and EVERY instruction, decision, question, condition, reason that changes a decision, name, number, path, URL, and code identifier. These must ALL appear in the output — numbers exactly as digits, dictionary terms exactly as spelled. An illustrative number enumeration may collapse while keeping its spoken order ("100 o 20 o 40 palabras" → "100/20/40 palabras"), but a number tied to an instruction ("12 píxeles", "menos de 10.000 tokens") is untouchable.
             2. COMPRESS everything else aggressively: delete filler, stutters, restarts, self-corrections (keep the corrected version), repeated passes over the same idea (keep one), thinking-out-loud, apologies, meta-comments about speaking, and empty closers. Rewrite long-winded phrasing into short direct sentences in the user's own vocabulary.
             3. Target length: as short as possible with ZERO requirement loss. A rambling dictation typically compresses to 10-30% of its size; a dictation that is already dense may barely shrink. Never pad, never summarize away a requirement, never add ideas of your own.
             4. The output is the same kind of text, addressed to the same audience: a message stays a message, instructions to an assistant stay imperative instructions ("haz X", "do X"), a question stays a question. Keep the user's tone and dialect words — compress, do not formalize.

@@ -6,6 +6,51 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Settings now presents evidence-based AI model tiers while preserving the
+  free-text model field. The public benchmark scorecard records the dated
+  short-screen results, rejected candidates, pricing snapshot, and promotion
+  gates; local AI polish is explicitly experimental until a small model passes.
+- Local MLX model rows distinguish the Large V3 Turbo quality default from its
+  lower-memory 4-bit alternative.
+
+### Changed
+
+- New AI-polish setups require an explicit model choice instead of silently
+  selecting a provider model. A one-time migration preserves the active legacy
+  default and every existing per-provider selection on upgrades.
+- AI polish now validates structured responses, translation language and
+  plausible completeness, protected technical tokens, missing passages,
+  negations, and assistant-answer drift within one shared three-response
+  budget. A failed translated chunk keeps the complete source transcript
+  instead of producing mixed-language or collapsed output.
+- Public STT and History replay tools now emit aggregate metrics by default,
+  use production-equivalent canonical recognition hints, and keep exact text,
+  terms, digit values, paths, provider bodies, and fingerprints behind an
+  explicit private-output opt-in.
+
+### Fixed
+
+- Deepgram Flux Live now keeps a one-second capture tail, atomically flushes
+  the final PCM remainder, and waits for the provider to finish its
+  post-CloseStream response before accepting the transcript. A failed or timed
+  out finalization falls back to Nova-3 using the preserved WAV instead of
+  pasting a clipped final word.
+- Recognition benchmark payloads now honor the setting that excludes
+  replacement targets from engine hints without disabling deterministic
+  corrections after transcription.
+
+### Security
+
+- Provider URLs no longer persist embedded credentials, query strings, or
+  fragments. Bearer tokens require HTTPS for remote/LAN hosts and may use
+  plain HTTP only on loopback.
+- Public-repo gates now reject any tracked WAV outside the exact sound and
+  fixture allowlist, and reject an allowlisted path when its hash or audio
+  format changes. The former natural-voice Spanish fixture is replaced by a
+  system-generated public fixture.
+
 ## [2.16.2] - 2026-08-27
 
 ### Security
@@ -229,7 +274,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **Short and silent dictations no longer hallucinate** — pressing the hotkey without speaking could paste a phrase like "Thank you.", and a short code ("CTK214") could come back repeated twenty times. The Local AI Server request now enables the server's voice-activity detector so non-speech is never decoded, and a new hallucination filter on every batch engine catches the remaining debris: punctuation-only output, repetition loops (collapsed to a single occurrence), and takes where the decoder reads the vocabulary glossary back as the transcript. Silent takes land in the existing "no speech" flow instead of pasting garbage. Validated by replaying 193 real dictations — normal transcriptions are byte-for-byte unaffected.
+- **Short and silent dictations no longer hallucinate** — pressing the hotkey without speaking could paste a phrase like "Thank you.", and a short code could come back repeated many times. The Local AI Server request now enables the server's voice-activity detector so non-speech is never decoded, and a new hallucination filter on every batch engine catches the remaining debris: punctuation-only output, repetition loops, and takes where the decoder reads the vocabulary glossary back as the transcript. Silent takes land in the existing "no speech" flow instead of pasting garbage, with regression coverage that keeps normal transcriptions unchanged.
 
 ## [2.10.0] - 2026-07-09
 
@@ -288,7 +333,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Whisper (Local MLX) engine** — new default local engine on Apple Silicon: the same Whisper large-v3-turbo weights running on MLX (Metal), ~4x faster than the WhisperKit engine on the 154 s Spanish benchmark fixture (7.3 s vs 30.4 s warm, RTF 0.047) at equal quality. Four downloadable tiers with progress UI (Base 141 MB, Small 463 MB, Large V3 Turbo 1.5 GB — recommended, Large V3 2.9 GB), per-model delete, idle unload policy, and the personal vocabulary conditioning the decoder as a true Whisper initial prompt (`<|startofprev|>`), so keyterms like SapoWhisper, TestFlight, or .gitignore come out spelled right at the engine level. Auto language mode runs a real detection pass (upstream mlx-audio-swift skipped the language slot entirely). The engine is vendored from mlx-audio-swift (MIT, pinned commit) as a local Swift package trimmed to Whisper only.
 
-- **Compact polish mode** — Settings → AI Polish gains a "Polish style" selector: Normal (today's clean-up) or Compact. Compact extracts the main and secondary ideas plus every instruction, number, name, path, and URL, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter) — ideal for dictating to AI assistants while spending far fewer tokens. Works in any language, runs the whole transcript in one pass so repeated ideas merge globally, and was validated case-by-case against real dictation history on six cloud models and three local MLX models before shipping; the selector recommends the best-performing model.
+- **Compact polish mode** — Settings → AI Polish gains a "Polish style" selector: Normal (today's clean-up) or Compact. Compact extracts the main and secondary ideas plus every instruction, number, name, path, and URL, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter) — ideal for dictating to AI assistants while spending far fewer tokens. Works in any language and runs the whole transcript in one pass so repeated ideas merge globally.
 - **Compact mode is visible end to end** — while compact is active the recording pill shows a purple meter and a "Compact" chip, the polish phase says "Compacting…", and the post-dictation toast shows how much the text shrank (e.g. −82%).
 - **Raw-fallback notice** — when AI polish is enabled but the pasted text shipped raw (provider failure or the fidelity guard rejected the output), the post-dictation toast now says "AI not applied — raw text" with a warning tone and the error sound, instead of silently looking like a normal dictation.
 - **Minimum duration for AI polish** — Settings → AI Polish gains an "Activate after" picker (Always, 10 s, 30 s, 45 s, 60 s): dictations shorter than the chosen threshold paste as-is without an AI round-trip, in both Normal and Compact. The recording pill reflects it live — the purple meter and Compact chip appear the moment the threshold is crossed. Polishing from History always runs regardless.
@@ -339,7 +384,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Structured polish outputs** — on OpenAI/OpenRouter the polish request uses a strict JSON schema with a leading filler scan, so the model enumerates filler before writing the final text and cleaning stays consistent; providers without schema support fall back to plain text automatically.
 
 - **Simplified menu bar popover** — the menu now holds the essentials: status header, record/stop, History, Settings, About, and Quit. The pickers, last transcription, auto-paste toggle, and welcome tour left the menu; auto-paste and the tour live in Settings → General, and language switching stays in the overlay chip and Settings.
-- **One adaptive polish mode** — the AI mode picker (Clean-up, AI Assistant, Work Message, Translate) and custom prompt profiles were removed. A single benchmarked prompt now deletes filler and duplicated ideas in any language, keeps every instruction, name, and number, respects the user's tone, and shapes the output as the same kind of text the user spoke — no configuration needed. Validated case-by-case against real dictation history on local Qwen 3.5 4B and 9B before shipping.
+- **One adaptive polish mode** — the AI mode picker (Clean-up, AI Assistant, Work Message, Translate) and custom prompt profiles were removed. A single benchmarked prompt now deletes filler and duplicated ideas in any language, keeps every instruction, name, and number, respects the user's tone, and shapes the output as the same kind of text the user spoke — no configuration needed.
 - **Long dictations are polished in chunks** — transcripts past ~2k characters are split at sentence boundaries and each chunk is polished on its own, so cleaning quality on long rambling dictations matches short ones instead of degrading (small models under-clean or start summarizing on long inputs).
 - **AI polish always runs** — the minimum-duration and short-text gates were removed together with their settings; every non-empty dictation is polished when the feature is enabled and configured, so results are consistent instead of silently skipping short recordings.
 - **Overlay redesign: dock chip + droplet pill** — the dock chip is now a permanent slim bar hugging the screen edge, and every active state (recording, transcribing, result, errors) is a separate droplet pill that detaches from the chip when it appears and is absorbed back on dismiss, with squash-and-stretch chip feedback. This replaces the old background morph that could show an empty half-grown pill with clipped buttons.
@@ -379,7 +424,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- GitHub Actions CI workflow that runs `make ci-check` (lint, secret scan, Debug build, tests).
+- GitHub Actions CI workflow that ran `make ci-check` at this release; it was
+  later retired when verification moved to the supported local Apple Silicon
+  toolchain.
 - `make install-dev` / `scripts/install_dev.sh` for fast local reinstalls of the signed Release build without resetting macOS permissions.
 
 ### Fixed
@@ -393,7 +440,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Local AI Server (NVIDIA)** — added a LAN batch transcription engine for OpenAI-style STT endpoints, with Base URL/model settings, optional Keychain bearer token support, history filters, onboarding, import/export coverage, public benchmark fixtures, and a reproducible local STT benchmark script.
 - **Local AI polish learning** — AI polish can now use a Local Server preset, feed compact accepted-correction memory into the prompt, and save likely speech-to-text correction suggestions for user review before they become automatic corrections.
-- **Private history polish replay** — added a terminal-only replay script that can run saved history text or WAVs through the local STT + AI polish stack and report aggregate acceptance/suggestion metrics without printing private transcripts by default.
+- **Local history polish replay** — added a terminal-only replay script that can run saved history text or WAVs through the local STT + AI polish stack and report aggregate acceptance/suggestion metrics without printing private transcripts by default.
 - **Audio upload quality profiles** — added a Microphone setting for batch recordings: Ultra fast, Medium (default), High, and Ultra original.
 
 ### Changed

@@ -53,6 +53,10 @@ struct LocalModelsCard: View {
             }
 
             modelsList
+            Label("config.mlx_tiers_hint".localized, systemImage: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             storageInfo
             idleUnloadRow
 

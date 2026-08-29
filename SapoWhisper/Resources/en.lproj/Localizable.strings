@@ -139,6 +139,7 @@
 "config.space_used" = "Space used: %@";
 "config.models_download_auto" = "Models are downloaded automatically the first time";
 "config.mlx_vocabulary_hint" = "Your vocabulary guides the local model while it transcribes, so your terms come out spelled right.";
+"config.mlx_tiers_hint" = "Large V3 Turbo is the quality default. Its 4-bit tier uses much less disk and memory with comparable transcription quality.";
 "config.unload_after_idle" = "Unload model after idle";
 "config.unload_never" = "Keep loaded";
 "config.unload_minutes" = "%@ min";
@@ -181,7 +182,7 @@
 "ai.polish.mode_normal_help" = "Cleans fillers, repetition, and dictation mistakes while keeping every sentence, your tone, and your order.";
 "ai.polish.mode_compact" = "Compact";
 "ai.polish.mode_compact_help" = "Extracts the main and secondary ideas with all your instructions, numbers, and names, and rewrites the dictation as the shortest faithful text (typically 70–90% shorter). Ideal for talking to an AI while spending fewer tokens.";
-"ai.polish.mode_compact_hint" = "Recommended for Compact: OpenRouter · qwen/qwen3.5-flash-02-23 with reasoning off (best fidelity/speed/price balance in real-history tests).";
+"ai.polish.mode_compact_hint" = "Compact and translation are the strictest routes. Use the best-tested tier for important text.";
 "ai.polish.min_duration" = "Activate after";
 "ai.polish.min_duration_desc" = "Shorter dictations paste as-is, no AI — a 5-second snippet needs no polish. Applies to Normal and Compact; polishing from History always runs.";
 "ai.polish.min_duration_always" = "Always";
@@ -199,9 +200,22 @@
 "ai.provider.endpoint_custom" = "Custom";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
 "ai.provider.base_url" = "Base URL";
-"ai.provider.base_url_hint" = "Use the OpenAI-compatible base URL; SapoWhisper adds /chat/completions.";
+"ai.provider.base_url_hint" = "Use the OpenAI-compatible base URL; SapoWhisper adds /chat/completions. Bearer tokens require HTTPS except on this Mac.";
 "ai.provider.model" = "Model";
-"ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
+"ai.provider.model_placeholder" = "Choose or type a model ID";
+"ai.provider.model_recommendations" = "Evidence-based model recommendations";
+"ai.provider.model_suggestions_help" = "Evidence-based starting points";
+"ai.provider.model_tier_bestTested" = "Best tested";
+"ai.provider.model_tier_sameLanguageValue" = "Best value · same language";
+"ai.provider.model_tier_fastBudget" = "Fast budget";
+"ai.provider.model_tier_economy" = "Economy";
+"ai.provider.model_tier_notRecommended" = "Not recommended";
+"ai.provider.model_detail_opus5" = "Only model to pass all 16 current short-screen routes, including translation. Highest cost; 14/40-minute qualification is still pending.";
+"ai.provider.model_detail_qwen38" = "Preserved the short same-language routes at low cost, but failed every translation route.";
+"ai.provider.model_detail_nano" = "Fastest tested budget option. Hard Compact and translation cases may fall back to the source text.";
+"ai.provider.model_detail_qwen35" = "Very low cost, but lower fidelity; avoid it for important instructions or translation.";
+"ai.provider.model_detail_failed_gates" = "Failed one or more critical fidelity, translation, runtime, or stability gates.";
+"ai.provider.model_local_experimental" = "Local AI-polish models are experimental; no small local model qualified in the current public screen.";
 "ai.provider.api_key" = "API key";
 "ai.provider.api_key_optional" = "API key (optional)";
 "ai.provider.api_key_placeholder" = "Paste your API key";
@@ -217,11 +231,12 @@
 "ai.provider.summary_edit" = "Edit";
 "ai.provider.summary_done" = "Done";
 "ai.provider.summary_key_help" = "AI polish provider is ready.";
-"ai.provider.model_suggestions_help" = "Suggested models";
 "ai.provider.model_custom_hint" = "Accepts any model ID from openrouter.ai/models (e.g. qwen/qwen3-32b).";
 "ai.polish.fidelity_max" = "Fidelity at max";
 "ai.provider.error_not_configured" = "AI polish is not configured (missing provider details).";
 "ai.provider.error_empty" = "The AI provider returned an empty response.";
+"ai.provider.error_invalid_structured" = "The AI provider returned an invalid structured response.";
+"ai.provider.error_translation_failed" = "The AI provider did not return the requested translation.";
 "ai.provider.error_truncated" = "The AI response was cut off before finishing.";
 "error.mlx.model_load" = "Error loading MLX model: %@";
 "error.mlx.transcription" = "MLX transcription error: %@";
@@ -263,6 +278,8 @@
 "model.speed.very_fast" = "Very fast";
 "model.speed.fast" = "Fast";
 "model.speed.moderate" = "Moderate";
+"model.tier_quality_default" = "Quality default";
+"model.tier_lower_memory" = "Lower memory";
 "model.delete_tooltip" = "Delete model to free up space";
 "model.download_tooltip" = "Download model";
 "model.pause_tooltip" = "Pause download";
@@ -271,7 +288,6 @@
 "model.retry_tooltip" = "Retry download";
 "model.paused_label" = "Paused";
 "model.download_failed" = "Download failed: %@";
-"badge.recommended" = "Recommended";
 
 /* Settings Tabs */
 "tab.general" = "General";

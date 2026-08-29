@@ -24,26 +24,30 @@ nonisolated enum LocalAIServerConfiguration {
         return model.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static var hasUsableConfiguration: Bool {
-        normalizedBaseURL(from: storedBaseURL) != nil
+    @MainActor static var hasUsableConfiguration: Bool {
+        let bearerToken = KeychainStore.hasValue(for: .localAIServerAPIKey) ? "stored" : ""
+        return normalizedBaseURL(from: storedBaseURL, apiKey: bearerToken) != nil
             && !storedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func normalizedBaseURL(from value: String) -> URL? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed),
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            let scheme = url.scheme?.lowercased(),
-            scheme == "http" || scheme == "https",
-            url.host != nil,
-            components.user == nil,
-            components.password == nil,
-            components.query == nil,
-            components.fragment == nil
-        else {
-            return nil
+    static func normalizedBaseURL(from value: String, apiKey: String = "") -> URL? {
+        ProviderURLSecurity.validatedURL(from: value, bearerToken: apiKey)
+    }
+
+    static func sanitizedBaseURLForStorage(_ value: String) -> String {
+        ProviderURLSecurity.sanitizedForStorage(value)
+    }
+
+    static func setStoredBaseURL(_ value: String, defaults: UserDefaults = .standard) {
+        defaults.set(sanitizedBaseURLForStorage(value), forKey: Constants.StorageKeys.localAIServerBaseURL)
+    }
+
+    static func sanitizeStoredBaseURL(defaults: UserDefaults = .standard) {
+        guard let stored = defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL) else { return }
+        let sanitized = sanitizedBaseURLForStorage(stored)
+        if sanitized != stored {
+            defaults.set(sanitized, forKey: Constants.StorageKeys.localAIServerBaseURL)
         }
-        return url
     }
 
     static func apiRootURL(from baseURL: URL) -> URL {

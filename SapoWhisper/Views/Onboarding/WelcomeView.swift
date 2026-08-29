@@ -633,7 +633,7 @@ private struct WelcomeLocalAIServerCard: View {
     }
 
     private var canSave: Bool {
-        LocalAIServerConfiguration.normalizedBaseURL(from: baseURL) != nil
+        LocalAIServerConfiguration.normalizedBaseURL(from: baseURL, apiKey: apiKey) != nil
             && !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -651,7 +651,7 @@ private struct WelcomeLocalAIServerCard: View {
 
             if isSelected {
                 VStack(alignment: .leading, spacing: 8) {
-                    TextField("config.local_ai_base_url_placeholder".localized, text: $baseURL)
+                    TextField("config.local_ai_base_url_placeholder".localized, text: baseURLBinding)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
 
@@ -714,7 +714,15 @@ private struct WelcomeLocalAIServerCard: View {
             }
             return
         }
+        baseURL = LocalAIServerConfiguration.sanitizedBaseURLForStorage(baseURL)
         viewModel.setEngine(.localAIServer)
+    }
+
+    private var baseURLBinding: Binding<String> {
+        Binding(
+            get: { baseURL },
+            set: { baseURL = LocalAIServerConfiguration.sanitizedBaseURLForStorage($0) }
+        )
     }
 }
 
