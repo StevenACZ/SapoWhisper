@@ -1238,6 +1238,12 @@ class SapoWhisperViewModel: ObservableObject {
         }
         isStopPending = true
 
+        if playSoundEnabled {
+            // Restaurar el volumen antes del beep para que no suene ducked
+            AutoDuckingManager.shared.restore()
+            SoundManager.shared.play(.stopRecording)
+        }
+
         let tailPadding = Self.stopTailPadding(for: sessionVariant)
         let stopRequestTime = CFAbsoluteTimeGetCurrent()
         let perf = DictationPerfTimeline(engine: perfEngine)
@@ -1292,12 +1298,6 @@ class SapoWhisperViewModel: ObservableObject {
     private func stopStreamingAndTranscribe(_ context: StreamingEngineContext, perf: DictationPerfTimeline? = nil) {
         isStopPending = false
         defer { captureCoordinator.endActiveCapture() }
-
-        if playSoundEnabled {
-            // Restaurar el volumen antes del beep para que no suene ducked
-            AutoDuckingManager.shared.restore()
-            SoundManager.shared.play(.stopRecording)
-        }
 
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
         activeRecordingSessionID = nil
@@ -1387,12 +1387,6 @@ class SapoWhisperViewModel: ObservableObject {
     /// Detiene la grabacion y transcribe
     private func stopRecordingAndTranscribe(perf: DictationPerfTimeline? = nil) {
         isStopPending = false
-
-        if playSoundEnabled {
-            // Restaurar el volumen antes del beep para que no suene ducked
-            AutoDuckingManager.shared.restore()
-            SoundManager.shared.play(.stopRecording)
-        }
 
         let variant = sessionVariant
         let engine = variant.engine

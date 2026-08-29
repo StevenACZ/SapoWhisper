@@ -205,12 +205,15 @@
 "ai.provider.model_placeholder" = "Elige o escribe un ID de modelo";
 "ai.provider.model_recommendations" = "Recomendaciones de modelos basadas en evidencia";
 "ai.provider.model_suggestions_help" = "Puntos de partida basados en evidencia";
+"ai.provider.model_ranking_header" = "Ordenados según el benchmark de SapoWhisper (2026-08)";
 "ai.provider.model_tier_bestTested" = "Mejor probado";
+"ai.provider.model_tier_bestValue" = "Mejor calidad-precio";
 "ai.provider.model_tier_sameLanguageValue" = "Mejor valor · mismo idioma";
 "ai.provider.model_tier_fastBudget" = "Económico y rápido";
 "ai.provider.model_tier_economy" = "Muy económico";
 "ai.provider.model_tier_notRecommended" = "No recomendado";
-"ai.provider.model_detail_opus5" = "Único modelo que pasó las 16 rutas de la prueba corta actual, incluida traducción. Es el más caro y aún falta calificar 14/40 minutos.";
+"ai.provider.model_detail_opus5" = "Único modelo que pasó las 16 rutas de la prueba corta actual, incluida traducción, y se mantuvo limpio en el dictado real de 4 minutos en Compacto. Es el más caro y aún falta calificar 14/40 minutos.";
+"ai.provider.model_detail_sol" = "La salida Compacta más limpia en los dictados reales, a casi un cuarto del costo de Opus 5 y al doble de velocidad. Aún faltan los gates de entrada larga.";
 "ai.provider.model_detail_qwen38" = "Conservó las rutas cortas en el mismo idioma a bajo costo, pero falló todas las rutas de traducción.";
 "ai.provider.model_detail_nano" = "La opción económica más rápida de la prueba. Casos difíciles de Compacto y traducción pueden volver al texto original.";
 "ai.provider.model_detail_qwen35" = "Costo muy bajo, pero menor fidelidad; evítalo para instrucciones importantes o traducción.";

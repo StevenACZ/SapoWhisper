@@ -205,12 +205,15 @@
 "ai.provider.model_placeholder" = "Choose or type a model ID";
 "ai.provider.model_recommendations" = "Evidence-based model recommendations";
 "ai.provider.model_suggestions_help" = "Evidence-based starting points";
+"ai.provider.model_ranking_header" = "Ranked from the SapoWhisper benchmark (2026-08)";
 "ai.provider.model_tier_bestTested" = "Best tested";
+"ai.provider.model_tier_bestValue" = "Best quality per price";
 "ai.provider.model_tier_sameLanguageValue" = "Best value · same language";
 "ai.provider.model_tier_fastBudget" = "Fast budget";
 "ai.provider.model_tier_economy" = "Economy";
 "ai.provider.model_tier_notRecommended" = "Not recommended";
-"ai.provider.model_detail_opus5" = "Only model to pass all 16 current short-screen routes, including translation. Highest cost; 14/40-minute qualification is still pending.";
+"ai.provider.model_detail_opus5" = "Only model to pass all 16 current short-screen routes, including translation, and it stayed clean on the real 4-minute Compact dictation. Highest cost; 14/40-minute qualification is still pending.";
+"ai.provider.model_detail_sol" = "Cleanest Compact output on the real dictations at about a quarter of the Opus 5 cost and twice its speed. Long-input gates are still pending.";
 "ai.provider.model_detail_qwen38" = "Preserved the short same-language routes at low cost, but failed every translation route.";
 "ai.provider.model_detail_nano" = "Fastest tested budget option. Hard Compact and translation cases may fall back to the source text.";
 "ai.provider.model_detail_qwen35" = "Very low cost, but lower fidelity; avoid it for important instructions or translation.";

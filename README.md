@@ -38,10 +38,13 @@ The model field always accepts a custom ID. The menu adds tested starting points
 
 | Tier | OpenRouter model | Guidance |
 |---|---|---|
-| Best tested | `anthropic/claude-opus-5` | Only model to pass the current 16/16 short four-route screen, including translation. Highest cost; 14/40-minute qualification is still pending. |
+| Best tested | `anthropic/claude-opus-5` | Only model to pass the current 16/16 short four-route screen, including translation, and clean on the real 4-minute Compact dictation. Highest cost; 14/40-minute qualification is still pending. |
+| Best quality per price | `openai/gpt-5.6-sol` | Cleanest Compact output on the real dictations at about a quarter of the Opus 5 cost and twice its speed; long-input and translation gates still pending. |
 | Same-language value | `qwen/qwen3.8-flash` | Low-cost cleanup when output stays in the spoken language. It failed every translation record and showed runtime instability, so it is not a universal default. |
 | Fast budget | `openai/gpt-5.4-nano` | Fastest tested budget option. Hard Compact and translation cases may safely fall back to the source text. |
 | Economy | `qwen/qwen3.5-flash-02-23` | Cheapest offered option, but it failed the fidelity, translation, runtime, and stability gates; use only for low-stakes same-language cleanup. |
+
+If you want most of the Opus 5 quality without its price, pick `openai/gpt-5.6-sol`: on the 2026-08-29 real-dictation Compact run it was the quality-per-price choice, roughly a quarter of the cost at twice the speed.
 
 No small local AI-polish model has qualified yet, so Local Server polish is labeled experimental. This is separate from local speech-to-text: MLX Large V3 Turbo remains the recommended offline transcription model.
 

@@ -23,18 +23,20 @@ struct PolishModelPicker: View {
                 let suggestions = endpoint.modelRecommendations.filter(\.isSuggested)
                 if !suggestions.isEmpty {
                     Menu {
-                        ForEach(suggestions) { recommendation in
-                            Button {
-                                model = recommendation.model
-                            } label: {
-                                let title =
-                                    "\(recommendation.tier.displayName) · \(recommendation.model)"
-                                if recommendation.model
-                                    == model.trimmingCharacters(in: .whitespacesAndNewlines)
-                                {
-                                    Label(title, systemImage: "checkmark")
-                                } else {
-                                    Text(title)
+                        Section("ai.provider.model_ranking_header".localized) {
+                            ForEach(suggestions) { recommendation in
+                                Button {
+                                    model = recommendation.model
+                                } label: {
+                                    let title =
+                                        "\(recommendation.tier.displayName) · \(recommendation.model)"
+                                    if recommendation.model
+                                        == model.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    {
+                                        Label(title, systemImage: "checkmark")
+                                    } else {
+                                        Text(title)
+                                    }
                                 }
                             }
                         }
@@ -52,14 +54,20 @@ struct PolishModelPicker: View {
             }
 
             if let recommendation = endpoint.modelRecommendation(for: model) {
-                Label {
-                    Text("\(recommendation.tier.displayName): \(recommendation.detail)")
+                VStack(alignment: .leading, spacing: 2) {
+                    Label {
+                        Text(recommendation.tier.displayName)
+                    } icon: {
+                        Image(systemName: recommendationIcon(for: recommendation.tier))
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(recommendationColor(for: recommendation.tier))
+
+                    Text(recommendation.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: recommendationIcon(for: recommendation.tier))
                 }
-                .font(.caption2)
-                .foregroundStyle(recommendationColor(for: recommendation.tier))
             } else if endpoint == .localServer {
                 Label("ai.provider.model_local_experimental".localized, systemImage: "exclamationmark.triangle")
                     .font(.caption2)
@@ -72,6 +80,7 @@ struct PolishModelPicker: View {
     private func recommendationIcon(for tier: PolishModelEvidenceTier) -> String {
         switch tier {
         case .bestTested: return "checkmark.seal.fill"
+        case .bestValue: return "star.circle.fill"
         case .sameLanguageValue: return "equal.circle.fill"
         case .fastBudget: return "bolt.circle.fill"
         case .economy: return "dollarsign.circle.fill"
@@ -82,6 +91,7 @@ struct PolishModelPicker: View {
     private func recommendationColor(for tier: PolishModelEvidenceTier) -> Color {
         switch tier {
         case .bestTested: return .sapoGreenText
+        case .bestValue: return .teal
         case .sameLanguageValue: return .blue
         case .fastBudget: return .orange
         case .economy: return .secondary

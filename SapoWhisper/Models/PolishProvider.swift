@@ -7,6 +7,7 @@ import Foundation
 
 enum PolishModelEvidenceTier: String {
     case bestTested
+    case bestValue
     case sameLanguageValue
     case fastBudget
     case economy
@@ -120,6 +121,12 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
                     isSuggested: true
                 ),
                 PolishModelRecommendation(
+                    model: "openai/gpt-5.6-sol",
+                    tier: .bestValue,
+                    detailKey: "ai.provider.model_detail_sol",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
                     model: "qwen/qwen3.8-flash",
                     tier: .sameLanguageValue,
                     detailKey: "ai.provider.model_detail_qwen38",
@@ -150,12 +157,6 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
                     isSuggested: false
                 ),
                 PolishModelRecommendation(
-                    model: "openai/gpt-5.6-sol",
-                    tier: .notRecommended,
-                    detailKey: "ai.provider.model_detail_failed_gates",
-                    isSuggested: false
-                ),
-                PolishModelRecommendation(
                     model: "openai/gpt-5.6-luna",
                     tier: .notRecommended,
                     detailKey: "ai.provider.model_detail_failed_gates",
@@ -165,11 +166,17 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
         case .openAI:
             return [
                 PolishModelRecommendation(
+                    model: "gpt-5.6-sol",
+                    tier: .bestValue,
+                    detailKey: "ai.provider.model_detail_sol",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
                     model: "gpt-5.4-nano",
                     tier: .fastBudget,
                     detailKey: "ai.provider.model_detail_nano",
                     isSuggested: true
-                )
+                ),
             ]
         case .localServer, .groq, .custom:
             return []

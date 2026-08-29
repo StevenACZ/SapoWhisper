@@ -193,6 +193,7 @@ final class PolishProviderTests: XCTestCase {
             recommendations.filter(\.isSuggested).map(\.model),
             [
                 "anthropic/claude-opus-5",
+                "openai/gpt-5.6-sol",
                 "qwen/qwen3.8-flash",
                 "openai/gpt-5.4-nano",
                 "qwen/qwen3.5-flash-02-23",
@@ -203,8 +204,28 @@ final class PolishProviderTests: XCTestCase {
             .bestTested
         )
         XCTAssertEqual(
+            PolishEndpoint.openRouter.modelRecommendation(for: "openai/gpt-5.6-sol")?.tier,
+            .bestValue
+        )
+        XCTAssertEqual(
+            PolishEndpoint.openRouter.modelRecommendation(for: "openai/gpt-5.6-sol")?.detailKey,
+            "ai.provider.model_detail_sol"
+        )
+        XCTAssertEqual(
+            PolishEndpoint.openAI.modelRecommendations.map(\.model),
+            ["gpt-5.6-sol", "gpt-5.4-nano"]
+        )
+        XCTAssertEqual(
+            PolishEndpoint.openAI.modelRecommendation(for: "gpt-5.6-sol")?.tier,
+            .bestValue
+        )
+        XCTAssertEqual(
             PolishEndpoint.openRouter.modelRecommendation(for: "deepseek/deepseek-v4-flash-0731")?.tier,
             .notRecommended
+        )
+        XCTAssertEqual(
+            recommendations.filter(\.isSuggested).map(\.tier),
+            [.bestTested, .bestValue, .sameLanguageValue, .fastBudget, .economy]
         )
         XCTAssertNil(PolishEndpoint.openRouter.modelRecommendation(for: "future/provider-model"))
         XCTAssertTrue(

@@ -12,6 +12,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   free-text model field. The public benchmark scorecard records the dated
   short-screen results, rejected candidates, pricing snapshot, and promotion
   gates; local AI polish is explicitly experimental until a small model passes.
+- New "Best quality per price" model tier offering `openai/gpt-5.6-sol` (and
+  `gpt-5.6-sol` on the OpenAI endpoint) between the best-tested and
+  same-language tiers.
+- The model suggestions menu now carries a ranking header, and the evidence card
+  under the model field shows a tier badge with the evidence sentence below it.
+- Benchmark scorecard gained a "Compact route on real dictations (2026-08-29)"
+  section with per-model ratio, latency, cost and verdicts, plus the known
+  limitation that some endpoints reject reasoning "off" and run with their
+  default reasoning instead.
 - Local MLX model rows distinguish the Large V3 Turbo quality default from its
   lower-memory 4-bit alternative.
 
