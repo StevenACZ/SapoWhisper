@@ -7,8 +7,8 @@ in-app Sparkle channel: the app checks the appcast published on GitHub
 Releases once a day and shows a quiet notice; nothing downloads until the
 user clicks Install. Update archives are EdDSA-signed and verified against
 the public key embedded in the app before installation. Manual installs
-remain available — download the newest DMG from GitHub Releases and verify
-its published SHA-256.
+remain available — download the newest DMG from GitHub Releases and compare
+its SHA-256 with the value in that release's notes.
 
 ## Secret Handling
 

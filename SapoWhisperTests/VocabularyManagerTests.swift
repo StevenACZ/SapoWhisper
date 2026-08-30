@@ -321,21 +321,20 @@ final class VocabularyManagerTests: XCTestCase {
         )
     }
 
-    func testRecognitionCorrectionsHandlePersonalIABrainAndChangelogForms() {
+    func testRecognitionCorrectionsHandleChangelogAndAgentsSpokenForms() {
         let manager = makeManager()
-        manager.addKeyterm("IABrain")
         manager.addKeyterm("CHANGELOG")
         manager.addKeyterm("AGENTS.md")
 
         XCTAssertEqual(
             manager.applyingRecognitionCorrections(
-                to: "revisa ya brain, changelov y AGENTS punto eme de"
+                to: "revisa changelov y AGENTS punto eme de"
             ),
-            "revisa IABrain, CHANGELOG y AGENTS.md"
+            "revisa CHANGELOG y AGENTS.md"
         )
         XCTAssertEqual(
             manager.recognitionKeytermPayload(maxCount: 20, maxLength: 200).terms,
-            ["IABrain", "CHANGELOG", "AGENTS.md"]
+            ["CHANGELOG", "AGENTS.md"]
         )
     }
 

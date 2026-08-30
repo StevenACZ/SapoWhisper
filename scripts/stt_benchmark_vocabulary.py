@@ -8,7 +8,6 @@ BASE_CONFUSIONS = {
     "Claude": ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
     "Deepgram": ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
     "ElevenLabs": ["Eleven Labs", "11labs"],
-    "IABrain": ["IA Brain", "I A Brain", "ya brain"],
     "CHANGELOG": ["Change log", "hangelog", "changelov"],
     "AGENTS.md": ["AGENTS punto eme de", "Ages punto eme de"],
     "Local AI Server": ["localize server", "local ya server", "localia server"],

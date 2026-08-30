@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-08-30
+
 ### Added
 
 - Catalog candidates carry their tested reasoning policy: picking one applies it. Four endpoints that rejected the historical screen's requested `reasoning: none` (Grok 4.6, Qwen 3.8 Max, GLM 5.3 Flash, Gemini 3.7 Flash) used provider-default reasoning in their fallback measurements; the current picker requires at least Low for those models and explains why.
@@ -82,7 +84,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   replacement targets from engine hints without disabling deterministic
   corrections after transcription.
 - Deterministic vocabulary correction now covers observed, multi-word spoken
-  forms for IABrain, CHANGELOG, AGENTS.md, git commit and git push when those
+  forms for CHANGELOG, AGENTS.md, git commit and git push when those
   canonical terms are configured, without enabling ambiguous single-word
   replacements.
 - Local AI Server builds now declare their macOS local-network purpose, so LAN
@@ -104,10 +106,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   public unified logs; Release builds also ignore local Sparkle feed overrides.
 - Public-repo gates now reject tracked audio or video outside the exact
   app-sound and fixture allowlist, and reject an allowlisted path when its hash
-  or audio format changes. The retired natural-voice Spanish fixture
-  `technical/es/real-natural.wav` and `technical/es/real-natural.txt` are
-  excluded from current scores; `technical/es/synthetic-public.wav` is
-  generated from the tracked public text with the macOS Paulina system voice.
+  or audio format changes. The retired natural-voice Spanish fixture is
+  excluded from current scores; its replacement is generated from tracked
+  public text with the macOS Paulina system voice.
 - Sparkle appcast generation now runs the full release-app identity,
   architecture, contents and private-path verifier on both the notarized app
   and the app extracted from its update ZIP.

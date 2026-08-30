@@ -476,14 +476,14 @@ class BenchmarkVocabularyParityTests(unittest.TestCase):
                     self.assertFalse(capture.exists())
                     environment[variable] = str(transcript if variable == "TRANSCRIPT_PATH" else critical)
 
-    def test_runner_matches_production_personal_and_conditional_git_variants(self):
+    def test_runner_matches_production_technical_and_conditional_git_variants(self):
         self.assertEqual(
             apply_recognition_corrections(
-                "revisa ya brain, changelov y AGENTS punto eme de",
-                ["IABrain", "CHANGELOG", "AGENTS.md"],
+                "revisa changelov y AGENTS punto eme de",
+                ["CHANGELOG", "AGENTS.md"],
                 {},
             ),
-            "revisa IABrain, CHANGELOG y AGENTS.md",
+            "revisa CHANGELOG y AGENTS.md",
         )
         variants = "HIIT con meat, HIIT push, heat con meat y heat push"
         self.assertEqual(
@@ -496,7 +496,6 @@ class BenchmarkVocabularyParityTests(unittest.TestCase):
         )
         self.assertEqual(apply_recognition_corrections("KitCom y KitPush", ["git commit"], {}), "git commit y KitPush")
         self.assertEqual(apply_recognition_corrections("KitCom y KitPush", ["git push"], {}), "KitCom y git push")
-        self.assertNotIn("y abre", " ".join(recognition_variants("IABrain")))
 
     def test_cloud_benchmark_hides_missing_private_paths_by_default(self):
         with tempfile.TemporaryDirectory() as directory:
