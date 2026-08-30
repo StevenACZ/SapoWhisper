@@ -20,6 +20,8 @@ nonisolated enum SpeechConfusionCatalog {
         ("Claude", ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"]),
         ("Deepgram", ["Deep gram", "Depgram", "Deppgram", "Ditgram"]),
         ("ElevenLabs", ["Eleven Labs", "11labs"]),
+        ("CHANGELOG", ["Change log", "hangelog", "changelov"]),
+        ("AGENTS.md", ["AGENTS punto eme de", "Ages punto eme de"]),
         ("Local AI Server", ["localize server", "local ya server", "localia server"]),
         (
             "SapoWhisper",

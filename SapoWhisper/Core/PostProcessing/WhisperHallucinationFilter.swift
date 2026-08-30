@@ -7,7 +7,7 @@ import Foundation
 
 /// Post-transcription hygiene for Whisper-family hallucinations on short or
 /// near-silent takes, applied to every batch engine result. Three deterministic
-/// failure shapes are handled (all reproduced from real history audio):
+/// failure shapes are handled by public regression coverage:
 ///
 /// 1. Punctuation-only debris (". .") that survives the server's VAD.
 /// 2. Repetition loops — the decoder locks onto one token or a short cycle

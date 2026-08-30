@@ -58,6 +58,8 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+SOURCE_IDENTITY="$(scripts/verify_release_inputs.sh)"
+
 if ! command -v create-dmg >/dev/null 2>&1; then
   echo "create-dmg is required. Install it with: brew install create-dmg" >&2
   exit 69
@@ -127,7 +129,14 @@ if [[ ! -d "$BUILT_APP" ]]; then
   exit 66
 fi
 
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_APP/Contents/Info.plist")"
+BUILT_IDENTITY="$(scripts/verify_release_inputs.sh --app "$BUILT_APP")"
+if [[ "$BUILT_IDENTITY" != "$SOURCE_IDENTITY" ]]; then
+  echo "Project release identity changed during the build." >&2
+  echo "Before build: $SOURCE_IDENTITY" >&2
+  echo "After build: $BUILT_IDENTITY" >&2
+  exit 65
+fi
+IFS=$'\t' read -r VERSION BUILD <<<"$BUILT_IDENTITY"
 if [[ -z "$OUTPUT_DMG" ]]; then
   OUTPUT_DMG="$HOME/Downloads/SapoWhisper-$VERSION.dmg"
 fi
@@ -242,10 +251,12 @@ if [[ ! -e "$MOUNT_POINT/Applications" && ! -L "$MOUNT_POINT/Applications" ]]; t
   exit 66
 fi
 MOUNTED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$MOUNTED_APP/Contents/Info.plist")"
-if [[ "$MOUNTED_VERSION" != "$VERSION" ]]; then
-  echo "Mounted app version mismatch: expected $VERSION, got $MOUNTED_VERSION" >&2
+MOUNTED_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$MOUNTED_APP/Contents/Info.plist")"
+if [[ "$MOUNTED_VERSION" != "$VERSION" || "$MOUNTED_BUILD" != "$BUILD" ]]; then
+  echo "Mounted app identity mismatch: expected $VERSION ($BUILD), got $MOUNTED_VERSION ($MOUNTED_BUILD)" >&2
   exit 66
 fi
+scripts/verify_release_inputs.sh --app "$MOUNTED_APP" >/dev/null
 
 echo "==> Verifying mounted app"
 xcrun stapler validate "$MOUNTED_APP"

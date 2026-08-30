@@ -16,6 +16,11 @@ import XCTest
 
 nonisolated final class AudioCaptureEngineGuardTests: XCTestCase {
 
+    func testOnlyStreamingCaptureKeepsRecoveryMarkerAfterSeal() {
+        XCTAssertFalse(AudioCaptureEngine.Mode.batch.keepsRecoveryMarkerAfterCapture)
+        XCTAssertTrue(AudioCaptureEngine.Mode.streaming.keepsRecoveryMarkerAfterCapture)
+    }
+
     private nonisolated final class ResultStore: @unchecked Sendable {
         private let lock = NSLock()
         private var results: [Result<Int, Error>] = []

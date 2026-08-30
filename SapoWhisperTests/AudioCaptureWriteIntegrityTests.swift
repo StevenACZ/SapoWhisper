@@ -53,7 +53,11 @@ final class AudioCaptureWriteIntegrityTests: XCTestCase {
         let diagnostics = snapshot(engine)
         XCTAssertFalse(diagnostics.isComplete)
         XCTAssertEqual(diagnostics.failedWriteCount, 2)
-        XCTAssertEqual(diagnostics.firstWriteError, "stub-disk-full")
+        XCTAssertEqual(
+            diagnostics.firstWriteError,
+            LogSanitizer.errorDiagnostic(StubWriteFailure.diskFull, state: "audio-write")
+        )
+        XCTAssertFalse(diagnostics.firstWriteError?.contains("stub-disk-full") == true)
     }
 
     func testTruncatedCaptureStillReportsTheInputItDidReceive() {

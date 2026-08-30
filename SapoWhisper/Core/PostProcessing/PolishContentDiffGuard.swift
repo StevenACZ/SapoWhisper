@@ -20,22 +20,25 @@ struct PolishContentDiffVerdict {
 }
 
 /// Cheap deterministic raw-vs-polished diff: catches a polish that dropped
-/// digits or an entire passage. Like the fidelity guard it is RETRY-ONLY —
-/// after the retry budget the last AI output ships, and it must never
-/// raw-fallback an otherwise good polish.
+/// digits or an entire passage. A failed verdict triggers regeneration but
+/// never raw-fallbacks the polish.
 ///
 /// Numbers stay out of the hard-anchor guard on purpose (STT mangles spoken
 /// numbers and the polish must be free to repair separators); this check is
-/// the lenient complement: a digit RUN may be re-punctuated ("0,63" → "0.63")
+/// the lenient complement: a digit run may be re-punctuated ("0,63" → "0.63")
 /// or absorbed into a longer surviving run (stutter "14 ca--, 1440" → "1440"),
-/// but digits that vanish entirely are a real loss. Thresholds calibrated on
-/// real-history bench outputs against gpt-5.4-nano (2026-07-04): flags the
-/// catastrophic collapse cases, zero false positives on accepted outputs.
+/// but digits that vanish entirely are a real loss.
 enum PolishContentDiffGuard {
     private static let minimumClusterWords = 8
     private static let minimumDistinctiveTokens = 4
     private static let clusterSurvivalThreshold = 0.15
+    private static let instructionSurvivalThreshold = 0.5
     private static let distinctiveTokenMinimumLength = 5
+    private static let instructionPatterns = [
+        #"\b(dime|cuentame|explicame|responde|investiga|busca|consulta|analiza|revisa|haz|crea|genera|calcula|corre|ejecuta|abre|instala|soluciona|arregla|dame|prepara|escribe|redacta|elimina|borra|mueve|cambia|actualiza|configura|guarda|copia|pega|sube|publica|despliega|prueba|verifica|documenta|agrega|anade|quita|remueve|renombra|reemplaza|compila|construye|inicia|deten|reinicia|avisale|recuerdale|mandale|deja)\b"#,
+        #"\b(tell me|explain|answer|research|search|look up|analyze|analyse|review|run|execute|open|install|fix|create|generate|calculate|write|draft|delete|remove|move|change|update|configure|save|copy|paste|upload|publish|deploy|test|verify|document|add|rename|replace|build|start|stop|restart)\b"#,
+        #"\b(necesito que|quiero que|tienes que|hay que|por favor|please|can you|could you|i need you to|i want you to|make sure to|make sure that)\b"#,
+    ]
 
     /// `translationExpected` skips the content-cluster check — words
     /// legitimately change language — while digit runs must survive any
@@ -60,9 +63,6 @@ enum PolishContentDiffGuard {
         )
     }
 
-    /// Digit runs from raw that appear nowhere in the polished output, not
-    /// even inside a longer run. Set semantics: a number repeated in raw only
-    /// needs to survive once (merged repetition keeps one copy).
     private static func lostDigitRuns(raw: String, polished: String) -> [String] {
         let rawRuns = Set(digitRuns(in: raw))
         guard !rawRuns.isEmpty else { return [] }
@@ -103,7 +103,8 @@ enum PolishContentDiffGuard {
             let distinctive = distinctiveTokens(in: sentence)
             guard distinctive.count >= minimumDistinctiveTokens else { continue }
             let surviving = distinctive.filter { polishedLowercased.contains($0) }.count
-            if Double(surviving) / Double(distinctive.count) < clusterSurvivalThreshold {
+            let threshold = containsInstructionCue(sentence) ? instructionSurvivalThreshold : clusterSurvivalThreshold
+            if Double(surviving) / Double(distinctive.count) < threshold {
                 dropped.append(sentence)
             }
         }
@@ -142,6 +143,14 @@ enum PolishContentDiffGuard {
             }
         }
         return tokens
+    }
+
+    private static func containsInstructionCue(_ sentence: String) -> Bool {
+        let normalized =
+            sentence
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .lowercased()
+        return instructionPatterns.contains { normalized.range(of: $0, options: .regularExpression) != nil }
     }
 
     private static func retryInstruction(lostRuns: [String], droppedClusters: [String]) -> String? {

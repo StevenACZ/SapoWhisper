@@ -90,15 +90,36 @@ final class UpdateManagerTests: XCTestCase {
             version: "9.9.9", releasePage: nil, informationOnly: false)
         XCTAssertEqual(choice, .dismiss)
 
-        manager.handleError("network down")
+        manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 4001))
 
         XCTAssertEqual(manager.phase, .available(version: "9.9.9"))
     }
 
     func testScheduledCheckErrorWithNothingPendingIsIdle() {
-        manager.handleError("network down")
+        manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 4001))
 
         XCTAssertEqual(manager.phase, .idle)
+    }
+
+    func testStartFailureDiagnosticOmitsDescriptionPathURLAndSecrets() {
+        let error = NSError(
+            domain: "SUSparkleErrorDomain",
+            code: 4002,
+            userInfo: [
+                NSLocalizedDescriptionKey: "Failed with api_key=json-secret-123456",
+                NSFilePathErrorKey: "/Users/example/private/update.zip",
+                NSURLErrorKey: URL(
+                    string: "https://updates.example.test/feed?token=url-secret-654321")!,
+            ]
+        )
+
+        let diagnostic = UpdateManager.startFailureLogDetail(for: error)
+
+        XCTAssertEqual(diagnostic, "state=start domain=SUSparkleErrorDomain code=4002")
+        XCTAssertFalse(diagnostic.contains("json-secret"))
+        XCTAssertFalse(diagnostic.contains("/Users/example"))
+        XCTAssertFalse(diagnostic.contains("updates.example.test"))
+        XCTAssertFalse(diagnostic.contains("url-secret"))
     }
 
     // MARK: - Session teardown

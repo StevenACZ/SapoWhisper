@@ -125,9 +125,7 @@ enum EnginePortfolioMigration {
             for entry in entries where entry.lastPathComponent.lowercased().contains("whisperkit") {
                 try? fileManager.removeItem(at: entry)
                 deletedAny = true
-                SapoLog.lifecycle.info(
-                    "Deleted WhisperKit model cache dir=\(entry.lastPathComponent, privacy: .public)"
-                )
+                SapoLog.lifecycle.info("Deleted WhisperKit model cache")
             }
         }
 

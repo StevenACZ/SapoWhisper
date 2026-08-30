@@ -37,7 +37,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
     let kind: Kind
     /// Engine brand shown to the user, e.g. `"ElevenLabs"`. `nil` for engine-agnostic failures.
     let engine: String?
-    /// HTTP status, response body snippet, error code — logged, never shown to the user.
+    /// Safe status, domain, or error code metadata logged but never shown to the user.
     let technicalDetail: String?
     /// Pre-localized message that wins over `kind`'s default text. Used to preserve the
     /// specific wording of engine-domain errors (model not loaded, permission denied, ...).
@@ -119,20 +119,22 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         }
         return diagnosticCode
     }
+
+    nonisolated static func diagnosticDetail(for error: Error) -> String {
+        let nsError = error as NSError
+        return "\(nsError.domain)/\(nsError.code)"
+    }
 }
 
 // MARK: - Factories
 
 extension TranscriptionFailure {
 
-    /// Classifies a non-2xx HTTP response, capturing a redacted body snippet for logs.
-    ///
-    /// The body is only used for keyword hints (e.g. "quota" vs "api key") and a short
-    /// log snippet — it is never shown to the user.
+    /// Classifies a non-2xx HTTP response. The body is used only for classification.
     static func fromHTTP(engine: String, statusCode: Int, body: Data) -> TranscriptionFailure {
         let bodyText = String(data: body, encoding: .utf8) ?? ""
         let lower = bodyText.lowercased()
-        let detail = "HTTP \(statusCode) body=\(redactedLogSnippet(from: bodyText))"
+        let detail = "HTTP status=\(statusCode)"
 
         let mentionsCredits =
             lower.contains("quota") || lower.contains("credit")
@@ -181,34 +183,7 @@ extension TranscriptionFailure {
     /// Internal (not private) so OpenAI-compatible polish errors reuse the same
     /// patterns instead of logging a raw provider body.
     static func redactedLogSnippet(from bodyText: String) -> String {
-        let normalized =
-            bodyText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\n", with: " ")
-
-        // Ordered array (not a dictionary): the auth-scheme pattern runs FIRST so
-        // the generic key/authorization pattern below cannot match just the scheme
-        // word ("Bearer"/"Token", whose value stops at the space) and strand the
-        // token in cleartext. The scheme value class includes base64/JWT
-        // punctuation (~ + / =) and covers Deepgram's "Token <key>" scheme.
-        let patterns: [(pattern: String, replacement: String)] = [
-            (#"(?i)(Bearer|Token)\s+[A-Za-z0-9._~+/=-]{10,}"#, "$1 [redacted]"),
-            (
-                #"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization)\s*[:=]\s*["']?[^"',\s}]{6,}"#,
-                "$1=[redacted]"
-            ),
-            (#"(?i)sk-[A-Za-z0-9._*-]{6,}"#, "[redacted-key]"),
-            (#"AIza[0-9A-Za-z_-]{10,}"#, "[redacted-key]"),
-        ]
-        let redacted = patterns.reduce(normalized) { partial, entry in
-            partial.replacingOccurrences(
-                of: entry.pattern,
-                with: entry.replacement,
-                options: .regularExpression
-            )
-        }
-
-        return String(redacted.prefix(300))
+        LogSanitizer.redactedSnippet(from: bodyText)
     }
 
     /// Normalizes any caught error into a `TranscriptionFailure`.
@@ -245,10 +220,9 @@ extension TranscriptionFailure {
             }
         }
 
-        let nsError = error as NSError
         return TranscriptionFailure(
             kind: .unknown, engine: engine,
-            technicalDetail: "\(nsError.domain)/\(nsError.code) \(error.localizedDescription)")
+            technicalDetail: diagnosticDetail(for: error))
     }
 
     private static func fromURLError(_ urlError: URLError, engine: String?) -> TranscriptionFailure {
@@ -348,7 +322,8 @@ enum AudioFileValidator {
             throw TranscriptionFailure(
                 kind: .audioCorrupt,
                 technicalDetail:
-                    "AVAudioFile open failed bytes=\(byteCount) error=\(error.localizedDescription)")
+                    "AVAudioFile open failed bytes=\(byteCount) error=\(TranscriptionFailure.diagnosticDetail(for: error))"
+            )
         }
     }
 }

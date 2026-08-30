@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import collections
 import contextlib
+import ipaddress
 import json
 import mimetypes
 import pathlib
@@ -19,6 +20,7 @@ import sqlite3
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -32,7 +34,6 @@ DEFAULT_APP_SUPPORT = pathlib.Path.home() / "Library/Application Support/SapoWhi
 DEFAULT_DB = DEFAULT_APP_SUPPORT / "history.db"
 DEFAULT_VOCABULARY = DEFAULT_APP_SUPPORT / "vocabulary.json"
 DEFAULT_POLISH_BASE_URL = "http://localhost:8081/v1"
-DEFAULT_POLISH_MODEL = "qwen3.6-35b-a3b"
 DEFAULT_STT_BASE_URL = "http://localhost:8000"
 DEFAULT_STT_MODEL = "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo"
 
@@ -73,6 +74,71 @@ DEFAULT_CORRECTION_TARGETS = [
 ]
 
 
+class ReplayInputError(Exception):
+    """An input failure with a private detail that is opt-in to display."""
+
+    def __init__(self, public_message: str, private_detail: str):
+        super().__init__(public_message)
+        self.public_message = public_message
+        self.private_detail = private_detail
+
+
+def is_loopback_host(hostname: str) -> bool:
+    normalized = hostname.casefold()
+    if normalized in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_provider_url(value: str, field_name: str) -> urllib.parse.SplitResult:
+    public_message = "Provider URL must use http(s) without credentials, query, or fragment."
+    if not value or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+        raise ReplayInputError(public_message, f"{field_name} contains whitespace or control characters")
+
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as error:
+        raise ReplayInputError(public_message, f"{field_name} is malformed: {error}") from error
+
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not parsed.netloc
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or "?" in value
+        or "#" in value
+    ):
+        raise ReplayInputError(public_message, f"{field_name} is not a permitted provider URL")
+    return parsed
+
+
+def validate_replay_transport(args: argparse.Namespace) -> None:
+    polish_url = validate_provider_url(args.polish_base_url, "polish-base-url")
+    stt_url = validate_provider_url(args.stt_base_url, "stt-base-url")
+    remote_urls = [polish_url] if not is_loopback_host(polish_url.hostname) else []
+    if args.retranscribe_audio:
+        if not is_loopback_host(stt_url.hostname):
+            remote_urls.append(stt_url)
+    if any(url.scheme.casefold() != "https" for url in remote_urls):
+        raise ReplayInputError(
+            "Remote private data requires HTTPS.",
+            "a non-loopback replay endpoint used plaintext HTTP",
+        )
+    if remote_urls and not args.allow_remote_private_data:
+        raise ReplayInputError(
+            "Remote private data requires --allow-remote-private-data.",
+            "a non-loopback replay endpoint was selected without explicit private-data authorization",
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=pathlib.Path, default=DEFAULT_DB)
@@ -83,11 +149,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--since", default="", help="Inclusive ISO timestamp lower bound, e.g. 2026-06-20T00:00:00Z")
     parser.add_argument("--until", default="", help="Exclusive ISO timestamp upper bound, e.g. 2026-06-21T00:00:00Z")
     parser.add_argument("--polish-base-url", default=DEFAULT_POLISH_BASE_URL)
-    parser.add_argument("--polish-model", default=DEFAULT_POLISH_MODEL)
+    parser.add_argument("--polish-model", required=True, help="Model identifier; required to avoid an implicit model choice")
     parser.add_argument("--stt-base-url", default=DEFAULT_STT_BASE_URL)
     parser.add_argument("--stt-model", default=DEFAULT_STT_MODEL)
     parser.add_argument("--timeout", type=float, default=35)
     parser.add_argument("--retranscribe-audio", action="store_true")
+    parser.add_argument(
+        "--allow-remote-private-data",
+        action="store_true",
+        help="authorize sending local transcript/audio data to a non-loopback endpoint",
+    )
     parser.add_argument("--print-samples", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
@@ -102,7 +173,7 @@ def fetch_rows(
     until: str,
 ) -> list[sqlite3.Row]:
     if not db_path.exists():
-        raise SystemExit(f"History DB not found: {db_path}")
+        raise ReplayInputError("Unable to read local replay inputs.", f"History DB not found: {db_path}")
 
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
@@ -135,6 +206,7 @@ def fetch_rows(
 
 
 def post_json(url: str, payload: dict, timeout: float) -> dict:
+    validate_provider_url(url, "provider URL")
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -154,6 +226,7 @@ def polish_text(
     replacements: dict[str, str],
     timeout: float,
 ) -> str:
+    validate_provider_url(base_url, "polish-base-url")
     base = base_url.rstrip("/")
     replacement_lines = "; ".join(f'"{src}" -> "{dst}"' for src, dst in sorted(replacements.items())) or "none"
     keyterm_lines = ", ".join(keyterms[:80]) or "none"
@@ -194,6 +267,7 @@ Never create or recommend vocabulary/keyterms. Never inject a term when the tran
 
 
 def transcribe_audio(base_url: str, model: str, audio_path: pathlib.Path, timeout: float) -> str:
+    validate_provider_url(base_url, "stt-base-url")
     base = base_url.rstrip("/")
     endpoint = f"{base}/v1/audio/transcriptions" if not base.endswith("/v1") else f"{base}/audio/transcriptions"
     boundary = f"----SapoWhisperReplay{uuid.uuid4().hex}"
@@ -339,8 +413,23 @@ def relative_audio_path(value: str | None) -> pathlib.Path | None:
 
 def main() -> int:
     args = parse_args()
-    keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
-    rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains, args.since, args.until)
+    try:
+        validate_replay_transport(args)
+        keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
+        rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains, args.since, args.until)
+    except ReplayInputError as error:
+        print(
+            f"Error: {error.private_detail if args.print_samples else error.public_message}",
+            file=sys.stderr,
+        )
+        return 1
+    except Exception as error:
+        private_detail = f"Could not load replay inputs (vocabulary={args.vocabulary}, db={args.db}): {error}"
+        print(
+            f"Error: {private_detail if args.print_samples else 'Unable to read local replay inputs.'}",
+            file=sys.stderr,
+        )
+        return 1
     correction_suggestions = collections.Counter()
     metrics = collections.Counter()
     latencies: list[float] = []
@@ -371,7 +460,7 @@ def main() -> int:
                 replacements,
                 args.timeout,
             )
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, json.JSONDecodeError) as error:
+        except Exception as error:
             metrics["provider_errors"] += 1
             if args.print_samples:
                 samples.append({"id": row["id"], "error": str(error)})
@@ -403,18 +492,22 @@ def main() -> int:
                 }
             )
 
+    suggestions = [
+        {"from": source, "to": target, "count": count}
+        for (source, target), count in correction_suggestions.most_common(20)
+        if count > 0
+    ]
     result = {
-        "history_db": str(args.db),
+        "history_source": "local",
         "rows_requested": args.limit,
         "metrics": dict(metrics),
         "avg_polish_seconds": round(sum(latencies) / len(latencies), 3) if latencies else None,
-        "suggestions": [
-            {"from": source, "to": target, "count": count}
-            for (source, target), count in correction_suggestions.most_common(20)
-            if count > 0
-        ],
+        "suggestion_pair_count": len(suggestions),
+        "suggestion_occurrence_count": sum(item["count"] for item in suggestions),
     }
     if args.print_samples:
+        result["history_db"] = str(args.db)
+        result["suggestions"] = suggestions
         result["samples"] = samples
 
     if args.json:
@@ -430,9 +523,14 @@ def main() -> int:
             print(f"Audio missing/failed: {metrics['audio_missing_or_failed']}")
         print(f"Average polish seconds: {result['avg_polish_seconds']}")
         print(
-            "Correction suggestions:",
-            "; ".join(f"{item['from']} -> {item['to']} x{item['count']}" for item in result["suggestions"]) or "none",
+            "Correction candidates:",
+            f"{result['suggestion_pair_count']} pair(s), {result['suggestion_occurrence_count']} occurrence(s)",
         )
+        if args.print_samples:
+            print(
+                "Private suggestions:",
+                "; ".join(f"{item['from']} -> {item['to']} x{item['count']}" for item in suggestions) or "none",
+            )
     return 0 if metrics["provider_errors"] == 0 else 1
 
 

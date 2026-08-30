@@ -45,6 +45,75 @@ final class LocalAIServerTests: XCTestCase {
         XCTAssertNil(LocalAIServerConfiguration.normalizedBaseURL(from: "http://localhost:8000#health"))
     }
 
+    func testLocalAIServerBearerTransportRequiresHTTPSOutsideLoopback() {
+        XCTAssertNil(
+            LocalAIServerConfiguration.normalizedBaseURL(
+                from: "http://192.0.2.20:8000",
+                apiKey: "local-token"
+            )
+        )
+        XCTAssertNotNil(
+            LocalAIServerConfiguration.normalizedBaseURL(
+                from: "http://192.0.2.20:8000",
+                apiKey: ""
+            )
+        )
+        XCTAssertNotNil(
+            LocalAIServerConfiguration.normalizedBaseURL(
+                from: "http://127.0.0.1:8000",
+                apiKey: "local-token"
+            )
+        )
+        XCTAssertNotNil(
+            LocalAIServerConfiguration.normalizedBaseURL(
+                from: "https://transcription.example:8000",
+                apiKey: "hosted-token"
+            )
+        )
+    }
+
+    func testLocalAIServerStoredURLMigrationSanitizesSensitiveComponents() throws {
+        let suiteName = "test.sapowhisper.local-url-migration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            "https://user:secret@transcription.example/v1?token=private#fragment",
+            forKey: Constants.StorageKeys.localAIServerBaseURL
+        )
+
+        LocalAIServerConfiguration.sanitizeStoredBaseURL(defaults: defaults)
+        LocalAIServerConfiguration.sanitizeStoredBaseURL(defaults: defaults)
+
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL),
+            "https://transcription.example/v1"
+        )
+    }
+
+    @MainActor
+    func testConnectionRejectsPlainHTTPLANBearerBeforeMakingRequest() async {
+        StubURLProtocol.handler = { _ in
+            XCTFail("An insecure provider URL must be rejected before a request is created")
+            return .failure(URLError(.badURL))
+        }
+        defer { StubURLProtocol.handler = nil }
+
+        do {
+            _ = try await makeStubbedTranscriber().testConnection(
+                baseURL: "http://192.0.2.20:8000",
+                model: "test-model",
+                apiKey: "local-token"
+            )
+            XCTFail("Expected invalidBaseURL")
+        } catch let error as LocalAIServerConnectionError {
+            guard case .invalidBaseURL = error else {
+                return XCTFail("Expected invalidBaseURL, got \(error)")
+            }
+        } catch {
+            XCTFail("Expected LocalAIServerConnectionError, got \(error)")
+        }
+    }
+
     func testEngineFilterHasLocalAIBucket() {
         XCTAssertTrue(EngineFilter.localAI.matches("Local AI Server · mobiuslabsgmbh/faster-whisper-large-v3-turbo"))
         XCTAssertFalse(EngineFilter.other.matches("Local AI Server"))
@@ -55,7 +124,7 @@ final class LocalAIServerTests: XCTestCase {
     func testTranscriptionRequestAlwaysEnablesVADFilter() {
         // vad_filter is the layer that stops Whisper from hallucinating
         // ("Thank you.", repetition loops) on silent or short takes —
-        // reproduced against real history audio (2026-07-11). Do not drop it.
+        // Covered by the silent/short-take regression contract. Do not drop it.
         let fields = LocalAIServerTranscriber.transcriptionFormFields(
             model: "faster-whisper", languageCode: nil, vocabularyPrompt: "")
         XCTAssertTrue(fields.contains { $0.name == "vad_filter" && $0.value == "true" })

@@ -49,9 +49,11 @@ final class LocalAIServerTranscriber: ObservableObject {
     }
 
     func transcribe(audioURL: URL, language: String) async throws -> String {
+        let apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
         guard
             let baseURL = LocalAIServerConfiguration.normalizedBaseURL(
-                from: LocalAIServerConfiguration.storedBaseURL)
+                from: LocalAIServerConfiguration.storedBaseURL,
+                apiKey: apiKey)
         else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
@@ -60,8 +62,6 @@ final class LocalAIServerTranscriber: ObservableObject {
         guard !model.isEmpty else {
             throw TranscriptionFailure(kind: .notConfigured, engine: Self.engineName)
         }
-        let apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
-
         try AudioFileValidator.validate(audioURL)
 
         isTranscribing = true
@@ -124,7 +124,7 @@ final class LocalAIServerTranscriber: ObservableObject {
         -> LocalAIServerConnectionResult
     {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let baseURL = LocalAIServerConfiguration.normalizedBaseURL(from: rawBaseURL),
+        guard let baseURL = LocalAIServerConfiguration.normalizedBaseURL(from: rawBaseURL, apiKey: apiKey),
             !trimmedModel.isEmpty
         else {
             throw LocalAIServerConnectionError.invalidBaseURL
@@ -141,7 +141,7 @@ final class LocalAIServerTranscriber: ObservableObject {
     /// Whisper from hallucinating "Thank you." on silent takes and from
     /// looping on the trailing silence of short ones. The vocabulary stays in
     /// `prompt` — hotwords-only requests lose punctuation/casing on a large
-    /// fraction of real dictations (measured against 3 days of history).
+    /// fraction of normal regression fixtures.
     nonisolated static func transcriptionFormFields(
         model: String,
         languageCode: String?,
@@ -208,15 +208,17 @@ final class LocalAIServerTranscriber: ObservableObject {
     /// contract as the pre-upload preflight; never throws, and an
     /// unconfigured server reports nothing rather than a false "down".
     func probeReachability() async -> Bool? {
+        let apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
         guard
             let baseURL = LocalAIServerConfiguration.normalizedBaseURL(
-                from: LocalAIServerConfiguration.storedBaseURL)
+                from: LocalAIServerConfiguration.storedBaseURL,
+                apiKey: apiKey)
         else { return nil }
 
         do {
             try await preflightServerReachability(
                 baseURL: baseURL,
-                apiKey: KeychainStore.string(for: .localAIServerAPIKey) ?? ""
+                apiKey: apiKey
             )
             return true
         } catch {
@@ -242,11 +244,11 @@ final class LocalAIServerTranscriber: ObservableObject {
             _ = try await session.data(for: request)
         } catch {
             try Task.checkCancellation()
+            let detail = LogSanitizer.errorDiagnostic(error, state: "local-preflight")
             let failure = TranscriptionFailure(
                 kind: .network,
                 engine: Self.engineName,
-                technicalDetail:
-                    "preflight health probe failed error=\((error as? URLError).map { "URLError.\($0.code.rawValue)" } ?? error.localizedDescription)"
+                technicalDetail: detail
             )
             SapoLog.recording.error(
                 "Local AI Server preflight failed \(failure.logSummary, privacy: .public)")

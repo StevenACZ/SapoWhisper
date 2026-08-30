@@ -5,6 +5,72 @@
 
 import Foundation
 
+enum PolishModelEvidenceTier: String {
+    case bestTested
+    case bestValue
+    case sameLanguageValue
+    case fastBudget
+    case economy
+    case notRecommended
+
+    nonisolated var displayName: String {
+        "ai.provider.model_tier_\(rawValue)".localized
+    }
+
+    nonisolated var carriesFidelityRisk: Bool {
+        switch self {
+        case .bestTested: return false
+        case .bestValue, .sameLanguageValue, .fastBudget, .economy, .notRecommended: return true
+        }
+    }
+}
+
+nonisolated struct PolishModelRecommendation: Identifiable, Hashable {
+    let model: String
+    let tier: PolishModelEvidenceTier
+    let detailKey: String
+    let isSuggested: Bool
+    var benchmarkedReasoning: PolishReasoningEffort = .off
+    var minimumReasoning: PolishReasoningEffort? = nil
+
+    var id: String { model }
+    var detail: String { detailKey.localized }
+}
+
+enum PolishModelCatalog {
+    /// Verified on OpenRouter 2026-08-29: these reject `reasoning: none` with
+    /// HTTP 400 "Reasoning is mandatory for this endpoint and cannot be
+    /// disabled", so the request retries without the field and runs with the
+    /// model's own (slow) default budget.
+    static let reasoningMandatoryModels: Set<String> = [
+        "x-ai/grok-4.6",
+        "qwen/qwen3.8-max",
+        "z-ai/glm-5.3-flash",
+        "google/gemini-3.7-flash",
+    ]
+
+    static func requiresReasoning(_ modelID: String) -> Bool {
+        let normalized = modelID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        if reasoningMandatoryModels.contains(normalized) { return true }
+        return reasoningMandatoryModels.contains { $0.split(separator: "/").last.map(String.init) == normalized }
+    }
+
+    static func reasoningPolicy(
+        for modelID: String,
+        provider: PolishEndpoint
+    ) -> (benchmarked: PolishReasoningEffort, minimum: PolishReasoningEffort?) {
+        let normalized = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mandatoryMinimum: PolishReasoningEffort? =
+            provider == .openRouter && requiresReasoning(normalized) ? .low : nil
+
+        guard let recommendation = provider.modelRecommendation(for: normalized) else {
+            return (.automatic, mandatoryMinimum)
+        }
+        return (recommendation.benchmarkedReasoning, recommendation.minimumReasoning ?? mandatoryMinimum)
+    }
+}
+
 /// Endpoint presets for the OpenAI-compatible polish provider. Every preset
 /// speaks the same `chat/completions` protocol; only the base URL changes.
 enum PolishEndpoint: String, CaseIterable, Identifiable {
@@ -62,6 +128,13 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
 
     var defaultModel: String {
         switch self {
+        case .openRouter, .localServer, .openAI, .groq, .custom:
+            return ""
+        }
+    }
+
+    fileprivate var legacyDefaultModel: String {
+        switch self {
         case .openRouter:
             return "openai/gpt-5.4-nano"
         case .localServer:
@@ -77,23 +150,87 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
     /// provider catalogs rotate. Any ID from openrouter.ai/models is valid on
     /// OpenRouter — these are just one-click starting points.
     var suggestedModels: [String] {
+        modelRecommendations.filter(\.isSuggested).map(\.model)
+    }
+
+    var modelRecommendations: [PolishModelRecommendation] {
         switch self {
         case .openRouter:
             return [
-                "openai/gpt-5.4-nano",
-                "openai/gpt-5.4-mini",
-                "google/gemini-2.5-flash-lite",
-                "deepseek/deepseek-chat-v3-0324",
-                "qwen/qwen3-32b",
-                "meta-llama/llama-3.3-70b-instruct",
+                PolishModelRecommendation(
+                    model: "anthropic/claude-opus-5",
+                    tier: .bestTested,
+                    detailKey: "ai.provider.model_detail_opus5",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
+                    model: "openai/gpt-5.6-sol",
+                    tier: .bestValue,
+                    detailKey: "ai.provider.model_detail_sol",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
+                    model: "qwen/qwen3.8-flash",
+                    tier: .sameLanguageValue,
+                    detailKey: "ai.provider.model_detail_qwen38",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
+                    model: "openai/gpt-5.4-nano",
+                    tier: .fastBudget,
+                    detailKey: "ai.provider.model_detail_nano",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
+                    model: "qwen/qwen3.5-flash-02-23",
+                    tier: .economy,
+                    detailKey: "ai.provider.model_detail_qwen35",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
+                    model: "z-ai/glm-5.3-flash",
+                    tier: .notRecommended,
+                    detailKey: "ai.provider.model_detail_failed_gates",
+                    isSuggested: false,
+                    benchmarkedReasoning: .automatic,
+                    minimumReasoning: .low
+                ),
+                PolishModelRecommendation(
+                    model: "deepseek/deepseek-v4-flash-0731",
+                    tier: .notRecommended,
+                    detailKey: "ai.provider.model_detail_failed_gates",
+                    isSuggested: false
+                ),
+                PolishModelRecommendation(
+                    model: "openai/gpt-5.6-luna",
+                    tier: .notRecommended,
+                    detailKey: "ai.provider.model_detail_failed_gates",
+                    isSuggested: false
+                ),
             ]
         case .openAI:
-            return ["gpt-5.4-nano", "gpt-5.4-mini"]
-        case .localServer:
-            return ["qwen3.6-35b-a3b", "qwen36"]
-        case .groq, .custom:
+            return [
+                PolishModelRecommendation(
+                    model: "gpt-5.6-sol",
+                    tier: .bestValue,
+                    detailKey: "ai.provider.model_detail_sol",
+                    isSuggested: true
+                ),
+                PolishModelRecommendation(
+                    model: "gpt-5.4-nano",
+                    tier: .fastBudget,
+                    detailKey: "ai.provider.model_detail_nano",
+                    isSuggested: true
+                ),
+            ]
+        case .localServer, .groq, .custom:
             return []
         }
+    }
+
+    func modelRecommendation(for model: String) -> PolishModelRecommendation? {
+        let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return modelRecommendations.first { $0.model == normalized }
     }
 
     /// Local OpenAI-compatible servers (Ollama, LM Studio) accept requests
@@ -138,8 +275,28 @@ enum PolishEndpoint: String, CaseIterable, Identifiable {
 
     fileprivate var managedModels: Set<String> {
         Set(
-            ([defaultModel] + suggestedModels).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            ([defaultModel] + suggestedModels + legacySuggestedModels)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty })
+    }
+
+    private var legacySuggestedModels: [String] {
+        switch self {
+        case .openRouter:
+            return [
+                "openai/gpt-5.4-mini",
+                "google/gemini-2.5-flash-lite",
+                "deepseek/deepseek-chat-v3-0324",
+                "qwen/qwen3-32b",
+                "meta-llama/llama-3.3-70b-instruct",
+            ]
+        case .openAI:
+            return ["gpt-5.4-mini"]
+        case .localServer:
+            return ["qwen3.6-35b-a3b", "qwen36"]
+        case .groq, .custom:
+            return []
+        }
     }
 }
 
@@ -181,6 +338,21 @@ enum PolishReasoningEffort: String, CaseIterable, Identifiable {
 
     nonisolated var displayName: String {
         "ai.polish.reasoning_\(rawValue)".localized
+    }
+
+    nonisolated func coerced(toMinimum minimum: PolishReasoningEffort?) -> PolishReasoningEffort {
+        guard let minimumRank = minimum?.explicitRank else { return self }
+        guard let currentRank = explicitRank else { return minimum ?? self }
+        return currentRank >= minimumRank ? self : (minimum ?? self)
+    }
+
+    private nonisolated var explicitRank: Int? {
+        switch self {
+        case .automatic, .off: return nil
+        case .low: return 0
+        case .medium: return 1
+        case .high: return 2
+        }
     }
 
     static func current(defaults: UserDefaults = .standard) -> PolishReasoningEffort {
@@ -225,6 +397,18 @@ struct PolishProviderConfiguration {
         )
     }
 
+    static func migrateExplicitModelSelection(defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: Constants.StorageKeys.aiPolishExplicitModelMigration) else { return }
+        defaults.set(true, forKey: Constants.StorageKeys.aiPolishExplicitModelMigration)
+        guard defaults.bool(forKey: Constants.StorageKeys.onboardingComplete) else { return }
+
+        let endpoint = currentEndpoint(defaults: defaults)
+        guard storedModel(for: endpoint, defaults: defaults).isEmpty else { return }
+        let legacyModel = endpoint.legacyDefaultModel
+        guard !legacyModel.isEmpty else { return }
+        setStoredModel(legacyModel, for: endpoint, defaults: defaults)
+    }
+
     /// Resolves a usable configuration for an explicit endpoint/model pair —
     /// the history "polish with…" menu re-polishes with any configured
     /// provider without touching the global selection. `model: nil` uses the
@@ -239,7 +423,7 @@ struct PolishProviderConfiguration {
         let apiKey = apiKey(for: endpoint, allowLegacyFallback: true)
 
         guard isUsable(endpoint: endpoint, model: model, customBaseURL: baseURLInput, apiKey: apiKey),
-            let baseURL = URL(string: resolvedBaseURLString(for: endpoint, input: baseURLInput))
+            let baseURL = validatedBaseURL(endpoint: endpoint, input: baseURLInput, apiKey: apiKey)
         else {
             return nil
         }
@@ -258,7 +442,7 @@ struct PolishProviderConfiguration {
         guard endpoint != .localServer else { return true }
 
         let baseURLInput = storedBaseURLInput(for: endpoint, defaults: defaults)
-        guard let baseURL = URL(string: resolvedBaseURLString(for: endpoint, input: baseURLInput)) else {
+        guard let baseURL = validatedBaseURL(endpoint: endpoint, input: baseURLInput, apiKey: "") else {
             return false
         }
         return isLocalNetworkHost(baseURL.host)
@@ -297,11 +481,7 @@ struct PolishProviderConfiguration {
             return false
         }
 
-        let baseURLString = resolvedBaseURLString(for: endpoint, input: customBaseURL)
-        guard let url = URL(string: baseURLString), let scheme = url.scheme?.lowercased(), url.host != nil else {
-            return false
-        }
-        return scheme == "https" || scheme == "http"
+        return validatedBaseURL(endpoint: endpoint, input: customBaseURL, apiKey: apiKey) != nil
     }
 
     // MARK: - Recent models
@@ -400,10 +580,28 @@ struct PolishProviderConfiguration {
 
     static func setStoredBaseURLInput(_ baseURL: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
         guard endpoint.usesEditableBaseURL else { return }
-        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        defaults.set(trimmed, forKey: baseURLStorageKey(for: endpoint))
+        let safeValue = sanitizedBaseURLForStorage(baseURL)
+        defaults.set(safeValue, forKey: baseURLStorageKey(for: endpoint))
         if endpoint == .custom {
-            defaults.set(trimmed, forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+            defaults.set(safeValue, forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+        }
+    }
+
+    static func sanitizeStoredBaseURLs(defaults: UserDefaults = .standard) {
+        for endpoint in PolishEndpoint.allCases where endpoint.usesEditableBaseURL {
+            let key = baseURLStorageKey(for: endpoint)
+            guard let stored = defaults.string(forKey: key) else { continue }
+            let sanitized = sanitizedBaseURLForStorage(stored)
+            if sanitized != stored {
+                defaults.set(sanitized, forKey: key)
+            }
+        }
+
+        if let legacy = defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL) {
+            let sanitized = sanitizedBaseURLForStorage(legacy)
+            if sanitized != legacy {
+                defaults.set(sanitized, forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
+            }
         }
     }
 
@@ -426,6 +624,15 @@ struct PolishProviderConfiguration {
         guard endpoint.usesEditableBaseURL else { return endpoint.defaultBaseURL }
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? endpoint.defaultBaseURL : trimmed
+    }
+
+    static func validatedBaseURL(endpoint: PolishEndpoint, input: String, apiKey: String) -> URL? {
+        let value = resolvedBaseURLString(for: endpoint, input: input)
+        return ProviderURLSecurity.validatedURL(from: value, bearerToken: apiKey)
+    }
+
+    static func sanitizedBaseURLForStorage(_ input: String) -> String {
+        ProviderURLSecurity.sanitizedForStorage(input)
     }
 
     private static func modelStorageKey(for endpoint: PolishEndpoint) -> String {
@@ -471,4 +678,5 @@ struct PolishProviderConfiguration {
         if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
         return false
     }
+
 }

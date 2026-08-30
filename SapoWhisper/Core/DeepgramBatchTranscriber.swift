@@ -186,8 +186,9 @@ class DeepgramBatchTranscriber: ObservableObject {
             )
             return (wavData, "audio/wav")
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "batch-compress")
             SapoLog.recording.warning(
-                "Deepgram batch compression fallback error=\(error.localizedDescription, privacy: .public)"
+                "Deepgram batch compression fallback \(detail, privacy: .public)"
             )
             let data = (try? Data(contentsOf: wavURL)) ?? Data()
             return (data, "audio/wav")

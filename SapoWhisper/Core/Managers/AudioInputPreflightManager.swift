@@ -193,8 +193,9 @@ final class AudioInputPreflightManager {
             try AudioEngineGuard.prepareAndStart(engine, operation: "preflight-engine-start")
             consecutiveWarmupFailures = 0
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "input-preflight")
             SapoLog.audioRoute.warning(
-                "Audio input preflight warm-up failed error=\(error.localizedDescription, privacy: .public)"
+                "Audio input preflight warm-up failed \(detail, privacy: .public)"
             )
             consecutiveWarmupFailures += 1
             if consecutiveWarmupFailures <= Self.maxWarmupRetries {

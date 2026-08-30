@@ -52,4 +52,15 @@ final class ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
             )
         )
     }
+
+    func testResultVariantsDistinguishRealtimeFromScribeBatchFallback() {
+        XCTAssertEqual(
+            ElevenLabsScribeRealtimeTranscriber.liveTranscriptionVariant,
+            .elevenLabsScribeRealtime
+        )
+        XCTAssertEqual(
+            ElevenLabsScribeRealtimeTranscriber.fallbackTranscriptionVariant,
+            .elevenLabsScribeBatch
+        )
+    }
 }

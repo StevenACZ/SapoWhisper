@@ -11,7 +11,8 @@ import SwiftUI
 /// the saved personal context — exactly what a dictation would get.
 struct PolishPreviewSection: View {
     @State private var isExpanded = false
-    @State private var sample = "prompts.preview_sample".localized
+    @State private var sample = PolishSampleDictation.current
+    @AppStorage(Constants.StorageKeys.appLanguage) private var appLanguage = PolishSampleDictation.currentLanguage
     @State private var state: PreviewState = .idle
 
     private enum PreviewState: Equatable {
@@ -29,6 +30,11 @@ struct PolishPreviewSection: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             content
                 .padding(.top, 8)
+                .onChange(of: appLanguage) { _, language in
+                    if PolishSampleDictation.isPristine(sample) {
+                        sample = PolishSampleDictation.text(for: language)
+                    }
+                }
         } label: {
             SettingsSectionHeader(
                 title: "prompts.preview_polish".localized,

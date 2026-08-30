@@ -1,149 +1,62 @@
 # 🐸 SapoWhisper
 
-SapoWhisper is a small macOS menu bar app for fast speech-to-text.
-Press `Option + Space`, speak, press it again, and the transcript is pasted into the app you were using.
+SapoWhisper is a fast speech-to-text app for Apple Silicon Macs. Press the global shortcut, speak, press it again, and the transcript is pasted into the app you were using.
 
-## ✨ Highlights
+[Download the latest release](https://github.com/StevenACZ/SapoWhisper/releases/latest)
 
-- ⚡ Global hotkey recording with a compact floating overlay.
-- 📋 Auto-paste via clipboard + `Cmd+V`; no live typing while you speak.
-- 🧠 Local and cloud transcription engines.
-- 🗂️ Searchable history with saved audio, cancelled-recording recovery, replay, download, pinning, and re-transcription.
-- 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
-- 📱 Companion control from Mirador: start or stop SapoWhisper in the iPhone viewer and use the phone as the host microphone without synthetic hotkeys.
-- 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
-- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
-- 🔐 Guided setup for Microphone and Accessibility permissions.
-- 🔔 One-click in-app updates (Sparkle): a quiet menu notice when a new version ships; installing downloads, verifies the EdDSA signature, and relaunches automatically. The daily check can be turned off in Settings.
+## What it does
 
-## 🎧 Transcription Engines
+- Records from a configurable global shortcut. The default is `Option + Space`, and a double-modifier shortcut is also available.
+- Transcribes locally, through a local NVIDIA server, or with supported cloud providers.
+- Supports low-latency realtime dictation with a preserved local-audio fallback.
+- Pastes the result automatically and keeps searchable local history with replay and re-transcription.
+- Recovers interrupted recordings after a crash or restart.
+- Keeps a personal vocabulary for names and technical terms.
+- Optionally cleans up or translates transcripts with an OpenAI-compatible AI provider.
+- Includes English and Spanish interfaces plus signed one-click updates.
 
-| Engine | Mode | Best for |
-|---|---|---|
-| Whisper (Local MLX) | Local | Private offline transcription on the Apple Silicon GPU. |
-| Local AI Server (NVIDIA) | Batch LAN | Offloading transcription to a local NVIDIA GPU server with an OpenAI-style STT endpoint. |
-| Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
-| Deepgram Flux Live | Realtime | Low-latency streaming with WAV backup. |
-| ElevenLabs Scribe v2 | Batch | Accurate Scribe transcription. |
-| ElevenLabs Scribe Realtime v2 | Realtime | Low-latency Scribe with committed-text buffering. |
+## Install
 
-Cloud and optional local-server credentials are stored locally on the user's Mac. Never commit API keys, exported recordings, logs, DMGs, archives, or signing files.
+SapoWhisper requires macOS 14 or later on an Apple Silicon Mac.
 
-Batch engines use the selected microphone upload-quality profile: Ultra fast (16 kHz Int16), Medium by default (24 kHz Int16), High (native rate up to 48 kHz Int16), or Ultra original (native Float32). Realtime engines keep their required 16 kHz Int16 streaming format.
+1. Download the latest `SapoWhisper-*.dmg` from [Releases](https://github.com/StevenACZ/SapoWhisper/releases/latest).
+2. Drag SapoWhisper into Applications.
+3. Open it and grant Microphone permission. Grant Accessibility permission for automatic paste; double-modifier shortcuts also require Input Monitoring.
+4. Choose a transcription engine and add that provider's credential when required.
 
-### Local AI Server Fixtures
+Existing users can update from inside the app.
 
-`TestAssets/LocalAITranscription/` contains public synthetic WAV fixtures for local STT testing:
+## Transcription engines
 
-- `longform/sample-1m.wav`
-- `longform/sample-2m.wav`
-- `longform/sample-3m.wav`
-- `longform/sample-6m.wav`
-- `technical/en/*.wav`
-- `technical/es/*.wav`
+| Engine | Mode | Use case |
+| --- | --- | --- |
+| Whisper MLX | Local | Private offline transcription on the Mac |
+| Local AI Server | Local network | Offload transcription to an NVIDIA server |
+| Deepgram Nova-3 | Cloud batch | Accurate completed recordings |
+| Deepgram Flux | Cloud realtime | Fast live dictation |
+| ElevenLabs Scribe | Cloud batch or realtime | Scribe transcription |
 
-Use `scripts/local_stt_benchmark.sh` with any OpenAI-compatible local STT server:
+Cloud engines and the configured local server receive the audio sent for transcription. Local MLX stays on the Mac. API credentials are stored in the macOS Keychain, and history remains on the Mac under the retention settings you choose.
 
-```bash
-BASE_URL=http://YOUR_SERVER_IP:8000 \
-MODEL_ID=rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo \
-AUDIO_PATH=TestAssets/LocalAITranscription/longform/sample-1m.wav \
-scripts/local_stt_benchmark.sh
-```
+## AI polish
 
-## 🧰 Requirements
+AI polish is optional. You choose the provider, model, cleanup level, and output language. Settings includes model candidates and a built-in test, while custom model IDs remain supported. If a response fails the app's safety checks, SapoWhisper retries within a bounded budget and preserves the source transcript when needed.
 
-- macOS 14.0 or later
-- Apple Silicon Mac (`arm64`, M1 and newer)
-- Xcode with command line tools
-- Microphone permission
-- Accessibility permission for auto-paste
+See [BENCHMARKS.md](BENCHMARKS.md) for the public evaluation contract and its evidence limits.
 
-## 🚀 Quick Start
+## Build from source
+
+Building requires Xcode and `gitleaks`. Local MLX builds also require the Metal Toolchain; maintainer-style signed reinstalls require a local `Signing.xcconfig`, while normal contributor builds use the tracked local-signing defaults.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/StevenACZ/SapoWhisper.git
 cd SapoWhisper
 make tools
 make ci-check
 ```
 
-Open `SapoWhisper.xcodeproj` in Xcode and run the `SapoWhisper` scheme.
+Open `SapoWhisper.xcodeproj` and run the `SapoWhisper` scheme. See [CONTRIBUTING.md](CONTRIBUTING.md) for development details and [SECURITY.md](SECURITY.md) for the security policy.
 
-The tracked project defaults to local signing (`Sign to Run Locally`) so contributors can build without the maintainer's Apple Developer Team ID.
-
-## 🛠️ Developer Workflow
-
-```bash
-make format
-make lint
-make ci-check
-```
-
-- `make format`: format changed Swift files with Xcode's bundled `swift-format`.
-- `make lint`: lint changed Swift files without editing them.
-- `make test`: run the `SapoWhisperTests` unit bundle.
-- `make ci-check`: lint + Debug build + unit tests.
-- `make release-check`: lint + Release build + bundle size audit.
-- `make install-dev`: signed Release reinstall to `/Applications` for local UI iteration without resetting macOS permission grants.
-- `make format-all` / `make lint-all`: full-repo passes for planned formatting work.
-
-Optional hooks:
-
-```bash
-make hooks-install
-```
-
-## 📦 Release Builds
-
-Release builds target Apple Silicon only.
-
-```bash
-make release-check
-
-scripts/measure_release_bundle.sh \
-  build/audit-release/Build/Products/Release/SapoWhisper.app
-```
-
-Current arm64 cleanup baseline:
-
-- `.app`: 29,624 KB -> 20,624 KB (`-30.38%`)
-- executable: 17,708 KB -> 8,712 KB (`-50.80%`)
-- local compressed test DMG: about 13-14 MB
-
-Local test DMGs are usually ad-hoc signed with hardened runtime. Do not present them as notarized unless notarization was explicitly verified.
-
-## 🧪 Tests
-
-Unit tests live in `SapoWhisperTests` and cover pure logic: the AI polish fidelity guard, failure mapping, engine migration, audio upload quality, realtime replay conversion, and settings transfer.
-
-```bash
-make test
-```
-
-Use `make ci-check` (lint + build + tests) as the main local gate and `make release-check` before packaging.
-
-## 🧼 Public Repo Safety
-
-Tracked and public-safe:
-
-- Source code, app assets, localized strings, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, changelog, `AGENTS.md`, contributing notes, security notes, and license.
-
-Ignored and local/private:
-
-- `DMG/`, `docs/`, `.agents/`, `.claude/`, `.codex/`, `skills-lock.json`, `xcuserdata/`, `build/`, logs, crash reports, credentials, `.env*`, exported audio, DMGs, archives, and local signing files.
-
-Before opening a PR:
-
-```bash
-make ci-check
-git diff --check
-```
-
-## 🤝 Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## 📄 License
+## License
 
 MIT

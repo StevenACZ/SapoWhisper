@@ -50,8 +50,9 @@ nonisolated final class HistoryAudioStorage: Sendable {
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
             return destURL.path
         } catch {
+            let detail = TranscriptionFailure.diagnosticDetail(for: error)
             SapoLog.recording.error(
-                "History audio save failed error=\(error.localizedDescription, privacy: .public)"
+                "History audio save failed error=\(detail, privacy: .public)"
             )
             return nil
         }
@@ -75,8 +76,9 @@ nonisolated final class HistoryAudioStorage: Sendable {
         do {
             try fileManager.moveItem(at: audioDir, to: sidelined)
         } catch {
+            let detail = TranscriptionFailure.diagnosticDetail(for: error)
             SapoLog.recording.error(
-                "History audio sideline failed error=\(error.localizedDescription, privacy: .public)"
+                "History audio sideline failed error=\(detail, privacy: .public)"
             )
             return
         }
@@ -99,7 +101,7 @@ nonisolated final class HistoryAudioStorage: Sendable {
                 now.timeIntervalSince1970 - stamp > Self.sidelinedRetention
             else { continue }
             try? fileManager.removeItem(at: directory)
-            SapoLog.recording.info("History audio sideline expired name=\(name, privacy: .public)")
+            SapoLog.recording.info("History audio sideline expired")
         }
     }
 

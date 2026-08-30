@@ -62,12 +62,11 @@ nonisolated enum MLXWhisperModel: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 1...5 stars in the model picker.
-    var accuracy: Int {
+    var accuracy: Int? {
         switch self {
         case .base: return 3
         case .small: return 4
-        case .largeV3TurboQ4: return 5
+        case .largeV3TurboQ4: return nil
         case .largeV3Turbo: return 5
         case .largeV3: return 5
         }
@@ -89,6 +88,18 @@ extension MLXWhisperModel {
         }
     }
 
-    @MainActor var badgeText: String { "badge.recommended".localized }
-    var badgeColor: Color { .sapoGreen }
+    @MainActor var badgeText: String? {
+        switch self {
+        case .largeV3Turbo:
+            return "model.tier_quality_default".localized
+        case .largeV3TurboQ4:
+            return "model.tier_lower_memory".localized
+        case .base, .small, .largeV3:
+            return nil
+        }
+    }
+
+    var badgeColor: Color {
+        self == .largeV3TurboQ4 ? .blue : .sapoGreen
+    }
 }

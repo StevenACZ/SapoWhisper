@@ -19,7 +19,7 @@ import XCTest
 @MainActor
 final class AppleSpeechFixtureBenchTests: XCTestCase {
 
-    private static let fixtureAudioSeconds = 154.56
+    private static let fixtureAudioSeconds = 130.667
 
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
@@ -36,11 +36,11 @@ final class AppleSpeechFixtureBenchTests: XCTestCase {
     }
 
     private static var fixtureAudioURL: URL {
-        fixtureDirectory.appendingPathComponent("real-natural.wav")
+        fixtureDirectory.appendingPathComponent("synthetic-public.wav")
     }
 
     private static var referenceTextURL: URL {
-        fixtureDirectory.appendingPathComponent("real-natural.txt")
+        fixtureDirectory.appendingPathComponent("synthetic-public.txt")
     }
 
     func testAppleSpeechBenchSpanishSpain() async throws {

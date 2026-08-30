@@ -53,7 +53,7 @@ final class PolishActivationAndBudgetTests: XCTestCase {
     // MARK: - Compact timeout budget
 
     /// Compact rewrites the whole transcript in one call with a requirements
-    /// scan — the normal per-chunk curve timed out real dictations at 10s
+    /// scan — the normal per-chunk curve timed out long-form fixtures at 10s
     /// (262 words, 2026-07-05).
     func testCompactHostedBudgetOutgrowsNormalCurve() {
         let chars = 1_500

@@ -102,8 +102,11 @@ nonisolated extension AudioCaptureEngine {
                 }
                 return
             case .error:
+                let detail =
+                    error.map { LogSanitizer.errorDiagnostic($0, state: "audio-convert") }
+                    ?? "state=audio-convert domain=none code=0"
                 SapoLog.recording.error(
-                    "\(self.mode.logLabel, privacy: .public) audio conversion failed error=\(error?.localizedDescription ?? "unknown", privacy: .public)"
+                    "\(self.mode.logLabel, privacy: .public) audio conversion failed \(detail, privacy: .public)"
                 )
                 return
             @unknown default:
@@ -140,8 +143,9 @@ nonisolated extension AudioCaptureEngine {
                 self?.registerWrittenFrames(convertedBuffer.frameLength)
             } catch {
                 self?.registerWriteFailure(error)
+                let detail = LogSanitizer.errorDiagnostic(error, state: "audio-write")
                 SapoLog.recording.error(
-                    "\(self?.mode.logLabel ?? "Capture", privacy: .public) audio buffer write failed error=\(error.localizedDescription, privacy: .public)"
+                    "\(self?.mode.logLabel ?? "Capture", privacy: .public) audio buffer write failed \(detail, privacy: .public)"
                 )
             }
         }
@@ -278,8 +282,11 @@ nonisolated extension AudioCaptureEngine {
                 }
                 return frames
             case .error:
+                let detail =
+                    error.map { LogSanitizer.errorDiagnostic($0, state: "converter-flush") }
+                    ?? "state=converter-flush domain=none code=0"
                 SapoLog.recording.error(
-                    "\(self.mode.logLabel, privacy: .public) converter flush failed error=\(error?.localizedDescription ?? "unknown", privacy: .public)"
+                    "\(self.mode.logLabel, privacy: .public) converter flush failed \(detail, privacy: .public)"
                 )
                 return frames
             @unknown default:

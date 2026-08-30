@@ -9,6 +9,62 @@ import OSLog
 import SwiftUI
 import os
 
+@MainActor
+enum BatchStopCaptureHandoff {
+    static func perform<Result>(
+        seal: () async -> Result,
+        onStopped: @MainActor @Sendable () -> Void
+    ) async -> Result {
+        let result = await seal()
+        onStopped()
+        return result
+    }
+}
+
+@MainActor
+enum CaptureStopInterruptionGate {
+    static func sharesInFlightSeal(isStopPending: Bool, hasPendingTailTask: Bool) -> Bool {
+        isStopPending && !hasPendingTailTask
+    }
+}
+
+enum BatchStopTerminalDisposition: Equatable {
+    case sleep
+    case terminate
+}
+
+@MainActor
+enum BatchStopTerminalRouter {
+    static func perform<Result>(
+        sealedResult: Result?,
+        disposition: BatchStopTerminalDisposition?,
+        onTerminal: @MainActor (Result?, BatchStopTerminalDisposition) -> Void,
+        onContinue: @MainActor (Result?) async -> Void
+    ) async {
+        if let disposition {
+            onTerminal(sealedResult, disposition)
+            return
+        }
+        await onContinue(sealedResult)
+    }
+}
+
+@MainActor
+enum CaptureStartCompletionGate {
+    static func perform(
+        start: @MainActor () async throws -> Void,
+        isSessionCurrent: @MainActor () -> Bool,
+        abortStarted: @MainActor @Sendable () -> Void
+    ) async throws -> Bool {
+        try await start()
+        guard !Task.isCancelled, isSessionCurrent() else {
+            abortStarted()
+            return false
+        }
+        return true
+    }
+}
+
 /// ViewModel principal que coordina toda la funcionalidad de la app
 @MainActor
 class SapoWhisperViewModel: ObservableObject {
@@ -118,9 +174,11 @@ class SapoWhisperViewModel: ObservableObject {
     // paste the same audio twice. Set before the Task, cleared in its defer.
     private var isRetryInFlight = false
 
-    private static let stopTailPadding: TimeInterval = 0.12
     private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
+    private var stopTailTask: Task<Void, Never>?
+    private var pendingBatchStopTerminalDisposition: BatchStopTerminalDisposition?
+    private var stopFeedbackPlayed = false
     private var startRecordingTask: Task<Void, Never>?
     private var selectedMLXModelLoadTask: Task<Void, Never>?
     private var isStartPending = false
@@ -783,7 +841,8 @@ class SapoWhisperViewModel: ObservableObject {
             return
         } catch {
             let errorMsg = error.localizedDescription
-            SapoLog.recording.error("MLX load failed error=\(errorMsg, privacy: .public)")
+            let detail = LogSanitizer.errorDiagnostic(error, state: "mlx-load")
+            SapoLog.recording.error("MLX load failed \(detail, privacy: .public)")
             // Mid-recording reload failures surface at stop time through the
             // normal transcription failure path; do not clobber the session.
             guard activeRecordingSessionID == nil else { return }
@@ -897,6 +956,11 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func canStartRecordingFromHotkey() -> Bool {
+        if startRecordingTask != nil {
+            SapoLog.hotkey.info("Hotkey ignored while a cancelled recording start is draining")
+            return false
+        }
+
         if let activeTranscriptionSessionID {
             SapoLog.hotkey.info(
                 "Hotkey ignored while transcription session=\(activeTranscriptionSessionID, privacy: .public) is active"
@@ -946,8 +1010,9 @@ class SapoWhisperViewModel: ObservableObject {
                     try session.resumeRecording()
                     overlayManager.updateState(.recording(duration: session.recordingDuration))
                 } catch {
+                    let detail = LogSanitizer.errorDiagnostic(error, state: "stream-resume")
                     context.logger.error(
-                        "\(context.logLabel, privacy: .public) resume failed error=\(error.localizedDescription, privacy: .public)"
+                        "\(context.logLabel, privacy: .public) resume failed \(detail, privacy: .public)"
                     )
                     handleCaptureDeviceFailure(reason: "\(context.snapshotPrefix)-resume-failed")
                 }
@@ -967,7 +1032,8 @@ class SapoWhisperViewModel: ObservableObject {
                 try audioRecorder.resumeRecording()
                 overlayManager.updateState(.recording(duration: audioRecorder.recordingDuration))
             } catch {
-                SapoLog.recording.error("Capture resume failed error=\(error.localizedDescription, privacy: .public)")
+                let detail = LogSanitizer.errorDiagnostic(error, state: "capture-resume")
+                SapoLog.recording.error("Capture resume failed \(detail, privacy: .public)")
                 handleCaptureDeviceFailure(reason: "recording-resume-failed")
             }
         } else {
@@ -1137,7 +1203,8 @@ class SapoWhisperViewModel: ObservableObject {
                 playSound: playSound,
                 triggerTime: triggerTime,
                 prepare: { context.session.cancel() },
-                start: { try await context.session.start(microphone: mic, language: language) }
+                start: { try await context.session.start(microphone: mic, language: language) },
+                abortStarted: { context.session.cancel() }
             )
         } else {
             startCaptureSession(
@@ -1148,7 +1215,8 @@ class SapoWhisperViewModel: ObservableObject {
                 playSound: playSound,
                 triggerTime: triggerTime,
                 prepare: { audioRecorder.cancelPendingSetup() },
-                start: { try await self.captureStartSupervisor.start(microphone: mic, targetEngine: engine) }
+                start: { try await self.captureStartSupervisor.start(microphone: mic, targetEngine: engine) },
+                abortStarted: { self.audioRecorder.discardRecording() }
             )
         }
     }
@@ -1188,7 +1256,6 @@ class SapoWhisperViewModel: ObservableObject {
             context.session.cancel()
         }
         startRecordingTask?.cancel()
-        startRecordingTask = nil
         isStartPending = false
         activeRecordingSessionID = nil
         activeSessionVariant = nil
@@ -1231,15 +1298,17 @@ class SapoWhisperViewModel: ObservableObject {
         snapshotPrefix: String,
         logger: Logger,
         perfEngine: String,
-        stop: @escaping @MainActor (DictationPerfTimeline) -> Void
+        stop: @escaping @MainActor (DictationPerfTimeline) async -> Void
     ) {
         guard !isStopPending else {
             SapoLog.hotkey.info("Hotkey ignored because \(logLabel, privacy: .public) stop is already pending")
             return
         }
         isStopPending = true
+        stopFeedbackPlayed = false
+        pendingBatchStopTerminalDisposition = nil
 
-        let tailPadding = Self.stopTailPadding
+        let tailPadding = Self.stopTailPadding(for: sessionVariant)
         let stopRequestTime = CFAbsoluteTimeGetCurrent()
         let perf = DictationPerfTimeline(engine: perfEngine)
         logger.info(
@@ -1254,14 +1323,54 @@ class SapoWhisperViewModel: ObservableObject {
         transition(to: .processing, reason: "stop-requested")
         overlayManager.updateState(.transcribing)
 
-        Task {
+        stopTailTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             // Inherits MainActor from the enclosing @MainActor class.
-            try? await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds: UInt64(tailPadding * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, self.isStopPending else { return }
+            self.stopTailTask = nil
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - stopRequestTime) * 1000)
             logger.info("\(logLabel, privacy: .public) stop tail elapsed=\(elapsed, privacy: .public)ms")
             perf.markTailDone()
-            stop(perf)
+            await stop(perf)
         }
+    }
+
+    nonisolated static func stopTailPadding(for variant: TranscriptionEngineVariant) -> TimeInterval {
+        variant == .deepgramFluxLive ? 0.4 : 0.12
+    }
+
+    private func acknowledgeCaptureStopped() {
+        guard !stopFeedbackPlayed else { return }
+        stopFeedbackPlayed = true
+        AutoDuckingManager.shared.restore()
+        if playSoundEnabled {
+            SoundManager.shared.play(.stopRecording)
+        }
+    }
+
+    private func completeCaptureStopTransition(
+        sessionID: UInt64,
+        perf: DictationPerfTimeline?
+    ) {
+        isStopPending = false
+        stopTailTask = nil
+        activeRecordingSessionID = nil
+        activeSessionVariant = nil
+        activeTranscriptionSessionID = sessionID
+        captureCoordinator.endActiveCapture()
+        acknowledgeCaptureStopped()
+        perf?.markFinalizeDone()
+    }
+
+    private func cancelPendingStopTail() {
+        stopTailTask?.cancel()
+        stopTailTask = nil
+        isStopPending = false
     }
 
     private func requestStopRecordingAndTranscribe() {
@@ -1271,7 +1380,7 @@ class SapoWhisperViewModel: ObservableObject {
             logger: SapoLog.recording,
             perfEngine: sessionVariant.rawValue
         ) { perf in
-            self.stopRecordingAndTranscribe(perf: perf)
+            await self.stopRecordingAndTranscribe(perf: perf)
         }
     }
 
@@ -1282,27 +1391,18 @@ class SapoWhisperViewModel: ObservableObject {
             logger: context.logger,
             perfEngine: context.engineName
         ) { perf in
-            self.stopStreamingAndTranscribe(context, perf: perf)
+            await self.stopStreamingAndTranscribe(context, perf: perf)
         }
     }
 
-    private func stopStreamingAndTranscribe(_ context: StreamingEngineContext, perf: DictationPerfTimeline? = nil) {
-        isStopPending = false
-        defer { captureCoordinator.endActiveCapture() }
-
-        if playSoundEnabled {
-            // Restaurar el volumen antes del beep para que no suene ducked
-            AutoDuckingManager.shared.restore()
-            SoundManager.shared.play(.stopRecording)
-        }
-
+    private func stopStreamingAndTranscribe(
+        _ context: StreamingEngineContext,
+        perf: DictationPerfTimeline? = nil
+    ) async {
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
-        activeRecordingSessionID = nil
-        activeSessionVariant = nil
-        activeTranscriptionSessionID = sessionID
         context.logger.info("\(context.logLabel, privacy: .public) stopping session=\(sessionID, privacy: .public)")
 
-        let request = TranscriptionPipeline.Request(
+        var request = TranscriptionPipeline.Request(
             sessionID: sessionID,
             engine: context.engine,
             engineName: context.engineName,
@@ -1312,29 +1412,32 @@ class SapoWhisperViewModel: ObservableObject {
             logger: context.logger,
             perf: perf
         )
+        request.discardSilentCaptureOnTerminalFailure = true
 
         let session = context.session
         let variant = context.variant
         let language = selectedLanguage
-        Task { @MainActor in
-            perf?.markFinalizeDone()
-            await transcriptionPipeline.run(request) {
-                do {
-                    let result = try await session.stop()
-                    self.settleReachability(variant.engine, reachable: true)
-                    return TranscriptionPipeline.EngineOutput(
-                        transcript: result.transcript,
-                        audioURL: result.audioURL,
-                        duration: result.duration,
-                        language: result.language
-                    )
-                } catch {
-                    return try await self.rescueFailedStream(
-                        error, variant: variant, session: session, language: language)
+        await transcriptionPipeline.run(request) {
+            do {
+                let result = try await session.stop {
+                    self.completeCaptureStopTransition(sessionID: sessionID, perf: perf)
                 }
-            } captureResultOnFailure: {
-                session.lastCaptureResult.map { ($0.audioURL, $0.duration) }
+                self.settleReachability(variant.engine, reachable: true)
+                return TranscriptionPipeline.EngineOutput(
+                    transcript: result.transcript,
+                    audioURL: result.audioURL,
+                    duration: result.duration,
+                    language: result.language,
+                    engineNameOverride: result.transcriptionVariant == variant
+                        ? nil
+                        : self.historyEngineName(for: result.transcriptionVariant)
+                )
+            } catch {
+                return try await self.rescueFailedStream(
+                    error, variant: variant, session: session, language: language)
             }
+        } captureResultOnFailure: {
+            session.lastCaptureResult.map { ($0.audioURL, $0.duration) }
         }
     }
 
@@ -1382,154 +1485,230 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Detiene la grabacion y transcribe
-    private func stopRecordingAndTranscribe(perf: DictationPerfTimeline? = nil) {
-        isStopPending = false
-
-        if playSoundEnabled {
-            // Restaurar el volumen antes del beep para que no suene ducked
-            AutoDuckingManager.shared.restore()
-            SoundManager.shared.play(.stopRecording)
-        }
-
+    private func stopRecordingAndTranscribe(perf: DictationPerfTimeline? = nil) async {
         let variant = sessionVariant
-        let engine = variant.engine
         let language = selectedLanguage
         let duration = recordingDuration
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
-        activeRecordingSessionID = nil
-        activeSessionVariant = nil
-        activeTranscriptionSessionID = sessionID
 
-        Task { @MainActor in
-            // All engines: stop recording, get audio file, transcribe.
-            // The finalize runs on the audio queue so the MainActor stays free.
-            let stoppedURL = await audioRecorder.stopRecordingAsync()?.audioURL
-            captureCoordinator.endActiveCapture()
-
-            guard let audioURL = stoppedURL else {
-                activeTranscriptionSessionID = nil
-                let failure = TranscriptionFailure(kind: .audioEmpty)
-                SapoLog.recording.error(
-                    "Recording produced no audio file \(failure.diagnosticCode, privacy: .public)")
-                presentTranscriptionFailure(failure)
-                return
-            }
-            perf?.markFinalizeDone()
-
-            if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
-                SapoLog.recording.warning(
-                    "Dropping empty recording after device switch bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .public)"
+        let stoppedResult = await BatchStopCaptureHandoff.perform(
+            seal: { await audioRecorder.stopRecordingAsync() },
+            onStopped: { self.completeCaptureStopTransition(sessionID: sessionID, perf: perf) }
+        )
+        let terminalDisposition = pendingBatchStopTerminalDisposition
+        pendingBatchStopTerminalDisposition = nil
+        await BatchStopTerminalRouter.perform(
+            sealedResult: stoppedResult,
+            disposition: terminalDisposition,
+            onTerminal: { result, disposition in
+                self.finalizeSealedBatchInterruption(
+                    result,
+                    disposition: disposition,
+                    variant: variant,
+                    language: language
                 )
+            },
+            onContinue: { result in
+                await self.processStoppedBatchCapture(
+                    result,
+                    variant: variant,
+                    language: language,
+                    duration: duration,
+                    sessionID: sessionID,
+                    perf: perf
+                )
+            }
+        )
+    }
+
+    private func processStoppedBatchCapture(
+        _ stoppedResult: AudioCaptureResult?,
+        variant: TranscriptionEngineVariant,
+        language: String,
+        duration: TimeInterval,
+        sessionID: UInt64,
+        perf: DictationPerfTimeline?
+    ) async {
+        let engine = variant.engine
+        let stoppedURL = stoppedResult?.audioURL
+
+        guard let audioURL = stoppedURL else {
+            activeTranscriptionSessionID = nil
+            let failure = TranscriptionFailure(kind: .audioEmpty)
+            SapoLog.recording.error(
+                "Recording produced no audio file \(failure.diagnosticCode, privacy: .public)")
+            presentTranscriptionFailure(failure)
+            return
+        }
+
+        if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
+            SapoLog.recording.warning(
+                "Dropping empty recording after device switch bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .private(mask: .hash))"
+            )
+            audioRecorder.deleteRecording(at: audioURL)
+            activeTranscriptionSessionID = nil
+            // The audio was just deleted, so the (retryable) .recordingInterrupted
+            // must not let Retry retranscribe a STALE prior session's audio ([6]).
+            persister.clearRetryState()
+            presentTranscriptionFailure(TranscriptionFailure(kind: .recordingInterrupted))
+            return
+        }
+
+        // Continue-previous merge: prepend the offered take before
+        // transcription so one transcript covers both. On merge failure
+        // the current take still transcribes alone — never lose new audio
+        // over an enhancement.
+        let mergeResumable = resumableStore.consumeRequestedMerge()
+
+        // No-speech fast path: the whole session peaked below the silence
+        // threshold, so skip the network entirely. The WAV stays on disk
+        // (guardrail) and no failed history row is created. A requested
+        // merge bypasses the gate — the previous take carries the speech.
+        if sessionLooksSilent && mergeResumable == nil {
+            activeTranscriptionSessionID = nil
+            SapoLog.recording.info(
+                "No-speech fast path engaged engine=\(engine.rawValue, privacy: .public) peakDb=\(self.approximateSessionPeakDb, privacy: .public)"
+            )
+            presentTranscriptionFailure(
+                TranscriptionFailure(
+                    kind: .emptyTranscription, engine: engine.displayName,
+                    technicalDetail: "local silence gate peakDb=\(approximateSessionPeakDb)"
+                )
+            )
+            return
+        }
+
+        var effectiveAudioURL = audioURL
+        var effectiveDuration = duration
+        if let mergeResumable {
+            do {
+                let mergedURL = try AudioFileMerger.merge(first: mergeResumable.audioURL, second: audioURL)
                 audioRecorder.deleteRecording(at: audioURL)
-                activeTranscriptionSessionID = nil
-                // The audio was just deleted, so the (retryable) .recordingInterrupted
-                // must not let Retry retranscribe a STALE prior session's audio ([6]).
-                persister.clearRetryState()
-                presentTranscriptionFailure(TranscriptionFailure(kind: .recordingInterrupted))
-                return
-            }
-
-            // Continue-previous merge: prepend the offered take before
-            // transcription so one transcript covers both. On merge failure
-            // the current take still transcribes alone — never lose new audio
-            // over an enhancement.
-            let mergeResumable = resumableStore.consumeRequestedMerge()
-
-            // No-speech fast path: the whole session peaked below the silence
-            // threshold, so skip the network entirely. The WAV stays on disk
-            // (guardrail) and no failed history row is created. A requested
-            // merge bypasses the gate — the previous take carries the speech.
-            if sessionLooksSilent && mergeResumable == nil {
-                activeTranscriptionSessionID = nil
+                effectiveAudioURL = mergedURL
+                effectiveDuration = mergeResumable.duration + duration
+                resumableStore.clearOffer()
+                // The merged take supersedes the recovered/cancelled row;
+                // keeping it would duplicate the same audio in History.
+                historyManager.delete(id: mergeResumable.historyId)
                 SapoLog.recording.info(
-                    "No-speech fast path engaged engine=\(engine.rawValue, privacy: .public) peakDb=\(self.approximateSessionPeakDb, privacy: .public)"
+                    "Continue-previous merge applied durationSec=\(Int(effectiveDuration), privacy: .public)"
                 )
-                presentTranscriptionFailure(
-                    TranscriptionFailure(
-                        kind: .emptyTranscription, engine: engine.displayName,
-                        technicalDetail: "local silence gate peakDb=\(approximateSessionPeakDb)"
-                    )
+            } catch {
+                let detail = LogSanitizer.errorDiagnostic(error, state: "merge")
+                SapoLog.recording.error(
+                    "Continue-previous merge failed; transcribing current take only \(detail, privacy: .public)"
                 )
-                return
             }
+        }
 
-            var effectiveAudioURL = audioURL
-            var effectiveDuration = duration
-            if let mergeResumable {
-                do {
-                    let mergedURL = try AudioFileMerger.merge(first: mergeResumable.audioURL, second: audioURL)
-                    audioRecorder.deleteRecording(at: audioURL)
-                    effectiveAudioURL = mergedURL
-                    effectiveDuration = mergeResumable.duration + duration
-                    resumableStore.clearOffer()
-                    // The merged take supersedes the recovered/cancelled row;
-                    // keeping it would duplicate the same audio in History.
-                    historyManager.delete(id: mergeResumable.historyId)
-                    SapoLog.recording.info(
-                        "Continue-previous merge applied durationSec=\(Int(effectiveDuration), privacy: .public)"
-                    )
-                } catch {
-                    SapoLog.recording.error(
-                        "Continue-previous merge failed, transcribing current take only error=\(error.localizedDescription, privacy: .public)"
-                    )
-                }
+        // The finished capture is persisted BEFORE the engine runs: a
+        // hang, crash, Esc, or force-quit during transcription can no
+        // longer lose the audio — it is already a History row that the
+        // pipeline finalizes (or the launch sweep resolves).
+        let pending = persister.persistPending(
+            audioURL: effectiveAudioURL,
+            engine: engine,
+            engineName: historyEngineName(for: variant),
+            language: language,
+            duration: effectiveDuration
+        )
+
+        var request = TranscriptionPipeline.Request(
+            sessionID: sessionID,
+            engine: engine,
+            engineName: historyEngineName(for: variant),
+            source: variant.rawValue,
+            failureLanguage: language,
+            snapshotPrefix: "transcription",
+            logger: SapoLog.recording,
+            perf: perf
+        )
+        if let pending {
+            request.historyTarget = .finalizePending(historyId: pending.historyId)
+        }
+
+        let transcriptionURL = pending?.audioURL ?? effectiveAudioURL
+        let transcriptionDuration = effectiveDuration
+        let pipelineRequest = request
+        let pipelineTask = Task {
+            await self.transcriptionPipeline.run(pipelineRequest) {
+                let result = try await self.transcribeWithFallback(
+                    at: transcriptionURL, primary: variant, language: language)
+                return TranscriptionPipeline.EngineOutput(
+                    transcript: result.transcript,
+                    audioURL: transcriptionURL,
+                    duration: transcriptionDuration,
+                    language: language,
+                    engineNameOverride: result.engineNameOverride
+                )
+            } captureResultOnFailure: {
+                (transcriptionURL, transcriptionDuration)
             }
+        }
+        activeBatchTranscription = ActiveBatchTranscription(
+            sessionID: sessionID,
+            historyId: pending?.historyId,
+            audioURL: transcriptionURL,
+            duration: transcriptionDuration,
+            task: pipelineTask
+        )
+        await pipelineTask.value
+        if activeBatchTranscription?.sessionID == sessionID {
+            activeBatchTranscription = nil
+        }
+    }
 
-            // The finished capture is persisted BEFORE the engine runs: a
-            // hang, crash, Esc, or force-quit during transcription can no
-            // longer lose the audio — it is already a History row that the
-            // pipeline finalizes (or the launch sweep resolves).
-            let pending = persister.persistPending(
-                audioURL: effectiveAudioURL,
-                engine: engine,
+    private func finalizeSealedBatchInterruption(
+        _ result: AudioCaptureResult?,
+        disposition: BatchStopTerminalDisposition,
+        variant: TranscriptionEngineVariant,
+        language: String
+    ) {
+        activeTranscriptionSessionID = nil
+
+        let failureKind: TranscriptionFailure.Kind
+        let storeRetryState: Bool
+        let reasonLog: String
+        switch disposition {
+        case .sleep:
+            failureKind = .recordingInterrupted
+            storeRetryState = true
+            reasonLog = "sleep"
+        case .terminate:
+            failureKind = .userCancelled
+            storeRetryState = false
+            reasonLog = "terminate"
+        }
+
+        if let result {
+            let outcome = persister.persistAbortedCapture(
+                audioURL: result.audioURL,
+                duration: result.duration,
+                engine: variant.engine,
                 engineName: historyEngineName(for: variant),
                 language: language,
-                duration: effectiveDuration
+                failureKind: failureKind,
+                storeRetryState: storeRetryState
             )
+            if let historyId = outcome.historyId, let offerURL = outcome.audioURL {
+                resumableStore.offer(
+                    ResumableDictation(
+                        historyId: historyId,
+                        audioURL: offerURL,
+                        duration: result.duration,
+                        capturedAt: Date()
+                    ))
+            }
+            SapoLog.lifecycle.info(
+                "Recording aborted after seal reason=\(reasonLog, privacy: .public) durationSec=\(Int(result.duration), privacy: .public)"
+            )
+        } else if !storeRetryState {
+            persister.clearRetryState()
+        }
 
-            var request = TranscriptionPipeline.Request(
-                sessionID: sessionID,
-                engine: engine,
-                engineName: historyEngineName(for: variant),
-                source: variant.rawValue,
-                failureLanguage: language,
-                snapshotPrefix: "transcription",
-                logger: SapoLog.recording,
-                perf: perf
-            )
-            if let pending {
-                request.historyTarget = .finalizePending(historyId: pending.historyId)
-            }
-
-            let transcriptionURL = pending?.audioURL ?? effectiveAudioURL
-            let transcriptionDuration = effectiveDuration
-            let pipelineRequest = request
-            let pipelineTask = Task {
-                await self.transcriptionPipeline.run(pipelineRequest) {
-                    let result = try await self.transcribeWithFallback(
-                        at: transcriptionURL, primary: variant, language: language)
-                    return TranscriptionPipeline.EngineOutput(
-                        transcript: result.transcript,
-                        audioURL: transcriptionURL,
-                        duration: transcriptionDuration,
-                        language: language,
-                        engineNameOverride: result.engineNameOverride
-                    )
-                } captureResultOnFailure: {
-                    (transcriptionURL, transcriptionDuration)
-                }
-            }
-            activeBatchTranscription = ActiveBatchTranscription(
-                sessionID: sessionID,
-                historyId: pending?.historyId,
-                audioURL: transcriptionURL,
-                duration: transcriptionDuration,
-                task: pipelineTask
-            )
-            await pipelineTask.value
-            if activeBatchTranscription?.sessionID == sessionID {
-                activeBatchTranscription = nil
-            }
+        if disposition == .sleep {
+            overlayManager.updateState(.hidden)
+            checkInitialState()
         }
     }
 
@@ -1986,13 +2165,18 @@ class SapoWhisperViewModel: ObservableObject {
         playSound: Bool,
         triggerTime: CFAbsoluteTime,
         prepare: () -> Void,
-        start: @escaping () async throws -> Void
+        start: @escaping @MainActor () async throws -> Void,
+        abortStarted: @escaping @MainActor @Sendable () -> Void
     ) {
         prepare()
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let captureToken = await self.captureCoordinator.beginCapture(owner) else { return }
+            guard let captureToken = await self.captureCoordinator.beginCapture(owner) else {
+                self.isStartPending = false
+                self.startRecordingTask = nil
+                return
+            }
             var recorderDidStart = false
 
             defer {
@@ -2006,7 +2190,14 @@ class SapoWhisperViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
 
             do {
-                try await start()
+                let accepted = try await CaptureStartCompletionGate.perform(
+                    start: start,
+                    isSessionCurrent: {
+                        self.isStartPending && self.activeRecordingSessionID == sessionID
+                    },
+                    abortStarted: abortStarted
+                )
+                guard accepted else { return }
                 recorderDidStart = true
                 self.overlayManager.setMicConnecting(deviceName: nil)
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
@@ -2026,6 +2217,7 @@ class SapoWhisperViewModel: ObservableObject {
                     )
                     return
                 }
+                let detail = LogSanitizer.errorDiagnostic(error, state: "capture-start")
                 self.activeRecordingSessionID = nil
                 self.transition(
                     to: .error(ErrorState(message: error.localizedDescription)),
@@ -2038,12 +2230,12 @@ class SapoWhisperViewModel: ObservableObject {
                 PerformanceDiagnostics.logRuntimeSnapshot(
                     reason: "\(snapshotPrefix)-input-failed",
                     context: self.diagnosticContext(
-                        extra: "session=\(sessionID) error=\(error.localizedDescription)"
+                        extra: "session=\(sessionID) \(detail)"
                     ),
                     force: true
                 )
                 SapoLog.recording.error(
-                    "\(logLabel, privacy: .public) failed to start: \(error.localizedDescription, privacy: .public)"
+                    "\(logLabel, privacy: .public) failed to start \(detail, privacy: .public)"
                 )
             }
         }
@@ -2311,9 +2503,9 @@ class SapoWhisperViewModel: ObservableObject {
     private func logAIResult(_ result: TranscriptAIResult, source: String) {
         let mode = result.mode ?? "none"
         let model = result.model ?? "none"
-        let fallbackReason = result.error ?? "none"
+        let hasFallback = result.error != nil
         SapoLog.ai.info(
-            "AI polish source=\(source, privacy: .public) status=\(result.status.rawValue, privacy: .public) mode=\(mode, privacy: .public) model=\(model, privacy: .public) elapsed=\(result.elapsedMs, privacy: .public)ms rawChars=\(result.rawText.count, privacy: .public) finalChars=\(result.finalText.count, privacy: .public) fallback=\(fallbackReason, privacy: .public)"
+            "AI polish source=\(source, privacy: .public) status=\(result.status.rawValue, privacy: .public) mode=\(mode, privacy: .public) model=\(model, privacy: .public) elapsed=\(result.elapsedMs, privacy: .public)ms rawChars=\(result.rawText.count, privacy: .public) finalChars=\(result.finalText.count, privacy: .public) fallback=\(hasFallback, privacy: .public)"
         )
     }
 
@@ -2330,7 +2522,17 @@ class SapoWhisperViewModel: ObservableObject {
             cancelPendingRecordingStart()
             return
         }
-        guard !isStopPending, activeTranscriptionSessionID == nil else { return }
+        if isStopPending {
+            if CaptureStopInterruptionGate.sharesInFlightSeal(
+                isStopPending: isStopPending,
+                hasPendingTailTask: stopTailTask != nil
+            ) {
+                pendingBatchStopTerminalDisposition = .sleep
+                return
+            }
+            cancelPendingStopTail()
+        }
+        guard activeTranscriptionSessionID == nil else { return }
         guard abortActiveCapturePreservingAudio(reasonLog: "sleep").aborted else { return }
 
         overlayManager.updateState(.hidden)
@@ -2347,6 +2549,17 @@ class SapoWhisperViewModel: ObservableObject {
             return
         }
 
+        if isStopPending {
+            if CaptureStopInterruptionGate.sharesInFlightSeal(
+                isStopPending: isStopPending,
+                hasPendingTailTask: stopTailTask != nil
+            ) {
+                pendingBatchStopTerminalDisposition = .terminate
+                return
+            }
+            cancelPendingStopTail()
+        }
+
         // A graceful quit mid-transcription resolves the pre-persisted row
         // right away instead of leaving it for the next launch sweep.
         if let active = activeBatchTranscription, let historyId = active.historyId {
@@ -2358,7 +2571,6 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         guard activeTranscriptionSessionID == nil else { return }
-        isStopPending = false
         _ = abortActiveCapturePreservingAudio(
             reasonLog: "terminate",
             failureKind: .userCancelled,
@@ -2373,7 +2585,16 @@ class SapoWhisperViewModel: ObservableObject {
         SapoLog.recording.error(
             "Capture device failure reason=\(reason, privacy: .private(mask: .hash)) \(self.diagnosticContext(), privacy: .public)"
         )
-        guard !isStopPending, activeTranscriptionSessionID == nil else { return }
+        if isStopPending {
+            if CaptureStopInterruptionGate.sharesInFlightSeal(
+                isStopPending: isStopPending,
+                hasPendingTailTask: stopTailTask != nil
+            ) {
+                return
+            }
+            cancelPendingStopTail()
+        }
+        guard activeTranscriptionSessionID == nil else { return }
         guard abortActiveCapturePreservingAudio(reasonLog: reason).aborted else { return }
 
         presentTranscriptionFailure(

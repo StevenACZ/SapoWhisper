@@ -10,12 +10,15 @@ struct PolishResponse: Sendable {
     let text: String
     /// Endpoint-qualified model id, e.g. `openrouter/openai/gpt-5.4-nano`.
     let modelIdentifier: String
+    let responseCount: Int
 }
 
 enum PolishProviderError: LocalizedError {
     case notConfigured
     case emptyResponse(finishReason: String?)
     case truncatedResponse
+    case invalidStructuredResponse
+    case translationFailed
     case httpError(statusCode: Int, endpoint: PolishEndpoint, message: String)
 
     var errorDescription: String? {
@@ -26,6 +29,10 @@ enum PolishProviderError: LocalizedError {
             return "ai.provider.error_empty".localized
         case .truncatedResponse:
             return "ai.provider.error_truncated".localized
+        case .invalidStructuredResponse:
+            return "ai.provider.error_invalid_structured".localized
+        case .translationFailed:
+            return "ai.provider.error_translation_failed".localized
         case .httpError(let statusCode, let endpoint, let message):
             let friendlyMessage = Self.friendlyHTTPMessage(
                 statusCode: statusCode,
@@ -203,7 +210,8 @@ final class OpenAICompatiblePolisher {
         timeout: TimeInterval = 8,
         maxTokens: Int? = nil,
         configuration: PolishProviderConfiguration? = nil,
-        contract: StructuredContract = .polish
+        contract: StructuredContract = .polish,
+        maximumResponses: Int? = nil
     ) async throws -> PolishResponse {
         guard let configuration = configuration ?? PolishProviderConfiguration.current() else {
             throw PolishProviderError.notConfigured
@@ -215,7 +223,8 @@ final class OpenAICompatiblePolisher {
             maxTokens: maxTokens,
             configuration: configuration,
             structured: configuration.endpoint.supportsStructuredOutputs,
-            contract: contract
+            contract: contract,
+            maximumResponses: maximumResponses
         )
     }
 
@@ -243,10 +252,15 @@ final class OpenAICompatiblePolisher {
         contract: StructuredContract = .polish,
         includeTemperature: Bool = true,
         includeReasoning: Bool = true,
-        allowTruncationRetry: Bool = true
+        allowTruncationRetry: Bool = true,
+        responseCount: Int = 0,
+        maximumResponses: Int? = nil
     ) async throws -> PolishResponse {
         let startedAt = CFAbsoluteTimeGetCurrent()
-        let reasoningEffort: PolishReasoningEffort = includeReasoning ? .current() : .automatic
+        let reasoningEffort: PolishReasoningEffort =
+            includeReasoning
+            ? Self.resolvedReasoningEffort(selected: .current(), configuration: configuration)
+            : .automatic
         let request = try makeRequest(
             system: structured ? system + contract.scanNote : system,
             user: user,
@@ -287,7 +301,9 @@ final class OpenAICompatiblePolisher {
                     contract: contract,
                     includeTemperature: includeTemperature,
                     includeReasoning: includeReasoning,
-                    allowTruncationRetry: allowTruncationRetry
+                    allowTruncationRetry: allowTruncationRetry,
+                    responseCount: responseCount,
+                    maximumResponses: maximumResponses
                 )
             }
             // Reasoning-tier models on some providers reject sampling params;
@@ -304,7 +320,9 @@ final class OpenAICompatiblePolisher {
                     contract: contract,
                     includeTemperature: false,
                     includeReasoning: includeReasoning,
-                    allowTruncationRetry: allowTruncationRetry
+                    allowTruncationRetry: allowTruncationRetry,
+                    responseCount: responseCount,
+                    maximumResponses: maximumResponses
                 )
             }
             // Not every provider/model accepts reasoning control (Groq and
@@ -324,7 +342,9 @@ final class OpenAICompatiblePolisher {
                     contract: contract,
                     includeTemperature: includeTemperature,
                     includeReasoning: false,
-                    allowTruncationRetry: allowTruncationRetry
+                    allowTruncationRetry: allowTruncationRetry,
+                    responseCount: responseCount,
+                    maximumResponses: maximumResponses
                 )
             }
             throw PolishProviderError.httpError(
@@ -337,18 +357,17 @@ final class OpenAICompatiblePolisher {
         let body = try JSONDecoder().decode(ChatCompletionsResponse.self, from: data)
         let choice = body.choices?.first
         let content = (choice?.message?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = structured ? Self.extractStructuredText(from: content) : content
         let finishReason = choice?.finishReason ?? "none"
-        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-        SapoLog.ai.info(
-            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) reasoning=\(reasoningEffort.rawValue, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
-        )
+        let publicFinishReason = Self.publicFinishReason(finishReason)
+        let completedResponseCount = responseCount + 1
 
         // A "length" finish means the output was cut mid-sentence; pasting it
         // would ship a silently truncated polish. Retry once with a doubled
         // cap, then let the caller fall back to the raw text.
         if finishReason == "length" {
-            if allowTruncationRetry, let maxTokens {
+            if allowTruncationRetry, let maxTokens,
+                maximumResponses.map({ completedResponseCount < $0 }) ?? true
+            {
                 SapoLog.ai.warning(
                     "Polish response hit max_tokens cap=\(maxTokens, privacy: .public) — retrying with doubled cap"
                 )
@@ -362,31 +381,136 @@ final class OpenAICompatiblePolisher {
                     contract: contract,
                     includeTemperature: includeTemperature,
                     includeReasoning: includeReasoning,
-                    allowTruncationRetry: false
+                    allowTruncationRetry: false,
+                    responseCount: completedResponseCount,
+                    maximumResponses: maximumResponses
                 )
             }
             throw PolishProviderError.truncatedResponse
         }
 
+        let text: String
+        do {
+            text = try structured ? Self.extractStructuredText(from: content, contract: contract) : content
+        } catch PolishProviderError.invalidStructuredResponse where structured {
+            guard maximumResponses.map({ completedResponseCount < $0 }) ?? true else {
+                throw PolishProviderError.invalidStructuredResponse
+            }
+            SapoLog.ai.info("Polish provider returned invalid structured output — retrying plain")
+            return try await send(
+                system: system,
+                user: user,
+                timeout: timeout,
+                maxTokens: maxTokens,
+                configuration: configuration,
+                structured: false,
+                contract: contract,
+                includeTemperature: includeTemperature,
+                includeReasoning: includeReasoning,
+                allowTruncationRetry: allowTruncationRetry,
+                responseCount: completedResponseCount,
+                maximumResponses: maximumResponses
+            )
+        }
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+        SapoLog.ai.info(
+            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) reasoning=\(reasoningEffort.rawValue, privacy: .public) finishReason=\(publicFinishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
+        )
+
         guard !text.isEmpty else {
-            throw PolishProviderError.emptyResponse(finishReason: choice?.finishReason)
+            throw PolishProviderError.emptyResponse(finishReason: publicFinishReason)
         }
 
-        return PolishResponse(text: text, modelIdentifier: configuration.modelIdentifier)
+        return PolishResponse(
+            text: text,
+            modelIdentifier: configuration.modelIdentifier,
+            responseCount: completedResponseCount
+        )
     }
 
-    /// Pulls the final text (`polished` or `compact`) out of a structured
-    /// response body. A model that ignored the schema (some OpenRouter
-    /// fallback routes) returns plain text; keep it as-is and let the
-    /// sanitizer handle any wrapper noise.
-    private static func extractStructuredText(from content: String) -> String {
-        guard let data = content.data(using: .utf8),
-            let payload = try? JSONDecoder().decode(StructuredPolishPayload.self, from: data),
-            let text = payload.polished ?? payload.compact
+    nonisolated static func publicFinishReason(_ value: String?) -> String {
+        switch value?.lowercased() {
+        case "stop": return "stop"
+        case "length": return "length"
+        case "content_filter": return "content_filter"
+        case "tool_calls": return "tool_calls"
+        case "function_call": return "function_call"
+        case nil, "", "none":
+            return "none"
+        default:
+            return "other"
+        }
+    }
+
+    /// The stored effort raised to the model's mandatory floor, so a
+    /// reasoning-mandatory model never sends `reasoning: none` regardless of how
+    /// it was selected (catalog, free text, migration, history menu).
+    static func resolvedReasoningEffort(
+        selected: PolishReasoningEffort,
+        configuration: PolishProviderConfiguration
+    ) -> PolishReasoningEffort {
+        let policy = PolishModelCatalog.reasoningPolicy(
+            for: configuration.model,
+            provider: configuration.endpoint
+        )
+        return selected.coerced(toMinimum: policy.minimum)
+    }
+
+    private static func extractStructuredText(
+        from content: String,
+        contract: StructuredContract
+    ) throws -> String {
+        let fenced = unwrapStructuredFence(from: content)
+        let candidate = fenced?.body ?? content
+        let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isJSONEnvelope =
+            fenced?.declaresJSON == true
+            || trimmed.hasPrefix("{") || trimmed.hasPrefix("[")
+        guard isJSONEnvelope else { return content }
+        guard let data = trimmed.data(using: .utf8) else {
+            throw PolishProviderError.invalidStructuredResponse
+        }
+
+        guard let decoded = try? JSONSerialization.jsonObject(with: data),
+            let object = decoded as? [String: Any]
         else {
-            return content
+            throw PolishProviderError.invalidStructuredResponse
+        }
+
+        let expectedKeys: Set<String>
+        let scanKey: String
+        let textKey: String
+        switch contract {
+        case .polish:
+            expectedKeys = ["filler_scan", "polished"]
+            scanKey = "filler_scan"
+            textKey = "polished"
+        case .compact:
+            expectedKeys = ["requirements_scan", "compact"]
+            scanKey = "requirements_scan"
+            textKey = "compact"
+        }
+        guard Set(object.keys) == expectedKeys,
+            object[scanKey] is String,
+            let text = object[textKey] as? String
+        else {
+            throw PolishProviderError.invalidStructuredResponse
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func unwrapStructuredFence(from content: String) -> (body: String, declaresJSON: Bool)? {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("```"), trimmed.hasSuffix("```") else { return nil }
+        guard let firstLineEnd = trimmed.firstIndex(of: "\n") else { return nil }
+        let fenceLabel = trimmed[trimmed.index(trimmed.startIndex, offsetBy: 3)..<firstLineEnd]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard fenceLabel.isEmpty || fenceLabel.caseInsensitiveCompare("json") == .orderedSame else { return nil }
+        let closingStart = trimmed.index(trimmed.endIndex, offsetBy: -3)
+        return (
+            String(trimmed[trimmed.index(after: firstLineEnd)..<closingStart]),
+            fenceLabel.caseInsensitiveCompare("json") == .orderedSame
+        )
     }
 
     private func makeRequest(
@@ -472,19 +596,6 @@ private struct ChatChoice: Decodable {
 
 private struct ChatMessage: Decodable {
     let content: String?
-}
-
-/// Content payload of a structured polish response (either contract). The
-/// scan fields are ignored on decode; they may contain transcript tokens and
-/// must never be logged or persisted.
-private struct StructuredPolishPayload: Decodable {
-    let polished: String?
-    let compact: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case polished
-        case compact
-    }
 }
 
 private struct ChatCompletionsErrorEnvelope: Decodable {

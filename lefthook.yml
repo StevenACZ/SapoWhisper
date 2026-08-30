@@ -19,3 +19,9 @@ pre-commit:
       fail_text: |
         Potential secret detected in staged changes. Review the gitleaks
         report above; never commit API keys or credentials.
+
+    audio-allowlist:
+      run: bash scripts/verify_public_audio_allowlist.sh
+      fail_text: |
+        Public audio allowlist failed. Tracked audio must match the pinned
+        hashes; never commit swapped or private recordings.

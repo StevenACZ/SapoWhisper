@@ -8,12 +8,17 @@ import NaturalLanguage
 import os
 
 final class TranscriptPostProcessor {
-    private static let maximumFidelityAttempts = 3
+    private static let maximumPolishResponses = 3
 
     private struct GuardedPolishResponse: Sendable {
         let response: PolishResponse
         let cleanedText: String
         let blockedInstructionResponse: Bool
+    }
+
+    private struct VerifiedPolishResponse: Sendable {
+        let response: PolishResponse
+        let responseCount: Int
     }
 
     /// Result of polishing one chunk. A chunk that fails, times out, or gets
@@ -33,7 +38,7 @@ final class TranscriptPostProcessor {
     /// small-model reasoning can be much slower. Compact runs the WHOLE
     /// transcript in one call and emits a requirements scan before the
     /// rewrite, so its per-character cost is higher than a normal chunk —
-    /// the normal curve timed out real dictations at 10s (2026-07-05).
+    /// the normal curve timed out long-form regression inputs at 10s.
     static func polishTimeout(
         forCharacterCount count: Int,
         duration: TimeInterval?,
@@ -157,7 +162,7 @@ final class TranscriptPostProcessor {
             error: String? = nil
         ) -> TranscriptAIResult {
             let result = makeResult(
-                rawText: transcript,
+                rawText: trimmed,
                 finalText: finalText,
                 status: status,
                 model: model,
@@ -300,6 +305,27 @@ final class TranscriptPostProcessor {
 
         let anyApplied = outcomes.contains(where: \.applied)
         let model = outcomes.compactMap(\.model).last ?? configuration.modelIdentifier
+        let salvagedCount = outcomes.filter { !$0.applied }.count
+
+        if outcomes.contains(where: \.blocked) {
+            return finish(
+                finalText: transcript,
+                status: .rejectedFidelity,
+                model: model,
+                mode: polishMode.historyModeIdentifier,
+                error: "history.ai_polish_rejected_notice".localized
+            )
+        }
+
+        if outputLanguage.requiresTranslation, salvagedCount > 0 {
+            return finish(
+                finalText: transcript,
+                status: .failed,
+                model: model,
+                mode: polishMode.historyModeIdentifier,
+                error: outcomes.compactMap(\.failureDetail).first ?? "ai.provider.error_translation_failed".localized
+            )
+        }
 
         if anyApplied {
             // A model that just delivered a polish is worth re-offering in the
@@ -307,7 +333,6 @@ final class TranscriptPostProcessor {
             PolishProviderConfiguration.recordRecentModel(configuration.model, for: configuration.endpoint)
             let finalText = outcomes.map(\.text).joined(separator: "\n\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let salvagedCount = outcomes.filter { !$0.applied }.count
             if salvagedCount > 0 {
                 SapoLog.ai.warning(
                     "AI polish salvaged chunks raw=\(salvagedCount, privacy: .public)/\(outcomes.count, privacy: .public)"
@@ -319,16 +344,6 @@ final class TranscriptPostProcessor {
                 model: model,
                 mode: polishMode.historyModeIdentifier,
                 error: salvagedCount > 0 ? "\(salvagedCount)/\(outcomes.count) chunks kept raw" : nil
-            )
-        }
-
-        if outcomes.contains(where: \.blocked) {
-            return finish(
-                finalText: transcript,
-                status: .rejectedFidelity,
-                model: model,
-                mode: polishMode.historyModeIdentifier,
-                error: "AI polish answered or performed the transcript instead of polishing it"
             )
         }
 
@@ -367,28 +382,28 @@ final class TranscriptPostProcessor {
         // Its real job is making finish_reason=="length" detectable instead of
         // shipping a silently truncated polish.
         let maxTokens = max(512, chunk.count * 2 / 3)
+        let messages =
+            mode == .compact
+            ? TranscriptPolishPromptBuilder.makeCompactMessages(
+                rawText: chunk,
+                personalContext: personalContext,
+                outputLanguage: outputLanguage,
+                keyterms: keyterms,
+                replacements: mergedReplacements,
+                recentDictations: recentDictations
+            )
+            : TranscriptPolishPromptBuilder.makeMessages(
+                rawText: chunk,
+                personalContext: personalContext,
+                outputLanguage: outputLanguage,
+                keyterms: keyterms,
+                replacements: mergedReplacements,
+                recentDictations: recentDictations,
+                previousChunkTail: previousChunkTail
+            )
 
         do {
             let guarded = try await withTimeout(seconds: budget) {
-                let messages =
-                    mode == .compact
-                    ? TranscriptPolishPromptBuilder.makeCompactMessages(
-                        rawText: chunk,
-                        personalContext: personalContext,
-                        outputLanguage: outputLanguage,
-                        keyterms: keyterms,
-                        replacements: mergedReplacements,
-                        recentDictations: recentDictations
-                    )
-                    : TranscriptPolishPromptBuilder.makeMessages(
-                        rawText: chunk,
-                        personalContext: personalContext,
-                        outputLanguage: outputLanguage,
-                        keyterms: keyterms,
-                        replacements: mergedReplacements,
-                        recentDictations: recentDictations,
-                        previousChunkTail: previousChunkTail
-                    )
                 return try await self.polishWithHardGuardRetries(
                     messages: messages,
                     rawText: chunk,
@@ -454,7 +469,7 @@ final class TranscriptPostProcessor {
     /// complete sentences up to the target size. Runs without usable enders
     /// (some engines emit no punctuation) fall back to whitespace splits, so a
     /// long transcript still chunks instead of reaching the model whole and
-    /// getting summarized (benchmarked on real history, 2026-07-02).
+    /// getting summarized in long-form regression inputs.
     static func splitIntoChunks(_ text: String) -> [String] {
         guard text.count > chunkThresholdCharacters else { return [text] }
 
@@ -522,9 +537,6 @@ final class TranscriptPostProcessor {
         return chunks.isEmpty ? [text] : chunks
     }
 
-    /// Hard-token fidelity is a regeneration hint, not a raw-text fallback. If
-    /// the model still misses a protected token after the retry budget, the last
-    /// AI output ships because the user explicitly opted into AI polish.
     private func polishWithHardGuardRetries(
         messages: TranscriptPolishMessages,
         rawText: String,
@@ -536,19 +548,43 @@ final class TranscriptPostProcessor {
         configuration: PolishProviderConfiguration
     ) async throws -> GuardedPolishResponse {
         var attemptMessages = messages
+        var guardRound = 1
+        var responseCount = 0
         var lastInstructionRejected: GuardedPolishResponse?
-        var attempt = 1
+        var lastGuarded: GuardedPolishResponse?
+        var lastTranslationShapeRejected = false
 
         while true {
-            let response = try await polishVerifyingTranslation(
-                messages: attemptMessages,
-                rawText: rawText,
-                mode: mode,
-                outputLanguage: outputLanguage,
-                timeout: timeout,
-                maxTokens: maxTokens,
-                configuration: configuration
-            )
+            let verified: VerifiedPolishResponse
+            do {
+                verified = try await polishVerifyingTranslation(
+                    messages: attemptMessages,
+                    rawText: rawText,
+                    mode: mode,
+                    outputLanguage: outputLanguage,
+                    timeout: timeout,
+                    maxTokens: maxTokens,
+                    configuration: configuration,
+                    remainingResponseBudget: Self.maximumPolishResponses - responseCount
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if let lastInstructionRejected {
+                    return GuardedPolishResponse(
+                        response: lastInstructionRejected.response,
+                        cleanedText: lastInstructionRejected.cleanedText,
+                        blockedInstructionResponse: true
+                    )
+                }
+                if lastTranslationShapeRejected {
+                    throw PolishProviderError.translationFailed
+                }
+                if let lastGuarded { return lastGuarded }
+                throw error
+            }
+            responseCount += verified.responseCount
+            let response = verified.response
             let cleaned = PolishOutputSanitizer.clean(response.text, rawText: rawText)
             let guarded = GuardedPolishResponse(
                 response: response,
@@ -559,7 +595,8 @@ final class TranscriptPostProcessor {
                 raw: rawText,
                 polished: cleaned,
                 vocabularyTerms: vocabularyTerms,
-                translationExpected: outputLanguage.requiresTranslation
+                translationExpected: outputLanguage.requiresTranslation,
+                compactionExpected: mode == .compact
             )
             let instructionVerdict = PolishInstructionResponseGuard.evaluate(
                 raw: rawText,
@@ -583,20 +620,24 @@ final class TranscriptPostProcessor {
                 !fidelityVerdict.isAcceptable || !instructionVerdict.isAcceptable
                     || !contentDiffVerdict.isAcceptable || compactCollapsed
             else {
-                if attempt > 1 {
-                    SapoLog.ai.info("AI polish hard guard recovered attempt=\(attempt, privacy: .public)")
+                if guardRound > 1 {
+                    SapoLog.ai.info("AI polish hard guard recovered round=\(guardRound, privacy: .public)")
                 }
                 return guarded
             }
 
+            SapoLog.ai.warning(
+                "AI polish hard guard retry round=\(guardRound, privacy: .public) responses=\(responseCount, privacy: .public) \(fidelityVerdict.diagnosticSummary, privacy: .public) \(instructionVerdict.diagnosticSummary, privacy: .public) \(contentDiffVerdict.diagnosticSummary, privacy: .public)"
+            )
             if !instructionVerdict.isAcceptable {
                 lastInstructionRejected = guarded
+            } else {
+                lastInstructionRejected = nil
             }
-            SapoLog.ai.warning(
-                "AI polish hard guard retry attempt=\(attempt, privacy: .public) \(fidelityVerdict.diagnosticSummary, privacy: .public) \(instructionVerdict.diagnosticSummary, privacy: .public) \(contentDiffVerdict.diagnosticSummary, privacy: .public)"
-            )
+            lastGuarded = guarded
+            lastTranslationShapeRejected = fidelityVerdict.translationShapeMismatch
 
-            if attempt >= Self.maximumFidelityAttempts {
+            if responseCount >= Self.maximumPolishResponses {
                 if let lastInstructionRejected {
                     SapoLog.ai.warning("AI polish rejected after instruction-response guard retries")
                     return GuardedPolishResponse(
@@ -605,11 +646,14 @@ final class TranscriptPostProcessor {
                         blockedInstructionResponse: true
                     )
                 }
-                SapoLog.ai.warning("AI polish shipping last output after hard guard retry budget")
+                if fidelityVerdict.translationShapeMismatch {
+                    throw PolishProviderError.translationFailed
+                }
+                SapoLog.ai.warning("AI polish shipping last output after hard guard response budget")
                 return guarded
             }
 
-            attempt += 1
+            guardRound += 1
             if compactCollapsed {
                 SapoLog.ai.warning("AI compact polish near-empty output — retrying")
             }
@@ -631,8 +675,7 @@ final class TranscriptPostProcessor {
     /// Runs the polish call and, when an explicit output language is set,
     /// verifies with NLLanguageRecognizer that the model actually translated.
     /// Long transcripts make small models ignore the language instruction, so
-    /// one corrective retry runs inside the same timeout budget; if the retry
-    /// itself fails, the first (untranslated but cleaned) attempt ships.
+    /// one corrective retry runs inside the same timeout budget.
     private func polishVerifyingTranslation(
         messages: TranscriptPolishMessages,
         rawText: String,
@@ -640,36 +683,36 @@ final class TranscriptPostProcessor {
         outputLanguage: TranscriptPolishOutputLanguage,
         timeout: TimeInterval,
         maxTokens: Int,
-        configuration: PolishProviderConfiguration
-    ) async throws -> PolishResponse {
+        configuration: PolishProviderConfiguration,
+        remainingResponseBudget: Int
+    ) async throws -> VerifiedPolishResponse {
         let contract: OpenAICompatiblePolisher.StructuredContract = mode == .compact ? .compact : .polish
         let first = try await polisher.polish(
             system: messages.system, user: messages.user, timeout: timeout, maxTokens: maxTokens,
-            configuration: configuration, contract: contract
+            configuration: configuration, contract: contract, maximumResponses: remainingResponseBudget
         )
         let firstCleaned = PolishOutputSanitizer.clean(first.text, rawText: rawText)
 
-        // 12 chars is enough for NLLanguageRecognizer to call the dominant
-        // language of a short greeting ("hola, ¿cómo estás?"); those short
-        // dictations reach this path since the skip-gate bypass and were
-        // exactly the ones shipping untranslated.
         guard
             let targetCode = outputLanguage.nlLanguageCode,
-            let targetName = outputLanguage.englishName,
-            firstCleaned.count >= 12
-        else { return first }
+            let targetName = outputLanguage.englishName
+        else { return VerifiedPolishResponse(response: first, responseCount: first.responseCount) }
 
         let detected = Self.dominantLanguageCode(of: firstCleaned)
-        guard let detected, !detected.hasPrefix(targetCode) else {
+        guard !Self.matchesTargetLanguage(firstCleaned, targetCode: targetCode) else {
             SapoLog.ai.info(
                 "AI polish translation check target=\(targetCode, privacy: .public) detected=\(detected ?? "unknown", privacy: .public) result=ok"
             )
-            return first
+            return VerifiedPolishResponse(response: first, responseCount: first.responseCount)
         }
 
         SapoLog.ai.warning(
-            "AI polish translation missed target=\(targetCode, privacy: .public) detected=\(detected, privacy: .public) chars=\(firstCleaned.count, privacy: .public) action=retry"
+            "AI polish translation missed target=\(targetCode, privacy: .public) detected=\(detected ?? "unknown", privacy: .public) chars=\(firstCleaned.count, privacy: .public) action=retry"
         )
+
+        guard first.responseCount < remainingResponseBudget else {
+            throw PolishProviderError.translationFailed
+        }
 
         let retrySystem =
             messages.system + """
@@ -681,19 +724,30 @@ final class TranscriptPostProcessor {
         do {
             let second = try await polisher.polish(
                 system: retrySystem, user: messages.user, timeout: timeout, maxTokens: maxTokens,
-                configuration: configuration, contract: contract
+                configuration: configuration, contract: contract,
+                maximumResponses: remainingResponseBudget - first.responseCount
             )
             let secondCleaned = PolishOutputSanitizer.clean(second.text, rawText: rawText)
             let retryDetected = Self.dominantLanguageCode(of: secondCleaned) ?? "unknown"
+            let retryMatches = Self.matchesTargetLanguage(secondCleaned, targetCode: targetCode)
             SapoLog.ai.info(
-                "AI polish translation retry target=\(targetCode, privacy: .public) detected=\(retryDetected, privacy: .public) result=\(retryDetected.hasPrefix(targetCode) ? "ok" : "still-missed", privacy: .public)"
+                "AI polish translation retry target=\(targetCode, privacy: .public) detected=\(retryDetected, privacy: .public) result=\(retryMatches ? "ok" : "still-missed", privacy: .public)"
             )
-            return retryDetected.hasPrefix(targetCode) ? second : first
+            guard retryMatches else {
+                throw PolishProviderError.translationFailed
+            }
+            return VerifiedPolishResponse(
+                response: second,
+                responseCount: first.responseCount + second.responseCount
+            )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "translation-retry")
             SapoLog.ai.warning(
-                "AI polish translation retry failed; keeping first attempt detail=\(error.localizedDescription, privacy: .public)"
+                "AI polish translation retry failed \(detail, privacy: .public)"
             )
-            return first
+            throw PolishProviderError.translationFailed
         }
     }
 
@@ -701,6 +755,59 @@ final class TranscriptPostProcessor {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
         return recognizer.dominantLanguage?.rawValue
+    }
+
+    private static let nonLinguisticTokens: Set<String> = [
+        "api", "bash", "commit", "cp", "curl", "docker", "env", "git", "json", "kubectl", "main", "make", "md",
+        "merge", "mv", "npm", "ok", "pull", "push", "readme", "rm", "ssh", "swift", "url", "uuid",
+    ]
+
+    private static let languageNeutralTechnicalPatterns = [
+        #"https?://[^\s]+"#,
+        #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#,
+        #"(?<![:/\p{L}\p{N}_])(?:~/|\.{1,2}/|/)(?:[A-Za-z0-9_@%+,:=-]+/)*[A-Za-z0-9._@%+,:=-]+"#,
+        #"(?:(?<![\p{L}\p{N}_/.])\.[A-Za-z][A-Za-z0-9_-]*|(?<![\p{L}\p{N}_/])(?=[A-Za-z0-9_-]*[A-Za-z_])[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+)(?![\p{L}\p{N}_/])"#,
+        #"(?<![\p{L}\p{N}_-])--?[A-Za-z0-9][A-Za-z0-9_-]*"#,
+        #"\b(?=[A-Za-z0-9._-]*[A-Za-z])(?=[A-Za-z0-9._-]*\d)[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*\b"#,
+    ]
+
+    private static func matchesTargetLanguage(_ text: String, targetCode: String) -> Bool {
+        let languageText = strippingLanguageNeutralTechnicalSpans(from: text)
+        let segments = languageText.components(separatedBy: CharacterSet(charactersIn: ".!?…;,:\n"))
+            .filter(hasLanguageBearingText)
+        guard !segments.isEmpty else { return true }
+        return segments.allSatisfy { dominantLanguageCode(of: $0)?.hasPrefix(targetCode) == true }
+    }
+
+    private static func strippingLanguageNeutralTechnicalSpans(from text: String) -> String {
+        languageNeutralTechnicalPatterns.reduce(text) { current, pattern in
+            current.replacingOccurrences(
+                of: pattern,
+                with: " ",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+    }
+
+    private static func hasLanguageBearingText(_ text: String) -> Bool {
+        let compact = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let singleTechnicalToken =
+            !compact.contains(where: \.isWhitespace)
+            && (compact.contains(where: \.isNumber) || compact.contains("/") || compact.contains(".")
+                || compact.contains("_") || compact.contains("@") || compact.hasPrefix("-"))
+        if singleTechnicalToken { return false }
+
+        return text.split(whereSeparator: { !$0.isLetter }).contains { rawToken in
+            let token = String(rawToken)
+            let lowercased = token.lowercased()
+            guard !nonLinguisticTokens.contains(lowercased) else { return false }
+            let letters = token.filter(\.isLetter)
+            guard !letters.isEmpty else { return false }
+            let camelCaseIdentifier =
+                letters.contains(where: \.isLowercase)
+                && letters.dropFirst().contains(where: \.isUppercase)
+            return !camelCaseIdentifier
+        }
     }
 
     /// Output language as configured right now (Settings/menu-bar selection).
@@ -712,8 +819,8 @@ final class TranscriptPostProcessor {
     }
 
     /// Polish runs for every non-empty dictation when enabled and configured —
-    /// no SILENT duration/length gates (they read as "the AI didn't work";
-    /// see brain/lessons/sapowhisper-skip-gates-vs-explicit-output-language).
+    /// no SILENT duration/length gates because an invisible skip reads as a
+    /// broken provider.
     /// The one sanctioned gate is the user-chosen minimum duration
     /// (`PolishMinimumDuration`, default Always), applied to live dictations
     /// only. Mirrors the exact gating of `process()` so the overlay countdown

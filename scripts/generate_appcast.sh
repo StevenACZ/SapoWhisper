@@ -20,6 +20,10 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 65
 fi
 
+INFO_PLIST="$APP_PATH/Contents/Info.plist"
+RELEASE_IDENTITY="$(scripts/verify_release_inputs.sh --app "$APP_PATH")"
+IFS=$'\t' read -r VERSION BUILD <<<"$RELEASE_IDENTITY"
+
 SPARKLE_BIN="$(ls -d build/*/SourcePackages/artifacts/sparkle/Sparkle/bin 2>/dev/null | head -1)"
 if [[ -z "$SPARKLE_BIN" ]]; then
   echo "Sparkle tools not found under build/*/SourcePackages." >&2
@@ -27,9 +31,6 @@ if [[ -z "$SPARKLE_BIN" ]]; then
   exit 69
 fi
 
-INFO_PLIST="$APP_PATH/Contents/Info.plist"
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
-BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
 MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$INFO_PLIST")"
 
 ZIP_NAME="SapoWhisper-$VERSION.zip"
@@ -43,7 +44,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Verifying stapled app"
-codesign --verify --deep --strict "$APP_PATH"
+scripts/verify_release_app.sh "$APP_PATH" "Developer ID Application"
 xcrun stapler validate "$APP_PATH"
 
 echo "==> Zipping $APP_PATH -> $ZIP_PATH"
@@ -60,8 +61,9 @@ fi
 echo "==> Verifying archived app"
 ditto -x -k "$ZIP_PATH" "$VALIDATION_DIR"
 ARCHIVED_APP="$VALIDATION_DIR/$(basename "$APP_PATH")"
-codesign --verify --deep --strict "$ARCHIVED_APP"
+scripts/verify_release_app.sh "$ARCHIVED_APP" "Developer ID Application"
 xcrun stapler validate "$ARCHIVED_APP"
+scripts/verify_release_inputs.sh --app "$ARCHIVED_APP" >/dev/null
 
 echo "==> Signing update (EdDSA key from the login Keychain)"
 SIGNATURE_ATTRS="$("$SPARKLE_BIN/sign_update" "$ZIP_PATH")"

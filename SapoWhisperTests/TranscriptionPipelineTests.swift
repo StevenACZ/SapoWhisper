@@ -107,7 +107,7 @@ final class TranscriptionPipelineTests: XCTestCase {
     private let audioURL = URL(fileURLWithPath: "/tmp/pipeline-test.wav")
 
     private func makeRequest(sessionID: UInt64 = 7) -> TranscriptionPipeline.Request {
-        TranscriptionPipeline.Request(
+        var request = TranscriptionPipeline.Request(
             sessionID: sessionID,
             engine: .deepgram,
             engineName: "Deepgram Flux",
@@ -117,6 +117,8 @@ final class TranscriptionPipelineTests: XCTestCase {
             logger: SapoLog.flux,
             perf: nil
         )
+        request.discardSilentCaptureOnTerminalFailure = true
+        return request
     }
 
     private func makeOutput(transcript: String = "hola mundo desde el test") -> TranscriptionPipeline.EngineOutput {
@@ -208,16 +210,27 @@ final class TranscriptionPipelineTests: XCTestCase {
         let host = HostSpy()
         host.sessionLooksSilent = true
         let pipeline = TranscriptionPipeline(host: host)
+        let terminalAudio = FileManager.default.temporaryDirectory
+            .appendingPathComponent("silent-terminal-\(UUID().uuidString).wav")
+        FileManager.default.createFile(atPath: terminalAudio.path, contents: Data([0, 1, 2]))
+        ActiveRecordingMarker.mark(terminalAudio)
+        let marker = ActiveRecordingMarker.markerURL(for: terminalAudio)
+        defer {
+            try? FileManager.default.removeItem(at: terminalAudio)
+            try? FileManager.default.removeItem(at: marker)
+        }
 
         await pipeline.run(makeRequest()) {
             throw TranscriptionFailure(kind: .emptyTranscription, engine: "Deepgram")
         } captureResultOnFailure: {
-            (self.audioURL, 3.0)
+            (terminalAudio, 3.0)
         }
 
         XCTAssertEqual(host.presentedFailures.count, 1)
         XCTAssertEqual(host.presentedFailures.first?.kind, .emptyTranscription)
         XCTAssertTrue(host.failedPersists.isEmpty, "silence sessions must not create failed history rows")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: terminalAudio.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
 
     func testSilentSessionStillPersistsNonEmptyFailures() async {
@@ -232,6 +245,33 @@ final class TranscriptionPipelineTests: XCTestCase {
         }
 
         XCTAssertEqual(host.failedPersists.count, 1, "only empty-transcription failures ride the silence rule")
+    }
+
+    func testBatchSilentInsertWithoutHistoryOwnershipPreservesCapture() async {
+        let host = HostSpy()
+        host.sessionLooksSilent = true
+        let pipeline = TranscriptionPipeline(host: host)
+        let batchAudio = FileManager.default.temporaryDirectory
+            .appendingPathComponent("silent-batch-\(UUID().uuidString).wav")
+        FileManager.default.createFile(atPath: batchAudio.path, contents: Data([0, 1, 2]))
+        ActiveRecordingMarker.mark(batchAudio)
+        let marker = ActiveRecordingMarker.markerURL(for: batchAudio)
+        defer {
+            try? FileManager.default.removeItem(at: batchAudio)
+            try? FileManager.default.removeItem(at: marker)
+        }
+        var request = makeRequest()
+        request.discardSilentCaptureOnTerminalFailure = false
+
+        await pipeline.run(request) {
+            throw TranscriptionFailure(kind: .emptyTranscription, engine: "Deepgram")
+        } captureResultOnFailure: {
+            (batchAudio, 3.0)
+        }
+
+        XCTAssertTrue(host.failedPersists.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: batchAudio.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
     }
 
     // MARK: - Session staleness (C2)
@@ -377,11 +417,20 @@ final class TranscriptionPipelineTests: XCTestCase {
         let host = HostSpy()
         host.sessionLooksSilent = true
         let pipeline = TranscriptionPipeline(host: host)
+        let pendingAudio = FileManager.default.temporaryDirectory
+            .appendingPathComponent("silent-pending-\(UUID().uuidString).wav")
+        FileManager.default.createFile(atPath: pendingAudio.path, contents: Data([0, 1, 2]))
+        ActiveRecordingMarker.mark(pendingAudio)
+        let marker = ActiveRecordingMarker.markerURL(for: pendingAudio)
+        defer {
+            try? FileManager.default.removeItem(at: pendingAudio)
+            try? FileManager.default.removeItem(at: marker)
+        }
 
         await pipeline.run(makePendingRequest(historyId: 77)) {
             throw TranscriptionFailure(kind: .emptyTranscription, engine: "Deepgram")
         } captureResultOnFailure: {
-            (self.audioURL, 3.0)
+            (pendingAudio, 3.0)
         }
 
         XCTAssertEqual(
@@ -389,6 +438,8 @@ final class TranscriptionPipelineTests: XCTestCase {
             "a pre-persisted row must always resolve — even under the local-silence rule"
         )
         XCTAssertEqual(host.failedPersists.first?.target, .finalizePending(historyId: 77))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pendingAudio.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
     }
 
     func testEngineNameOverrideReachesCompletedPersist() async {

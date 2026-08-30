@@ -8,7 +8,8 @@ import Foundation
 import os
 
 /// Sidecar `<recording>.wav.active` files identifying which temp WAV belongs
-/// to a live capture and which process owns it.
+/// to a live capture or a sealed streaming take not yet owned by History, and
+/// which process owns it.
 ///
 /// The launch orphan recovery used to wait 60 s of file age before adopting a
 /// WAV, so a crash followed by an immediate relaunch left the dictation
@@ -23,14 +24,17 @@ nonisolated enum ActiveRecordingMarker {
         recordingURL.appendingPathExtension(markerExtension)
     }
 
-    /// Writes the marker for a capture that just opened its WAV.
+    /// Writes the marker for a capture that just opened its WAV. Streaming
+    /// captures retain it through provider finalization and AI polish; History
+    /// persistence clears it only after a row safely references the audio.
     static func mark(_ recordingURL: URL) {
         let pid = "\(ProcessInfo.processInfo.processIdentifier)"
         do {
             try pid.write(to: markerURL(for: recordingURL), atomically: true, encoding: .utf8)
         } catch {
+            let detail = TranscriptionFailure.diagnosticDetail(for: error)
             SapoLog.recording.warning(
-                "Active-recording marker write failed error=\(error.localizedDescription, privacy: .public)"
+                "Active-recording marker write failed error=\(detail, privacy: .public)"
             )
         }
     }
@@ -47,7 +51,7 @@ nonisolated enum ActiveRecordingMarker {
         guard let contents = try? String(contentsOf: markerURL, encoding: .utf8),
             let pid = pid_t(contents.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return false }
-        guard pid > 0, pid != ProcessInfo.processInfo.processIdentifier else { return false }
+        guard pid > 0 else { return false }
         return kill(pid, 0) == 0 || errno == EPERM
     }
 

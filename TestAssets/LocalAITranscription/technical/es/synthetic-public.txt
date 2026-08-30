@@ -1,0 +1,13 @@
+Bueno, eh, esta es una prueba pública y sintética de SapoWhisper en español, con pausas, repeticiones y algunas muletillas. La idea es revisar si el Local AI Server, o sea el Local AI Server (NVIDIA), reconoce vocabulario técnico antes de pasar por AI polish.
+
+Primero aparecen archivos y comandos frecuentes: .env, .md, .gitignore, README.md, CHANGELOG, AGENTS.md y CLAUDE.md. Después se abre GitHub, se revisa la branch, se hace git commit, se hace git push, se prepara un pull request, se mira el PR, se revisa el merge y se espera que el CI check pase sin errores.
+
+Ahora siguen herramientas de agentes y modelos. Codex, Claude Code, Hermes y Kimi V2 revisan un prompt, depuran la CLI y comparan resultados. A veces aparecen commit, push o merge por separado, y el texto final debe mantener esas palabras sin traducirlas ni cambiarlas.
+
+En los motores de transcripción, eh, se comparan WhisperKit, Deepgram batch con Nova-3, ElevenLabs batch con Scribe v2 y el Local AI Server. Si Deepgram o ElevenLabs escuchan una palabra rara, la corrección debe conservar la forma canónica guardada.
+
+Para desarrollo de aplicaciones aparecen Xcode, Swift, SwiftUI, macOS, App Store Connect y TestFlight. También se mencionan Android Studio, Flutter y Vue 3 al hablar de interfaces, builds y pruebas rápidas.
+
+Para infraestructura, este, aparecen Hetzner, VPS, Docker, Nginx, PostgreSQL, Redis, Cloudflare y WireGuard. También se nombran Jellyfin y qBittorrent, y esos nombres deben escribirse de forma exacta.
+
+Finalmente, SQLite, Keychain, UserDefaults, WebSocket, REST API, JSON y UUID deben mantenerse bien escritos. O sea, esta locución sintética con muletillas permite medir si el motor reconoce español sin exponer la voz de ninguna persona.

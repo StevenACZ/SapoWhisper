@@ -50,6 +50,22 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertFalse(prompt.contains("VeryLongTechnicalTerm79WithPadding"))
     }
 
+    func testInitialPromptTextBenchmarkParityFixture() {
+        let manager = makeManager()
+        manager.addKeyterm("AlphaTool")
+        manager.addKeyterm("alphatool")
+        manager.addKeyterm("BetaCLI")
+        manager.addReplacement(from: "heard beta", to: "BetaCLI")
+        manager.addReplacement(from: "heard gamma", to: "GammaAPI")
+
+        XCTAssertEqual(manager.initialPromptText(), "Glossary: AlphaTool, BetaCLI, GammaAPI.")
+        XCTAssertEqual(manager.initialPromptText(maxLength: 24), "Glossary: AlphaTool.")
+
+        manager.setIncludeReplacementTargetsInRecognitionHints(false)
+
+        XCTAssertEqual(manager.initialPromptText(), "Glossary: AlphaTool, BetaCLI.")
+    }
+
     func testInitialPromptTextEmptyWithoutVocabulary() {
         XCTAssertEqual(makeManager().initialPromptText(), "")
     }
@@ -302,6 +318,36 @@ final class VocabularyManagerTests: XCTestCase {
         XCTAssertEqual(
             output,
             "Open SapoWhisper, update CLAUDE.md, then read AGENTS.md with Claude Code, Deepgram, ElevenLabs batch, Jellyfin, Hetzner, and git push."
+        )
+    }
+
+    func testRecognitionCorrectionsHandleChangelogAndAgentsSpokenForms() {
+        let manager = makeManager()
+        manager.addKeyterm("CHANGELOG")
+        manager.addKeyterm("AGENTS.md")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(
+                to: "revisa changelov y AGENTS punto eme de"
+            ),
+            "revisa CHANGELOG y AGENTS.md"
+        )
+        XCTAssertEqual(
+            manager.recognitionKeytermPayload(maxCount: 20, maxLength: 200).terms,
+            ["CHANGELOG", "AGENTS.md"]
+        )
+    }
+
+    func testRecognitionCorrectionsHandlePersonalGitPhrasesWithoutSeparateGitTerm() {
+        let manager = makeManager()
+        manager.addKeyterm("git commit")
+        manager.addKeyterm("git push")
+
+        XCTAssertEqual(
+            manager.applyingRecognitionCorrections(
+                to: "ejecuta HIIT con meat y HIIT push; luego heat con meat y heat push"
+            ),
+            "ejecuta git commit y git push; luego git commit y git push"
         )
     }
 

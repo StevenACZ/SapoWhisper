@@ -139,6 +139,8 @@
 "config.space_used" = "Espacio usado: %@";
 "config.models_download_auto" = "Los modelos se descargan automáticamente la primera vez";
 "config.mlx_vocabulary_hint" = "Tu vocabulario guía al modelo local mientras transcribe, así tus términos salen bien escritos.";
+"config.mlx_tiers_hint" = "Large V3 Turbo es la opción predeterminada de calidad. Su versión de 4 bits usa mucho menos disco y memoria, pero su calidad de transcripción no está medida.";
+"model.quality_unmeasured" = "Calidad no medida";
 "config.unload_after_idle" = "Liberar modelo tras inactividad";
 "config.unload_never" = "Mantener cargado";
 "config.unload_minutes" = "%@ min";
@@ -181,7 +183,7 @@
 "ai.polish.mode_normal_help" = "Limpia muletillas, repeticiones y errores del dictado manteniendo todas tus frases, tono y orden.";
 "ai.polish.mode_compact" = "Compacto";
 "ai.polish.mode_compact_help" = "Extrae las ideas principales y secundarias con todas tus instrucciones, números y nombres, y reescribe el dictado en el texto más corto posible (típicamente 70–90% menos). Ideal para hablarle a una IA gastando menos tokens.";
-"ai.polish.mode_compact_hint" = "Recomendado para Compacto: OpenRouter · qwen/qwen3.5-flash-02-23 con razonamiento desactivado (el mejor balance fidelidad/velocidad/precio en pruebas reales).";
+"ai.polish.mode_compact_hint" = "Compacto y traducción son las rutas más exigentes. Prueba el candidato elegido antes de usarlo para texto importante.";
 "ai.polish.min_duration" = "Activar desde";
 "ai.polish.min_duration_desc" = "Dictados más cortos se pegan tal cual, sin IA — un audio de 5 segundos no necesita pulido. Aplica a Normal y Compacto; mejorar desde el historial siempre funciona.";
 "ai.polish.min_duration_always" = "Siempre";
@@ -193,15 +195,35 @@
 "ai.polish.reasoning_low" = "Bajo";
 "ai.polish.reasoning_medium" = "Medio";
 "ai.polish.reasoning_high" = "Alto";
+"ai.polish.reasoning_minimum_note" = "Este modelo no puede correr sin razonamiento; Low es el mínimo.";
+"ai.polish.reasoning_benchmarked_off_note" = "Evaluado con razonamiento apagado.";
 "ai.provider.section" = "Proveedor";
 "ai.provider.endpoint" = "Endpoint";
 "ai.provider.endpoint_local_server" = "Servidor local";
 "ai.provider.endpoint_custom" = "Personalizado";
 "ai.provider.custom_url_placeholder" = "http://localhost:11434/v1";
 "ai.provider.base_url" = "URL base";
-"ai.provider.base_url_hint" = "Usa la URL base OpenAI-compatible; SapoWhisper agrega /chat/completions.";
+"ai.provider.base_url_hint" = "Usa la URL base OpenAI-compatible; SapoWhisper agrega /chat/completions. Los tokens Bearer requieren HTTPS excepto en esta Mac.";
 "ai.provider.model" = "Modelo";
-"ai.provider.model_placeholder" = "openai/gpt-5.4-nano";
+"ai.provider.model_placeholder" = "Elige o escribe un ID de modelo";
+"ai.provider.model_recommendations" = "Modelos candidatos";
+"ai.provider.model_suggestions_help" = "Puntos de partida históricos; pruébalos antes de usarlos";
+"ai.provider.model_ranking_header" = "Candidatos de la prueba interna de agosto de 2026";
+"ai.provider.model_tier_bestTested" = "Candidato para traducción";
+"ai.provider.model_tier_bestValue" = "Candidato para Compacto";
+"ai.provider.model_tier_sameLanguageValue" = "Candidato · mismo idioma";
+"ai.provider.model_tier_fastBudget" = "Candidato rápido";
+"ai.provider.model_tier_economy" = "Candidato experimental";
+"ai.provider.model_tier_notRecommended" = "No recomendado";
+"ai.provider.model_detail_opus5" = "Las pruebas internas históricas favorecieron este candidato para traducción y reescrituras difíciles. Falta calificar entradas largas; pruébalo antes de confiar en él.";
+"ai.provider.model_detail_sol" = "Candidato preferido para Compacto. Falta calificar traducción y entradas largas; pruébalo antes de confiar en él.";
+"ai.provider.model_detail_qwen38" = "Candidato para el mismo idioma. Traducción no está calificada.";
+"ai.provider.model_detail_nano" = "Candidato rápido. Casos difíciles de Compacto y traducción pueden conservar el texto original.";
+"ai.provider.model_detail_qwen35" = "Candidato experimental con mayor riesgo de fidelidad; evítalo para instrucciones importantes o traducción.";
+"ai.provider.model_detail_failed_gates" = "No recomendado según la prueba interna histórica.";
+"ai.provider.model_local_experimental" = "Los modelos locales de mejora por IA son experimentales; ningún modelo local pequeño calificó en la prueba interna histórica.";
+"ai.provider.model_risk_note" = "Los modelos pueden perder contenido, números o negaciones. La prueba histórica es orientativa, no un ranking público reproducible; usa el probador integrado.";
+"ai.provider.model_untested_note" = "Modelo sin probar. La salida se pega tal cual; usa \"Probar el polish\" antes de confiar en él.";
 "ai.provider.api_key" = "API key";
 "ai.provider.api_key_optional" = "API key (opcional)";
 "ai.provider.api_key_placeholder" = "Pega tu API key";
@@ -217,11 +239,12 @@
 "ai.provider.summary_edit" = "Editar";
 "ai.provider.summary_done" = "Hecho";
 "ai.provider.summary_key_help" = "Proveedor de mejora por IA listo.";
-"ai.provider.model_suggestions_help" = "Modelos sugeridos";
 "ai.provider.model_custom_hint" = "Acepta cualquier ID de modelo de openrouter.ai/models (ej. qwen/qwen3-32b).";
 "ai.polish.fidelity_max" = "Fidelidad al máximo";
 "ai.provider.error_not_configured" = "La mejora por IA no está configurada (faltan datos del proveedor).";
 "ai.provider.error_empty" = "El proveedor de IA devolvió una respuesta vacía.";
+"ai.provider.error_invalid_structured" = "El proveedor de IA devolvió una respuesta estructurada no válida.";
+"ai.provider.error_translation_failed" = "El proveedor de IA no devolvió la traducción solicitada.";
 "ai.provider.error_truncated" = "La respuesta de la IA se cortó antes de terminar.";
 "error.mlx.model_load" = "Error cargando modelo MLX: %@";
 "error.mlx.transcription" = "Error de transcripción MLX: %@";
@@ -263,6 +286,8 @@
 "model.speed.very_fast" = "Muy rápido";
 "model.speed.fast" = "Rápido";
 "model.speed.moderate" = "Moderado";
+"model.tier_quality_default" = "Calidad predeterminada";
+"model.tier_lower_memory" = "Menor memoria";
 "model.delete_tooltip" = "Borrar modelo para liberar espacio";
 "model.download_tooltip" = "Descargar modelo";
 "model.pause_tooltip" = "Pausar descarga";
@@ -271,7 +296,6 @@
 "model.retry_tooltip" = "Reintentar descarga";
 "model.paused_label" = "En pausa";
 "model.download_failed" = "Descarga fallida: %@";
-"badge.recommended" = "Recomendado";
 
 /* Settings Tabs */
 "tab.general" = "General";

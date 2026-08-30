@@ -129,12 +129,16 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "live marker must stay")
     }
 
-    func testMarkClearRoundTrip() throws {
+    func testCurrentProcessMarkerProtectsFreshWAVUntilCleared() throws {
         let wav = tempDir.appendingPathComponent("recording_roundtrip.wav")
         try writeWAV(to: wav, seconds: 1, staleHeader: false)
 
         ActiveRecordingMarker.mark(wav)
         let marker = ActiveRecordingMarker.markerURL(for: wav)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertTrue(ActiveRecordingMarker.ownerIsAlive(markerURL: marker))
+        XCTAssertTrue(ActiveRecordingMarker.abandonedRecordings(in: tempDir).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wav.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
 
         ActiveRecordingMarker.clear(wav)
@@ -219,6 +223,27 @@ final class OrphanAudioRecoveryTests: XCTestCase {
             FileManager.default.fileExists(atPath: abandoned.path),
             "an unreferenced stale WAV must still be swept"
         )
+    }
+
+    func testStaleSweepKeepsMarkedStreamingAudioAndSidecar() throws {
+        let sweepDir = tempDir.appendingPathComponent("temp-sweep-marked", isDirectory: true)
+        try FileManager.default.createDirectory(at: sweepDir, withIntermediateDirectories: true)
+
+        let marked = sweepDir.appendingPathComponent("flux_recording_marked.wav")
+        try writeWAV(to: marked, seconds: 5, staleHeader: false)
+        let marker = ActiveRecordingMarker.markerURL(for: marked)
+        try "1".write(to: marker, atomically: true, encoding: .utf8)
+        try backdate(marked, by: 48 * 60 * 60)
+        try backdate(marker, by: 48 * 60 * 60)
+
+        let removed = TemporaryAudioStorage.sweepStaleFiles(
+            in: sweepDir,
+            referencedNames: []
+        )
+
+        XCTAssertEqual(removed, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marked.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
     }
 
     /// A truncated reference scan is indistinguishable from "nothing is

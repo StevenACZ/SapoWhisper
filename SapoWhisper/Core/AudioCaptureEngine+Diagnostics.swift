@@ -99,7 +99,7 @@ nonisolated extension AudioCaptureEngine {
         captureStateLock.lock()
         failedWriteCount += 1
         if firstWriteError == nil {
-            firstWriteError = error.localizedDescription
+            firstWriteError = LogSanitizer.errorDiagnostic(error, state: "audio-write")
         }
         captureStateLock.unlock()
     }

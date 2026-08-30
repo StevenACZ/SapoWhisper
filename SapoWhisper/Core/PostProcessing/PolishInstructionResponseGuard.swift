@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct PolishInstructionResponseVerdict {
+nonisolated struct PolishInstructionResponseVerdict {
     let isAcceptable: Bool
     let retryInstruction: String?
 
@@ -15,32 +15,16 @@ struct PolishInstructionResponseVerdict {
     }
 }
 
-/// Detects the failure mode where a chat model answers a dictated request
-/// instead of polishing that request as text. This is intentionally narrow and
-/// retry-oriented: prompts remain the main defense, while this guard catches
-/// obvious assistant/refusal/math-answer drift before it gets pasted.
-enum PolishInstructionResponseGuard {
-    /// Everyday dictation legitimately contains "no puedo ir a la reunión" or
-    /// "claro, mándame el reporte", and a faithful polish keeps those words.
-    /// A response phrase therefore only signals drift when the model
-    /// INTRODUCED it — it appears in the polished text but nowhere in the raw
-    /// transcript. A true refusal is always the model's own wording, so this
-    /// keeps every real rejection while releasing normal speech (which
-    /// previously burned the whole retry budget and shipped the raw text).
-    ///
-    /// `translationExpected` narrows the check to self-reference markers only:
-    /// a translation rewrites every phrase into the target language, so any
-    /// language-bound pattern would read as "introduced". The cue-preservation
-    /// check stays off for the same reason ("genera" → "generates" matches no
-    /// EN pattern).
-    ///
-    /// `compactionExpected` disables ONLY the cue-preservation check: a
-    /// compact rewrite legitimately turns imperative cues into requirement
-    /// phrasing ("elimina el motor" → "Eliminar el motor"), so demanding the
-    /// literal cue words rejected every good compaction 3/3 attempts and
-    /// shipped raw (2026-07-05). The introduced-phrase checks stay on — a
-    /// model that answers instead of compacting still writes its own
-    /// refusal/answer wording.
+/// Rejects only the unambiguous failure mode where the model answered or acted
+/// on the dictation instead of rewriting it: assistant openers, first-person
+/// completion reports, sign-offs, refusals/apologies, and a Q&A-shaped reply to
+/// a dictated question.
+/// A marker counts only when the model INTRODUCED it — dictation legitimately
+/// contains "claro" or "ya probé", and a faithful polish keeps those words.
+/// "Introduced" is decided per semantic marker family over its Spanish and
+/// English equivalents, so translating "claro, hazlo" into "Of course, do it"
+/// passes without allowing a different assistant opener such as "Here is".
+nonisolated enum PolishInstructionResponseGuard {
     static func evaluate(
         raw: String,
         polished: String,
@@ -49,52 +33,25 @@ enum PolishInstructionResponseGuard {
     ) -> PolishInstructionResponseVerdict {
         let rawNormalized = normalize(raw)
         let polishedNormalized = normalize(polished)
+        let rawLiteral = normalize(raw, preserveDiacritics: true)
+        let polishedLiteral = normalize(polished, preserveDiacritics: true)
 
         guard !rawNormalized.isEmpty, !polishedNormalized.isEmpty else {
             return acceptable()
         }
 
-        let polishedPreservesRequestCue =
-            containsAnyPattern(assistantDirectedCuePatterns, in: polishedNormalized)
-            || containsAnyPattern(genericRequestCuePatterns, in: polishedNormalized)
-
-        if introducedMatch(of: selfReferencePatterns, raw: rawNormalized, polished: polishedNormalized) {
-            return rejected()
-        }
-
-        // The math-answer format ("5 + 5 = 10") is language-independent, so
-        // this check stays on for translations too.
-        if looksLikeMathAnswer(raw: rawNormalized, polished: polishedNormalized),
-            introducedMatch(of: mathAnswerPatterns, raw: rawNormalized, polished: polishedNormalized),
-            !polishedPreservesRequestCue
-        {
-            return rejected()
-        }
-
-        guard !translationExpected else { return acceptable() }
-
-        if introducedMatch(of: capabilityRefusalPatterns, raw: rawNormalized, polished: polishedNormalized),
-            !polishedPreservesRequestCue
-        {
-            return rejected()
-        }
-
-        // Weak phrases ("no puedo", "claro,", "here's") open normal sentences
-        // too, so beyond being introduced they must also sit where an
-        // assistant reply starts: the leading characters of the output.
-        if introducedMatch(
-            of: responseOpenerPatterns,
+        for family in markerFamilies
+        where introducesMarker(
+            family,
             raw: rawNormalized,
             polished: polishedNormalized,
-            withinLeading: 30
-        ), !polishedPreservesRequestCue {
+            rawLiteral: rawLiteral,
+            polishedLiteral: polishedLiteral
+        ) {
             return rejected()
         }
 
-        guard !compactionExpected else { return acceptable() }
-
-        let rawHasAssistantDirectedCue = containsAnyPattern(assistantDirectedCuePatterns, in: rawNormalized)
-        if rawHasAssistantDirectedCue, !polishedPreservesRequestCue {
+        if looksLikeReplyToQuestion(raw: rawNormalized, polished: polishedNormalized) {
             return rejected()
         }
 
@@ -114,114 +71,242 @@ enum PolishInstructionResponseGuard {
         )
     }
 
-    private static let assistantDirectedCuePatterns: [String] = [
-        #"\b(dime|cuentame|explicame|explica|respondeme|responde|investigame|investiga|buscame|busca|consulta|analizame|analiza|revisame|revisa|haz|crea|genera|calcula|corre|ejecuta|abre|instala|soluciona|arregla|ayudame|dame|preparame|escribe|redacta|que es|cuanto es)\b"#,
-        #"\b(tell me|explain|answer|research|search|look up|analyze|analyse|review|run|execute|open|install|fix|create|generate|calculate|what is|how much is|how many|write|draft|summarize|summarise)\b"#,
-    ]
-
-    private static let genericRequestCuePatterns: [String] = [
-        #"\b(necesito que|quiero que|puedes|podrias|tienes que|por favor|please|can you|could you|i need you to|i want you to)\b"#
-    ]
-
-    /// Nobody dictates these about themselves; they stay active even for
-    /// translations, where every other phrase legitimately changes language.
-    private static let selfReferencePatterns: [String] = [
-        #"\b(como una ia|como ia|as an ai)\b"#
-    ]
-
-    /// Capability-refusal phrasing. A person can dictate these ("no tengo
-    /// acceso al server"), so they only reject when the model introduced them.
-    private static let capabilityRefusalPatterns: [String] = [
-        #"\b(no tengo acceso|no tengo conexion|no cuento con conexion|no puedo acceder|no puedo navegar|no puedo buscar|no puedo ejecutar|no puedo correr|i do not have access|i don'?t have access|cannot browse|can'?t browse|cannot access|unable to access|i am unable to|i'?m unable to)\b"#
-    ]
-
-    /// Assistant reply openers that are also common in everyday speech;
-    /// checked introduced-only AND anchored to the start of the output.
-    private static let responseOpenerPatterns: [String] = [
-        #"\b(no puedo|no encontre|no pude encontrar|i cannot|i can'?t)\b"#,
-        #"\b(aqui tienes|here'?s|here is|por supuesto[,!]|claro[,!]|la respuesta es|the answer is|el resultado es|the result is)\b"#,
-    ]
-
-    private static func looksLikeMathAnswer(raw: String, polished: String) -> Bool {
-        let rawMentionsMath =
-            containsAnyPattern(mathQuestionPatterns, in: raw)
-            || containsAnyPattern(mathExpressionPatterns, in: raw)
-        guard rawMentionsMath else { return false }
-
-        return containsAnyPattern(mathAnswerPatterns, in: polished)
+    private struct MarkerFamily {
+        let foldedPatterns: [String]
+        var literalPatterns: [String] = []
+        var leadingLimit: Int? = nil
     }
 
-    private static let mathQuestionPatterns: [String] = [
-        #"\b(cuanto es|calcula|dime)\b.{0,40}\b(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\b"#,
-        #"\b(what is|calculate|tell me)\b.{0,40}\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b"#,
+    private static let markerFamilies: [MarkerFamily] =
+        openerPatternGroups.map { MarkerFamily(foldedPatterns: $0, leadingLimit: 40) }
+        + completionVerbForms.map(completionReportFamily)
+        + [
+            MarkerFamily(foldedPatterns: bareCompletionPatterns),
+            MarkerFamily(foldedPatterns: asRequestedPatterns),
+            MarkerFamily(foldedPatterns: signOffPatterns),
+        ]
+        + refusalPatternGroups.map { MarkerFamily(foldedPatterns: $0) }
+
+    /// Assistant acknowledgments/openers. Common in speech too, so they must be
+    /// introduced AND sit where an assistant reply starts.
+    private static let openerPatternGroups: [[String]] = [
+        [#"\b(claro|por supuesto|sure|certainly|of course)\b"#],
+        [#"\b(aqui tienes|aqui esta|aca tienes|aca esta|here is|here'?s)\b"#],
+        [#"\b(entendido|got it|understood)\b"#],
+        [#"\b(con gusto|encantado|i'?d be happy to|i would be happy to)\b"#],
     ]
 
-    private static let mathExpressionPatterns: [String] = [
-        #"\b(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\s*(mas|menos|por|entre|\+|-|x|\*)\s*(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\b"#,
-        #"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s*(plus|minus|times|divided by|\+|-|x|\*)\s*(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b"#,
+    private struct CompletionVerbForms {
+        let spanishPerfect: String
+        let spanishPast: String
+        let englishPerfect: String
+        let englishPast: String
+    }
+
+    private static let completionVerbForms: [CompletionVerbForms] = [
+        CompletionVerbForms(
+            spanishPerfect: "completado|terminado|hecho", spanishPast: "completé|terminé|hice",
+            englishPerfect: "completed|finished|done", englishPast: "completed|finished"),
+        CompletionVerbForms(
+            spanishPerfect: "probado|testeado", spanishPast: "probé|testeé",
+            englishPerfect: "tested", englishPast: "tested"),
+        CompletionVerbForms(
+            spanishPerfect: "ejecutado|corrido", spanishPast: "ejecuté|corrí",
+            englishPerfect: "run", englishPast: "ran"),
+        CompletionVerbForms(
+            spanishPerfect: "revisado", spanishPast: "revisé",
+            englishPerfect: "reviewed", englishPast: "reviewed"),
+        CompletionVerbForms(
+            spanishPerfect: "analizado", spanishPast: "analicé",
+            englishPerfect: "analyzed|analysed", englishPast: "analyzed|analysed"),
+        CompletionVerbForms(
+            spanishPerfect: "comprobado|verificado", spanishPast: "comprobé|verifiqué",
+            englishPerfect: "checked|verified", englishPast: "checked|verified"),
+        CompletionVerbForms(
+            spanishPerfect: "creado", spanishPast: "creé",
+            englishPerfect: "created", englishPast: "created"),
+        CompletionVerbForms(
+            spanishPerfect: "generado", spanishPast: "generé",
+            englishPerfect: "generated", englishPast: "generated"),
+        CompletionVerbForms(
+            spanishPerfect: "agregado", spanishPast: "agregué",
+            englishPerfect: "added", englishPast: "added"),
+        CompletionVerbForms(
+            spanishPerfect: "actualizado", spanishPast: "actualicé",
+            englishPerfect: "updated", englishPast: "updated"),
+        CompletionVerbForms(
+            spanishPerfect: "cambiado", spanishPast: "cambié",
+            englishPerfect: "changed", englishPast: "changed"),
+        CompletionVerbForms(
+            spanishPerfect: "eliminado|borrado|quitado", spanishPast: "eliminé|borré|quité",
+            englishPerfect: "deleted|removed", englishPast: "deleted|removed"),
+        CompletionVerbForms(
+            spanishPerfect: "movido", spanishPast: "moví",
+            englishPerfect: "moved", englishPast: "moved"),
+        CompletionVerbForms(
+            spanishPerfect: "renombrado", spanishPast: "renombré",
+            englishPerfect: "renamed", englishPast: "renamed"),
+        CompletionVerbForms(
+            spanishPerfect: "reemplazado", spanishPast: "reemplacé",
+            englishPerfect: "replaced", englishPast: "replaced"),
+        CompletionVerbForms(
+            spanishPerfect: "corregido|arreglado", spanishPast: "corregí|arreglé",
+            englishPerfect: "fixed|corrected", englishPast: "fixed|corrected"),
+        CompletionVerbForms(
+            spanishPerfect: "configurado", spanishPast: "configuré",
+            englishPerfect: "configured", englishPast: "configured"),
+        CompletionVerbForms(
+            spanishPerfect: "instalado", spanishPast: "instalé",
+            englishPerfect: "installed", englishPast: "installed"),
+        CompletionVerbForms(
+            spanishPerfect: "desplegado", spanishPast: "desplegué",
+            englishPerfect: "deployed", englishPast: "deployed"),
+        CompletionVerbForms(
+            spanishPerfect: "publicado", spanishPast: "publiqué",
+            englishPerfect: "published", englishPast: "published"),
+        CompletionVerbForms(
+            spanishPerfect: "subido", spanishPast: "subí",
+            englishPerfect: "uploaded", englishPast: "uploaded"),
+        CompletionVerbForms(
+            spanishPerfect: "guardado", spanishPast: "guardé",
+            englishPerfect: "saved", englishPast: "saved"),
+        CompletionVerbForms(
+            spanishPerfect: "copiado", spanishPast: "copié",
+            englishPerfect: "copied", englishPast: "copied"),
+        CompletionVerbForms(
+            spanishPerfect: "documentado", spanishPast: "documenté",
+            englishPerfect: "documented", englishPast: "documented"),
+        CompletionVerbForms(
+            spanishPerfect: "escrito|redactado", spanishPast: "escribí|redacté",
+            englishPerfect: "written|drafted", englishPast: "wrote|drafted"),
+        CompletionVerbForms(
+            spanishPerfect: "resumido", spanishPast: "resumí",
+            englishPerfect: "summarized|summarised", englishPast: "summarized|summarised"),
+        CompletionVerbForms(
+            spanishPerfect: "preparado", spanishPast: "preparé",
+            englishPerfect: "prepared", englishPast: "prepared"),
+        CompletionVerbForms(
+            spanishPerfect: "iniciado", spanishPast: "inicié",
+            englishPerfect: "started", englishPast: "started"),
+        CompletionVerbForms(
+            spanishPerfect: "detenido", spanishPast: "detuve",
+            englishPerfect: "stopped", englishPast: "stopped"),
+        CompletionVerbForms(
+            spanishPerfect: "reiniciado", spanishPast: "reinicié",
+            englishPerfect: "restarted", englishPast: "restarted"),
     ]
 
-    private static let mathAnswerPatterns: [String] = [
-        #"\b(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\s*(mas|menos|por|entre|\+|-|x|\*)\s*(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\s*(es|=)\s*-?\d+\b"#,
-        #"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s*(plus|minus|times|divided by|\+|-|x|\*)\s*(zero|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s*(is|equals|=)\s*-?\d+\b"#,
-        #"\b(la respuesta es|el resultado es|the answer is|the result is)\s*-?\d+\b"#,
+    private static func completionReportFamily(_ forms: CompletionVerbForms) -> MarkerFamily {
+        MarkerFamily(
+            foldedPatterns: [
+                #"\b(ya )?(he|hemos) (\#(forms.spanishPerfect))\b"#,
+                #"\bi(?: have| had|['’]ve) (\#(forms.englishPerfect))\b"#,
+                #"\bi (\#(forms.englishPast))\b"#,
+            ],
+            literalPatterns: [#"\b(ya )?(lo |la |los |las )?(\#(forms.spanishPast))\b"#]
+        )
+    }
+
+    private static let bareCompletionPatterns: [String] = [
+        #"^(done|finished|completed|ready|all done|all set|everything is ready|hecho|terminado|completado|listo|todo listo|todo esta listo|ya esta|ya esta (hecho|listo|terminado)|it['’]?s (done|finished|ready)|it is (done|finished|ready))[.!…]*$"#
     ]
 
-    /// True when some pattern matches `polished` with a concrete phrase that
-    /// does not appear in `raw` (both already normalized) — phrasing the model
-    /// introduced rather than preserved. The raw lookup ignores punctuation:
-    /// a polish legitimately adds commas/apostrophes to preserved speech
-    /// ("claro mandame" → "Claro, mándame") and that must not read as
-    /// introduced. `withinLeading` further requires the match to start inside
-    /// the first N characters.
-    private static func introducedMatch(
-        of patterns: [String],
+    private static let asRequestedPatterns: [String] = [
+        #"\b(como (me )?(lo )?(pediste|solicitaste|indicaste|habias pedido)|segun lo solicitado)\b"#,
+        #"\b(as|per) (you )?(requested|asked|instructed)\b"#,
+    ]
+
+    private static let signOffPatterns: [String] = [
+        #"\bespero que (esto |eso )?(te )?(sirva|ayude|funcione)\b"#,
+        #"\b(avisame|hazme saber) si (necesitas|quieres|deseas|hay algo)\b"#,
+        #"\b(let me know if|hope (this|that) helps|anything else i can)\b"#,
+    ]
+
+    /// Assistant refusals and apologies. Everyday speech says "no puedo ir" or
+    /// "I can't make it", so the refusal verb must carry an assistant-style
+    /// object and, as always, be introduced by the model.
+    private static let refusalPatternGroups: [[String]] =
+        [
+            [
+                #"\b(lo siento|mis disculpas)\b"#,
+                #"\bi['’]?m sorry\b"#,
+                #"\bi am sorry\b"#,
+                #"\bi apologi[sz]e\b"#,
+            ],
+            [
+                #"\b(as an ai|as a language model|como (una |un )?(ia|inteligencia artificial)|como modelo de lenguaje)\b"#
+            ],
+        ] + refusalActionGroups.map { refusalActionPatterns(spanish: $0.0, english: $0.1) }
+
+    private static let refusalActionGroups: [(String, String)] = [
+        ("ayudar|asistir", "help|assist"),
+        ("acceder", "access"),
+        ("proporcionar", "provide"),
+        ("responder", "answer"),
+        ("resumir", "summarize|summarise"),
+        ("buscar", "search"),
+        ("investigar", "research"),
+        ("realizar|ejecutar", "do that|do this|execute|run"),
+        ("generar", "generate"),
+        ("crear", "create"),
+        ("continuar", "continue"),
+        ("completar|cumplir", "complete|comply"),
+        ("procesar", "process"),
+        ("navegar", "browse"),
+        ("traducir", "translate"),
+    ]
+
+    private static func refusalActionPatterns(spanish: String, english: String) -> [String] {
+        [
+            #"\bno (puedo|podre|podria) (\#(spanish))\b"#,
+            #"\bno me es posible (\#(spanish))\b"#,
+            #"\bi (can['’]?t|cannot|can not) (\#(english))\b"#,
+            #"\bi['’]?m (unable|not able) to (\#(english))\b"#,
+            #"\bi am (unable|not able) to (\#(english))\b"#,
+        ]
+    }
+
+    /// Conservative Q&A shape: the source asks a question and the output opens
+    /// with a yes/no verdict followed by an explanation.
+    private static func looksLikeReplyToQuestion(raw: String, polished: String) -> Bool {
+        guard raw.hasSuffix("?") else { return false }
+        guard raw.range(of: #"^(si|no|yes)\b"#, options: .regularExpression) == nil else { return false }
+        guard polished.range(of: #"^(si|no|yes)\b\s*[,.:;-]"#, options: .regularExpression) != nil else {
+            return false
+        }
+        return polished.split(separator: " ").count >= 5
+    }
+
+    private static func introducesMarker(
+        _ family: MarkerFamily,
         raw: String,
         polished: String,
-        withinLeading leadingLimit: Int? = nil
+        rawLiteral: String,
+        polishedLiteral: String
     ) -> Bool {
-        var rawSearchable: String?
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            let fullRange = NSRange(polished.startIndex..<polished.endIndex, in: polished)
-            for match in regex.matches(in: polished, range: fullRange) {
-                guard let matchRange = Range(match.range, in: polished) else { continue }
-                if let leadingLimit {
-                    let offset = polished.distance(from: polished.startIndex, to: matchRange.lowerBound)
-                    guard offset < leadingLimit else { continue }
-                }
-                let phrase = searchableText(String(polished[matchRange]))
-                guard !phrase.isEmpty else { continue }
-                let haystack = rawSearchable ?? searchableText(raw)
-                rawSearchable = haystack
-                if !haystack.contains(phrase) { return true }
-            }
-        }
-        return false
+        let polishedMatches =
+            matches(family.foldedPatterns, in: polished, leadingLimit: family.leadingLimit)
+            || matches(family.literalPatterns, in: polishedLiteral, leadingLimit: family.leadingLimit)
+        let rawMatches =
+            matches(family.foldedPatterns, in: raw, leadingLimit: family.leadingLimit)
+            || matches(family.literalPatterns, in: rawLiteral, leadingLimit: family.leadingLimit)
+        return polishedMatches && !rawMatches
     }
 
-    /// Letters, digits, and single spaces only — the punctuation-insensitive
-    /// form used to check whether a matched phrase came from the transcript.
-    private static func searchableText(_ text: String) -> String {
-        String(
-            text.unicodeScalars.map { scalar -> Character in
-                if CharacterSet.alphanumerics.contains(scalar) { return Character(scalar) }
-                return " "
-            }
-        )
-        .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
-        .trimmingCharacters(in: .whitespaces)
-    }
-
-    private static func containsAnyPattern(_ patterns: [String], in text: String) -> Bool {
+    private static func matches(_ patterns: [String], in text: String, leadingLimit: Int?) -> Bool {
         patterns.contains { pattern in
-            text.range(of: pattern, options: .regularExpression) != nil
+            guard let range = text.range(of: pattern, options: .regularExpression) else { return false }
+            guard let leadingLimit else { return true }
+            return text.distance(from: text.startIndex, to: range.lowerBound) < leadingLimit
         }
     }
 
-    private static func normalize(_ text: String) -> String {
-        text
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    private static func normalize(_ text: String, preserveDiacritics: Bool = false) -> String {
+        let options: String.CompareOptions =
+            preserveDiacritics ? [.caseInsensitive] : [.diacriticInsensitive, .caseInsensitive]
+        return
+            text
+            .folding(options: options, locale: Locale(identifier: "en_US_POSIX"))
             .lowercased()
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
