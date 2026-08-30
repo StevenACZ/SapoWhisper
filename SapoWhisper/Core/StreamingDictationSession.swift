@@ -19,6 +19,7 @@ struct StreamingDictationResult {
     let duration: TimeInterval
     let language: String
     let diagnostics: RecordingCaptureDiagnostics
+    let transcriptionVariant: TranscriptionEngineVariant
 }
 
 @MainActor

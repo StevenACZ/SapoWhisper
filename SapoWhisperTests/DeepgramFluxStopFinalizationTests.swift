@@ -19,6 +19,11 @@ final class DeepgramFluxStopFinalizationTests: XCTestCase {
         XCTAssertFalse(DeepgramFluxLiveTranscriber.shouldFallBackForEmptyRealtimeTranscript("texto final"))
     }
 
+    func testFluxResultVariantsDistinguishLiveFromNovaFallback() {
+        XCTAssertEqual(DeepgramFluxLiveTranscriber.liveTranscriptionVariant, .deepgramFluxLive)
+        XCTAssertEqual(DeepgramFluxLiveTranscriber.fallbackTranscriptionVariant, .deepgramNova3)
+    }
+
     func testStaleEndOfTurnCannotFinalizeBeforeCorrectedTurnArrives() {
         var accumulator = DeepgramFluxTranscriptAccumulator()
         var gate = DeepgramFluxFinalizationGate()

@@ -129,12 +129,16 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "live marker must stay")
     }
 
-    func testMarkClearRoundTrip() throws {
+    func testCurrentProcessMarkerProtectsFreshWAVUntilCleared() throws {
         let wav = tempDir.appendingPathComponent("recording_roundtrip.wav")
         try writeWAV(to: wav, seconds: 1, staleHeader: false)
 
         ActiveRecordingMarker.mark(wav)
         let marker = ActiveRecordingMarker.markerURL(for: wav)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertTrue(ActiveRecordingMarker.ownerIsAlive(markerURL: marker))
+        XCTAssertTrue(ActiveRecordingMarker.abandonedRecordings(in: tempDir).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wav.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
 
         ActiveRecordingMarker.clear(wav)

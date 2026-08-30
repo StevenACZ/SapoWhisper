@@ -426,6 +426,8 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var requestedLanguage = "auto"
 
     nonisolated private static let engineName = "ElevenLabs"
+    nonisolated static let liveTranscriptionVariant = TranscriptionEngineVariant.elevenLabsScribeRealtime
+    nonisolated static let fallbackTranscriptionVariant = liveTranscriptionVariant.fileTranscriptionVariant
     private static let maxRealtimeKeyterms = ElevenLabsKeytermLimits.realtimeMaxCount
     private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
     nonisolated private static let sampleRate = 16000
@@ -620,7 +622,8 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
             language: requestedLanguage,
-            diagnostics: captureResult.diagnostics
+            diagnostics: captureResult.diagnostics,
+            transcriptionVariant: Self.liveTranscriptionVariant
         )
     }
 
@@ -657,7 +660,8 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
             language: requestedLanguage,
-            diagnostics: captureResult.diagnostics
+            diagnostics: captureResult.diagnostics,
+            transcriptionVariant: Self.fallbackTranscriptionVariant
         )
     }
 

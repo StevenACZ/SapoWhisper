@@ -51,7 +51,7 @@ nonisolated enum ActiveRecordingMarker {
         guard let contents = try? String(contentsOf: markerURL, encoding: .utf8),
             let pid = pid_t(contents.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return false }
-        guard pid > 0, pid != ProcessInfo.processInfo.processIdentifier else { return false }
+        guard pid > 0 else { return false }
         return kill(pid, 0) == 0 || errno == EPERM
     }
 

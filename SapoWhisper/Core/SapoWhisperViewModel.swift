@@ -28,6 +28,43 @@ enum CaptureStopInterruptionGate {
     }
 }
 
+enum BatchStopTerminalDisposition: Equatable {
+    case sleep
+    case terminate
+}
+
+@MainActor
+enum BatchStopTerminalRouter {
+    static func perform<Result>(
+        sealedResult: Result?,
+        disposition: BatchStopTerminalDisposition?,
+        onTerminal: @MainActor (Result?, BatchStopTerminalDisposition) -> Void,
+        onContinue: @MainActor (Result?) async -> Void
+    ) async {
+        if let disposition {
+            onTerminal(sealedResult, disposition)
+            return
+        }
+        await onContinue(sealedResult)
+    }
+}
+
+@MainActor
+enum CaptureStartCompletionGate {
+    static func perform(
+        start: @MainActor () async throws -> Void,
+        isSessionCurrent: @MainActor () -> Bool,
+        abortStarted: @MainActor @Sendable () -> Void
+    ) async throws -> Bool {
+        try await start()
+        guard !Task.isCancelled, isSessionCurrent() else {
+            abortStarted()
+            return false
+        }
+        return true
+    }
+}
+
 /// ViewModel principal que coordina toda la funcionalidad de la app
 @MainActor
 class SapoWhisperViewModel: ObservableObject {
@@ -140,6 +177,7 @@ class SapoWhisperViewModel: ObservableObject {
     private static let startHotkeyDebounce: TimeInterval = 0.35
     private var isStopPending = false
     private var stopTailTask: Task<Void, Never>?
+    private var pendingBatchStopTerminalDisposition: BatchStopTerminalDisposition?
     private var stopFeedbackPlayed = false
     private var startRecordingTask: Task<Void, Never>?
     private var selectedMLXModelLoadTask: Task<Void, Never>?
@@ -918,6 +956,11 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func canStartRecordingFromHotkey() -> Bool {
+        if startRecordingTask != nil {
+            SapoLog.hotkey.info("Hotkey ignored while a cancelled recording start is draining")
+            return false
+        }
+
         if let activeTranscriptionSessionID {
             SapoLog.hotkey.info(
                 "Hotkey ignored while transcription session=\(activeTranscriptionSessionID, privacy: .public) is active"
@@ -1160,7 +1203,8 @@ class SapoWhisperViewModel: ObservableObject {
                 playSound: playSound,
                 triggerTime: triggerTime,
                 prepare: { context.session.cancel() },
-                start: { try await context.session.start(microphone: mic, language: language) }
+                start: { try await context.session.start(microphone: mic, language: language) },
+                abortStarted: { context.session.cancel() }
             )
         } else {
             startCaptureSession(
@@ -1171,7 +1215,8 @@ class SapoWhisperViewModel: ObservableObject {
                 playSound: playSound,
                 triggerTime: triggerTime,
                 prepare: { audioRecorder.cancelPendingSetup() },
-                start: { try await self.captureStartSupervisor.start(microphone: mic, targetEngine: engine) }
+                start: { try await self.captureStartSupervisor.start(microphone: mic, targetEngine: engine) },
+                abortStarted: { self.audioRecorder.discardRecording() }
             )
         }
     }
@@ -1211,7 +1256,6 @@ class SapoWhisperViewModel: ObservableObject {
             context.session.cancel()
         }
         startRecordingTask?.cancel()
-        startRecordingTask = nil
         isStartPending = false
         activeRecordingSessionID = nil
         activeSessionVariant = nil
@@ -1262,6 +1306,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
         isStopPending = true
         stopFeedbackPlayed = false
+        pendingBatchStopTerminalDisposition = nil
 
         let tailPadding = Self.stopTailPadding(for: sessionVariant)
         let stopRequestTime = CFAbsoluteTimeGetCurrent()
@@ -1382,7 +1427,10 @@ class SapoWhisperViewModel: ObservableObject {
                     transcript: result.transcript,
                     audioURL: result.audioURL,
                     duration: result.duration,
-                    language: result.language
+                    language: result.language,
+                    engineNameOverride: result.transcriptionVariant == variant
+                        ? nil
+                        : self.historyEngineName(for: result.transcriptionVariant)
                 )
             } catch {
                 return try await self.rescueFailedStream(
@@ -1439,7 +1487,6 @@ class SapoWhisperViewModel: ObservableObject {
     /// Detiene la grabacion y transcribe
     private func stopRecordingAndTranscribe(perf: DictationPerfTimeline? = nil) async {
         let variant = sessionVariant
-        let engine = variant.engine
         let language = selectedLanguage
         let duration = recordingDuration
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
@@ -1448,6 +1495,41 @@ class SapoWhisperViewModel: ObservableObject {
             seal: { await audioRecorder.stopRecordingAsync() },
             onStopped: { self.completeCaptureStopTransition(sessionID: sessionID, perf: perf) }
         )
+        let terminalDisposition = pendingBatchStopTerminalDisposition
+        pendingBatchStopTerminalDisposition = nil
+        await BatchStopTerminalRouter.perform(
+            sealedResult: stoppedResult,
+            disposition: terminalDisposition,
+            onTerminal: { result, disposition in
+                self.finalizeSealedBatchInterruption(
+                    result,
+                    disposition: disposition,
+                    variant: variant,
+                    language: language
+                )
+            },
+            onContinue: { result in
+                await self.processStoppedBatchCapture(
+                    result,
+                    variant: variant,
+                    language: language,
+                    duration: duration,
+                    sessionID: sessionID,
+                    perf: perf
+                )
+            }
+        )
+    }
+
+    private func processStoppedBatchCapture(
+        _ stoppedResult: AudioCaptureResult?,
+        variant: TranscriptionEngineVariant,
+        language: String,
+        duration: TimeInterval,
+        sessionID: UInt64,
+        perf: DictationPerfTimeline?
+    ) async {
+        let engine = variant.engine
         let stoppedURL = stoppedResult?.audioURL
 
         guard let audioURL = stoppedURL else {
@@ -1573,6 +1655,60 @@ class SapoWhisperViewModel: ObservableObject {
         await pipelineTask.value
         if activeBatchTranscription?.sessionID == sessionID {
             activeBatchTranscription = nil
+        }
+    }
+
+    private func finalizeSealedBatchInterruption(
+        _ result: AudioCaptureResult?,
+        disposition: BatchStopTerminalDisposition,
+        variant: TranscriptionEngineVariant,
+        language: String
+    ) {
+        activeTranscriptionSessionID = nil
+
+        let failureKind: TranscriptionFailure.Kind
+        let storeRetryState: Bool
+        let reasonLog: String
+        switch disposition {
+        case .sleep:
+            failureKind = .recordingInterrupted
+            storeRetryState = true
+            reasonLog = "sleep"
+        case .terminate:
+            failureKind = .userCancelled
+            storeRetryState = false
+            reasonLog = "terminate"
+        }
+
+        if let result {
+            let outcome = persister.persistAbortedCapture(
+                audioURL: result.audioURL,
+                duration: result.duration,
+                engine: variant.engine,
+                engineName: historyEngineName(for: variant),
+                language: language,
+                failureKind: failureKind,
+                storeRetryState: storeRetryState
+            )
+            if let historyId = outcome.historyId, let offerURL = outcome.audioURL {
+                resumableStore.offer(
+                    ResumableDictation(
+                        historyId: historyId,
+                        audioURL: offerURL,
+                        duration: result.duration,
+                        capturedAt: Date()
+                    ))
+            }
+            SapoLog.lifecycle.info(
+                "Recording aborted after seal reason=\(reasonLog, privacy: .public) durationSec=\(Int(result.duration), privacy: .public)"
+            )
+        } else if !storeRetryState {
+            persister.clearRetryState()
+        }
+
+        if disposition == .sleep {
+            overlayManager.updateState(.hidden)
+            checkInitialState()
         }
     }
 
@@ -2029,13 +2165,18 @@ class SapoWhisperViewModel: ObservableObject {
         playSound: Bool,
         triggerTime: CFAbsoluteTime,
         prepare: () -> Void,
-        start: @escaping () async throws -> Void
+        start: @escaping @MainActor () async throws -> Void,
+        abortStarted: @escaping @MainActor @Sendable () -> Void
     ) {
         prepare()
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let captureToken = await self.captureCoordinator.beginCapture(owner) else { return }
+            guard let captureToken = await self.captureCoordinator.beginCapture(owner) else {
+                self.isStartPending = false
+                self.startRecordingTask = nil
+                return
+            }
             var recorderDidStart = false
 
             defer {
@@ -2049,7 +2190,14 @@ class SapoWhisperViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
 
             do {
-                try await start()
+                let accepted = try await CaptureStartCompletionGate.perform(
+                    start: start,
+                    isSessionCurrent: {
+                        self.isStartPending && self.activeRecordingSessionID == sessionID
+                    },
+                    abortStarted: abortStarted
+                )
+                guard accepted else { return }
                 recorderDidStart = true
                 self.overlayManager.setMicConnecting(deviceName: nil)
                 let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
@@ -2379,6 +2527,7 @@ class SapoWhisperViewModel: ObservableObject {
                 isStopPending: isStopPending,
                 hasPendingTailTask: stopTailTask != nil
             ) {
+                pendingBatchStopTerminalDisposition = .sleep
                 return
             }
             cancelPendingStopTail()
@@ -2405,6 +2554,7 @@ class SapoWhisperViewModel: ObservableObject {
                 isStopPending: isStopPending,
                 hasPendingTailTask: stopTailTask != nil
             ) {
+                pendingBatchStopTerminalDisposition = .terminate
                 return
             }
             cancelPendingStopTail()

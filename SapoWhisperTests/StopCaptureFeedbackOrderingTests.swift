@@ -28,6 +28,29 @@ struct StopCaptureFeedbackOrderingTests {
         }
     }
 
+    private actor StartCompletionProbe {
+        private var isBlocked = false
+        private var continuation: CheckedContinuation<Void, Never>?
+
+        func finishStartWhenReleased() async {
+            await withCheckedContinuation {
+                continuation = $0
+                isBlocked = true
+            }
+        }
+
+        func waitUntilBlocked() async {
+            while !isBlocked {
+                await Task.yield()
+            }
+        }
+
+        func release() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
     private let sourceRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -123,6 +146,88 @@ struct StopCaptureFeedbackOrderingTests {
                 hasPendingTailTask: true
             )
         )
+    }
+
+    @Test("Sleep and quit after the seal never invoke the transcription engine")
+    @MainActor
+    func terminalDispositionSkipsEngine() async {
+        var persistedResults: [Int] = []
+        var engineCalls = 0
+
+        for disposition in [BatchStopTerminalDisposition.sleep, .terminate] {
+            await BatchStopTerminalRouter.perform(
+                sealedResult: 42,
+                disposition: disposition,
+                onTerminal: { result, _ in
+                    if let result {
+                        persistedResults.append(result)
+                    }
+                },
+                onContinue: { _ in
+                    engineCalls += 1
+                }
+            )
+        }
+
+        #expect(persistedResults == [42, 42])
+        #expect(engineCalls == 0)
+    }
+
+    @Test("Cancel at start completion discards the newly opened capture")
+    @MainActor
+    func cancelWinsAtStartCompletion() async {
+        let probe = StartCompletionProbe()
+        var sessionIsCurrent = true
+        var captureIsActive = false
+        var abortCalls = 0
+
+        let task = Task { @MainActor in
+            try? await CaptureStartCompletionGate.perform(
+                start: {
+                    await probe.finishStartWhenReleased()
+                    captureIsActive = true
+                },
+                isSessionCurrent: { sessionIsCurrent },
+                abortStarted: {
+                    abortCalls += 1
+                    captureIsActive = false
+                }
+            )
+        }
+
+        await probe.waitUntilBlocked()
+        sessionIsCurrent = false
+        task.cancel()
+        await probe.release()
+        let accepted = await task.value
+
+        #expect(accepted == false)
+        #expect(abortCalls == 1)
+        #expect(!captureIsActive)
+    }
+
+    @Test("Lifecycle interruptions are routed through the post-seal terminal gate")
+    func lifecycleTerminalRoutingIsWired() throws {
+        let viewModel = try source("SapoWhisperViewModel.swift")
+        let sleepBody = try body(
+            in: viewModel,
+            from: "func handleSystemWillSleep()",
+            to: "func handleApplicationWillTerminate()"
+        )
+        let terminateBody = try body(
+            in: viewModel,
+            from: "func handleApplicationWillTerminate()",
+            to: "private func handleCaptureDeviceFailure"
+        )
+        let stopBody = try body(
+            in: viewModel,
+            from: "private func stopRecordingAndTranscribe(",
+            to: "private func processStoppedBatchCapture("
+        )
+
+        #expect(sleepBody.contains("pendingBatchStopTerminalDisposition = .sleep"))
+        #expect(terminateBody.contains("pendingBatchStopTerminalDisposition = .terminate"))
+        #expect(stopBody.contains("BatchStopTerminalRouter.perform"))
     }
 
     @Test("Sleep cancels a pending tail before preserving capture")

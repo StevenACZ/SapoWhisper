@@ -38,6 +38,8 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
 
     /// Brand name surfaced in user-facing failures and logs.
     private static let engineName = "Deepgram"
+    nonisolated static let liveTranscriptionVariant = TranscriptionEngineVariant.deepgramFluxLive
+    nonisolated static let fallbackTranscriptionVariant = liveTranscriptionVariant.fileTranscriptionVariant
 
     private enum StartRecovery {
         static let maxAttempts = 3
@@ -189,7 +191,8 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
             language: currentLanguage,
-            diagnostics: captureResult.diagnostics
+            diagnostics: captureResult.diagnostics,
+            transcriptionVariant: Self.liveTranscriptionVariant
         )
     }
 
@@ -456,7 +459,8 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             audioURL: captureResult.audioURL,
             duration: captureResult.duration,
             language: currentLanguage,
-            diagnostics: captureResult.diagnostics
+            diagnostics: captureResult.diagnostics,
+            transcriptionVariant: Self.fallbackTranscriptionVariant
         )
     }
 
