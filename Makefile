@@ -1,4 +1,4 @@
-.PHONY: help tools format format-all lint lint-all build test script-tests release install-dev size-check artifact-check secrets-scan ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
+.PHONY: help tools format format-all lint lint-all build test script-tests release install-dev size-check artifact-check secrets-scan release-input-check ci-check release-check notarized-dmg appcast hooks-install idle-cpu-note
 
 .DEFAULT_GOAL := help
 
@@ -30,6 +30,7 @@ help:
 	@printf "  make size-check    Measure the Release app bundle\n"
 	@printf "  make artifact-check Verify identity, architecture, paths, and contents\n"
 	@printf "  make secrets-scan  Scan source plus exact tracked audio allowlist (fixtures + app sounds)\n"
+	@printf "  make release-input-check Verify project identity and synchronized source inputs\n"
 	@printf "  make ci-check      Local gate: lint + secret/audio scan + script tests + Debug build + tests\n"
 	@printf "  make release-check Release gate: lint + Release build + size + artifact checks\n"
 	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
@@ -110,13 +111,16 @@ secrets-scan:
 	@scripts/secrets_scan.sh tree
 	@bash scripts/verify_public_audio_allowlist.sh
 
+release-input-check:
+	@scripts/verify_release_inputs.sh >/dev/null
+
 ci-check: lint secrets-scan script-tests build test
 	@printf "ci-check: passed\n"
 
-release-check: lint release size-check artifact-check
+release-check: release-input-check lint release size-check artifact-check
 	@printf "release-check: passed\n"
 
-notarized-dmg:
+notarized-dmg: release-input-check
 	@scripts/package_notarized_dmg.sh
 
 appcast:

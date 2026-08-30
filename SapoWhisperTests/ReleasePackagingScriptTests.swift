@@ -41,6 +41,17 @@ struct ReleasePackagingScriptTests {
                 "scripts/verify_release_app.sh \"$MOUNTED_APP\" \"Developer ID Application\""
             )
         )
+        #expect(activeLines.contains("SOURCE_IDENTITY=\"$(scripts/verify_release_inputs.sh)\""))
+        #expect(
+            activeLines.contains(
+                "BUILT_IDENTITY=\"$(scripts/verify_release_inputs.sh --app \"$BUILT_APP\")\""
+            )
+        )
+        #expect(
+            activeLines.contains(
+                "scripts/verify_release_inputs.sh --app \"$MOUNTED_APP\" >/dev/null"
+            )
+        )
     }
 
     @Test("Private path scanning rejects a contaminated artifact")
@@ -104,6 +115,84 @@ struct ReleasePackagingScriptTests {
                 "scripts/verify_release_app.sh \"$ARCHIVED_APP\" \"Developer ID Application\""
             )
         )
+        #expect(script.contains("scripts/verify_release_inputs.sh --app \"$APP_PATH\""))
+        #expect(script.contains("scripts/verify_release_inputs.sh --app \"$ARCHIVED_APP\""))
+    }
+
+    @Test("Release inputs reject untracked and ignored synchronized files")
+    func releaseInputsRejectExtraSynchronizedFiles() throws {
+        let repository = try makeReleaseFixture()
+        defer { try? FileManager.default.removeItem(at: repository) }
+        let script = releaseInputScript()
+
+        #expect(try run(script, arguments: ["--root", repository.path]) == 0)
+
+        let untracked = repository.appendingPathComponent("SapoWhisper/Untracked.swift")
+        try Data("let untracked = true\n".utf8).write(to: untracked)
+        #expect(try run(script, arguments: ["--root", repository.path]) != 0)
+        try FileManager.default.removeItem(at: untracked)
+
+        let gitignore = repository.appendingPathComponent(".gitignore")
+        try Data("SapoWhisper/Ignored.swift\n".utf8).write(to: gitignore)
+        try requireSuccess("/usr/bin/git", ["add", ".gitignore"], in: repository)
+        let ignored = repository.appendingPathComponent("SapoWhisper/Ignored.swift")
+        try Data("let ignored = true\n".utf8).write(to: ignored)
+        #expect(try run(script, arguments: ["--root", repository.path]) != 0)
+    }
+
+    @Test("Release inputs reject stale app identity")
+    func releaseInputsRejectStaleAppIdentity() throws {
+        let repository = try makeReleaseFixture()
+        defer { try? FileManager.default.removeItem(at: repository) }
+        let app = repository.appendingPathComponent("Fixture.app")
+        let contents = app.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let plist: [String: Any] = [
+            "CFBundleShortVersionString": "2.17.0",
+            "CFBundleVersion": "26",
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: plist,
+            format: .xml,
+            options: 0
+        )
+        try data.write(to: contents.appendingPathComponent("Info.plist"))
+
+        #expect(
+            try run(
+                releaseInputScript(),
+                arguments: ["--root", repository.path, "--app", app.path]
+            ) != 0
+        )
+    }
+
+    @Test("Release inputs require one project identity")
+    func releaseInputsRejectConflictingProjectIdentity() throws {
+        let repository = try makeReleaseFixture()
+        defer { try? FileManager.default.removeItem(at: repository) }
+        let project = repository.appendingPathComponent("SapoWhisper.xcodeproj/project.pbxproj")
+        let settings = """
+            MARKETING_VERSION = 2.17.0;
+            CURRENT_PROJECT_VERSION = 27;
+            MARKETING_VERSION = 2.18.0;
+            CURRENT_PROJECT_VERSION = 27;
+            """
+        try Data(settings.utf8).write(to: project)
+
+        #expect(try run(releaseInputScript(), arguments: ["--root", repository.path]) != 0)
+    }
+
+    @Test("Release targets run the input guard")
+    func releaseTargetsRunInputGuard() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let makefile = try String(
+            contentsOf: repository.appendingPathComponent("Makefile"),
+            encoding: .utf8
+        )
+        #expect(makefile.contains("release-check: release-input-check"))
+        #expect(makefile.contains("notarized-dmg: release-input-check"))
     }
 
     @Test("The public media gate rejects video containers")
@@ -121,15 +210,63 @@ struct ReleasePackagingScriptTests {
         #expect(script.contains("*.[Ww][Ee][Bb][Mm]"))
     }
 
-    private func run(_ executable: URL, argument: URL) throws -> Int32 {
+    private func releaseInputScript() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("scripts/verify_release_inputs.sh")
+    }
+
+    private func makeReleaseFixture() throws -> URL {
+        let repository = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let source = repository.appendingPathComponent("SapoWhisper")
+        let project = repository.appendingPathComponent("SapoWhisper.xcodeproj")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try Data("let tracked = true\n".utf8).write(
+            to: source.appendingPathComponent("Tracked.swift")
+        )
+        let settings = """
+            MARKETING_VERSION = 2.17.0;
+            CURRENT_PROJECT_VERSION = 27;
+            MARKETING_VERSION = 2.17.0;
+            CURRENT_PROJECT_VERSION = 27;
+            """
+        try Data(settings.utf8).write(to: project.appendingPathComponent("project.pbxproj"))
+        try requireSuccess("/usr/bin/git", ["init", "-q"], in: repository)
+        try requireSuccess(
+            "/usr/bin/git",
+            ["add", "SapoWhisper/Tracked.swift", "SapoWhisper.xcodeproj/project.pbxproj"],
+            in: repository
+        )
+        return repository
+    }
+
+    private func requireSuccess(_ executable: String, _ arguments: [String], in directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.currentDirectoryURL = directory
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        try #require(process.terminationStatus == 0)
+    }
+
+    private func run(_ executable: URL, arguments: [String]) throws -> Int32 {
         let process = Process()
         process.executableURL = executable
-        process.arguments = [argument.path]
+        process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
         return process.terminationStatus
+    }
+
+    private func run(_ executable: URL, argument: URL) throws -> Int32 {
+        try run(executable, arguments: [argument.path])
     }
 
     private func lineIndex(_ command: String, in lines: [String]) throws -> Int {
