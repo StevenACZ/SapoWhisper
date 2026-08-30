@@ -56,41 +56,16 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(errorState.isNoSpeech)
     }
 
-    func testBodySnippetRedactsSecrets() {
+    func testHTTPLogSummaryOmitsProviderBody() {
         let failure = TranscriptionFailure.fromHTTP(
             engine: "Deepgram", statusCode: 500,
-            body: Data("{\"api_key\": \"sk-supersecretvalue123456\"}".utf8))
-        XCTAssertFalse(failure.logSummary.contains("supersecretvalue"))
-    }
-
-    func testRedactsBearerTokenInColonSpaceHeader() {
-        // Regression: the generic key pattern used to consume only the word
-        // "Bearer" (it stops at the space), stranding the token. The scheme
-        // pattern now runs first and must redact the whole token.
-        let failure = TranscriptionFailure.fromHTTP(
-            engine: "ElevenLabs", statusCode: 500,
-            body: Data("Authorization: Bearer supersecret-bearer-token-1234567".utf8))
+            body: Data(
+                "private transcript Authorization: Bearer supersecret-bearer-token-1234567".utf8
+            )
+        )
+        XCTAssertEqual(failure.logSummary, "Deepgram/server_error detail=HTTP status=500")
+        XCTAssertFalse(failure.logSummary.contains("private transcript"))
         XCTAssertFalse(failure.logSummary.contains("supersecret-bearer-token-1234567"))
-    }
-
-    func testRedactsDeepgramTokenScheme() {
-        // Deepgram authenticates with "Token <key>"; "Token" is < 6 chars so the
-        // generic pattern never fired — the scheme pattern must catch it.
-        let failure = TranscriptionFailure.fromHTTP(
-            engine: "Deepgram", statusCode: 500,
-            body: Data("Authorization: Token deepgram_secret_key_0123456789".utf8))
-        XCTAssertFalse(failure.logSummary.contains("deepgram_secret_key_0123456789"))
-    }
-
-    func testRedactsBareSkAndAIzaKeys() {
-        let sk = TranscriptionFailure.fromHTTP(
-            engine: "OpenAI", statusCode: 500,
-            body: Data("{\"error\":\"key sk-abcdef0123456789 invalid\"}".utf8))
-        XCTAssertFalse(sk.logSummary.contains("abcdef0123456789"))
-        let aiza = TranscriptionFailure.fromHTTP(
-            engine: "Gemini", statusCode: 500,
-            body: Data("{\"error\":\"AIzaSyABCDEF0123456789xyz bad\"}".utf8))
-        XCTAssertFalse(aiza.logSummary.contains("AIzaSyABCDEF0123456789xyz"))
     }
 
     func testRedactsProviderMaskedOpenAICompatibleKeys() {
@@ -102,6 +77,23 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertFalse(snippet.contains("sk-or-v1"))
         XCTAssertFalse(snippet.contains("eb76"))
         XCTAssertTrue(snippet.contains("[redacted-key]"))
+    }
+
+    func testRedactsQuotedJSONSecretsWithoutLeakingValues() {
+        let apiSecret = ["json", "secret", "123456"].joined(separator: "-")
+        let clientSecret = ["second", "secret", "654321"].joined(separator: "-")
+        let bearerSecret = ["third", "secret", "abcdef"].joined(separator: "-")
+        let snippet = TranscriptionFailure.redactedLogSnippet(
+            from:
+                #"{"api_key":"\#(apiSecret)","client_secret": "\#(clientSecret)", "authorization":"Bearer \#(bearerSecret)"}"#
+        )
+
+        XCTAssertFalse(snippet.contains(apiSecret))
+        XCTAssertFalse(snippet.contains(clientSecret))
+        XCTAssertFalse(snippet.contains(bearerSecret))
+        XCTAssertTrue(snippet.contains(#""api_key":"[redacted]""#))
+        XCTAssertTrue(snippet.contains(#""client_secret": "[redacted]""#))
+        XCTAssertTrue(snippet.contains(#""authorization":"[redacted]""#))
     }
 
     func testErrorStateTreatsNoSpeechGently() {
@@ -182,5 +174,17 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertEqual(failure.kind, .auth)
         // The already-classified failure wins, keeping its original engine.
         XCTAssertEqual(failure.engine, "ElevenLabs")
+    }
+
+    func testGenericErrorDiagnosticOmitsDescriptionAndPath() {
+        let error = NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileReadNoPermissionError,
+            userInfo: [NSLocalizedDescriptionKey: "Cannot read /private/audio.wav"]
+        )
+        let failure = TranscriptionFailure.from(error, engine: "Deepgram")
+
+        XCTAssertEqual(failure.technicalDetail, "NSCocoaErrorDomain/257")
+        XCTAssertFalse(failure.logSummary.contains("/private/audio.wav"))
     }
 }

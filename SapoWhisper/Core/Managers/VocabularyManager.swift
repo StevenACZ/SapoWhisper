@@ -347,22 +347,37 @@ class VocabularyManager {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         )
         var current = transcript
-        if availableTerms.contains("git"), availableTerms.contains("commit") {
+        let knowsGitCommit =
+            availableTerms.contains("git commit")
+            || (availableTerms.contains("git") && availableTerms.contains("commit"))
+        let knowsGitPush =
+            availableTerms.contains("git push")
+            || (availableTerms.contains("git") && availableTerms.contains("push"))
+        if knowsGitCommit {
             current = Self.replacingWholeTermVariants(
-                ["deep comment", "deep comet", "dip comment"],
+                [
+                    "deep comment", "deep comet", "dip comment", "hit commit", "hiit commit",
+                    "heat commit", "hit con meat", "hiit con meat", "heat con meat",
+                ],
                 with: "git commit",
                 in: current
             )
         }
-        if availableTerms.contains("git"), availableTerms.contains("push") {
-            current = Self.replacingWholeTermVariants(["deep push", "dip push"], with: "git push", in: current)
+        if knowsGitPush {
+            current = Self.replacingWholeTermVariants(
+                ["deep push", "dip push", "hit push", "hiit push", "heat push"],
+                with: "git push",
+                in: current
+            )
         }
-        if availableTerms.contains("git") {
+        if availableTerms.contains("git") || knowsGitCommit {
             current = Self.replacingWholeTermVariants(
                 ["KitCom", "KitComit", "KitCommit", "Kit Commit"],
                 with: "git commit",
                 in: current
             )
+        }
+        if availableTerms.contains("git") || knowsGitPush {
             current = Self.replacingWholeTermVariants(["KitPush", "Kit Push"], with: "git push", in: current)
         }
         return current

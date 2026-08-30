@@ -268,8 +268,9 @@ class MLXWhisperTranscriber {
             loadingState = .error
             let message = error.localizedDescription
             errorMessage = "error.mlx.model_load".localized(message)
+            let detail = LogSanitizer.errorDiagnostic(error, state: "mlx-model-load")
             SapoLog.recording.error(
-                "MLX model load failed error=\(message, privacy: .public)"
+                "MLX failed \(detail, privacy: .public)"
             )
             throw MLXWhisperError.modelLoadFailed(message)
         }
@@ -362,8 +363,9 @@ class MLXWhisperTranscriber {
                 if let self, !Task.isCancelled, self.downloadTasks[model] != nil {
                     self.downloadTasks[model] = nil
                     self.downloadPhases[model] = .failed(error.localizedDescription)
+                    let detail = LogSanitizer.errorDiagnostic(error, state: "mlx-model-download")
                     SapoLog.recording.error(
-                        "MLX model download failed model=\(model.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                        "MLX failed \(detail, privacy: .public)"
                     )
                 }
                 throw error
@@ -452,9 +454,7 @@ class MLXWhisperTranscriber {
             noteActivityForIdleUnload()
         }
 
-        SapoLog.recording.info(
-            "MLX transcription started file=\(audioURL.lastPathComponent, privacy: .public)"
-        )
+        SapoLog.recording.info("MLX transcription started")
 
         // Whisper-style initial prompt: the user's canonical vocabulary
         // conditions the decoder so keyterms come out spelled right.
@@ -485,8 +485,9 @@ class MLXWhisperTranscriber {
         } catch {
             let message = error.localizedDescription
             errorMessage = "error.mlx.transcription".localized(message)
+            let detail = LogSanitizer.errorDiagnostic(error, state: "mlx-transcription")
             SapoLog.recording.error(
-                "MLX transcription failed error=\(message, privacy: .public)"
+                "MLX failed \(detail, privacy: .public)"
             )
             throw MLXWhisperError.transcriptionFailed(message)
         }

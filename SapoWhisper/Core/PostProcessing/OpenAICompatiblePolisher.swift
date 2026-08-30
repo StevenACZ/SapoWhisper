@@ -358,6 +358,7 @@ final class OpenAICompatiblePolisher {
         let choice = body.choices?.first
         let content = (choice?.message?.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let finishReason = choice?.finishReason ?? "none"
+        let publicFinishReason = Self.publicFinishReason(finishReason)
         let completedResponseCount = responseCount + 1
 
         // A "length" finish means the output was cut mid-sentence; pasting it
@@ -413,11 +414,11 @@ final class OpenAICompatiblePolisher {
         }
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         SapoLog.ai.info(
-            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) reasoning=\(reasoningEffort.rawValue, privacy: .public) finishReason=\(finishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
+            "Polish provider response endpoint=\(configuration.endpoint.rawValue, privacy: .public) structured=\(structured, privacy: .public) reasoning=\(reasoningEffort.rawValue, privacy: .public) finishReason=\(publicFinishReason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms chars=\(text.count, privacy: .public)"
         )
 
         guard !text.isEmpty else {
-            throw PolishProviderError.emptyResponse(finishReason: choice?.finishReason)
+            throw PolishProviderError.emptyResponse(finishReason: publicFinishReason)
         }
 
         return PolishResponse(
@@ -425,6 +426,20 @@ final class OpenAICompatiblePolisher {
             modelIdentifier: configuration.modelIdentifier,
             responseCount: completedResponseCount
         )
+    }
+
+    nonisolated static func publicFinishReason(_ value: String?) -> String {
+        switch value?.lowercased() {
+        case "stop": return "stop"
+        case "length": return "length"
+        case "content_filter": return "content_filter"
+        case "tool_calls": return "tool_calls"
+        case "function_call": return "function_call"
+        case nil, "", "none":
+            return "none"
+        default:
+            return "other"
+        }
     }
 
     /// The stored effort raised to the model's mandatory floor, so a

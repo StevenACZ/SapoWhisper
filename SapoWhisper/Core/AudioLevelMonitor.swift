@@ -548,8 +548,9 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
             SapoLog.audioRoute.info("Mic sample recording started")
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "sample-create")
             SapoLog.audioRoute.error(
-                "Mic sample file create failed error=\(error.localizedDescription, privacy: .public)"
+                "Mic sample file create failed \(detail, privacy: .public)"
             )
         }
     }
@@ -690,8 +691,11 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         }
 
         guard status == .haveData, outputBuffer.frameLength > 0 else {
+            let detail =
+                error.map { LogSanitizer.errorDiagnostic($0, state: "sample-convert") }
+                ?? "state=sample-convert domain=none code=0"
             SapoLog.audioRoute.error(
-                "Mic sample conversion failed error=\(error?.localizedDescription ?? "no output", privacy: .public)"
+                "Mic sample conversion failed \(detail, privacy: .public)"
             )
             return false
         }
@@ -732,8 +736,9 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
                 try sampleFile.write(from: buffer)
             }
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "sample-write")
             SapoLog.audioRoute.error(
-                "Mic sample write failed error=\(error.localizedDescription, privacy: .public)"
+                "Mic sample write failed \(detail, privacy: .public)"
             )
         }
     }

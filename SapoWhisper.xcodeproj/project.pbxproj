@@ -414,6 +414,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_FILE = SapoWhisper/Support/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "SapoWhisper necesita acceso a tu red local para conectarse al servidor de transcripción configurado.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -456,6 +457,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_FILE = SapoWhisper/Support/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SapoWhisper necesita acceso al micrófono para grabar tu voz y convertirla a texto.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "SapoWhisper necesita acceso a tu red local para conectarse al servidor de transcripción configurado.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

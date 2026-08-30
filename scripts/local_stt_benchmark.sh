@@ -7,18 +7,99 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${MODEL_ID:?Set MODEL_ID, for example rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo}"
 : "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/longform/sample-1m.wav}"
 
+if ! BASE_URL_VALUE="$BASE_URL" API_KEY_VALUE="${API_KEY:-}" python3 - <<'PY'
+import ipaddress
+import os
+import sys
+from urllib.parse import urlsplit
+
+
+def reject(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
+
+
+base_url = os.environ["BASE_URL_VALUE"]
+if not base_url or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in base_url):
+    reject("BASE_URL must be an http(s) URL without credentials, query, or fragment.")
+
+try:
+    parsed = urlsplit(base_url)
+    hostname = parsed.hostname
+    parsed.port
+except ValueError:
+    reject("BASE_URL must be an http(s) URL without credentials, query, or fragment.")
+
+if (
+    parsed.scheme.casefold() not in {"http", "https"}
+    or not parsed.netloc
+    or not hostname
+    or parsed.username is not None
+    or parsed.password is not None
+    or parsed.query
+    or parsed.fragment
+    or "?" in base_url
+    or "#" in base_url
+):
+    reject("BASE_URL must be an http(s) URL without credentials, query, or fragment.")
+
+token = os.environ.get("API_KEY_VALUE", "")
+if any(ord(character) < 0x20 or ord(character) == 0x7F for character in token) or any(character in {'"', "\\"} for character in token):
+    reject("API_KEY contains unsupported characters.")
+
+normalized_host = hostname.casefold()
+is_loopback = normalized_host in {"localhost", "127.0.0.1", "::1"}
+if not is_loopback:
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        pass
+
+if token and parsed.scheme.casefold() == "http" and not is_loopback:
+    reject("API_KEY requires HTTPS for non-loopback BASE_URL.")
+PY
+then
+  exit 2
+fi
+
 if [[ -z "${VOCABULARY_PATH:-}" && "${ALLOW_EMPTY_VOCABULARY:-0}" != "1" ]]; then
   echo "Set VOCABULARY_PATH or explicitly opt out with ALLOW_EMPTY_VOCABULARY=1." >&2
   exit 2
 fi
 
 if [[ -n "${VOCABULARY_PATH:-}" && ! -f "$VOCABULARY_PATH" ]]; then
-  echo "Vocabulary file not found: $VOCABULARY_PATH" >&2
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Vocabulary file not found: $VOCABULARY_PATH" >&2
+  else
+    echo "Vocabulary file not found." >&2
+  fi
+  exit 2
+fi
+
+if [[ -n "${TRANSCRIPT_PATH:-}" && ! -f "$TRANSCRIPT_PATH" ]]; then
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Transcript file not found: $TRANSCRIPT_PATH" >&2
+  else
+    echo "Transcript file not found." >&2
+  fi
+  exit 2
+fi
+
+if [[ -n "${CRITICAL_TERMS_PATH:-}" && ! -f "$CRITICAL_TERMS_PATH" ]]; then
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Critical terms file not found: $CRITICAL_TERMS_PATH" >&2
+  else
+    echo "Critical terms file not found." >&2
+  fi
   exit 2
 fi
 
 if [[ ! -f "$AUDIO_PATH" ]]; then
-  echo "Audio file not found: $AUDIO_PATH" >&2
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Audio file not found: $AUDIO_PATH" >&2
+  else
+    echo "Audio file not found." >&2
+  fi
   exit 2
 fi
 
@@ -32,17 +113,19 @@ fi
 response_file="$(mktemp)"
 curl_error="$(mktemp)"
 prompt_file="$(mktemp)"
+prompt_error="$(mktemp)"
+scoring_error="$(mktemp)"
 curl_config=""
 
 cleanup() {
-  rm -f "$response_file" "$curl_error" "$prompt_file"
+  rm -f "$response_file" "$curl_error" "$prompt_file" "$prompt_error" "$scoring_error"
   if [[ -n "$curl_config" ]]; then
     rm -f "$curl_config"
   fi
 }
 trap cleanup EXIT
 
-python3 - "$script_dir" "${VOCABULARY_PATH:-}" >"$prompt_file" <<'PY'
+if python3 - "$script_dir" "${VOCABULARY_PATH:-}" >"$prompt_file" 2>"$prompt_error" <<'PY'
 import pathlib
 import sys
 
@@ -53,6 +136,17 @@ path = pathlib.Path(sys.argv[2]) if sys.argv[2] else None
 keyterms, replacements, include_replacement_targets = load_vocabulary_settings(path)
 print(initial_prompt_text(keyterms, replacements, include_replacement_targets), end="")
 PY
+then
+  :
+else
+  python_status=$?
+  if [[ "${PRINT_TEXT:-0}" == "1" && -s "$prompt_error" ]]; then
+    cat "$prompt_error" >&2
+  else
+    echo "Unable to load vocabulary." >&2
+  fi
+  exit "$python_status"
+fi
 
 vocabulary_prompt="$(<"$prompt_file")"
 
@@ -63,13 +157,13 @@ curl_args=(
   --output "$response_file"
   --write-out "%{time_total}"
   --request POST "$endpoint"
-  --form "model=${MODEL_ID}"
+  --form-string "model=${MODEL_ID}"
   --form "response_format=json"
   --form "vad_filter=true"
 )
 
 if [[ -n "${LANGUAGE:-}" && "${LANGUAGE}" != "auto" ]]; then
-  curl_args+=(--form "language=${LANGUAGE}")
+  curl_args+=(--form-string "language=${LANGUAGE}")
 fi
 
 if [[ -n "$vocabulary_prompt" ]]; then
@@ -104,7 +198,7 @@ if [[ "$curl_status" -ne 0 ]]; then
   exit "$curl_status"
 fi
 
-python3 - "$script_dir" "$response_file" "$elapsed" "$MODEL_ID" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" <<'PY'
+if python3 - "$script_dir" "$response_file" "$elapsed" "$MODEL_ID" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" 2>"$scoring_error" <<'PY'
 import json
 import pathlib
 import sys
@@ -120,6 +214,13 @@ transcript_path = pathlib.Path(sys.argv[6]) if sys.argv[6] else None
 vocabulary_path = pathlib.Path(sys.argv[7]) if sys.argv[7] else None
 critical_terms_path = pathlib.Path(sys.argv[8]) if sys.argv[8] else None
 print_text = sys.argv[9] == "1"
+model_path_like = (
+    pathlib.PurePosixPath(model).is_absolute()
+    or model in {".", "..", "~"}
+    or model.startswith(("./", "../", "~/"))
+    or model.casefold().startswith("file:")
+)
+reported_model = model if print_text or not model_path_like else "redacted"
 body = response_path.read_text(errors="replace")
 
 try:
@@ -132,7 +233,7 @@ keyterms, replacements = load_vocabulary(vocabulary_path)
 corrected_text = apply_recognition_corrections(text, keyterms, replacements) if keyterms or replacements else text
 
 result = {
-    "model": model,
+    "model": reported_model,
     "elapsed_seconds": round(elapsed, 3),
     "text_characters": len(text.strip()),
 }
@@ -192,3 +293,14 @@ if print_text:
 
 print(json.dumps(result, ensure_ascii=False))
 PY
+then
+  :
+else
+  python_status=$?
+  if [[ "${PRINT_TEXT:-0}" == "1" && -s "$scoring_error" ]]; then
+    cat "$scoring_error" >&2
+  else
+    echo "Unable to score transcription result." >&2
+  fi
+  exit "$python_status"
+fi

@@ -10,6 +10,7 @@ import urllib.parse
 from stt_benchmark_vocabulary import (
     apply_recognition_corrections,
     initial_prompt_text,
+    recognition_variants,
     sanitized_recognition_hint,
     score,
     swift_character_count,
@@ -177,6 +178,14 @@ class BenchmarkVocabularyParityTests(unittest.TestCase):
                     self.assertIn("prompt=Glossary: AlphaTerm, BetaCLI.", forms)
                     self.assertTrue(any(value.startswith("file=@") and "filename=recording.wav" in value for value in forms))
                     self.assertEqual("language=es" in forms, expected_language)
+                    string_forms = [
+                        arguments[index + 1]
+                        for index, value in enumerate(arguments[:-1])
+                        if value == "--form-string"
+                    ]
+                    self.assertIn("model=synthetic-model", string_forms)
+                    if language == "es":
+                        self.assertIn("language=es", string_forms)
                     self.assertNotIn("Synthetic private transcript", result.stdout)
                     self.assertNotIn("AlphaTerm", result.stdout)
                     self.assertNotIn(str(audio), result.stdout)
@@ -220,6 +229,364 @@ class BenchmarkVocabularyParityTests(unittest.TestCase):
             invalid = subprocess.run([str(BENCHMARK_SCRIPT)], cwd=REPO_ROOT, env=environment, capture_output=True, text=True)
             self.assertEqual(invalid.returncode, 2)
             self.assertIn("Vocabulary file not found", invalid.stderr)
+
+    def test_local_benchmark_rejects_invalid_urls_before_reading_inputs(self):
+        invalid_urls = (
+            "ftp://benchmark.invalid/v1",
+            "http://user:password@benchmark.invalid/v1",
+            "http://benchmark.invalid/v1?token=secret",
+            "http://benchmark.invalid/v1#fragment",
+        )
+        for base_url in invalid_urls:
+            with self.subTest(base_url=base_url), tempfile.TemporaryDirectory() as directory:
+                temporary = pathlib.Path(directory)
+                audio = temporary / "private recording.wav"
+                capture = temporary / "curl-args.json"
+                self._write_curl_stub(temporary)
+                environment = os.environ.copy()
+                environment.update(
+                    {
+                        "BASE_URL": base_url,
+                        "MODEL_ID": "synthetic-model",
+                        "AUDIO_PATH": str(audio),
+                        "ALLOW_EMPTY_VOCABULARY": "1",
+                        "PATH": f"{temporary}{os.pathsep}{environment['PATH']}",
+                        "CURL_CAPTURE": str(capture),
+                    }
+                )
+
+                result = subprocess.run(
+                    [str(BENCHMARK_SCRIPT)],
+                    cwd=REPO_ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("BASE_URL must be an http(s) URL", result.stderr)
+                self.assertNotIn(base_url, result.stderr)
+                self.assertNotIn(str(audio), result.stderr)
+                self.assertFalse(capture.exists())
+
+    def test_local_benchmark_prevalidates_reference_paths_before_curl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            audio = temporary / "sample.wav"
+            vocabulary = temporary / "vocabulary.json"
+            capture = temporary / "curl-args.json"
+            transcript = temporary / "reference.txt"
+            critical = temporary / "critical.txt"
+            audio.write_bytes(b"RIFFsynthetic")
+            vocabulary.write_text(json.dumps({"keyterms": ["AlphaTerm"]}))
+            transcript.write_text("AlphaTerm 42")
+            critical.write_text("AlphaTerm\n")
+            self._write_curl_stub(temporary)
+            environment = self._benchmark_environment(
+                temporary,
+                audio,
+                transcript,
+                vocabulary,
+                critical,
+                capture,
+                "auto",
+            )
+
+            for variable, missing in (("TRANSCRIPT_PATH", transcript.with_name("private reference.txt")), ("CRITICAL_TERMS_PATH", critical.with_name("private critical.txt"))):
+                with self.subTest(variable=variable):
+                    environment[variable] = str(missing)
+                    result = subprocess.run(
+                        [str(BENCHMARK_SCRIPT)],
+                        cwd=REPO_ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(f"{'Transcript' if variable == 'TRANSCRIPT_PATH' else 'Critical terms'} file not found.", result.stderr)
+                    self.assertNotIn(str(missing), result.stderr)
+                    self.assertFalse(capture.exists())
+                    environment[variable] = str(transcript if variable == "TRANSCRIPT_PATH" else critical)
+
+    def test_local_benchmark_treats_at_prefixed_form_values_as_literals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            audio = temporary / "sample.wav"
+            capture = temporary / "curl-args.json"
+            audio.write_bytes(b"RIFFsynthetic")
+            self._write_curl_stub(temporary)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "BASE_URL": "http://benchmark.invalid/v1",
+                    "MODEL_ID": "@private-model.txt",
+                    "AUDIO_PATH": str(audio),
+                    "ALLOW_EMPTY_VOCABULARY": "1",
+                    "LANGUAGE": "@private-language.txt",
+                    "PATH": f"{temporary}{os.pathsep}{environment['PATH']}",
+                    "CURL_CAPTURE": str(capture),
+                }
+            )
+
+            result = subprocess.run(
+                [str(BENCHMARK_SCRIPT)],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            arguments = json.loads(capture.read_text())
+            string_forms = [
+                arguments[index + 1]
+                for index, value in enumerate(arguments[:-1])
+                if value == "--form-string"
+            ]
+            self.assertIn("model=@private-model.txt", string_forms)
+            self.assertIn("language=@private-language.txt", string_forms)
+            regular_forms = [
+                arguments[index + 1]
+                for index, value in enumerate(arguments[:-1])
+                if value == "--form"
+            ]
+            self.assertNotIn("model=@private-model.txt", regular_forms)
+            self.assertNotIn("language=@private-language.txt", regular_forms)
+            self.assertNotIn("private-model.txt", result.stderr)
+            self.assertNotIn("private-language.txt", result.stderr)
+
+    def test_local_benchmark_redacts_model_paths_from_public_result(self):
+        model_paths = ("/Users/example/private-model", "/models/private-model", "../private-model", "~/private-model", "file:///models/private-model")
+        for model_path in model_paths:
+            with self.subTest(model_path=model_path), tempfile.TemporaryDirectory() as directory:
+                temporary = pathlib.Path(directory)
+                audio = temporary / "sample.wav"
+                capture = temporary / "curl-args.json"
+                audio.write_bytes(b"RIFFsynthetic")
+                self._write_curl_stub(temporary)
+                environment = os.environ.copy()
+                environment.update(
+                    {
+                        "BASE_URL": "http://benchmark.invalid/v1",
+                        "MODEL_ID": model_path,
+                        "AUDIO_PATH": str(audio),
+                        "ALLOW_EMPTY_VOCABULARY": "1",
+                        "PATH": f"{temporary}{os.pathsep}{environment['PATH']}",
+                        "CURL_CAPTURE": str(capture),
+                    }
+                )
+
+                result = subprocess.run(
+                    [str(BENCHMARK_SCRIPT)],
+                    cwd=REPO_ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.assertEqual(json.loads(result.stdout)["model"], "redacted")
+                self.assertNotIn(model_path, result.stdout)
+                self.assertNotIn(model_path, result.stderr)
+
+                environment["PRINT_TEXT"] = "1"
+                private_result = subprocess.run(
+                    [str(BENCHMARK_SCRIPT)],
+                    cwd=REPO_ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.assertEqual(json.loads(private_result.stdout)["model"], model_path)
+
+    def test_local_benchmark_hides_vocab_loader_tracebacks_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            audio = temporary / "sample.wav"
+            vocabulary = temporary / "private vocabulary.json"
+            capture = temporary / "curl-args.json"
+            audio.write_bytes(b"RIFFsynthetic")
+            vocabulary.write_text("{malformed")
+            self._write_curl_stub(temporary)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "BASE_URL": "http://benchmark.invalid/v1",
+                    "MODEL_ID": "synthetic-model",
+                    "AUDIO_PATH": str(audio),
+                    "VOCABULARY_PATH": str(vocabulary),
+                    "PATH": f"{temporary}{os.pathsep}{environment['PATH']}",
+                    "CURL_CAPTURE": str(capture),
+                }
+            )
+
+            result = subprocess.run(
+                [str(BENCHMARK_SCRIPT)],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Unable to load vocabulary.", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertNotIn(str(vocabulary), result.stderr)
+            self.assertNotIn(str(temporary), result.stderr)
+            self.assertFalse(capture.exists())
+
+    def test_cloud_benchmark_prevalidates_reference_paths_before_curl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            audio = temporary / "sample.wav"
+            vocabulary = temporary / "vocabulary.json"
+            capture = temporary / "curl-args.json"
+            transcript = temporary / "reference.txt"
+            critical = temporary / "critical.txt"
+            audio.write_bytes(b"RIFFsynthetic")
+            vocabulary.write_text(json.dumps({"keyterms": ["AlphaTerm"]}))
+            transcript.write_text("AlphaTerm 42")
+            critical.write_text("AlphaTerm\n")
+            self._write_curl_stub(temporary)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ENGINE": "deepgram",
+                    "DEEPGRAM_API_KEY": "private-test-key",
+                    "AUDIO_PATH": str(audio),
+                    "VOCABULARY_PATH": str(vocabulary),
+                    "TRANSCRIPT_PATH": str(transcript),
+                    "CRITICAL_TERMS_PATH": str(critical),
+                    "PATH": f"{temporary}{os.pathsep}{environment['PATH']}",
+                    "CURL_CAPTURE": str(capture),
+                }
+            )
+
+            for variable, missing in (("TRANSCRIPT_PATH", transcript.with_name("private reference.txt")), ("CRITICAL_TERMS_PATH", critical.with_name("private critical.txt"))):
+                with self.subTest(variable=variable):
+                    environment[variable] = str(missing)
+                    result = subprocess.run(
+                        [str(CLOUD_BENCHMARK_SCRIPT)],
+                        cwd=REPO_ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(f"{'Transcript' if variable == 'TRANSCRIPT_PATH' else 'Critical terms'} file not found.", result.stderr)
+                    self.assertNotIn(str(missing), result.stderr)
+                    self.assertFalse(capture.exists())
+                    environment[variable] = str(transcript if variable == "TRANSCRIPT_PATH" else critical)
+
+    def test_runner_matches_production_personal_and_conditional_git_variants(self):
+        self.assertEqual(
+            apply_recognition_corrections(
+                "revisa ya brain, changelov y AGENTS punto eme de",
+                ["IABrain", "CHANGELOG", "AGENTS.md"],
+                {},
+            ),
+            "revisa IABrain, CHANGELOG y AGENTS.md",
+        )
+        variants = "HIIT con meat, HIIT push, heat con meat y heat push"
+        self.assertEqual(
+            apply_recognition_corrections(variants, ["git commit", "git push"], {}),
+            "git commit, git push, git commit y git push",
+        )
+        self.assertEqual(
+            apply_recognition_corrections("haz deep comment y deep push", ["commit", "push"], {}),
+            "haz deep comment y deep push",
+        )
+        self.assertEqual(apply_recognition_corrections("KitCom y KitPush", ["git commit"], {}), "git commit y KitPush")
+        self.assertEqual(apply_recognition_corrections("KitCom y KitPush", ["git push"], {}), "KitCom y git push")
+        self.assertNotIn("y abre", " ".join(recognition_variants("IABrain")))
+
+    def test_cloud_benchmark_hides_missing_private_paths_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            missing_audio = temporary / "private recording.wav"
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "ENGINE": "deepgram",
+                    "AUDIO_PATH": str(missing_audio),
+                    "ALLOW_EMPTY_VOCABULARY": "1",
+                }
+            )
+
+            audio_result = subprocess.run(
+                [str(CLOUD_BENCHMARK_SCRIPT)],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(audio_result.returncode, 2)
+            self.assertIn("Audio file not found.", audio_result.stderr)
+            self.assertNotIn(str(missing_audio), audio_result.stderr)
+
+            audio = temporary / "sample.wav"
+            audio.write_bytes(b"RIFFsynthetic")
+            missing_vocabulary = temporary / "private vocabulary.json"
+            environment["AUDIO_PATH"] = str(audio)
+            environment["VOCABULARY_PATH"] = str(missing_vocabulary)
+            vocabulary_result = subprocess.run(
+                [str(CLOUD_BENCHMARK_SCRIPT)],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(vocabulary_result.returncode, 2)
+            self.assertIn("Vocabulary file not found.", vocabulary_result.stderr)
+            self.assertNotIn(str(missing_vocabulary), vocabulary_result.stderr)
+
+    def test_local_benchmark_requires_https_for_remote_tokens_but_allows_loopback_http(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            audio = temporary / "sample.wav"
+            capture = temporary / "curl-args.json"
+            audio.write_bytes(b"RIFFsynthetic")
+            self._write_curl_stub(temporary)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "MODEL_ID": "synthetic-model",
+                    "AUDIO_PATH": str(audio),
+                    "ALLOW_EMPTY_VOCABULARY": "1",
+                    "API_KEY": "private-test-key",
+                    "PATH": f"{temporary}{os.pathsep}{environment['PATH']}",
+                    "CURL_CAPTURE": str(capture),
+                }
+            )
+
+            environment["BASE_URL"] = "http://benchmark.invalid/v1"
+            rejected = subprocess.run(
+                [str(BENCHMARK_SCRIPT)],
+                cwd=REPO_ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn("API_KEY requires HTTPS", rejected.stderr)
+            self.assertNotIn("benchmark.invalid", rejected.stderr)
+            self.assertNotIn("private-test-key", rejected.stderr)
+            self.assertFalse(capture.exists())
+
+            for base_url in ("https://benchmark.invalid/v1", "http://localhost:8000/v1"):
+                with self.subTest(base_url=base_url):
+                    capture.unlink(missing_ok=True)
+                    environment["BASE_URL"] = base_url
+                    accepted = subprocess.run(
+                        [str(BENCHMARK_SCRIPT)],
+                        cwd=REPO_ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    self.assertNotIn("private-test-key", accepted.stdout)
+                    arguments = json.loads(capture.read_text())
+                    endpoint = arguments[arguments.index("--request") + 2]
+                    self.assertTrue(endpoint.startswith(base_url))
 
     def test_cloud_deepgram_contract_and_redaction(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -416,6 +783,9 @@ raise SystemExit(22)
             self.assertFalse(capture.exists())
             self.assertNotIn("private-test-key", result.stderr)
             self.assertNotIn("PrivateTerm", result.stderr)
+            self.assertIn("Unable to load vocabulary.", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertNotIn(str(vocabulary), result.stderr)
 
     def _write_curl_stub(self, directory):
         stub = directory / "curl"

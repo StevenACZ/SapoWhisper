@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import collections
 import contextlib
+import ipaddress
 import json
 import mimetypes
 import pathlib
@@ -19,6 +20,7 @@ import sqlite3
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -81,6 +83,62 @@ class ReplayInputError(Exception):
         self.private_detail = private_detail
 
 
+def is_loopback_host(hostname: str) -> bool:
+    normalized = hostname.casefold()
+    if normalized in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_provider_url(value: str, field_name: str) -> urllib.parse.SplitResult:
+    public_message = "Provider URL must use http(s) without credentials, query, or fragment."
+    if not value or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+        raise ReplayInputError(public_message, f"{field_name} contains whitespace or control characters")
+
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as error:
+        raise ReplayInputError(public_message, f"{field_name} is malformed: {error}") from error
+
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not parsed.netloc
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or "?" in value
+        or "#" in value
+    ):
+        raise ReplayInputError(public_message, f"{field_name} is not a permitted provider URL")
+    return parsed
+
+
+def validate_replay_transport(args: argparse.Namespace) -> None:
+    polish_url = validate_provider_url(args.polish_base_url, "polish-base-url")
+    stt_url = validate_provider_url(args.stt_base_url, "stt-base-url")
+    remote_urls = [polish_url] if not is_loopback_host(polish_url.hostname) else []
+    if args.retranscribe_audio:
+        if not is_loopback_host(stt_url.hostname):
+            remote_urls.append(stt_url)
+    if any(url.scheme.casefold() != "https" for url in remote_urls):
+        raise ReplayInputError(
+            "Remote private data requires HTTPS.",
+            "a non-loopback replay endpoint used plaintext HTTP",
+        )
+    if remote_urls and not args.allow_remote_private_data:
+        raise ReplayInputError(
+            "Remote private data requires --allow-remote-private-data.",
+            "a non-loopback replay endpoint was selected without explicit private-data authorization",
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=pathlib.Path, default=DEFAULT_DB)
@@ -96,6 +154,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stt-model", default=DEFAULT_STT_MODEL)
     parser.add_argument("--timeout", type=float, default=35)
     parser.add_argument("--retranscribe-audio", action="store_true")
+    parser.add_argument(
+        "--allow-remote-private-data",
+        action="store_true",
+        help="authorize sending local transcript/audio data to a non-loopback endpoint",
+    )
     parser.add_argument("--print-samples", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
@@ -143,6 +206,7 @@ def fetch_rows(
 
 
 def post_json(url: str, payload: dict, timeout: float) -> dict:
+    validate_provider_url(url, "provider URL")
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -162,6 +226,7 @@ def polish_text(
     replacements: dict[str, str],
     timeout: float,
 ) -> str:
+    validate_provider_url(base_url, "polish-base-url")
     base = base_url.rstrip("/")
     replacement_lines = "; ".join(f'"{src}" -> "{dst}"' for src, dst in sorted(replacements.items())) or "none"
     keyterm_lines = ", ".join(keyterms[:80]) or "none"
@@ -202,6 +267,7 @@ Never create or recommend vocabulary/keyterms. Never inject a term when the tran
 
 
 def transcribe_audio(base_url: str, model: str, audio_path: pathlib.Path, timeout: float) -> str:
+    validate_provider_url(base_url, "stt-base-url")
     base = base_url.rstrip("/")
     endpoint = f"{base}/v1/audio/transcriptions" if not base.endswith("/v1") else f"{base}/audio/transcriptions"
     boundary = f"----SapoWhisperReplay{uuid.uuid4().hex}"
@@ -348,6 +414,7 @@ def relative_audio_path(value: str | None) -> pathlib.Path | None:
 def main() -> int:
     args = parse_args()
     try:
+        validate_replay_transport(args)
         keyterms, replacements = load_vocabulary(args.vocabulary if args.vocabulary.exists() else None)
         rows = fetch_rows(args.db, args.limit, args.min_chars, args.engine_contains, args.since, args.until)
     except ReplayInputError as error:

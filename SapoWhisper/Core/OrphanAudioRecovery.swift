@@ -80,9 +80,7 @@ nonisolated enum OrphanAudioRecovery {
             }
 
             guard let info = WAVHeaderRepair.repairIfNeeded(at: file) else {
-                SapoLog.recording.warning(
-                    "Orphan WAV skipped reason=unreadable-header file=\(name, privacy: .public)"
-                )
+                SapoLog.recording.warning("Orphan WAV skipped reason=unreadable-header")
                 continue
             }
             guard info.duration >= minimumDuration else {
@@ -103,7 +101,7 @@ nonisolated enum OrphanAudioRecovery {
                 failureCode: failureCode
             )
             guard persisted.rowID > 0 else {
-                SapoLog.recording.error("Orphan WAV recovery insert failed file=\(name, privacy: .public)")
+                SapoLog.recording.error("Orphan WAV recovery insert failed")
                 continue
             }
             var recoveredURL = file

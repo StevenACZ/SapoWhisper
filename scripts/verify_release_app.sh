@@ -15,11 +15,16 @@ codesign --verify --deep --strict "$APP_PATH"
 SIGNING_DETAILS="$(codesign -dvvv "$APP_PATH" 2>&1)"
 TEAM_ID="$(sed -n 's/^TeamIdentifier=//p' <<<"$SIGNING_DETAILS" | head -1)"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist")"
+LOCAL_NETWORK_USAGE="$(/usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
 ARCHITECTURES="$(lipo -archs "$BINARY")"
 DESIGNATED_REQUIREMENT="$(codesign -d -r- "$APP_PATH" 2>&1)"
 
 if [[ "$BUNDLE_ID" != "oli.SapoWhisper" ]]; then
   echo "release-app-check: unexpected bundle identifier" >&2
+  exit 65
+fi
+if [[ -z "$LOCAL_NETWORK_USAGE" ]]; then
+  echo "release-app-check: missing local-network usage description" >&2
   exit 65
 fi
 if [[ "$ARCHITECTURES" != "arm64" ]]; then

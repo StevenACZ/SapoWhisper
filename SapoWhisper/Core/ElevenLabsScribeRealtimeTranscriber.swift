@@ -280,7 +280,11 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         }
 
         registerFailedMessage(waitMs: waitMs, timedOut: !didFinish)
-        let reason = didFinish ? (completedError?.localizedDescription ?? "unknown") : "timeout"
+        let reason =
+            didFinish
+            ? completedError.map { LogSanitizer.errorDiagnostic($0, state: "realtime-send") }
+                ?? "state=realtime-send domain=none code=0"
+            : "state=realtime-send domain=timeout code=0"
         SapoLog.recording.warning(
             "ElevenLabs realtime audio chunk send failed commit=\(commit, privacy: .public) wait=\(waitMs, privacy: .public)ms reason=\(reason, privacy: .public)"
         )
@@ -487,7 +491,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
     }
 
-    func stop() async throws -> StreamingDictationResult {
+    func stop(
+        onCaptureStopped: @escaping @MainActor @Sendable () -> Void
+    ) async throws -> StreamingDictationResult {
         guard isStreaming || isStopping else {
             throw TranscriptionFailure(
                 kind: .unknown, engine: Self.engineName,
@@ -498,7 +504,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         isStopping = true
         stopStartedAt = CFAbsoluteTimeGetCurrent()
         SapoLog.recording.info("ElevenLabs realtime stop requested")
-        let captureResult = capture.stopRecording()
+        let captureResult = StopCaptureHandoff.perform(
+            seal: { capture.stopRecording() },
+            onStopped: onCaptureStopped
+        )
         isStreaming = false
 
         guard let captureResult else {
@@ -509,7 +518,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
         guard captureResult.diagnostics.receivedInput else {
             cleanupWebSocket()
-            try? FileManager.default.removeItem(at: captureResult.audioURL)
+            capture.deleteRecording(at: captureResult.audioURL)
             lastCaptureResult = nil
             throw RecordingError.noInputAfterDeviceSwitch
         }
@@ -536,16 +545,17 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             do {
                 return try await transcribeFullCaptureFallback(captureResult, reason: "sender_incomplete")
             } catch {
+                let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-batch-fallback")
                 guard !transcriptAccumulator.transcript.isEmpty else {
                     throw TranscriptionFailure(
                         kind: .network,
                         engine: Self.engineName,
                         technicalDetail:
-                            "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends) drainTimedOut=\(senderStats.drainTimedOut); batch fallback failed: \(error.localizedDescription)"
+                            "ElevenLabs realtime sender failedMessages=\(senderStats.failedMessages) timedOut=\(senderStats.timedOutSends) drainTimedOut=\(senderStats.drainTimedOut); \(detail)"
                     )
                 }
                 SapoLog.recording.warning(
-                    "ElevenLabs realtime batch fallback failed reason=\(error.localizedDescription, privacy: .public); salvaging committed segments"
+                    "ElevenLabs realtime batch fallback failed \(detail, privacy: .public); salvaging committed segments"
                 )
             }
         }
@@ -571,8 +581,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         } catch {
             // The stream died without committing anything usable; the local
             // WAV still has the take, so batch it instead of losing the words.
+            let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-final")
             SapoLog.recording.warning(
-                "ElevenLabs realtime final transcript failed reason=\(error.localizedDescription, privacy: .public); falling back to batch transcription"
+                "ElevenLabs realtime final transcript failed \(detail, privacy: .public); falling back to batch transcription"
             )
             return try await transcribeFullCaptureFallback(captureResult, reason: "final_transcript_failed")
         }
@@ -916,8 +927,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
         if !isStreaming || isCancellation(error) { return }
         lastStreamingError = error
+        let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-receive")
         SapoLog.recording.warning(
-            "ElevenLabs realtime receive failed while recording reason=\(error.localizedDescription, privacy: .public); keeping local audio"
+            "ElevenLabs realtime receive failed while recording \(detail, privacy: .public); keeping local audio"
         )
     }
 
@@ -1107,10 +1119,13 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
                 }
                 return pcmData
             case .error:
+                let detail =
+                    convertError.map { LogSanitizer.errorDiagnostic($0, state: "pcm-convert") }
+                    ?? "state=pcm-convert domain=none code=0"
                 throw TranscriptionFailure(
                     kind: .audioCorrupt,
                     engine: Self.engineName,
-                    technicalDetail: convertError?.localizedDescription ?? "pcm_16000 conversion failed"
+                    technicalDetail: detail
                 )
             @unknown default:
                 throw TranscriptionFailure(kind: .audioCorrupt, engine: Self.engineName)

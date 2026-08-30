@@ -29,9 +29,9 @@ help:
 	@printf "  make install-dev   Reinstall signed Release build to /Applications\n"
 	@printf "  make size-check    Measure the Release app bundle\n"
 	@printf "  make artifact-check Verify identity, architecture, paths, and contents\n"
-	@printf "  make secrets-scan  Scan the working tree for leaked secrets\n"
-	@printf "  make ci-check      Fast local gate: lint + Debug build + tests\n"
-	@printf "  make release-check Release gate: lint + Release build + size check\n"
+	@printf "  make secrets-scan  Scan source plus exact tracked audio allowlist (fixtures + app sounds)\n"
+	@printf "  make ci-check      Local gate: lint + secret/audio scan + script tests + Debug build + tests\n"
+	@printf "  make release-check Release gate: lint + Release build + size + artifact checks\n"
 	@printf "  make notarized-dmg Build, sign, notarize, staple, and validate the release DMG\n"
 	@printf "  make appcast       Zip the notarized app, EdDSA-sign it, and write appcast.xml\n"
 	@printf "  make hooks-install Install optional Lefthook git hooks\n"
@@ -85,6 +85,7 @@ test:
 
 script-tests:
 	bash -n scripts/local_stt_benchmark.sh
+	bash scripts/test_secrets_scan.sh
 	python3 scripts/test_stt_benchmark_vocabulary.py
 	python3 scripts/test_ai_polish_history_replay.py
 

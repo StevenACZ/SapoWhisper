@@ -8,24 +8,25 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Recommended models carry their benchmarked reasoning effort: picking a ranked model applies it, models that reject `reasoning: none` (Grok 4.6, Qwen 3.8 Max, GLM 5.3 Flash, Gemini 3.7 Flash) hide the Off option and coerce to Low with a note.
+- Catalog candidates carry their tested reasoning policy: picking one applies it. Four endpoints that rejected the historical screen's requested `reasoning: none` (Grok 4.6, Qwen 3.8 Max, GLM 5.3 Flash, Gemini 3.7 Flash) used provider-default reasoning in their fallback measurements; the current picker requires at least Low for those models and explains why.
 - The polish tester ships a long, realistic developer dictation with fillers, self-corrections, numbers, a path, a branch and a negation, in English or Spanish following the app language.
 
-- Settings now presents evidence-based AI model tiers while preserving the
+- Settings now presents scoped AI model candidates while preserving the
   free-text model field. The public benchmark scorecard records the dated
-  short-screen results, rejected candidates, pricing snapshot, and promotion
-  gates; local AI polish is explicitly experimental until a small model passes.
-- New "Best quality per price" model tier offering `openai/gpt-5.6-sol` (and
-  `gpt-5.6-sol` on the OpenAI endpoint) between the best-tested and
-  same-language tiers.
-- The model suggestions menu now carries a ranking header, and the evidence card
+  short-screen scope and promotion gates; historical result counters and
+  prices remain withheld until a reproducible manifest exists. Local AI polish
+  is explicitly experimental until a small model passes.
+- New Compact candidate offering `openai/gpt-5.6-sol` (and `gpt-5.6-sol` on
+  the OpenAI endpoint); promotion still requires a reproducible manifest.
+- The model suggestions menu now carries a candidate header, and the evidence card
   under the model field shows a tier badge with the evidence sentence below it.
 - Benchmark scorecard gained a "Compact route on real dictations (2026-08-29)"
-  section with per-model ratio, latency, cost and verdicts, plus the known
-  limitation that some endpoints reject reasoning "off" and run with their
-  default reasoning instead.
+  section documenting its private acceptance scope and the known limitation
+  that some endpoints reject reasoning "off" and run with their default
+  reasoning instead; latency, ratio, and cost counters require a manifest.
 - Local MLX model rows distinguish the Large V3 Turbo quality default from its
-  lower-memory 4-bit alternative.
+  lower-memory 4-bit alternative and label that tier's quality as unmeasured
+  instead of showing an unsupported star rating.
 
 ### Changed
 
@@ -37,33 +38,79 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and assistant-answer drift within one shared three-response
   budget. A failed translated chunk keeps the complete source transcript
   instead of producing mixed-language or collapsed output.
-- Public STT and History replay tools now emit aggregate metrics by default,
-  use production-equivalent canonical recognition hints, and keep exact text,
-  terms, digit values, paths, provider bodies, and fingerprints behind an
-  explicit private-output opt-in.
+- Public STT tools now emit aggregate metrics by default and use
+  production-equivalent canonical recognition hints. History replay remains
+  aggregate and redacted, but is not a full live-engine parity harness: its
+  transcription request does not reproduce the app's complete recognition
+  prompt, language, or VAD settings.
+- The public benchmark scorecard now documents the scorer's two-decimal WER
+  formula and manifest requirements. Historical WER, latency, and cost
+  counters without runner/fixture/per-run/usage totals are not published as
+  promotion evidence; retired/current fixtures remain labeled without private
+  provenance.
 
 ### Fixed
 
-- AI polish no longer enforces strict fidelity rejection. The instruction-response guard now rejects only output where the model clearly answered instead of rewriting (introduced openers, first-person completion reports, refusals, sign-offs); anchor, digit and missing-passage checks remain retry-only hints. Lower tiers and untested models show a fidelity-risk note in Settings.
+- AI polish no longer enforces strict fidelity rejection. The instruction-response guard now rejects only output where the model clearly answered instead of rewriting (introduced openers, first-person completion reports, refusals, sign-offs); anchor, digit and missing-passage checks remain retry-only hints. Legitimate translated closers remain equivalent without authorizing invented actions or inverted claims. Riskier candidates and untested models show a fidelity note in Settings.
 
-- Deepgram Flux Live now keeps a half-second capture tail, atomically flushes
-  the final PCM remainder, and waits for the provider to finish its
-  post-CloseStream response before accepting the transcript. A failed or timed
-  out finalization falls back to Nova-3 using the preserved WAV instead of
-  pasting a clipped final word.
+- Every stop path seals capture before playing completion feedback. Batch
+  capture awaits its asynchronous audio teardown, while sleep, termination,
+  and route failure share an in-flight seal instead of starting another stop.
+- Deepgram Flux Live finalization keeps a physically qualified 400 ms tail
+  safe across sleep/wake, atomically
+  flushes the final PCM remainder, and waits for the provider to finish its
+  `CloseStream` response before accepting the transcript. Once the sender is
+  drained, the live result requires either a subsequent `Update` or a latest
+  pre-close `Update` whose audio window is within 220 ms of the drained PCM,
+  followed by the provider-confirmed stream close. This also protects the
+  documented no-status peer-close path. An empty live
+  result or failed/timed-out finalization falls back to Nova-3 using the
+  preserved WAV instead of pasting a clipped or empty result.
+- Streaming sender state is isolated per dictation: a cancelled or ambiguous
+  timeout cannot reuse a later session's sender or enqueue the same chunk twice.
+- A sealed streaming WAV keeps its recovery marker until History owns it, so a
+  quit during provider finalization or polish is recoverable immediately on
+  relaunch instead of waiting for the orphan-age gate; the daily stale sweep
+  also preserves marked WAV/sidecar pairs. A terminal silent live session with
+  no History owner now clears its marker and WAV instead of resurfacing as a
+  recovered dictation.
+- AI-polish guards now share one contract: model-introduced
+  assistant-response framing may reject and retry, while content and hard
+  token differences are retry-only; a valid rewrite is not raw-fallbacked for
+  those differences alone.
 - Recognition benchmark payloads now honor the setting that excludes
   replacement targets from engine hints without disabling deterministic
   corrections after transcription.
+- Deterministic vocabulary correction now covers observed, multi-word spoken
+  forms for IABrain, CHANGELOG, AGENTS.md, git commit and git push when those
+  canonical terms are configured, without enabling ambiguous single-word
+  replacements.
+- Local AI Server builds now declare their macOS local-network purpose, so LAN
+  transcription is not rejected as offline by privacy enforcement.
 
 ### Security
 
 - Provider URLs no longer persist embedded credentials, query strings, or
   fragments. Bearer tokens require HTTPS for remote/LAN hosts and may use
   plain HTTP only on loopback.
-- Public-repo gates now reject any tracked WAV outside the exact sound and
-  fixture allowlist, and reject an allowlisted path when its hash or audio
-  format changes. The former natural-voice Spanish fixture is replaced by a
-  system-generated public fixture.
+- Private History replay requires an explicit remote-data opt-in and HTTPS for
+  every non-loopback destination. Benchmark path failures stay redacted unless
+  private sample output is explicitly enabled.
+- Secret and public-audio gates scan the Git index independently from the
+  working tree, so replacing a staged private blob with a safe local copy can
+  no longer hide it from pre-commit/CI checks.
+- HTTP provider bodies, arbitrary error descriptions, finish-reason payloads,
+  History-audio paths, filenames and microphone identifiers no longer enter
+  public unified logs; Release builds also ignore local Sparkle feed overrides.
+- Public-repo gates now reject tracked audio or video outside the exact
+  app-sound and fixture allowlist, and reject an allowlisted path when its hash
+  or audio format changes. The retired natural-voice Spanish fixture
+  `technical/es/real-natural.wav` and `technical/es/real-natural.txt` are
+  excluded from current scores; `technical/es/synthetic-public.wav` is
+  generated from the tracked public text with the macOS Paulina system voice.
+- Sparkle appcast generation now runs the full release-app identity,
+  architecture, contents and private-path verifier on both the notarized app
+  and the app extracted from its update ZIP.
 
 ## [2.16.2] - 2026-08-27
 
@@ -312,7 +359,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Large V3 Turbo (4-bit) local model** — a new quantized tier of the recommended turbo model: 464 MB download instead of 1.5 GB and roughly a third of the RAM while transcribing (~0.5 GB vs ~1.6 GB) at comparable quality. The vendored MLX engine now reads quantized checkpoints natively (packed 4-bit weights, quantized tied embeddings), so more tiers can follow.
+- **Large V3 Turbo (4-bit) local model** — a new quantized tier of the recommended turbo model: 464 MB download instead of 1.5 GB and roughly a third of the RAM while transcribing (~0.5 GB vs ~1.6 GB). The vendored MLX engine now reads quantized checkpoints natively (packed 4-bit weights, quantized tied embeddings), so more tiers can follow; this scorecard does not publish a standalone quality measurement for the 4-bit tier.
 - **Liquid Glass overlay on macOS 26** — the recording pill and the dock chip render in real glass, and they visually fuse when the droplet detaches from or absorbs into the chip. Older systems keep the exact material look they have today.
 - **VoiceOver support across the app** — every icon-only button now has a spoken label (overlay controls, History actions, model rows, vocabulary tools), the overlay announces dictation phases (recording started, transcribing, text pasted, failed), the audio player's scrubber is adjustable with VoiceOver and arrow keys (±5 s), and hover-only affordances like vocabulary chip deletion also reveal on keyboard focus.
 - **Export notice** — the History save panels for audio and text exports now remind that the file will contain dictated content before it leaves the app.

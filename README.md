@@ -12,8 +12,8 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
 - 📱 Companion control from Mirador: start or stop SapoWhisper in the iPhone viewer and use the phone as the host microphone without synthetic hotkeys.
 - 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
-- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with retry-based fidelity checks and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
-- ✅ Evidence-based AI model tiers in Settings, while keeping free-text model IDs for providers that change over time.
+- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with retry-based fidelity checks and a shared output-language picker for same-language cleanup or a requested target-language translation; source-preserving fallback is path-dependent.
+- ✅ Historically tested AI model candidates in Settings, while keeping free-text model IDs for providers that change over time.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
 - 🔔 One-click in-app updates (Sparkle): a quiet menu notice when a new version ships; installing downloads, verifies the EdDSA signature, and relaunches automatically. The daily check can be turned off in Settings.
 
@@ -21,7 +21,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 
 | Engine | Mode | Best for |
 |---|---|---|
-| Whisper (Local MLX) | Local | Private offline transcription on Apple Silicon. Large V3 Turbo is the quality default; its 4-bit tier uses less memory. |
+| Whisper (Local MLX) | Local | Private offline transcription on Apple Silicon. Large V3 Turbo is the quality default; its 4-bit tier uses less memory, but its quality is not measured in the public scorecard. |
 | Local AI Server (NVIDIA) | Batch LAN | Offloading transcription to a local NVIDIA GPU server; faster-whisper Large V3 Turbo is the public-fixture reference. |
 | Deepgram Nova-3 | Batch | High-accuracy cloud transcription. |
 | Deepgram Flux Live | Realtime | Low-latency streaming with final-tail capture, server-close confirmation, and WAV fallback. |
@@ -38,28 +38,31 @@ The model field always accepts a custom ID. The menu adds tested starting points
 
 | Tier | OpenRouter model | Guidance |
 |---|---|---|
-| Best tested | `anthropic/claude-opus-5` | Only model to pass the current 16/16 short four-route screen, including translation, and clean on the real 3m47s Compact dictation. Highest cost; 14/40-minute qualification is still pending. |
-| Best quality per price | `openai/gpt-5.6-sol` | Cleanest Compact output on the real dictations at about a quarter of the Opus 5 cost and twice its speed; long-input and translation gates still pending. |
-| Same-language value | `qwen/qwen3.8-flash` | Low-cost cleanup when output stays in the spoken language. It failed every translation record and showed runtime instability, so it is not a universal default. |
-| Fast budget | `openai/gpt-5.4-nano` | Fastest tested budget option. Hard Compact and translation cases may safely fall back to the source text. |
-| Economy | `qwen/qwen3.5-flash-02-23` | Cheapest offered option, but it failed the fidelity, translation, runtime, and stability gates; use only for low-stakes same-language cleanup. |
+| Translation candidate | `anthropic/claude-opus-5` | Historical internal screens favored it for translation and difficult rewrites. Long-input qualification is pending, and no reproducible public result manifest is available. |
+| Compact candidate | `openai/gpt-5.6-sol` | Preferred candidate for Compact cleanup. Translation and long-input qualification are pending; use the built-in tester before relying on it. |
+| Same-language candidate | `qwen/qwen3.8-flash` | Candidate for cleanup when output stays in the spoken language. Translation is not qualified. |
+| Fast candidate | `openai/gpt-5.4-nano` | Candidate for quick cleanup. Difficult Compact and translation cases may keep the source text. |
+| Experimental candidate | `qwen/qwen3.5-flash-02-23` | Higher fidelity risk; use only for low-stakes same-language cleanup after testing it. |
 
-If you want most of the Opus 5 quality without its price, pick `openai/gpt-5.6-sol`: on the 2026-08-29 real-dictation Compact run it was the quality-per-price choice, roughly a quarter of the cost at twice the speed.
+For Compact cleanup, `openai/gpt-5.6-sol` is the preferred candidate. Translation and long-input qualification remain pending, so run the built-in polish test before enabling it for important dictations.
 
-No small local AI-polish model has qualified yet, so Local Server polish is labeled experimental. This is separate from local speech-to-text: MLX Large V3 Turbo remains the recommended offline transcription model.
+No small local AI-polish model has qualified yet, so Local Server polish is labeled experimental. This is separate from local speech-to-text: MLX Large V3 Turbo remains the recommended offline transcription model; the 4-bit tier saves resources, but its quality has not been measured here.
 
-See [BENCHMARKS.md](BENCHMARKS.md) for the dated scorecard, rejected candidates, pricing snapshot, and promotion gates.
+See [BENCHMARKS.md](BENCHMARKS.md) for the historical screen scope, known evidence gaps, and promotion gates.
 
 ### Local AI Server Fixtures
 
-`TestAssets/LocalAITranscription/` contains public authored and system-generated WAV fixtures for local STT testing. Their exact hashes and formats are enforced by the public-repo gate:
+`TestAssets/LocalAITranscription/` contains the current public fixture set: tracked reference text and previously published, hash-pinned WAV audio. The retired natural-voice Spanish fixture was `technical/es/real-natural.wav` with reference `technical/es/real-natural.txt`; it is not part of the current corpus. The active fixture labels are:
 
 - `longform/sample-1m.wav`
 - `longform/sample-2m.wav`
 - `longform/sample-3m.wav`
 - `longform/sample-6m.wav`
-- `technical/en/*.wav`
-- `technical/es/*.wav`
+- `technical/en/short.wav` / `technical/en/short.txt`
+- `technical/en/medium.wav` / `technical/en/medium.txt`
+- `technical/es/synthetic-public.wav` / `technical/es/synthetic-public.txt`
+
+The English and longform WAVs predate the current provenance record, so no synthetic-voice claim is made for them. `technical/es/synthetic-public.wav` was generated with the macOS Paulina system voice from the tracked public text; it contains no human voice or private recording. Exact hashes and formats for these fixtures and the bundled app sounds are enforced by the public-repo gate.
 
 Use `scripts/local_stt_benchmark.sh` with any OpenAI-compatible local STT server:
 
@@ -105,7 +108,7 @@ make ci-check
 - `make lint`: lint changed Swift files without editing them.
 - `make test`: run the `SapoWhisperTests` unit bundle.
 - `make script-tests`: run benchmark contract and redaction tests.
-- `make secrets-scan`: scan source plus the exact tracked-audio allowlist.
+- `make secrets-scan`: scan source plus the exact tracked-audio allowlist (public fixtures and bundled app sounds).
 - `make ci-check`: lint + secret/audio scan + script tests + Debug build + unit tests.
 - `make release-check`: lint + Release build + size, signature, architecture, content, and private-path checks.
 - `make install-dev`: signed Release reinstall to `/Applications` for local UI iteration without resetting macOS permission grants.
@@ -135,7 +138,7 @@ Local test DMGs are usually ad-hoc signed with hardened runtime. Do not present 
 
 ## 🧪 Tests
 
-Unit tests live in `SapoWhisperTests` and cover the AI polish contracts and model catalog, failure mapping, engine migration, audio upload quality, realtime finalization, replay conversion, and settings transfer.
+Unit tests live in `SapoWhisperTests` and cover the AI polish contracts and model catalog, failure mapping, engine migration, audio upload quality, realtime finalization, replay conversion, and settings transfer. The History replay script is an aggregate/redaction check, not a full live-engine parity test: its transcription request does not reproduce the app's complete recognition prompt, language, or VAD settings.
 
 ```bash
 make test
@@ -147,7 +150,7 @@ Use `make ci-check` as the local PR gate and `make release-check` before packagi
 
 Tracked and public-safe:
 
-- Source code, app assets, localized strings, hash-pinned public audio fixtures, sound effects, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, benchmark scorecard, changelog, `AGENTS.md`, contributing notes, security notes, and license.
+- Source code, app assets, localized strings, hash-pinned public audio fixtures, four bundled app sounds, entitlements, Xcode project metadata, shared scheme, `Package.resolved`, Makefile, scripts, README, benchmark scorecard, changelog, `AGENTS.md`, contributing notes, security notes, and license.
 
 Ignored and local/private:
 

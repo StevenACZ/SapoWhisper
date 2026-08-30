@@ -15,6 +15,7 @@ Public benchmark fixtures for SapoWhisper's `Local AI Server (NVIDIA)` engine.
 - `technical/es/synthetic-public.txt` / `technical/es/synthetic-public.wav`: Spanish technical fixture generated with the macOS Paulina system voice from the tracked authored transcript.
 
 All WAV files are `16 kHz`, mono, `pcm_s16le`, matching SapoWhisper's normal recording format.
+The English and longform WAVs were already public before the current provenance record, so only the Spanish fixture below carries a synthetic-voice claim. The preview mentioned inside the longform narration refers to the explicit `PRINT_TEXT=1` mode; benchmark output is aggregate-only by default.
 
 ## Benchmark
 

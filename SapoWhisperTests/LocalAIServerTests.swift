@@ -48,13 +48,13 @@ final class LocalAIServerTests: XCTestCase {
     func testLocalAIServerBearerTransportRequiresHTTPSOutsideLoopback() {
         XCTAssertNil(
             LocalAIServerConfiguration.normalizedBaseURL(
-                from: "http://192.168.1.20:8000",
+                from: "http://192.0.2.20:8000",
                 apiKey: "local-token"
             )
         )
         XCTAssertNotNil(
             LocalAIServerConfiguration.normalizedBaseURL(
-                from: "http://192.168.1.20:8000",
+                from: "http://192.0.2.20:8000",
                 apiKey: ""
             )
         )
@@ -100,7 +100,7 @@ final class LocalAIServerTests: XCTestCase {
 
         do {
             _ = try await makeStubbedTranscriber().testConnection(
-                baseURL: "http://192.168.1.20:8000",
+                baseURL: "http://192.0.2.20:8000",
                 model: "test-model",
                 apiKey: "local-token"
             )

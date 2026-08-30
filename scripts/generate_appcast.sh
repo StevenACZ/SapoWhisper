@@ -43,7 +43,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Verifying stapled app"
-codesign --verify --deep --strict "$APP_PATH"
+scripts/verify_release_app.sh "$APP_PATH" "Developer ID Application"
 xcrun stapler validate "$APP_PATH"
 
 echo "==> Zipping $APP_PATH -> $ZIP_PATH"
@@ -60,7 +60,7 @@ fi
 echo "==> Verifying archived app"
 ditto -x -k "$ZIP_PATH" "$VALIDATION_DIR"
 ARCHIVED_APP="$VALIDATION_DIR/$(basename "$APP_PATH")"
-codesign --verify --deep --strict "$ARCHIVED_APP"
+scripts/verify_release_app.sh "$ARCHIVED_APP" "Developer ID Application"
 xcrun stapler validate "$ARCHIVED_APP"
 
 echo "==> Signing update (EdDSA key from the login Keychain)"

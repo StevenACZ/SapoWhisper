@@ -91,8 +91,6 @@ struct PolishModelPicker: View {
         }
     }
 
-    /// Picking a ranked model also restores the reasoning budget its published
-    /// numbers were measured with; free-text IDs never touch the setting.
     private func applyBenchmarkedReasoning(for recommendation: PolishModelRecommendation) {
         let policy = PolishModelCatalog.reasoningPolicy(for: recommendation.model, provider: endpoint)
         let effort = policy.benchmarked.coerced(toMinimum: policy.minimum)
@@ -105,7 +103,7 @@ struct PolishModelPicker: View {
         case .bestValue: return "star.circle.fill"
         case .sameLanguageValue: return "equal.circle.fill"
         case .fastBudget: return "bolt.circle.fill"
-        case .economy: return "dollarsign.circle.fill"
+        case .economy: return "flask.fill"
         case .notRecommended: return "xmark.octagon.fill"
         }
     }

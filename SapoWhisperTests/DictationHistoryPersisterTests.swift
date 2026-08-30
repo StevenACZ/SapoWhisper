@@ -103,6 +103,26 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertNil(persister.lastFailedHistoryId)
     }
 
+    func testPersistenceClearsStreamingRecoveryMarkerOnlyAfterRowExists() throws {
+        let source = makeSourceWAV(named: "streaming-marker")
+        ActiveRecordingMarker.mark(source)
+        let marker = ActiveRecordingMarker.markerURL(for: source)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+
+        let outcome = persister.persistAbortedCapture(
+            audioURL: source,
+            duration: 2.4,
+            engine: .deepgram,
+            engineName: "Deepgram Flux Live",
+            language: "auto",
+            failureKind: .recordingInterrupted,
+            storeRetryState: true
+        )
+
+        XCTAssertNotNil(outcome.historyId)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+
     func testAbortStoringRetryStatePointsAtHistoryCopy() throws {
         let source = makeSourceWAV(named: "abort-retry")
 

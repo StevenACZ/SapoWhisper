@@ -65,6 +65,123 @@ final class PolishInstructionResponseGuardTests: XCTestCase {
         XCTAssertFalse(verdict.isAcceptable)
     }
 
+    func testDifferentSourceOpenerDoesNotAuthorizeIntroducedAssistantOpener() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Claro, revisa el reporte antes del viernes.",
+            polished: "Aquí tienes el reporte revisado antes del viernes."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testDifferentSourceRefusalDoesNotAuthorizeIntroducedAIRefusal() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Lo siento, actualiza el README cuando puedas.",
+            polished: "Como modelo de lenguaje, no puedo actualizar archivos."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testDifferentCompletionReportDoesNotAuthorizeIntroducedDeletion() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Ya probé el build; ahora revisa el reporte.",
+            polished: "Eliminé el reporte."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testRejectsSpanishCompletionReportWithoutYa() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Actualiza el README con los pasos nuevos.",
+            polished: "Actualicé el README con los pasos nuevos."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testRejectsIntroducedBareCompletionReply() {
+        let cases = [
+            ("Hazlo.", "Hecho."),
+            ("Run it.", "Done."),
+            ("Termina la actualización.", "Ya está listo."),
+            ("Completa la tarea.", "All done."),
+            ("Termina la tarea.", "Todo listo."),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishInstructionResponseGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1
+            )
+            XCTAssertFalse(verdict.isAcceptable, testCase.1)
+        }
+    }
+
+    func testAcceptsTranslatedBareCompletionFromSource() {
+        let cases = [
+            ("Hecho.", "Done."),
+            ("Ready.", "Listo."),
+            ("Listo.", "All set."),
+            ("Todo está listo.", "All set."),
+            ("Everything is ready.", "Todo está listo."),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishInstructionResponseGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1,
+                translationExpected: true
+            )
+            XCTAssertTrue(verdict.isAcceptable, testCase.1)
+        }
+    }
+
+    func testDeclarativeCompletionDoesNotAuthorizeInventedActionOrNegationFlip() {
+        let cases = [
+            ("Todo está listo.", "I finished it."),
+            ("Nada está listo.", "All set."),
+        ]
+
+        for testCase in cases {
+            let verdict = PolishInstructionResponseGuard.evaluate(
+                raw: testCase.0,
+                polished: testCase.1,
+                translationExpected: true
+            )
+            XCTAssertFalse(verdict.isAcceptable, testCase.1)
+        }
+    }
+
+    func testAcceptsFormalImperativeWithoutAccent() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Configura el servidor con el puerto nuevo.",
+            polished: "Configure el servidor con el puerto nuevo."
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testConfiguredSourceDoesNotAuthorizePublishedCompletion() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Ya configuré el servidor; publica el release mañana.",
+            polished: "Ya publiqué el release."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testHelpRefusalDoesNotAuthorizeExecutionRefusal() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "No puedo ayudar con la mudanza el sábado.",
+            polished: "No puedo ejecutar esa operación."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
+    func testNonLeadingSourceOpenerDoesNotAuthorizeAssistantReplyFraming() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "Durante la reunión de planificación del viernes, el mensaje decía claro, revisa el reporte.",
+            polished: "Claro, revisa el reporte antes del viernes."
+        )
+        XCTAssertFalse(verdict.isAcceptable)
+    }
+
     func testRejectsIntroducedFirstPersonCompletionReport() {
         let cases = [
             (

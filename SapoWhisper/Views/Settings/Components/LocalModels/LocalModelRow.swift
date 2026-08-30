@@ -140,12 +140,18 @@ struct LocalModelRow: View {
 
                 Text("•").foregroundColor(.secondary)
 
-                HStack(spacing: 1) {
-                    ForEach(0..<5) { index in
-                        Image(systemName: index < model.accuracy ? "star.fill" : "star")
-                            .font(.system(size: 8))
-                            .foregroundColor(index < model.accuracy ? .yellow : .secondary.opacity(0.3))
+                if let accuracy = model.accuracy {
+                    HStack(spacing: 1) {
+                        ForEach(0..<5) { index in
+                            Image(systemName: index < accuracy ? "star.fill" : "star")
+                                .font(.system(size: 8))
+                                .foregroundColor(index < accuracy ? .yellow : .secondary.opacity(0.3))
+                        }
                     }
+                } else {
+                    Text("model.quality_unmeasured".localized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
         }

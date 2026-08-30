@@ -7,7 +7,11 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/technical/en/short.wav}"
 
 if [[ ! -f "$AUDIO_PATH" ]]; then
-  echo "Audio file not found: $AUDIO_PATH" >&2
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Audio file not found: $AUDIO_PATH" >&2
+  else
+    echo "Audio file not found." >&2
+  fi
   exit 2
 fi
 
@@ -16,7 +20,29 @@ if [[ -z "${VOCABULARY_PATH:-}" && "${ALLOW_EMPTY_VOCABULARY:-0}" != "1" ]]; the
   exit 2
 fi
 if [[ -n "${VOCABULARY_PATH:-}" && ! -f "$VOCABULARY_PATH" ]]; then
-  echo "Vocabulary file not found: $VOCABULARY_PATH" >&2
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Vocabulary file not found: $VOCABULARY_PATH" >&2
+  else
+    echo "Vocabulary file not found." >&2
+  fi
+  exit 2
+fi
+
+if [[ -n "${TRANSCRIPT_PATH:-}" && ! -f "$TRANSCRIPT_PATH" ]]; then
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Transcript file not found: $TRANSCRIPT_PATH" >&2
+  else
+    echo "Transcript file not found." >&2
+  fi
+  exit 2
+fi
+
+if [[ -n "${CRITICAL_TERMS_PATH:-}" && ! -f "$CRITICAL_TERMS_PATH" ]]; then
+  if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+    echo "Critical terms file not found: $CRITICAL_TERMS_PATH" >&2
+  else
+    echo "Critical terms file not found." >&2
+  fi
   exit 2
 fi
 
@@ -24,11 +50,14 @@ engine="$(printf '%s' "$ENGINE" | tr '[:upper:]' '[:lower:]')"
 response_file="$(mktemp)"
 curl_config="$(mktemp)"
 curl_error="$(mktemp)"
-trap 'rm -f "$response_file" "$curl_config" "$curl_error"' EXIT
+scoring_error="$(mktemp)"
+trap 'rm -f "$response_file" "$curl_config" "$curl_error" "$scoring_error"' EXIT
 chmod 600 "$curl_config"
 
 make_deepgram_endpoint() {
-  python3 - "$script_dir" "${VOCABULARY_PATH:-}" "${LANGUAGE:-auto}" <<'PY'
+  local endpoint_error endpoint_value python_status
+  endpoint_error="$(mktemp)"
+  if endpoint_value="$(python3 - "$script_dir" "${VOCABULARY_PATH:-}" "${LANGUAGE:-auto}" 2>"$endpoint_error" <<'PY'
 import pathlib
 import sys
 import urllib.parse
@@ -69,10 +98,25 @@ if vocabulary_path:
 
 print("https://api.deepgram.com/v1/listen?" + urllib.parse.urlencode(query))
 PY
+  )"; then
+    rm -f "$endpoint_error"
+    printf '%s\n' "$endpoint_value"
+  else
+    python_status=$?
+    if [[ "${PRINT_TEXT:-0}" == "1" && -s "$endpoint_error" ]]; then
+      cat "$endpoint_error" >&2
+    else
+      echo "Unable to load vocabulary." >&2
+    fi
+    rm -f "$endpoint_error"
+    return "$python_status"
+  fi
 }
 
 make_elevenlabs_keyterms() {
-  python3 - "$script_dir" "${VOCABULARY_PATH:-}" <<'PY'
+  local keyterms_error keyterms_value python_status
+  keyterms_error="$(mktemp)"
+  if keyterms_value="$(python3 - "$script_dir" "${VOCABULARY_PATH:-}" 2>"$keyterms_error" <<'PY'
 import sys
 
 sys.path.insert(0, sys.argv[1])
@@ -94,6 +138,19 @@ valid = [
 for term in valid[:1000]:
     print(term)
 PY
+  )"; then
+    rm -f "$keyterms_error"
+    printf '%s\n' "$keyterms_value"
+  else
+    python_status=$?
+    if [[ "${PRINT_TEXT:-0}" == "1" && -s "$keyterms_error" ]]; then
+      cat "$keyterms_error" >&2
+    else
+      echo "Unable to load vocabulary." >&2
+    fi
+    rm -f "$keyterms_error"
+    return "$python_status"
+  fi
 }
 
 case "$engine" in
@@ -163,7 +220,7 @@ if [[ "$curl_status" -ne 0 ]]; then
   exit "$curl_status"
 fi
 
-python3 - "$script_dir" "$response_file" "$elapsed" "$engine" "$model" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" <<'PY'
+if python3 - "$script_dir" "$response_file" "$elapsed" "$engine" "$model" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" 2>"$scoring_error" <<'PY'
 import json
 import pathlib
 import sys
@@ -250,3 +307,14 @@ if print_text:
 
 print(json.dumps(result, ensure_ascii=False))
 PY
+then
+  :
+else
+  python_status=$?
+  if [[ "${PRINT_TEXT:-0}" == "1" && -s "$scoring_error" ]]; then
+    cat "$scoring_error" >&2
+  else
+    echo "Unable to score transcription result." >&2
+  fi
+  exit "$python_status"
+fi

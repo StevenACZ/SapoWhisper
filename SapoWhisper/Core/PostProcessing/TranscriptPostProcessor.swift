@@ -631,6 +631,8 @@ final class TranscriptPostProcessor {
             )
             if !instructionVerdict.isAcceptable {
                 lastInstructionRejected = guarded
+            } else {
+                lastInstructionRejected = nil
             }
             lastGuarded = guarded
             lastTranslationShapeRejected = fidelityVerdict.translationShapeMismatch
@@ -741,8 +743,9 @@ final class TranscriptPostProcessor {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "translation-retry")
             SapoLog.ai.warning(
-                "AI polish translation retry failed detail=\(error.localizedDescription, privacy: .public)"
+                "AI polish translation retry failed \(detail, privacy: .public)"
             )
             throw PolishProviderError.translationFailed
         }

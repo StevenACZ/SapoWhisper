@@ -18,21 +18,31 @@ case "$mode" in
     ;;
   tree)
     tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-gitleaks.XXXXXX")"
+    index_dir="$tmp_dir/index"
+    working_dir="$tmp_dir/working"
+    mkdir -p "$index_dir" "$working_dir"
     cleanup() {
       rm -rf "$tmp_dir"
     }
     trap cleanup EXIT
+
+    git ls-files -z --cached |
+      while IFS= read -r -d '' file; do
+        mkdir -p "$index_dir/$(dirname "$file")"
+        git cat-file blob ":$file" >"$index_dir/$file"
+      done
 
     git ls-files -z --cached --others --exclude-standard |
       while IFS= read -r -d '' file; do
         # Files deleted in the working tree but not yet staged are still
         # listed by --cached; there is nothing on disk to scan.
         [ -f "$file" ] || continue
-        mkdir -p "$tmp_dir/$(dirname "$file")"
-        cp -p "$file" "$tmp_dir/$file"
+        mkdir -p "$working_dir/$(dirname "$file")"
+        cp -p "$file" "$working_dir/$file"
       done
 
-    gitleaks dir "$tmp_dir" --redact --no-banner --config .gitleaks.toml
+    gitleaks dir "$index_dir" --redact --no-banner --config .gitleaks.toml
+    gitleaks dir "$working_dir" --redact --no-banner --config .gitleaks.toml
     ;;
   *)
     echo "secrets-scan: unknown mode '$mode' (use staged|tree)" >&2

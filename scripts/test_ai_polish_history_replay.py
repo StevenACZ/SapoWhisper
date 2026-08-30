@@ -119,6 +119,137 @@ class HistoryReplayRedactionTests(unittest.TestCase):
 
         self.assertIn("History DB not found: /private/example/missing-history.db", output.getvalue())
 
+    def test_provider_urls_require_http_or_https_without_private_url_parts(self):
+        invalid_urls = (
+            "ftp://example.invalid/v1",
+            "http://user:password@example.invalid/v1",
+            "http://example.invalid/v1?token=secret",
+            "http://example.invalid/v1#fragment",
+        )
+        for value in invalid_urls:
+            with self.subTest(value=value):
+                with self.assertRaises(REPLAY.ReplayInputError) as raised:
+                    REPLAY.validate_provider_url(value, "polish-base-url")
+                self.assertIn("Provider URL must use http(s)", str(raised.exception))
+                self.assertNotIn(value, str(raised.exception))
+
+        for value in ("http://localhost:8081/v1", "http://127.0.0.1:8081/v1", "http://[::1]:8081/v1"):
+            with self.subTest(value=value):
+                self.assertTrue(REPLAY.is_loopback_host(REPLAY.validate_provider_url(value, "polish-base-url").hostname))
+
+    def test_remote_polish_is_rejected_before_local_inputs_are_read(self):
+        output = io.StringIO()
+        arguments = [
+            str(SCRIPT),
+            "--json",
+            "--db",
+            "/private/example/history.db",
+            "--polish-base-url",
+            "https://remote.example.invalid/v1",
+            "--polish-model",
+            "test-model",
+        ]
+
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(REPLAY, "load_vocabulary") as load_vocabulary,
+            mock.patch.object(REPLAY, "fetch_rows") as fetch_rows,
+            contextlib.redirect_stderr(output),
+        ):
+            self.assertEqual(REPLAY.main(), 1)
+
+        load_vocabulary.assert_not_called()
+        fetch_rows.assert_not_called()
+        self.assertIn("Remote private data requires --allow-remote-private-data.", output.getvalue())
+        self.assertNotIn("remote.example.invalid", output.getvalue())
+        self.assertNotIn("/private/example/history.db", output.getvalue())
+
+    def test_remote_stt_requires_opt_in_only_when_audio_retranscription_is_enabled(self):
+        output = io.StringIO()
+        arguments = [
+            str(SCRIPT),
+            "--json",
+            "--db",
+            "/private/example/history.db",
+            "--polish-model",
+            "test-model",
+            "--stt-base-url",
+            "https://remote.example.invalid/v1",
+            "--retranscribe-audio",
+        ]
+
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(REPLAY, "load_vocabulary") as load_vocabulary,
+            mock.patch.object(REPLAY, "fetch_rows") as fetch_rows,
+            contextlib.redirect_stderr(output),
+        ):
+            self.assertEqual(REPLAY.main(), 1)
+
+        load_vocabulary.assert_not_called()
+        fetch_rows.assert_not_called()
+        self.assertIn("Remote private data requires --allow-remote-private-data.", output.getvalue())
+        self.assertNotIn("remote.example.invalid", output.getvalue())
+
+    def test_remote_replay_can_be_explicitly_authorized(self):
+        output = io.StringIO()
+        row = {
+            "id": 7,
+            "raw_transcription": "deep comment please",
+            "transcription": "deep comment please",
+            "audio_path": None,
+        }
+        arguments = [
+            str(SCRIPT),
+            "--json",
+            "--db",
+            "/private/example/history.db",
+            "--polish-base-url",
+            "https://remote.example.invalid/v1",
+            "--polish-model",
+            "test-model",
+            "--allow-remote-private-data",
+        ]
+
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(REPLAY, "load_vocabulary", return_value=([], {})),
+            mock.patch.object(REPLAY, "fetch_rows", return_value=[row]),
+            mock.patch.object(REPLAY, "polish_text", return_value="git commit please"),
+            mock.patch.object(REPLAY, "evaluate_guard", return_value=(True, [])),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertEqual(REPLAY.main(), 0)
+
+        self.assertEqual(json.loads(output.getvalue())["rows_requested"], 25)
+
+    def test_remote_replay_rejects_plain_http_even_with_opt_in(self):
+        output = io.StringIO()
+        arguments = [
+            str(SCRIPT),
+            "--json",
+            "--db",
+            "/private/example/history.db",
+            "--polish-base-url",
+            "http://remote.example.invalid/v1",
+            "--polish-model",
+            "test-model",
+            "--allow-remote-private-data",
+        ]
+
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(REPLAY, "load_vocabulary") as load_vocabulary,
+            mock.patch.object(REPLAY, "fetch_rows") as fetch_rows,
+            contextlib.redirect_stderr(output),
+        ):
+            self.assertEqual(REPLAY.main(), 1)
+
+        load_vocabulary.assert_not_called()
+        fetch_rows.assert_not_called()
+        self.assertIn("Remote private data requires HTTPS.", output.getvalue())
+        self.assertNotIn("remote.example.invalid", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,8 +19,8 @@ enum PolishModelEvidenceTier: String {
 
     nonisolated var carriesFidelityRisk: Bool {
         switch self {
-        case .bestTested, .bestValue: return false
-        case .sameLanguageValue, .fastBudget, .economy, .notRecommended: return true
+        case .bestTested: return false
+        case .bestValue, .sameLanguageValue, .fastBudget, .economy, .notRecommended: return true
         }
     }
 }
@@ -61,7 +61,8 @@ enum PolishModelCatalog {
         provider: PolishEndpoint
     ) -> (benchmarked: PolishReasoningEffort, minimum: PolishReasoningEffort?) {
         let normalized = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let mandatoryMinimum: PolishReasoningEffort? = requiresReasoning(normalized) ? .low : nil
+        let mandatoryMinimum: PolishReasoningEffort? =
+            provider == .openRouter && requiresReasoning(normalized) ? .low : nil
 
         guard let recommendation = provider.modelRecommendation(for: normalized) else {
             return (.automatic, mandatoryMinimum)
@@ -340,17 +341,17 @@ enum PolishReasoningEffort: String, CaseIterable, Identifiable {
     }
 
     nonisolated func coerced(toMinimum minimum: PolishReasoningEffort?) -> PolishReasoningEffort {
-        switch minimum {
-        case .low, .medium, .high:
-            break
-        case .automatic, .off, nil:
-            return self
-        }
+        guard let minimumRank = minimum?.explicitRank else { return self }
+        guard let currentRank = explicitRank else { return minimum ?? self }
+        return currentRank >= minimumRank ? self : (minimum ?? self)
+    }
+
+    private nonisolated var explicitRank: Int? {
         switch self {
-        case .automatic, .off:
-            return minimum ?? self
-        case .low, .medium, .high:
-            return self
+        case .automatic, .off: return nil
+        case .low: return 0
+        case .medium: return 1
+        case .high: return 2
         }
     }
 

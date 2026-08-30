@@ -77,8 +77,9 @@ final class UpdateManager {
         do {
             try updater.start()
         } catch {
+            let detail = Self.startFailureLogDetail(for: error)
             SapoLog.lifecycle.error(
-                "Updater failed to start: \(error.localizedDescription, privacy: .public)")
+                "Updater failed to start \(detail, privacy: .public)")
             return
         }
 
@@ -196,16 +197,22 @@ final class UpdateManager {
 
     /// Scheduled-check errors stay silent; a user-requested install shows
     /// a retryable failure row instead.
-    func handleError(_ message: String) {
+    func handleError(_ error: Error) {
         finishManualCheck(status: .idle)
         if installRequested, let pendingVersion {
-            SapoLog.lifecycle.error("Update install failed: \(message, privacy: .public)")
+            let detail = LogSanitizer.errorDiagnostic(error, state: "install")
+            SapoLog.lifecycle.error("Update failed \(detail, privacy: .public)")
             phase = .failed(version: pendingVersion)
         } else {
-            SapoLog.lifecycle.debug("Update check failed silently")
+            let detail = LogSanitizer.errorDiagnostic(error, state: "check")
+            SapoLog.lifecycle.debug("Update failed silently \(detail, privacy: .public)")
             phase = pendingVersion.map { .available(version: $0) } ?? .idle
         }
         installRequested = false
+    }
+
+    static func startFailureLogDetail(for error: Error) -> String {
+        LogSanitizer.errorDiagnostic(error, state: "start")
     }
 
     /// Sparkle tears the session down (abort or completion). Keep the
@@ -281,7 +288,7 @@ private final class Driver: NSObject, SPUUserDriver {
     }
 
     func showUpdaterError(_ error: any Error, acknowledgement: @escaping () -> Void) {
-        manager.handleError(error.localizedDescription)
+        manager.handleError(error)
         acknowledgement()
     }
 
@@ -327,10 +334,11 @@ private final class Driver: NSObject, SPUUserDriver {
 
 private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
-    /// Local-testing escape hatch: point the feed at a local appcast with
-    /// `defaults write oli.SapoWhisper updateFeedURLOverride <url>`.
-    /// Production resolves SUFeedURL from Info.plist (return nil).
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
-        UserDefaults.standard.string(forKey: Constants.StorageKeys.updateFeedURLOverride)
+        #if DEBUG
+            UserDefaults.standard.string(forKey: Constants.StorageKeys.updateFeedURLOverride)
+        #else
+            nil
+        #endif
     }
 }

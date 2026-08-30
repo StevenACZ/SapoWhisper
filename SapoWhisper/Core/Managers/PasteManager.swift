@@ -22,9 +22,7 @@ class PasteManager {
     /// Guarda la app activa actual
     static func savePreviousApp() {
         previousApp = NSWorkspace.shared.frontmostApplication
-        SapoLog.menuBar.info(
-            "Saved previous app name=\(self.previousApp?.localizedName ?? "none", privacy: .public)"
-        )
+        SapoLog.menuBar.info("Saved previous app available=\(self.previousApp != nil, privacy: .public)")
     }
 
     /// Copia texto al portapapeles del sistema
@@ -63,9 +61,7 @@ class PasteManager {
         }
 
         targetApp.activate(options: [])
-        SapoLog.menuBar.info(
-            "Reactivating previous app name=\(targetApp.localizedName ?? "unknown", privacy: .public)"
-        )
+        SapoLog.menuBar.info("Reactivating previous app")
 
         // Both triggers (workspace notification with queue .main, and the
         // main-queue fallback) deliver on the main thread.

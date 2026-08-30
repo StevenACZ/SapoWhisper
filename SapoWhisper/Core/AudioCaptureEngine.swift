@@ -61,6 +61,13 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
             case .streaming: return "streaming"
             }
         }
+
+        var keepsRecoveryMarkerAfterCapture: Bool {
+            switch self {
+            case .batch: return false
+            case .streaming: return true
+            }
+        }
     }
 
     let mode: Mode
@@ -346,8 +353,9 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                         continuation.resume(returning: ())
                     } catch {
                         self.cleanupSetupArtifacts(engine: engine, recordingURL: pendingRecordingURL, deleteTemporaryFile: true)
+                        let detail = LogSanitizer.errorDiagnostic(error, state: "capture-setup")
                         SapoLog.recording.error(
-                            "\(self.mode.logLabel, privacy: .public) setup failed error=\(error.localizedDescription, privacy: .public)"
+                            "\(self.mode.logLabel, privacy: .public) setup failed \(detail, privacy: .public)"
                         )
                         continuation.resume(throwing: error)
                     }
@@ -433,7 +441,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         audioWriteQueue.sync {}
 
         let currentURL = recordingURL
-        if let currentURL {
+        if let currentURL, !mode.keepsRecoveryMarkerAfterCapture {
             ActiveRecordingMarker.clear(currentURL)
         }
         audioFile = nil
@@ -459,7 +467,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                 )
             } else {
                 SapoLog.recording.warning(
-                    "\(self.mode.logLabel, privacy: .public) stopped without input buffers bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .public)"
+                    "\(self.mode.logLabel, privacy: .public) stopped without input buffers bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .private(mask: .hash))"
                 )
             }
             if !diagnostics.isComplete {
@@ -564,6 +572,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
     /// Elimina el archivo de grabación temporal
     func deleteRecording(at url: URL) {
+        ActiveRecordingMarker.clear(url)
         try? FileManager.default.removeItem(at: url)
     }
 

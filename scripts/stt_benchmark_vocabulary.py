@@ -8,6 +8,9 @@ BASE_CONFUSIONS = {
     "Claude": ["Cloud", "Claw", "Clawd", "Clawed", "Claud", "Clauco", "Clouco", "Slough", "Clog"],
     "Deepgram": ["Deep gram", "Depgram", "Deppgram", "Ditgram"],
     "ElevenLabs": ["Eleven Labs", "11labs"],
+    "IABrain": ["IA Brain", "I A Brain", "ya brain"],
+    "CHANGELOG": ["Change log", "hangelog", "changelov"],
+    "AGENTS.md": ["AGENTS punto eme de", "Ages punto eme de"],
     "Local AI Server": ["localize server", "local ya server", "localia server"],
     "SapoWhisper": [
         "Sapo Whisper",
@@ -38,11 +41,35 @@ EXACT_CONFUSIONS = {
     "local ai server (nvidia)": ["Local AI Server NVIDIA", "Local AI Server, NVIDIA", "local ya server NVIDIA", "localia server NVIDIA"],
     "ai polish": ["a AI", "a AI polish", "ahí a Polish"],
     "commit": ["comet", "comit", "commet", "HacerunComet"],
-    "git commit": ["deep comment", "deep comet", "dip comment", "hago Kimi", "Kit commit", "KitCom", "KitComit", "KitCommit"],
+    "git commit": [
+        "deep comment",
+        "deep comet",
+        "dip comment",
+        "hago Kimi",
+        "Kit commit",
+        "KitCom",
+        "KitComit",
+        "KitCommit",
+        "hit commit",
+        "hiit commit",
+        "heat commit",
+        "hit con meat",
+        "hiit con meat",
+        "heat con meat",
+    ],
     "kimi v2": ["KimiV2", "Kimi P2", "Kimi P 2", "KimiVersión2", "Kimi version 2", "Kimi version dos", "Kimi versión dos", "Kimi V two", "Kimi V dos"],
     "qbittorrent": ["KubiTorret", "Kubi Torrent", "QubiTorrent", "Qubitorrel", "Cubitorrel", "qBittorrent", "qbittorrent"],
     "vue 3": ["Vue three"],
-    "git push": ["deep push", "dip push", "hit pug", "kit push", "KitPush"],
+    "git push": [
+        "deep push",
+        "dip push",
+        "hit pug",
+        "kit push",
+        "KitPush",
+        "hit push",
+        "hiit push",
+        "heat push",
+    ],
     "testflight": ["TestFly"],
     "sqlite": ["SQ Lite", "UseSqlite"],
     "userdefaults": ["UserDefault", "User Default", "User Defaults"],
@@ -259,15 +286,28 @@ def apply_recognition_corrections(transcript, keyterms, replacements):
         current = re.sub(replacement_pattern(original), lambda _: replacement, current, flags=re.IGNORECASE)
     candidates = recognition_candidates(keyterms, replacements)
     available_terms = {term.strip().casefold() for term in candidates if term.strip()}
-    if "git" in available_terms and "commit" in available_terms:
-        for variant in ["deep comment", "deep comet", "dip comment"]:
+    knows_git_commit = "git commit" in available_terms or ("git" in available_terms and "commit" in available_terms)
+    knows_git_push = "git push" in available_terms or ("git" in available_terms and "push" in available_terms)
+    if knows_git_commit:
+        for variant in [
+            "deep comment",
+            "deep comet",
+            "dip comment",
+            "hit commit",
+            "hiit commit",
+            "heat commit",
+            "hit con meat",
+            "hiit con meat",
+            "heat con meat",
+        ]:
             current = re.sub(whole_term_pattern(variant), "git commit", current, flags=re.IGNORECASE)
-    if "git" in available_terms and "push" in available_terms:
-        for variant in ["deep push", "dip push"]:
+    if knows_git_push:
+        for variant in ["deep push", "dip push", "hit push", "hiit push", "heat push"]:
             current = re.sub(whole_term_pattern(variant), "git push", current, flags=re.IGNORECASE)
-    if "git" in available_terms:
+    if "git" in available_terms or knows_git_commit:
         for variant in ["KitCom", "KitComit", "KitCommit", "Kit Commit"]:
             current = re.sub(whole_term_pattern(variant), "git commit", current, flags=re.IGNORECASE)
+    if "git" in available_terms or knows_git_push:
         for variant in ["KitPush", "Kit Push"]:
             current = re.sub(whole_term_pattern(variant), "git push", current, flags=re.IGNORECASE)
     canonical_keys = {normalized_recognition_key(term) for term in candidates}

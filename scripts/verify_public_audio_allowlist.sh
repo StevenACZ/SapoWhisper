@@ -3,6 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/sapowhisper-public-audio.XXXXXX")"
+cleanup() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
+
 expected_hash() {
   case "$1" in
     SapoWhisper/Resources/Sounds/error.wav) printf '%s' '9011858c2d6b5c5cce10c939fdacb4d7c4bf39bb8a37431a7aaff22c4f2eb2b5' ;;
@@ -20,43 +26,73 @@ expected_hash() {
   esac
 }
 
-unexpected=0
-audio_count=0
-while IFS= read -r -d '' file; do
-  [[ -f "$file" ]] || continue
-  mime="$(file --brief --mime-type "$file")"
+is_media_candidate() {
+  local file="$1"
+  local mime="$2"
   case "$mime" in
-    audio/*) ;;
+    audio/* | video/*) return 0 ;;
     *)
       case "$file" in
-        *.[Ww][Aa][Vv] | *.[Cc][Aa][Ff] | *.[Aa][Mm][Rr] | *.[Ww][Mm][Aa] | *.[Mm][Pp]3 | *.[Mm]4[Aa] | *.[Ff][Ll][Aa][Cc] | *.[Aa][Ii][Ff] | *.[Aa][Ii][Ff][Ff] | *.[Aa][Aa][Cc] | *.[Oo][Gg][Gg] | *.[Oo][Pp][Uu][Ss]) ;;
-        *) continue ;;
+        *.[Ww][Aa][Vv] | *.[Cc][Aa][Ff] | *.[Aa][Mm][Rr] | *.[Ww][Mm][Aa] | *.[Mm][Pp]3 | *.[Mm]4[Aa] | *.[Ff][Ll][Aa][Cc] | *.[Aa][Ii][Ff] | *.[Aa][Ii][Ff][Ff] | *.[Aa][Aa][Cc] | *.[Oo][Gg][Gg] | *.[Oo][Pp][Uu][Ss] | *.[Mm][Oo][Vv] | *.[Mm][Pp]4 | *.[Mm]4[Vv] | *.[Ww][Ee][Bb][Mm] | *.[Mm][Kk][Vv] | *.[Aa][Vv][Ii] | *.[Mm][Pp][Ee][Gg] | *.[Mm][Pp][Gg] | *.[3][Gg][Pp]) return 0 ;;
+        *) return 1 ;;
       esac
       ;;
   esac
+}
 
-  audio_count=$((audio_count + 1))
+validate_audio() {
+  local source="$1"
+  local file="$2"
+  local mime="$3"
+  local actual="$4"
   if ! expected="$(expected_hash "$file")"; then
-    printf 'public-audio-check: unexpected tracked audio: %s\n' "$file" >&2
+    printf 'public-audio-check: unexpected %s audio: %s\n' "$source" "$file" >&2
     unexpected=1
-    continue
+    return
   fi
 
-  actual="$(shasum -a 256 "$file" | awk '{print $1}')"
   if [[ "$actual" != "$expected" ]]; then
-    printf 'public-audio-check: hash mismatch: %s\n' "$file" >&2
+    printf 'public-audio-check: %s hash mismatch: %s\n' "$source" "$file" >&2
     unexpected=1
   fi
 
   if [[ "$mime" != "audio/wav" && "$mime" != "audio/x-wav" && "$mime" != "audio/vnd.wave" ]]; then
-    printf 'public-audio-check: invalid WAV type: %s (%s)\n' "$file" "$mime" >&2
+    printf 'public-audio-check: invalid %s WAV type: %s (%s)\n' "$source" "$file" "$mime" >&2
     unexpected=1
   fi
-done < <(git ls-files -z --cached --others --exclude-standard)
+}
 
-if [[ "$audio_count" -ne 11 ]]; then
-  printf 'public-audio-check: expected 11 public audio files, found %s\n' "$audio_count" >&2
+unexpected=0
+index_audio_count=0
+index_blob="$tmp_dir/index-blob"
+while IFS= read -r -d '' file; do
+  git cat-file blob ":$file" > "$index_blob"
+  mime="$(file --brief --mime-type "$index_blob")"
+  is_media_candidate "$file" "$mime" || continue
+  index_audio_count=$((index_audio_count + 1))
+  actual="$(shasum -a 256 "$index_blob" | awk '{print $1}')"
+  validate_audio indexed "$file" "$mime" "$actual"
+done < <(git ls-files -z --cached)
+
+if [[ "$index_audio_count" -ne 11 ]]; then
+  printf 'public-audio-check: expected 11 indexed public audio files, found %s\n' "$index_audio_count" >&2
   unexpected=1
 fi
+
+working_audio_count=0
+while IFS= read -r -d '' file; do
+  [[ -f "$file" ]] || continue
+  mime="$(file --brief --mime-type "$file")"
+  is_media_candidate "$file" "$mime" || continue
+  working_audio_count=$((working_audio_count + 1))
+  actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  validate_audio working-tree "$file" "$mime" "$actual"
+done < <(git ls-files -z --cached --others --exclude-standard)
+
+if [[ "$working_audio_count" -ne 11 ]]; then
+  printf 'public-audio-check: expected 11 working-tree public audio files, found %s\n' "$working_audio_count" >&2
+  unexpected=1
+fi
+
 test "$unexpected" -eq 0
-printf 'public-audio-check: tracked audio hashes and formats passed\n'
+printf 'public-audio-check: indexed and working-tree audio hashes and formats passed\n'

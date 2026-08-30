@@ -104,6 +104,12 @@ nonisolated enum TemporaryAudioStorage {
         var removed = 0
         for file in files {
             let name = file.lastPathComponent
+            if file.pathExtension == ActiveRecordingMarker.markerExtension {
+                continue
+            }
+            if fileManager.fileExists(atPath: ActiveRecordingMarker.markerURL(for: file).path) {
+                continue
+            }
             if legacyPrefixesOnly {
                 guard name.hasSuffix(".wav"), legacyPrefixes.contains(where: name.hasPrefix) else { continue }
             }

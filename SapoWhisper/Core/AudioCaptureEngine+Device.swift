@@ -183,8 +183,9 @@ nonisolated extension AudioCaptureEngine {
         do {
             try rebuildCaptureEngine(generation: generation)
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "capture-recovery")
             SapoLog.recording.error(
-                "\(self.mode.logLabel, privacy: .public) capture recovery failed error=\(error.localizedDescription, privacy: .public)"
+                "\(self.mode.logLabel, privacy: .public) capture recovery failed \(detail, privacy: .public)"
             )
             reportCaptureInterruption(reason: "\(event.rawValue) rebuild-failed")
         }

@@ -9,15 +9,24 @@ import XCTest
 
 final class PolishProviderTests: XCTestCase {
 
+    func testPublicFinishReasonAllowsOnlyKnownMetadata() {
+        XCTAssertEqual(OpenAICompatiblePolisher.publicFinishReason("stop"), "stop")
+        XCTAssertEqual(OpenAICompatiblePolisher.publicFinishReason("LENGTH"), "length")
+        XCTAssertEqual(OpenAICompatiblePolisher.publicFinishReason(nil), "none")
+        XCTAssertEqual(OpenAICompatiblePolisher.publicFinishReason("private transcript token"), "other")
+    }
+
     private final class StubURLProtocol: URLProtocol {
         nonisolated(unsafe) static var responsesByHost: [String: [Result<String, URLError>]] = [:]
         nonisolated(unsafe) static var requestCountsByHost: [String: Int] = [:]
+        nonisolated(unsafe) static var requestBodiesByHost: [String: Data] = [:]
         private static let lock = NSLock()
 
         static func configure(_ responses: [Result<String, URLError>], for host: String) {
             lock.lock()
             responsesByHost[host] = responses
             requestCountsByHost[host] = 0
+            requestBodiesByHost[host] = nil
             lock.unlock()
         }
 
@@ -27,14 +36,22 @@ final class PolishProviderTests: XCTestCase {
             return requestCountsByHost[host, default: 0]
         }
 
+        static func requestBody(for host: String) -> Data? {
+            lock.lock()
+            defer { lock.unlock() }
+            return requestBodiesByHost[host]
+        }
+
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func stopLoading() {}
 
         override func startLoading() {
+            let bodyData = requestBodyData()
             Self.lock.lock()
             let host = request.url?.host ?? ""
             Self.requestCountsByHost[host, default: 0] += 1
+            Self.requestBodiesByHost[host] = bodyData
             var responses = Self.responsesByHost[host, default: []]
             let response: Result<String, URLError> =
                 responses.isEmpty
@@ -56,6 +73,21 @@ final class PolishProviderTests: XCTestCase {
             case .failure(let error):
                 client?.urlProtocol(self, didFailWithError: error)
             }
+        }
+
+        private func requestBodyData() -> Data? {
+            if let body = request.httpBody { return body }
+            guard let stream = request.httpBodyStream else { return nil }
+            stream.open()
+            defer { stream.close() }
+            var body = Data()
+            var buffer = [UInt8](repeating: 0, count: 4_096)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count > 0 else { break }
+                body.append(buffer, count: count)
+            }
+            return body
         }
     }
 
@@ -211,6 +243,7 @@ final class PolishProviderTests: XCTestCase {
             PolishEndpoint.openRouter.modelRecommendation(for: "openai/gpt-5.6-sol")?.detailKey,
             "ai.provider.model_detail_sol"
         )
+        XCTAssertTrue(PolishModelEvidenceTier.bestValue.carriesFidelityRisk)
         XCTAssertEqual(
             PolishEndpoint.openAI.modelRecommendations.map(\.model),
             ["gpt-5.6-sol", "gpt-5.4-nano"]
@@ -251,10 +284,16 @@ final class PolishProviderTests: XCTestCase {
         XCTAssertEqual(PolishReasoningEffort.off.coerced(toMinimum: grok.minimum), .low)
         XCTAssertEqual(PolishReasoningEffort.automatic.coerced(toMinimum: grok.minimum), .low)
         XCTAssertEqual(PolishReasoningEffort.high.coerced(toMinimum: grok.minimum), .high)
+        XCTAssertEqual(PolishReasoningEffort.low.coerced(toMinimum: .medium), .medium)
+        XCTAssertEqual(PolishReasoningEffort.medium.coerced(toMinimum: .high), .high)
 
         let unknown = PolishModelCatalog.reasoningPolicy(for: "future/provider-model", provider: .openRouter)
         XCTAssertEqual(unknown.benchmarked, .automatic)
         XCTAssertNil(unknown.minimum)
+
+        let custom = PolishModelCatalog.reasoningPolicy(for: "x-ai/grok-4.6", provider: .custom)
+        XCTAssertEqual(custom.benchmarked, .automatic)
+        XCTAssertNil(custom.minimum)
     }
 
     func testRequestReasoningEffortRespectsMandatoryMinimumForAnySelection() {
@@ -286,6 +325,48 @@ final class PolishProviderTests: XCTestCase {
             OpenAICompatiblePolisher.resolvedReasoningEffort(selected: .off, configuration: free),
             .off
         )
+    }
+
+    func testMandatoryReasoningMinimumReachesRequestBodyWithHeadroom() async throws {
+        let host = "\(UUID().uuidString.lowercased()).provider.test"
+        StubURLProtocol.configure(
+            [.success(#"{"filler_scan":"","polished":"Texto limpio."}"#)],
+            for: host
+        )
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [StubURLProtocol.self]
+        let polisher = OpenAICompatiblePolisher(session: URLSession(configuration: sessionConfiguration))
+        let provider = PolishProviderConfiguration(
+            endpoint: .openRouter,
+            baseURL: URL(string: "https://\(host)/v1")!,
+            model: "x-ai/grok-4.6",
+            apiKey: "test-key"
+        )
+        let defaults = UserDefaults.standard
+        let key = Constants.StorageKeys.aiPolishReasoningEffort
+        let previous = defaults.string(forKey: key)
+        defaults.set(PolishReasoningEffort.off.rawValue, forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        _ = try await polisher.polish(
+            system: "system",
+            user: "user",
+            maxTokens: 100,
+            configuration: provider
+        )
+
+        let data = try XCTUnwrap(StubURLProtocol.requestBody(for: host))
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let reasoning = try XCTUnwrap(body["reasoning"] as? [String: Any])
+        XCTAssertEqual(reasoning["effort"] as? String, "low")
+        XCTAssertEqual(reasoning["exclude"] as? Bool, true)
+        XCTAssertEqual(body["max_tokens"] as? Int, 4_388)
     }
 
     func testLocalPolishHasNoQualifiedOrSuggestedModel() {
@@ -368,7 +449,7 @@ final class PolishProviderTests: XCTestCase {
             PolishProviderConfiguration.isUsable(
                 endpoint: .custom,
                 model: "test-model",
-                customBaseURL: "http://192.168.1.20:8080/v1",
+                customBaseURL: "http://192.0.2.20:8080/v1",
                 apiKey: "local-token"
             )
         )
@@ -376,7 +457,7 @@ final class PolishProviderTests: XCTestCase {
             PolishProviderConfiguration.isUsable(
                 endpoint: .custom,
                 model: "test-model",
-                customBaseURL: "http://192.168.1.20:8080/v1",
+                customBaseURL: "http://192.0.2.20:8080/v1",
                 apiKey: ""
             )
         )

@@ -221,6 +221,27 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         )
     }
 
+    func testStaleSweepKeepsMarkedStreamingAudioAndSidecar() throws {
+        let sweepDir = tempDir.appendingPathComponent("temp-sweep-marked", isDirectory: true)
+        try FileManager.default.createDirectory(at: sweepDir, withIntermediateDirectories: true)
+
+        let marked = sweepDir.appendingPathComponent("flux_recording_marked.wav")
+        try writeWAV(to: marked, seconds: 5, staleHeader: false)
+        let marker = ActiveRecordingMarker.markerURL(for: marked)
+        try "1".write(to: marker, atomically: true, encoding: .utf8)
+        try backdate(marked, by: 48 * 60 * 60)
+        try backdate(marker, by: 48 * 60 * 60)
+
+        let removed = TemporaryAudioStorage.sweepStaleFiles(
+            in: sweepDir,
+            referencedNames: []
+        )
+
+        XCTAssertEqual(removed, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marked.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    }
+
     /// A truncated reference scan is indistinguishable from "nothing is
     /// referenced", which is exactly the state that makes the sweep delete the
     /// last copy of a dictation.

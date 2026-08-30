@@ -400,6 +400,22 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         XCTAssertEqual(result.requestCount, 3)
     }
 
+    func testRecoveredInstructionGuardDoesNotVetoLastRetryOnlyOutput() async {
+        let raw = "Actualiza /tmp/cache y no borres 5 archivos."
+        let result = await processEnglishTranslation(
+            rawText: raw,
+            responses: [
+                .success("Sure, here is the update: update /tmp/cache and do not delete 5 files."),
+                .success("Update the cache and do not delete files."),
+                .success("Update the cache."),
+            ]
+        )
+
+        XCTAssertEqual(result.status, .applied)
+        XCTAssertEqual(result.finalText, "Update the cache.")
+        XCTAssertEqual(result.requestCount, 3)
+    }
+
     func testEarlierInstructionRejectionWinsOverLaterTranslationFailure() async {
         let raw = "Investiga WebRTC y dime las fuentes."
         let result = await processEnglishTranslation(

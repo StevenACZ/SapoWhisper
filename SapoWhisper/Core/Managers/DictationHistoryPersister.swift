@@ -320,6 +320,9 @@ final class DictationHistoryPersister {
     }
 
     nonisolated private func cleanupSourceAudioIfSafe(sourceURL: URL, persistedEntry: PersistedEntry) {
+        if persistedEntry.id > 0 {
+            ActiveRecordingMarker.clear(sourceURL)
+        }
         guard persistedEntry.copiedAudioToHistory else {
             SapoLog.recording.warning(
                 "Keeping source audio because history copy was unavailable path=\(sourceURL.path, privacy: .private)"

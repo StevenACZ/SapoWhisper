@@ -17,6 +17,7 @@ protocol TranscriptionPipelineHost: AnyObject {
     func isTranscriptionSessionCurrent(_ sessionID: UInt64) -> Bool
     func clearActiveTranscriptionSession()
     func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64)
+    func discardTerminalCapture(audioURL: URL)
 
     func postProcessTranscript(_ rawText: String, source: String, duration: TimeInterval?) async -> TranscriptAIResult
     func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?)
@@ -43,6 +44,13 @@ protocol TranscriptionPipelineHost: AnyObject {
     )
 
     func logTranscriptionSnapshot(reason: String, extra: String)
+}
+
+extension TranscriptionPipelineHost {
+    func discardTerminalCapture(audioURL: URL) {
+        ActiveRecordingMarker.clear(audioURL)
+        try? FileManager.default.removeItem(at: audioURL)
+    }
 }
 
 /// Where the pipeline's result lands in History: live dictations insert a
@@ -79,6 +87,7 @@ final class TranscriptionPipeline {
         let logger: Logger
         let perf: DictationPerfTimeline?
         var historyTarget: HistoryPersistenceTarget = .insertNew
+        var discardSilentCaptureOnTerminalFailure = false
     }
 
     struct EngineOutput {
@@ -171,6 +180,11 @@ final class TranscriptionPipeline {
                     failure: failure,
                     target: request.historyTarget
                 )
+            } else if let captureResult, isLocalSilence,
+                request.historyTarget == .insertNew,
+                request.discardSilentCaptureOnTerminalFailure
+            {
+                host.discardTerminalCapture(audioURL: captureResult.audioURL)
             }
             request.logger.error(
                 "Transcription failed engine=\(request.engineName, privacy: .public) \(failure.logSummary, privacy: .public)"

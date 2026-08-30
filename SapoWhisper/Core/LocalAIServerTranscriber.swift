@@ -244,11 +244,11 @@ final class LocalAIServerTranscriber: ObservableObject {
             _ = try await session.data(for: request)
         } catch {
             try Task.checkCancellation()
+            let detail = LogSanitizer.errorDiagnostic(error, state: "local-preflight")
             let failure = TranscriptionFailure(
                 kind: .network,
                 engine: Self.engineName,
-                technicalDetail:
-                    "preflight health probe failed error=\((error as? URLError).map { "URLError.\($0.code.rawValue)" } ?? error.localizedDescription)"
+                technicalDetail: detail
             )
             SapoLog.recording.error(
                 "Local AI Server preflight failed \(failure.logSummary, privacy: .public)")

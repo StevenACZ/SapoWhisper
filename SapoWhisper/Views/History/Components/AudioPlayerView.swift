@@ -78,8 +78,9 @@ final class HistoryAudioPlayerController: ObservableObject {
             self.player = player
             duration = player.duration
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "history-audio-load")
             SapoLog.settings.warning(
-                "History AudioPlayer load failed error=\(error.localizedDescription, privacy: .public)"
+                "History AudioPlayer failed \(detail, privacy: .public)"
             )
         }
     }

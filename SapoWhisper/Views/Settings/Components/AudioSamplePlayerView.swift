@@ -87,8 +87,9 @@ struct AudioSamplePlayerView: View {
             player?.prepareToPlay()
             duration = player?.duration ?? 0
         } catch {
+            let detail = LogSanitizer.errorDiagnostic(error, state: "sample-audio-load")
             SapoLog.settings.warning(
-                "AudioSamplePlayer load failed error=\(error.localizedDescription, privacy: .public)"
+                "AudioSamplePlayer failed \(detail, privacy: .public)"
             )
         }
     }

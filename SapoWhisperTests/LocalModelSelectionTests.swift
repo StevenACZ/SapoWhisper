@@ -71,6 +71,8 @@ final class LocalModelSelectionTests: XCTestCase {
         XCTAssertTrue(MLXWhisperModel.largeV3Turbo.isRecommended)
         XCTAssertEqual(MLXWhisperModel.largeV3Turbo.badgeText, "model.tier_quality_default".localized)
         XCTAssertEqual(MLXWhisperModel.largeV3TurboQ4.badgeText, "model.tier_lower_memory".localized)
+        XCTAssertEqual(MLXWhisperModel.largeV3Turbo.accuracy, 5)
+        XCTAssertNil(MLXWhisperModel.largeV3TurboQ4.accuracy)
         XCTAssertNil(MLXWhisperModel.small.badgeText)
     }
 

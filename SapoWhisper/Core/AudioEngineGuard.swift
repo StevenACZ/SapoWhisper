@@ -68,7 +68,7 @@ nonisolated enum AudioEngineGuard {
             let name = exception.name.rawValue
             let reason = exception.reason ?? "unknown"
             SapoLog.recording.error(
-                "AVFAudio ObjC exception caught operation=\(operation, privacy: .public) name=\(name, privacy: .public) reason=\(reason, privacy: .private(mask: .hash))"
+                "AVFAudio ObjC exception caught operation=\(operation, privacy: .public) reason=\(reason, privacy: .private(mask: .hash))"
             )
             throw AudioEngineObjCException(operation: operation, name: name, reason: reason)
         }

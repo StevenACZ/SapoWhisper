@@ -93,6 +93,32 @@ struct ReleasePackagingScriptTests {
         #expect(script.contains("COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent"))
         #expect(script.contains("unzip -Z1 \"$ZIP_PATH\" >\"$ZIP_ENTRIES\""))
         #expect(script.contains("grep -E -q '(^|/)\\._' \"$ZIP_ENTRIES\""))
+        #expect(
+            script.components(
+                separatedBy:
+                    "scripts/verify_release_app.sh \"$APP_PATH\" \"Developer ID Application\""
+            ).count == 2
+        )
+        #expect(
+            script.contains(
+                "scripts/verify_release_app.sh \"$ARCHIVED_APP\" \"Developer ID Application\""
+            )
+        )
+    }
+
+    @Test("The public media gate rejects video containers")
+    func publicMediaGateIncludesVideo() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let script = try String(
+            contentsOf: repository.appendingPathComponent("scripts/verify_public_audio_allowlist.sh"),
+            encoding: .utf8
+        )
+        #expect(script.contains("audio/* | video/*"))
+        #expect(script.contains("*.[Mm][Oo][Vv]"))
+        #expect(script.contains("*.[Mm][Pp]4"))
+        #expect(script.contains("*.[Ww][Ee][Bb][Mm]"))
     }
 
     private func run(_ executable: URL, argument: URL) throws -> Int32 {
