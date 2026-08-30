@@ -1270,7 +1270,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     nonisolated static func stopTailPadding(for variant: TranscriptionEngineVariant) -> TimeInterval {
-        variant == .deepgramFluxLive ? 1.0 : 0.12
+        variant == .deepgramFluxLive ? 0.5 : 0.12
     }
 
     private func requestStopRecordingAndTranscribe() {

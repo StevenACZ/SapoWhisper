@@ -12,7 +12,7 @@ Press `Option + Space`, speak, press it again, and the transcript is pasted into
 - 🎙️ Preferred microphone sync, route-change resilience, gain control, and optional auto-ducking.
 - 📱 Companion control from Mirador: start or stop SapoWhisper in the iPhone viewer and use the phone as the host microphone without synthetic hotkeys.
 - 🎚️ Batch audio upload quality profiles, from ultra-fast compact WAVs to native Float32.
-- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with a built-in fidelity guard and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
+- 🪄 Optional AI polish through any OpenAI-compatible provider (OpenRouter by default) with retry-based fidelity checks and a shared output-language picker that can keep the audio language or translate faithfully to the selected target.
 - ✅ Evidence-based AI model tiers in Settings, while keeping free-text model IDs for providers that change over time.
 - 🔐 Guided setup for Microphone and Accessibility permissions.
 - 🔔 One-click in-app updates (Sparkle): a quiet menu notice when a new version ships; installing downloads, verifies the EdDSA signature, and relaunches automatically. The daily check can be turned off in Settings.
@@ -38,7 +38,7 @@ The model field always accepts a custom ID. The menu adds tested starting points
 
 | Tier | OpenRouter model | Guidance |
 |---|---|---|
-| Best tested | `anthropic/claude-opus-5` | Only model to pass the current 16/16 short four-route screen, including translation, and clean on the real 4-minute Compact dictation. Highest cost; 14/40-minute qualification is still pending. |
+| Best tested | `anthropic/claude-opus-5` | Only model to pass the current 16/16 short four-route screen, including translation, and clean on the real 3m47s Compact dictation. Highest cost; 14/40-minute qualification is still pending. |
 | Best quality per price | `openai/gpt-5.6-sol` | Cleanest Compact output on the real dictations at about a quarter of the Opus 5 cost and twice its speed; long-input and translation gates still pending. |
 | Same-language value | `qwen/qwen3.8-flash` | Low-cost cleanup when output stays in the spoken language. It failed every translation record and showed runtime instability, so it is not a universal default. |
 | Fast budget | `openai/gpt-5.4-nano` | Fastest tested budget option. Hard Compact and translation cases may safely fall back to the source text. |

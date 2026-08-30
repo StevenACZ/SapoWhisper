@@ -39,6 +39,24 @@ final class PolishInstructionResponseGuardTests: XCTestCase {
         XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
     }
 
+    func testAcceptsTranslatedOpenerThatCameFromTheSource() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "claro, hazlo cuando tengas tiempo el lunes",
+            polished: "Of course, do it when you have time on Monday.",
+            translationExpected: true
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
+    func testAcceptsTranslatedOpenerFromEnglishSourceIntoSpanish() {
+        let verdict = PolishInstructionResponseGuard.evaluate(
+            raw: "sure, do it when you have time on monday",
+            polished: "Por supuesto, hazlo cuando tengas tiempo el lunes.",
+            translationExpected: true
+        )
+        XCTAssertTrue(verdict.isAcceptable, verdict.diagnosticSummary)
+    }
+
     func testRejectsIntroducedAssistantOpener() {
         let verdict = PolishInstructionResponseGuard.evaluate(
             raw: "explícame cómo funciona el deploy",

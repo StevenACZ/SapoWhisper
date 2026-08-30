@@ -21,8 +21,9 @@ struct PolishInstructionResponseVerdict {
 /// a dictated question.
 /// A marker counts only when the model INTRODUCED it — dictation legitimately
 /// contains "claro" or "ya probé", and a faithful polish keeps those words.
-/// Each marker group holds its Spanish and English equivalents, so a
-/// translation is judged by the same markers in either language.
+/// "Introduced" is decided per marker FAMILY over the union of its Spanish and
+/// English patterns, so translating "claro, hazlo" into "Of course, do it"
+/// is not read as an introduced opener.
 enum PolishInstructionResponseGuard {
     static func evaluate(
         raw: String,
@@ -37,18 +38,8 @@ enum PolishInstructionResponseGuard {
             return acceptable()
         }
 
-        for group in openerGroups
-        where introducesMarker(group, raw: rawNormalized, polished: polishedNormalized, leadingLimit: 40) {
-            return rejected()
-        }
-
-        for group in assistantReportGroups
-        where introducesMarker(group, raw: rawNormalized, polished: polishedNormalized) {
-            return rejected()
-        }
-
-        for group in refusalGroups
-        where introducesMarker(group, raw: rawNormalized, polished: polishedNormalized) {
+        for family in markerFamilies
+        where introducesMarker(family, raw: rawNormalized, polished: polishedNormalized) {
             return rejected()
         }
 
@@ -72,54 +63,60 @@ enum PolishInstructionResponseGuard {
         )
     }
 
-    /// Assistant acknowledgments/openers. Common in speech too, so they must be
-    /// introduced AND sit where an assistant reply starts.
-    private static let openerGroups: [[String]] = [
-        [#"\b(claro|sure|certainly)\b"#],
-        [#"\b(por supuesto|of course)\b"#],
-        [#"\b(aqui tienes|aqui esta|aca tienes|aca esta|here is|here'?s)\b"#],
-        [#"\b(entendido|got it|understood)\b"#],
-        [#"\b(con gusto|encantado|i'?d be happy to|i would be happy to)\b"#],
+    private struct MarkerFamily {
+        let patterns: [String]
+        var leadingLimit: Int? = nil
+    }
+
+    private static let markerFamilies: [MarkerFamily] = [
+        MarkerFamily(patterns: openerPatterns, leadingLimit: 40),
+        MarkerFamily(patterns: completionReportPatterns),
+        MarkerFamily(patterns: asRequestedPatterns),
+        MarkerFamily(patterns: signOffPatterns),
+        MarkerFamily(patterns: refusalPatterns),
     ]
 
-    /// First-person completion reports, "as requested" framing, and sign-offs.
-    private static let assistantReportGroups: [[String]] = [
-        [
-            #"\b(ya )?(he|hemos) (completado|terminado|hecho|probado|testeado|ejecutado|corrido|revisado|analizado|comprobado|verificado|creado|generado|agregado|actualizado|cambiado|eliminado|borrado|quitado|movido|renombrado|reemplazado|corregido|arreglado|configurado|instalado|desplegado|publicado|subido|guardado|copiado|documentado|escrito|redactado|resumido|preparado|iniciado|detenido|reiniciado)\b"#,
-            #"\bya (lo |la |los |las )?(probe|teste|ejecute|corri|revise|analice|comprobe|verifique|genere|actualice|cambie|elimine|borre|quite|movi|renombre|reemplace|corregi|arregle|configure|instale|despliegue|publique|subi|guarde|copie|documente|escribi|redacte|resumi|prepare|inicie|detuve|reinicie|complete|termine|hice)\b"#,
-            #"\bi(?: have| had|['’]ve)? (completed|finished|done|tested|ran|run|reviewed|checked|analyzed|analysed|verified|created|generated|added|updated|changed|deleted|removed|moved|renamed|replaced|fixed|configured|installed|deployed|published|uploaded|saved|copied|documented|wrote|written|drafted|summarized|summarised|prepared|started|stopped|restarted)\b"#,
-        ],
-        [
-            #"\b(como (me )?(lo )?(pediste|solicitaste|indicaste|habias pedido)|segun lo solicitado)\b"#,
-            #"\b(as|per) (you )?(requested|asked|instructed)\b"#,
-        ],
-        [
-            #"\bespero que (esto |eso )?(te )?(sirva|ayude|funcione)\b"#,
-            #"\b(avisame|hazme saber) si (necesitas|quieres|deseas|hay algo)\b"#,
-            #"\b(let me know if|hope (this|that) helps|anything else i can)\b"#,
-        ],
+    /// Assistant acknowledgments/openers. Common in speech too, so they must be
+    /// introduced AND sit where an assistant reply starts.
+    private static let openerPatterns: [String] = [
+        #"\b(claro|sure|certainly)\b"#,
+        #"\b(por supuesto|of course)\b"#,
+        #"\b(aqui tienes|aqui esta|aca tienes|aca esta|here is|here'?s)\b"#,
+        #"\b(entendido|got it|understood)\b"#,
+        #"\b(con gusto|encantado|i'?d be happy to|i would be happy to)\b"#,
+    ]
+
+    private static let completionReportPatterns: [String] = [
+        #"\b(ya )?(he|hemos) (completado|terminado|hecho|probado|testeado|ejecutado|corrido|revisado|analizado|comprobado|verificado|creado|generado|agregado|actualizado|cambiado|eliminado|borrado|quitado|movido|renombrado|reemplazado|corregido|arreglado|configurado|instalado|desplegado|publicado|subido|guardado|copiado|documentado|escrito|redactado|resumido|preparado|iniciado|detenido|reiniciado)\b"#,
+        #"\bya (lo |la |los |las )?(probe|teste|ejecute|corri|revise|analice|comprobe|verifique|genere|actualice|cambie|elimine|borre|quite|movi|renombre|reemplace|corregi|arregle|configure|instale|despliegue|publique|subi|guarde|copie|documente|escribi|redacte|resumi|prepare|inicie|detuve|reinicie|complete|termine|hice)\b"#,
+        #"\bi(?: have| had|['’]ve)? (completed|finished|done|tested|ran|run|reviewed|checked|analyzed|analysed|verified|created|generated|added|updated|changed|deleted|removed|moved|renamed|replaced|fixed|configured|installed|deployed|published|uploaded|saved|copied|documented|wrote|written|drafted|summarized|summarised|prepared|started|stopped|restarted)\b"#,
+    ]
+
+    private static let asRequestedPatterns: [String] = [
+        #"\b(como (me )?(lo )?(pediste|solicitaste|indicaste|habias pedido)|segun lo solicitado)\b"#,
+        #"\b(as|per) (you )?(requested|asked|instructed)\b"#,
+    ]
+
+    private static let signOffPatterns: [String] = [
+        #"\bespero que (esto |eso )?(te )?(sirva|ayude|funcione)\b"#,
+        #"\b(avisame|hazme saber) si (necesitas|quieres|deseas|hay algo)\b"#,
+        #"\b(let me know if|hope (this|that) helps|anything else i can)\b"#,
     ]
 
     /// Assistant refusals and apologies. Everyday speech says "no puedo ir" or
     /// "I can't make it", so the refusal verb must carry an assistant-style
     /// object and, as always, be introduced by the model.
-    private static let refusalGroups: [[String]] = [
-        [
-            #"\b(lo siento|mis disculpas)\b"#,
-            #"\bi['’]?m sorry\b"#,
-            #"\bi am sorry\b"#,
-            #"\bi apologi[sz]e\b"#,
-        ],
-        [
-            #"\bno (puedo|podre|podria) (ayudar|asistir|acceder|proporcionar|responder|resumir|buscar|investigar|realizar|generar|crear|continuar|completar|cumplir|procesar|ejecutar|navegar|traducir)\b"#,
-            #"\bno me es posible\b"#,
-            #"\bi (can['’]?t|cannot|can not) (help|assist|access|provide|answer|comply|browse|search|research|do that|do this)\b"#,
-            #"\bi['’]?m (unable|not able) to\b"#,
-            #"\bi am (unable|not able) to\b"#,
-        ],
-        [
-            #"\b(as an ai|as a language model|como (una |un )?(ia|inteligencia artificial)|como modelo de lenguaje)\b"#
-        ],
+    private static let refusalPatterns: [String] = [
+        #"\b(lo siento|mis disculpas)\b"#,
+        #"\bi['’]?m sorry\b"#,
+        #"\bi am sorry\b"#,
+        #"\bi apologi[sz]e\b"#,
+        #"\bno (puedo|podre|podria) (ayudar|asistir|acceder|proporcionar|responder|resumir|buscar|investigar|realizar|generar|crear|continuar|completar|cumplir|procesar|ejecutar|navegar|traducir)\b"#,
+        #"\bno me es posible\b"#,
+        #"\bi (can['’]?t|cannot|can not) (help|assist|access|provide|answer|comply|browse|search|research|do that|do this)\b"#,
+        #"\bi['’]?m (unable|not able) to\b"#,
+        #"\bi am (unable|not able) to\b"#,
+        #"\b(as an ai|as a language model|como (una |un )?(ia|inteligencia artificial)|como modelo de lenguaje)\b"#,
     ]
 
     /// Conservative Q&A shape: the source asks a question and the output opens
@@ -134,12 +131,12 @@ enum PolishInstructionResponseGuard {
     }
 
     private static func introducesMarker(
-        _ group: [String],
+        _ family: MarkerFamily,
         raw: String,
-        polished: String,
-        leadingLimit: Int? = nil
+        polished: String
     ) -> Bool {
-        matches(group, in: polished, leadingLimit: leadingLimit) && !matches(group, in: raw, leadingLimit: nil)
+        matches(family.patterns, in: polished, leadingLimit: family.leadingLimit)
+            && !matches(family.patterns, in: raw, leadingLimit: nil)
     }
 
     private static func matches(_ patterns: [String], in text: String, leadingLimit: Int?) -> Bool {

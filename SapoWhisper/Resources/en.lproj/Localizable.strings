@@ -214,7 +214,7 @@
 "ai.provider.model_tier_fastBudget" = "Fast budget";
 "ai.provider.model_tier_economy" = "Economy";
 "ai.provider.model_tier_notRecommended" = "Not recommended";
-"ai.provider.model_detail_opus5" = "Only model to pass all 16 current short-screen routes, including translation, and it stayed clean on the real 4-minute Compact dictation. Highest cost; 14/40-minute qualification is still pending.";
+"ai.provider.model_detail_opus5" = "Only model to pass 16 of 16 short-screen records across the four routes, including translation, and it stayed clean on the real 3m47s Compact dictation. Highest cost; 14/40-minute qualification is still pending.";
 "ai.provider.model_detail_sol" = "Cleanest Compact output on the real dictations at about a quarter of the Opus 5 cost and twice its speed. Long-input gates are still pending.";
 "ai.provider.model_detail_qwen38" = "Preserved the short same-language routes at low cost, but failed every translation route.";
 "ai.provider.model_detail_nano" = "Fastest tested budget option. Hard Compact and translation cases may fall back to the source text.";

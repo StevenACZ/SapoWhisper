@@ -42,7 +42,7 @@ Snapshot: 2026-08-29. This is a **preliminary screen, not a general benchmark**:
 | Model | Input / output | p50 | Est. cost / 100 dictations | Verdict | Evidence |
 |---|---:|---:|---:|---|---|
 | anthropic/claude-opus-5 | $5.00 / $25.00 | 9.32 s | ~$0.93 | Offered as best tested | **16/16 critical pass**, including both translation routes. Best tested; long 14/40-minute gates pending. |
-| z-ai/glm-5.3-flash | $0.075 / $0.25 | 23.57 s | ~$0.011 | Rejected, not offered | Failed the language gate and the runtime-failure gate. |
+| z-ai/glm-5.3-flash | $0.075 / $0.25 | 23.57 s | ~$0.011 | Rejected, not offered | Failed the language gate and the runtime-failure gate. This model rejects `reasoning: none`, so its row ran with the provider's default reasoning. |
 | qwen/qwen3.8-flash | $0.15 / $0.47 | 9.05 s | ~$0.021 | Rejected as universal default / offered as same-language value | Failed the translation gate on all 8 translation records and the stability gate (runtime instability). Passed same-language fidelity. |
 | openai/gpt-5.6-sol | $2.00 / $10.00 | 11.75 s | ~$0.37 | Rejected as universal default / offered as best quality per price for Compact | Failed the semantic gate, the case-sensitive technical-token gate, the translation gate, and the runtime gate on this synthetic screen. Later cleared both real Compact dictations (see the 2026-08-29 section); the translation limitation stands. |
 | openai/gpt-5.4-nano | $0.20 / $1.25 | 6.13 s | ~$0.043 | Rejected as universal default / offered as fast budget | Failed the content-preservation gate on hard Compact records and the language gate on hard translation records. Fastest tested. |

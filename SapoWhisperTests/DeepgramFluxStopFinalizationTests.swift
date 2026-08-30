@@ -6,8 +6,8 @@ import os
 
 @MainActor
 final class DeepgramFluxStopFinalizationTests: XCTestCase {
-    func testFluxUsesOneSecondStopTailWithoutChangingOtherEngines() {
-        XCTAssertEqual(SapoWhisperViewModel.stopTailPadding(for: .deepgramFluxLive), 1.0)
+    func testFluxUsesHalfSecondStopTailWithoutChangingOtherEngines() {
+        XCTAssertEqual(SapoWhisperViewModel.stopTailPadding(for: .deepgramFluxLive), 0.5)
         XCTAssertEqual(SapoWhisperViewModel.stopTailPadding(for: .deepgramNova3), 0.12)
         XCTAssertEqual(SapoWhisperViewModel.stopTailPadding(for: .elevenLabsScribeRealtime), 0.12)
     }

@@ -214,7 +214,7 @@
 "ai.provider.model_tier_fastBudget" = "Económico y rápido";
 "ai.provider.model_tier_economy" = "Muy económico";
 "ai.provider.model_tier_notRecommended" = "No recomendado";
-"ai.provider.model_detail_opus5" = "Único modelo que pasó las 16 rutas de la prueba corta actual, incluida traducción, y se mantuvo limpio en el dictado real de 4 minutos en Compacto. Es el más caro y aún falta calificar 14/40 minutos.";
+"ai.provider.model_detail_opus5" = "Único modelo que pasó 16 de 16 registros de la prueba corta en las cuatro rutas, incluida traducción, y se mantuvo limpio en el dictado real de 3m47s en Compacto. Es el más caro y aún falta calificar 14/40 minutos.";
 "ai.provider.model_detail_sol" = "La salida Compacta más limpia en los dictados reales, a casi un cuarto del costo de Opus 5 y al doble de velocidad. Aún faltan los gates de entrada larga.";
 "ai.provider.model_detail_qwen38" = "Conservó las rutas cortas en el mismo idioma a bajo costo, pero falló todas las rutas de traducción.";
 "ai.provider.model_detail_nano" = "La opción económica más rápida de la prueba. Casos difíciles de Compacto y traducción pueden volver al texto original.";

@@ -257,7 +257,10 @@ final class OpenAICompatiblePolisher {
         maximumResponses: Int? = nil
     ) async throws -> PolishResponse {
         let startedAt = CFAbsoluteTimeGetCurrent()
-        let reasoningEffort: PolishReasoningEffort = includeReasoning ? .current() : .automatic
+        let reasoningEffort: PolishReasoningEffort =
+            includeReasoning
+            ? Self.resolvedReasoningEffort(selected: .current(), configuration: configuration)
+            : .automatic
         let request = try makeRequest(
             system: structured ? system + contract.scanNote : system,
             user: user,
@@ -422,6 +425,20 @@ final class OpenAICompatiblePolisher {
             modelIdentifier: configuration.modelIdentifier,
             responseCount: completedResponseCount
         )
+    }
+
+    /// The stored effort raised to the model's mandatory floor, so a
+    /// reasoning-mandatory model never sends `reasoning: none` regardless of how
+    /// it was selected (catalog, free text, migration, history menu).
+    static func resolvedReasoningEffort(
+        selected: PolishReasoningEffort,
+        configuration: PolishProviderConfiguration
+    ) -> PolishReasoningEffort {
+        let policy = PolishModelCatalog.reasoningPolicy(
+            for: configuration.model,
+            provider: configuration.endpoint
+        )
+        return selected.coerced(toMinimum: policy.minimum)
     }
 
     private static func extractStructuredText(

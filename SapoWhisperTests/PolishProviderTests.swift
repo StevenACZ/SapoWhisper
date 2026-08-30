@@ -257,6 +257,37 @@ final class PolishProviderTests: XCTestCase {
         XCTAssertNil(unknown.minimum)
     }
 
+    func testRequestReasoningEffortRespectsMandatoryMinimumForAnySelection() {
+        func configuration(model: String) -> PolishProviderConfiguration {
+            PolishProviderConfiguration(
+                endpoint: .openRouter,
+                baseURL: URL(string: "https://openrouter.ai/api/v1")!,
+                model: model,
+                apiKey: "sk-or-123"
+            )
+        }
+
+        let mandatory = configuration(model: "x-ai/grok-4.6")
+        XCTAssertEqual(
+            OpenAICompatiblePolisher.resolvedReasoningEffort(selected: .off, configuration: mandatory),
+            .low
+        )
+        XCTAssertEqual(
+            OpenAICompatiblePolisher.resolvedReasoningEffort(selected: .automatic, configuration: mandatory),
+            .low
+        )
+        XCTAssertEqual(
+            OpenAICompatiblePolisher.resolvedReasoningEffort(selected: .high, configuration: mandatory),
+            .high
+        )
+
+        let free = configuration(model: "future/provider-model")
+        XCTAssertEqual(
+            OpenAICompatiblePolisher.resolvedReasoningEffort(selected: .off, configuration: free),
+            .off
+        )
+    }
+
     func testLocalPolishHasNoQualifiedOrSuggestedModel() {
         XCTAssertTrue(PolishEndpoint.localServer.modelRecommendations.isEmpty)
         XCTAssertTrue(PolishEndpoint.localServer.suggestedModels.isEmpty)

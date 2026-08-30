@@ -34,7 +34,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   default and every existing per-provider selection on upgrades.
 - AI polish now validates structured responses, translation language and
   plausible completeness, protected technical tokens, missing passages,
-  negations, and assistant-answer drift within one shared three-response
+  and assistant-answer drift within one shared three-response
   budget. A failed translated chunk keeps the complete source transcript
   instead of producing mixed-language or collapsed output.
 - Public STT and History replay tools now emit aggregate metrics by default,
@@ -44,9 +44,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- AI polish no longer enforces strict fidelity rejection. The instruction-response guard now rejects only output where the model clearly answered instead of rewriting (introduced openers, first-person completion reports, refusals, sign-offs); negation, anchor, URL and drift checks remain retry-only hints. Lower tiers and untested models show a fidelity-risk note in Settings.
+- AI polish no longer enforces strict fidelity rejection. The instruction-response guard now rejects only output where the model clearly answered instead of rewriting (introduced openers, first-person completion reports, refusals, sign-offs); anchor, digit and missing-passage checks remain retry-only hints. Lower tiers and untested models show a fidelity-risk note in Settings.
 
-- Deepgram Flux Live now keeps a one-second capture tail, atomically flushes
+- Deepgram Flux Live now keeps a half-second capture tail, atomically flushes
   the final PCM remainder, and waits for the provider to finish its
   post-CloseStream response before accepting the transcript. A failed or timed
   out finalization falls back to Nova-3 using the preserved WAV instead of
