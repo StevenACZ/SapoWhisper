@@ -6,6 +6,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Transient microphone starts now receive a separate, bounded recovery window after the first attempt. Route settling and retry backoff share one wait, and a temporarily missing selected input can recover without switching microphones.
+- Batch and realtime engines share capture-start recovery, including Bluetooth's longer first-buffer wait. Recovery attempts are recorded at the persistent log level.
+- History processing no longer changes a concurrent live dictation's minimum-duration policy or polish state. Engine activity callbacks no longer take ownership of the live session UI.
+- Cancelling, closing or deleting a History polish stops its pending task. Late polish and retranscription results cannot recreate text versions for deleted entries.
+- A failed local build or signing check leaves the installed app intact; rollback only begins after replacement starts.
+
+### Added
+
+- A cancel button for in-progress History AI polish.
+- An opt-in hardware regression test for repeated capture starts on the explicitly selected microphone, with no transcription, playback or saved History entries.
+
 ## [2.17.0] - 2026-08-30
 
 ### Added

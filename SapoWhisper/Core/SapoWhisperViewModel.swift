@@ -151,7 +151,7 @@ class SapoWhisperViewModel: ObservableObject {
     let elevenLabsRealtimeTranscriber = ElevenLabsScribeRealtimeTranscriber()
     let localAIServerTranscriber = LocalAIServerTranscriber()
     private let historyManager = TranscriptionHistoryManager.shared
-    private let transcriptPostProcessor = TranscriptPostProcessor()
+    private let transcriptPostProcessor: any TranscriptPostProcessing
     /// Dictation→History persistence + retry/re-polish row bookkeeping.
     private lazy var persister = DictationHistoryPersister(
         deleteSourceAudio: { [audioRecorder] in audioRecorder.deleteRecording(at: $0) }
@@ -353,7 +353,8 @@ class SapoWhisperViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init() {
+    init(transcriptPostProcessor: any TranscriptPostProcessing = TranscriptPostProcessor()) {
+        self.transcriptPostProcessor = transcriptPostProcessor
         setupBindings()
         checkInitialState()
         // Before setupHotkey: Carbon registers whatever the manager holds, and
@@ -521,13 +522,7 @@ class SapoWhisperViewModel: ObservableObject {
         // Hooks del motor MLX (transcripcion, carga, modelo listo) — callback
         // hooks on the @Observable transcriber replace the old Combine sinks.
         mlxWhisperTranscriber.onTranscribingChanged = { [weak self] isTranscribing in
-            guard let self else { return }
-            if !isTranscribing {
-                self.unloadMLXModelIfNotSelected()
-                return
-            }
-            guard !self.isReprocessingHistory else { return }
-            self.transition(to: .processing, reason: "mlx-transcribing")
+            if !isTranscribing { self?.unloadMLXModelIfNotSelected() }
         }
         mlxWhisperTranscriber.onLoadingChanged = { [weak self] isLoading in
             guard let self else { return }
@@ -557,16 +552,6 @@ class SapoWhisperViewModel: ObservableObject {
             else { return }
             self.scheduleSelectedMLXModelLoad()
         }
-
-        // Observar estado de transcripcion (ElevenLabs Scribe)
-        elevenLabsTranscriber.$isTranscribing
-            .sink { [weak self] isTranscribing in
-                guard let self, !self.isReprocessingHistory else { return }
-                if isTranscribing {
-                    self.transition(to: .processing, reason: "elevenlabs-transcribing")
-                }
-            }
-            .store(in: &cancellables)
 
         // Sincronizar estado con MenuBarIcon y DockIcon
         $appState
@@ -1986,12 +1971,6 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// Depth counter for in-flight history re-runs. While > 0 the global
-    /// dictation sinks and the polishing overlay are suppressed so a history
-    /// retranscribe never drives the live UI or leaves appState stuck busy.
-    private var historyReprocessingDepth = 0
-    private var isReprocessingHistory: Bool { historyReprocessingDepth > 0 }
-
     /// Rows re-transcribing right now. The quick history pill can collapse
     /// and reopen mid-run, losing its per-view guard — without this a second
     /// tap runs the same row through the engine twice (double cloud spend,
@@ -2015,16 +1994,14 @@ class SapoWhisperViewModel: ObservableObject {
         // The menu picks a brand, and an explicit choice never falls back.
         let variant = TranscriptionEngineVariant.fileVariant(for: engine)
 
-        historyReprocessingDepth += 1
-        defer { historyReprocessingDepth -= 1 }
-
         do {
             let transcription = try await transcribeAudio(at: audioURL, using: variant, language: entry.language)
             try Task.checkCancellation()
             let aiResult = await postProcessTranscript(
                 transcription,
                 source: "history-retranscribe",
-                duration: entry.duration
+                duration: entry.duration,
+                context: .history
             )
             // A cancel during the polish phase must not write the row either.
             try Task.checkCancellation()
@@ -2072,6 +2049,7 @@ class SapoWhisperViewModel: ObservableObject {
         _ entry: HistoryEntry,
         with option: PolishModelOption? = nil
     ) async -> HistoryRetranscriptionResult {
+        guard !Task.isCancelled else { return HistoryRetranscriptionResult(entryId: entry.id) }
         let sourceText = (entry.hasRawTranscript ? entry.rawText : entry.text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -2101,8 +2079,9 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         let aiResult = await transcriptPostProcessor.process(
-            rawText: sourceText, duration: entry.duration, provider: provider
+            rawText: sourceText, duration: entry.duration, provider: provider, enforceMinimumDuration: false
         )
+        guard !Task.isCancelled else { return HistoryRetranscriptionResult(entryId: entry.id) }
         logAIResult(aiResult, source: "history-polish")
         historyManager.updateAIProcessing(
             id: entry.id,
@@ -2377,22 +2356,36 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    enum PostProcessingContext {
+        case liveDictation
+        case history
+    }
+
     func postProcessTranscript(
         _ rawText: String,
         source: String,
         duration: TimeInterval?
+    ) async -> TranscriptAIResult {
+        await postProcessTranscript(rawText, source: source, duration: duration, context: .liveDictation)
+    }
+
+    func postProcessTranscript(
+        _ rawText: String,
+        source: String,
+        duration: TimeInterval?,
+        context: PostProcessingContext
     ) async -> TranscriptAIResult {
         // Live dictations honor the user's minimum-duration setting; history
         // re-runs are explicit intent and always attempt.
         let willAttemptPolish = transcriptPostProcessor.willAttemptPolish(
             rawText: rawText,
             duration: duration,
-            enforceMinimumDuration: !isReprocessingHistory
+            enforceMinimumDuration: context == .liveDictation
         )
         if willAttemptPolish {
             // History re-runs reuse this helper but must not drive the live
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
-            if !isReprocessingHistory {
+            if context == .liveDictation {
                 transition(to: .polishing, reason: "polish-start")
                 let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
                 // Same per-chunk sum the processor enforces — a chunked
@@ -2422,10 +2415,11 @@ class SapoWhisperViewModel: ObservableObject {
         let result = await transcriptPostProcessor.process(
             rawText: rawText,
             duration: duration,
-            enforceMinimumDuration: !isReprocessingHistory
+            provider: nil,
+            enforceMinimumDuration: context == .liveDictation
         )
         logAIResult(result, source: source)
-        if !isReprocessingHistory {
+        if context == .liveDictation {
             // Baseline for the completed pill's re-polish chips.
             lastDictationRawText = result.rawText
             lastDictationDuration = duration
@@ -2473,7 +2467,9 @@ class SapoWhisperViewModel: ObservableObject {
             defer { isRepolishInFlight = false }
             let result = await transcriptPostProcessor.process(
                 rawText: rawText,
-                duration: duration
+                duration: duration,
+                provider: nil,
+                enforceMinimumDuration: false
             )
             logAIResult(result, source: "overlay-repolish")
 

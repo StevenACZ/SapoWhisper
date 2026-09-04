@@ -432,13 +432,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
     nonisolated private static let sampleRate = 16000
 
-    private enum StartRecovery {
-        static let maxAttempts = 3
-        static let firstInputTimeout: TimeInterval = 1.2
-        static let retryBudget: TimeInterval = 3.0
-        static let retryBackoffs: [TimeInterval] = [0.25, 0.60]
-    }
-
     var isConfigured: Bool {
         KeychainStore.hasValue(for: .elevenLabsAPIKey)
     }
@@ -778,87 +771,11 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     private func startCaptureWithRecovery(microphone: String) async throws {
-        let deadline = CFAbsoluteTimeGetCurrent() + StartRecovery.retryBudget
-        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
-
-        for attempt in 1...StartRecovery.maxAttempts {
-            guard !Task.isCancelled else { throw CancellationError() }
-
-            do {
-                let didStart = try await attemptCaptureStart(
-                    microphone: microphone,
-                    attempt: attempt,
-                    minimumDelay: attempt == 1 ? 0 : StartRecovery.retryBackoffs[attempt - 2]
-                )
-                if didStart {
-                    if attempt > 1 {
-                        SapoLog.recording.info("ElevenLabs realtime recovered input on attempt=\(attempt, privacy: .public)")
-                    }
-                    return
-                }
-                lastFailure = RecordingError.noInputAfterDeviceSwitch
-            } catch {
-                if error is CancellationError {
-                    throw error
-                }
-                lastFailure = error
-            }
-
-            capture.discardRecording()
-            guard attempt < StartRecovery.maxAttempts else { break }
-
-            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
-            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
-            guard classification.isTransient else {
-                throw lastFailure
-            }
-
-            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
-            guard remainingBudget > 0 else { break }
-
-            let retryDelay = min(
-                remainingBudget,
-                max(StartRecovery.retryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
-            )
-            SapoLog.recording.info(
-                "ElevenLabs realtime input not ready attempt=\(attempt, privacy: .public) reason=\(classification.reason, privacy: .public) retryDelay=\(Int(retryDelay * 1000), privacy: .public)ms"
-            )
-            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
-        }
-
-        throw lastFailure
-    }
-
-    private func attemptCaptureStart(
-        microphone: String,
-        attempt: Int,
-        minimumDelay: TimeInterval
-    ) async throws -> Bool {
-        capture.selectedDeviceUID = microphone
-        let settleDelay = max(minimumDelay, capture.prepareInputDeviceForRecording())
-        if settleDelay > 0 {
-            SapoLog.recording.info(
-                "Delaying ElevenLabs realtime capture start for route settle \(Int(settleDelay * 1000), privacy: .public)ms"
-            )
-            try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
-        }
-
-        guard !Task.isCancelled else { throw CancellationError() }
         let audioSender = self.audioSender
-        try await capture.startRecording { data in
+        let supervisor = CaptureStartSupervisor(recorder: capture, mode: .streaming)
+        try await supervisor.start(microphone: microphone) { data in
             audioSender.enqueue(data)
         }
-
-        let receivedInput = await capture.waitForFirstInputBuffer(timeout: StartRecovery.firstInputTimeout)
-        if receivedInput {
-            return true
-        }
-
-        let diagnostics = capture.currentCaptureDiagnostics()
-        SapoLog.recording.warning(
-            "ElevenLabs realtime attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
-        )
-        return false
     }
 
     private func receiveMessages() async {

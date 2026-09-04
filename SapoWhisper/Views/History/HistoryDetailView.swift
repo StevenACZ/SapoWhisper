@@ -10,6 +10,7 @@ import SwiftUI
 struct HistoryDetailView: View {
     let entry: HistoryEntry
     var isAIPolishing = false
+    var onCancelPolish: () -> Void = {}
     let onCopy: () -> Void
     /// nil polishes with the globally configured provider; an option polishes
     /// with that explicit endpoint/model (menu selection).
@@ -136,7 +137,11 @@ struct HistoryDetailView: View {
             .fixedSize()
             .disabled(isFailed || entry.text.isEmpty)
 
-            if canPolish {
+            if isAIPolishing {
+                Button("common.cancel".localized, systemImage: "stop.circle", action: onCancelPolish)
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+            } else if canPolish {
                 polishMenu
             }
 

@@ -38,7 +38,7 @@ struct HistoryView: View {
     @State private var selectedRetranscribeEngine: TranscriptionEngine = .mlxWhisper
     @State private var isRetranscribing = false
     @State private var retranscribeTask: Task<Void, Never>?
-    @State private var aiPolishingEntryIDs: Set<Int64> = []
+    @State private var aiPolishTasks: [Int64: Task<Void, Never>] = [:]
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
     @State private var showNoticeAlert = false
@@ -73,6 +73,7 @@ struct HistoryView: View {
                 titleVisibility: .visible
             ) {
                 Button("history.delete".localized, role: .destructive) {
+                    cancelAllPolishTasks()
                     TranscriptionHistoryManager.shared.deleteEntries(olderThanDays: Self.deleteOldThresholdDays)
                     selectedEntry = nil
                     loadEntries()
@@ -86,6 +87,7 @@ struct HistoryView: View {
                 titleVisibility: .visible
             ) {
                 Button("history.delete".localized, role: .destructive) {
+                    cancelAllPolishTasks()
                     TranscriptionHistoryManager.shared.deleteAll()
                     selectedEntry = nil
                     loadEntries()
@@ -126,6 +128,8 @@ struct HistoryView: View {
             }
             .onDisappear {
                 searchTask?.cancel()
+                retranscribeTask?.cancel()
+                cancelAllPolishTasks()
             }
             // Window already open when the overlay pill asks for an entry.
             .onReceive(NotificationCenter.default.publisher(for: HistoryFocusRequest.notification)) { _ in
@@ -179,7 +183,8 @@ struct HistoryView: View {
                 if let entry = selectedEntry {
                     HistoryDetailView(
                         entry: entry,
-                        isAIPolishing: aiPolishingEntryIDs.contains(entry.id),
+                        isAIPolishing: aiPolishTasks[entry.id] != nil,
+                        onCancelPolish: { aiPolishTasks[entry.id]?.cancel() },
                         onCopy: { PasteManager.copyToClipboard(entry.text) },
                         onPolishWithAI: { option in handlePolishWithAI(entry, option: option) },
                         onRetranscribe: { handleRetranscribe(entry) },
@@ -310,6 +315,7 @@ struct HistoryView: View {
 
     private func handleDelete(_ entry: HistoryEntry) {
         guard entry.isDeletable else { return }
+        aiPolishTasks[entry.id]?.cancel()
         TranscriptionHistoryManager.shared.delete(id: entry.id)
         selectedEntry = nil
         loadEntries()
@@ -346,23 +352,22 @@ struct HistoryView: View {
     }
 
     private func handlePolishWithAI(_ entry: HistoryEntry, option: PolishModelOption?) {
-        guard !aiPolishingEntryIDs.contains(entry.id) else { return }
-        aiPolishingEntryIDs.insert(entry.id)
-
-        Task {
+        guard aiPolishTasks[entry.id] == nil else { return }
+        aiPolishTasks[entry.id] = Task { @MainActor in
+            defer { aiPolishTasks.removeValue(forKey: entry.id) }
             let result = await viewModel.polishHistoryEntry(entry, with: option)
-
-            await MainActor.run {
-                aiPolishingEntryIDs.remove(entry.id)
-                loadEntries()
-
-                if let errorMessage = result.errorMessage {
-                    presentActionError(errorMessage)
-                } else if let noticeMessage = result.noticeMessage {
-                    presentActionNotice(noticeMessage)
-                }
+            guard !Task.isCancelled else { return }
+            loadEntries()
+            if let errorMessage = result.errorMessage {
+                presentActionError(errorMessage)
+            } else if let noticeMessage = result.noticeMessage {
+                presentActionNotice(noticeMessage)
             }
         }
+    }
+
+    private func cancelAllPolishTasks() {
+        for task in aiPolishTasks.values { task.cancel() }
     }
 
     private func handleDownloadAudio(_ entry: HistoryEntry) {

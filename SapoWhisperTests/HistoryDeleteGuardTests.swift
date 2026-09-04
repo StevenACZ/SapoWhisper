@@ -89,6 +89,32 @@ final class HistoryDeleteGuardTests: XCTestCase {
         XCTAssertEqual(entries.first { $0.id == completed.rowID }?.isDeletable, true)
     }
 
+    func testLatePolishCannotRecreateDeletedHistoryText() {
+        let id = manager.save(engine: "test", language: "en", duration: 2, text: "original")
+        manager.delete(id: id)
+
+        manager.updateAIProcessing(
+            id: id, finalText: "late result", rawText: "original", aiStatus: .applied,
+            aiModel: "test", aiMode: "normal", aiError: nil
+        )
+
+        XCTAssertTrue(manager.fetchAll().isEmpty)
+        XCTAssertTrue(manager.polishVersions(for: id).isEmpty)
+    }
+
+    func testLateRetranscriptionCannotRecreateClearedHistoryText() {
+        let id = manager.save(engine: "test", language: "en", duration: 2, text: "original")
+        manager.deleteAll()
+
+        manager.updateRetranscription(
+            id: id, engine: "test", finalText: "late result", rawText: "original",
+            aiStatus: .applied, aiModel: "test", aiMode: "normal", aiError: nil
+        )
+
+        XCTAssertTrue(manager.fetchAll().isEmpty)
+        XCTAssertTrue(manager.polishVersions(for: id).isEmpty)
+    }
+
     // MARK: - Helpers
 
     private func persistRow(named name: String, status: String) -> (rowID: Int64, audioPath: String?) {

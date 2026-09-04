@@ -231,7 +231,12 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
     /// can never drift apart.
     func insertPolishVersion(entryId: Int64, model: String?, text: String) {
         guard !text.isEmpty else { return }
-        let sql = "INSERT INTO polish_versions (entry_id, created_at, model, text) VALUES (?, ?, ?, ?);"
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
+        let sql = """
+            INSERT INTO polish_versions (entry_id, created_at, model, text)
+            SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM transcriptions WHERE id = ?);
+            """
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -243,6 +248,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
             sqlite3_bind_null(stmt, 3)
         }
         bindText(stmt, 4, text)
+        sqlite3_bind_int64(stmt, 5, entryId)
         stepStatement(stmt, operation: "insertPolishVersion")
     }
 
@@ -406,6 +412,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         aiMode: String?,
         aiError: String?
     ) {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         // H10: SET expressions read the row's pre-update values, so the first
         // applied polish is archived into ai_first_* before being overwritten.
         let sql = """
@@ -441,7 +449,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
             sqlite3_bind_null(stmt, 6)
         }
         sqlite3_bind_int64(stmt, 7, id)
-        stepStatement(stmt, operation: "updateAIProcessing")
+        guard stepStatement(stmt, operation: "updateAIProcessing"), sqlite3_changes(db) == 1 else { return }
         if aiStatus == .applied {
             insertPolishVersion(entryId: id, model: aiModel, text: finalText)
         }
@@ -460,6 +468,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         aiMode: String?,
         aiError: String?
     ) {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let sql = """
             UPDATE transcriptions
             SET original_engine = COALESCE(original_engine, engine), engine = ?,
@@ -495,7 +505,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
             sqlite3_bind_null(stmt, 7)
         }
         sqlite3_bind_int64(stmt, 8, id)
-        stepStatement(stmt, operation: "updateRetranscription")
+        guard stepStatement(stmt, operation: "updateRetranscription"), sqlite3_changes(db) == 1 else { return }
         if aiStatus == .applied {
             insertPolishVersion(entryId: id, model: aiModel, text: finalText)
         }

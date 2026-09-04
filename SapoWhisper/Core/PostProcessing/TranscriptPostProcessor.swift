@@ -7,7 +7,14 @@ import Foundation
 import NaturalLanguage
 import os
 
-final class TranscriptPostProcessor {
+protocol TranscriptPostProcessing {
+    func willAttemptPolish(rawText: String, duration: TimeInterval?, enforceMinimumDuration: Bool) -> Bool
+    func process(
+        rawText: String, duration: TimeInterval?, provider: PolishProviderConfiguration?, enforceMinimumDuration: Bool
+    ) async -> TranscriptAIResult
+}
+
+final class TranscriptPostProcessor: TranscriptPostProcessing {
     private static let maximumPolishResponses = 3
 
     private struct GuardedPolishResponse: Sendable {

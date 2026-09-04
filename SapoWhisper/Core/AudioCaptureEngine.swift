@@ -699,8 +699,13 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
                 isTransient: isTransient,
                 reason: "deviceSelectionFailed(\(status))"
             )
+        case .inputDeviceUnavailable:
+            return RecordingStartFailureClassification(
+                isTransient: routeTransitionActive,
+                reason: "inputDeviceUnavailable"
+            )
         case .engineCreationFailed, .fileCreationFailed, .converterCreationFailed, .permissionDenied,
-            .inputDeviceUnavailable, .inputSetupTimedOut:
+            .inputSetupTimedOut:
             return RecordingStartFailureClassification(isTransient: false, reason: "\(recordingError)")
         }
     }
