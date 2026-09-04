@@ -34,8 +34,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
     let persistenceLock = NSRecursiveLock()
 
     private convenience init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("SapoWhisper")
+        let appDir = AppRuntimePaths.applicationSupport
         self.init(
             databasePath: appDir.appendingPathComponent("history.db").path,
             audioDirectory: appDir
@@ -367,7 +366,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
     func recoverInterruptedTranscriptions() -> InterruptedTranscription? {
         let sql = """
             SELECT id, audio_path, duration_seconds, timestamp FROM transcriptions
-            WHERE status = 'transcribing' ORDER BY timestamp DESC, id DESC;
+            WHERE status IN \(HistoryEntryStatus.processingSQLValues) ORDER BY timestamp DESC, id DESC;
             """
         var stmt: OpaquePointer?
         var interrupted: [InterruptedTranscription] = []
@@ -401,6 +400,32 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
     /// files History owns must never be deleted by temp/stale cleanup paths.
     func ownsAudioFile(at url: URL) -> Bool {
         audioStorage.ownsFile(at: url)
+    }
+
+    func markProcessingStage(id: Int64, stage: HistoryEntryStatus, rawText: String? = nil) {
+        guard stage.isProcessing else { return }
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
+        let sql = """
+            UPDATE transcriptions SET status = ?,
+                raw_transcription = COALESCE(?, raw_transcription),
+                transcription = CASE WHEN transcription = '' THEN COALESCE(?, transcription) ELSE transcription END
+            WHERE id = ? AND status IN \(HistoryEntryStatus.processingSQLValues);
+            """
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return }
+        bindText(statement, 1, stage.rawValue)
+        if let rawText {
+            bindText(statement, 2, rawText)
+            bindText(statement, 3, rawText)
+        } else {
+            sqlite3_bind_null(statement, 2)
+            sqlite3_bind_null(statement, 3)
+        }
+        sqlite3_bind_int64(statement, 4, id)
+        guard stepStatement(statement, operation: "markProcessingStage"), sqlite3_changes(db) > 0 else { return }
+        notifyDidChange()
     }
 
     func updateAIProcessing(

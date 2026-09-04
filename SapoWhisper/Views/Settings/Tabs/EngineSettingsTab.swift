@@ -4,18 +4,20 @@ import SwiftUI
 struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.mlxWhisper.rawValue
-    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine) private var fallbackEngineRawValue = ""
-    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
-    @AppStorage(Constants.StorageKeys.mlxWhisperModel) private var selectedMLXModel = MLXWhisperModel.largeV3Turbo.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
+    @AppStorage(Constants.StorageKeys.transcriptionEngine, store: AppPreferences.defaults) private var selectedEngine = TranscriptionEngine
+        .mlxWhisper.rawValue
+    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine, store: AppPreferences.defaults) private var fallbackEngineRawValue = ""
+    @AppStorage(Constants.StorageKeys.language, store: AppPreferences.defaults) private var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) private var selectedMLXModel = MLXWhisperModel
+        .largeV3Turbo.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) private var selectedDeepgramMode =
         DeepgramTranscriptionMode.nova3.rawValue
-    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode, store: AppPreferences.defaults) private var selectedElevenLabsMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
-    @AppStorage(Constants.StorageKeys.localAIServerModel) private var selectedLocalAIServerModel =
+    @AppStorage(Constants.StorageKeys.localAIServerModel, store: AppPreferences.defaults) private var selectedLocalAIServerModel =
         LocalAIServerConfiguration.defaultModel
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage, store: AppPreferences.defaults) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
 

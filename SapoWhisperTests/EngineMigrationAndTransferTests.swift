@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class EngineMigrationAndTransferTests: XCTestCase {
 
     // MARK: - Engine migration mapping (§3.0)

@@ -6,6 +6,7 @@ import Testing
 @testable import SapoWhisper
 
 @Suite("Preferred microphone coordinator")
+@MainActor
 struct PreferredMicrophoneCoordinatorTests {
     @Test("A temporarily missing preferred microphone stays selected")
     func preservesMissingPreference() throws {
@@ -198,6 +199,7 @@ struct PreferredMicrophoneCoordinatorTests {
     }
 }
 
+@MainActor
 private final class FakePreferredMicrophoneDeviceManager: PreferredMicrophoneDeviceManaging {
     let routeChangeSubject = PassthroughSubject<Void, Never>()
     var routeChanges: AnyPublisher<Void, Never> {

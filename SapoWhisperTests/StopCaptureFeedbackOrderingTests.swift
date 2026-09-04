@@ -79,10 +79,11 @@ struct StopCaptureFeedbackOrderingTests {
 
         for fileName in ["DeepgramFluxLiveTranscriber.swift", "ElevenLabsScribeRealtimeTranscriber.swift"] {
             let transcriber = try source(fileName)
-            let stopBody = try body(in: transcriber, from: "func stop(", to: "func cancel()")
-            let captureStop = try #require(stopBody.range(of: "capture.stopRecording()"))
-            let feedback = try #require(stopBody.range(of: "onStopped: onCaptureStopped"))
-            #expect(captureStop.lowerBound < feedback.lowerBound)
+            let sealBody = try body(in: transcriber, from: "func sealCapture(", to: "func finalizeTranscription(")
+            #expect(sealBody.contains("capture.stopRecording()"))
+            #expect(!sealBody.contains("SoundManager.shared.play"))
+            let finalizationBody = try body(in: transcriber, from: "func finalizeTranscription(", to: "func cancel()")
+            #expect(!finalizationBody.contains("capture.stopRecording()"))
         }
     }
 

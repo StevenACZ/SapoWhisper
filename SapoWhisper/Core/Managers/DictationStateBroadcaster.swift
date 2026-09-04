@@ -7,9 +7,9 @@ import os
 /// stage and therefore never hears AutoDuckingManager's local ducking.
 ///
 enum DictationStateBroadcaster {
-    static let remoteInputDeviceUID = "MiradorMicrophone_UID"
-    static let recordingBeganNotification = Notification.Name("oli.SapoWhisper.dictation.began")
-    static let recordingEndedNotification = Notification.Name("oli.SapoWhisper.dictation.ended")
+    nonisolated static let remoteInputDeviceUID = "MiradorMicrophone_UID"
+    nonisolated static let recordingBeganNotification = Notification.Name("oli.SapoWhisper.dictation.began")
+    nonisolated static let recordingEndedNotification = Notification.Name("oli.SapoWhisper.dictation.ended")
 
     /// Posts on the recording edges of an `appState` change; every other
     /// transition stays silent.
@@ -30,6 +30,7 @@ enum DictationStateBroadcaster {
     }
 
     private static func post(_ name: Notification.Name) {
+        guard !UIPreviewMode.isRunningTests else { return }
         DistributedNotificationCenter.default().postNotificationName(
             name,
             object: nil,

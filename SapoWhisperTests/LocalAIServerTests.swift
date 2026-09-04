@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class LocalAIServerTests: XCTestCase {
 
     func testLocalAIServerEndpointNormalizationAcceptsRootBaseURL() throws {
@@ -185,7 +186,7 @@ final class LocalAIServerTests: XCTestCase {
     /// Sets the UserDefaults config transcribe() reads, runs the body, and
     /// restores the previous values (the test host shares the defaults domain).
     private func withLocalAIServerDefaults(_ body: () async throws -> Void) async rethrows {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let previousURL = defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL)
         let previousModel = defaults.string(forKey: Constants.StorageKeys.localAIServerModel)
         defaults.set("http://127.0.0.1:9999", forKey: Constants.StorageKeys.localAIServerBaseURL)

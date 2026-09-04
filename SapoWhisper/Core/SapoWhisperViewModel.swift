@@ -115,29 +115,34 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// New installs auto-detect the spoken language; every current engine
     /// (MLX Whisper, Local AI Server, Deepgram, ElevenLabs) supports detection natively.
-    @AppStorage(Constants.StorageKeys.language) var selectedLanguage = "auto"
-    @AppStorage(Constants.StorageKeys.selectedMicrophone) var selectedMicrophone = "default"
-    @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) var hotkeyTriggerKind: String = Constants.Hotkey.defaultTriggerKind
-    @AppStorage(Constants.StorageKeys.hotkeyKeyCode) var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
-    @AppStorage(Constants.StorageKeys.hotkeyModifiers) var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
-    @AppStorage(Constants.StorageKeys.hotkeyDoubleTapModifier) var hotkeyDoubleTapModifier: Int = Int(
+    @AppStorage(Constants.StorageKeys.language, store: AppPreferences.defaults) var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.selectedMicrophone, store: AppPreferences.defaults) var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.hotkeyTriggerKind, store: AppPreferences.defaults) var hotkeyTriggerKind: String = Constants.Hotkey
+        .defaultTriggerKind
+    @AppStorage(Constants.StorageKeys.hotkeyKeyCode, store: AppPreferences.defaults) var hotkeyKeyCode: Int = Int(
+        Constants.Hotkey.defaultKeyCode)
+    @AppStorage(Constants.StorageKeys.hotkeyModifiers, store: AppPreferences.defaults) var hotkeyModifiers: Int = Int(
+        Constants.Hotkey.defaultModifiers)
+    @AppStorage(Constants.StorageKeys.hotkeyDoubleTapModifier, store: AppPreferences.defaults) var hotkeyDoubleTapModifier: Int = Int(
         Constants.Hotkey.defaultDoubleTapModifier
     )
-    @AppStorage(Constants.StorageKeys.playSound) var playSoundEnabled = true
+    @AppStorage(Constants.StorageKeys.playSound, store: AppPreferences.defaults) var playSoundEnabled = true
     /// Same key the Settings toggle writes; before this the menu toggle drove
     /// a non-persisted @Published and the Settings toggle changed nothing.
-    @AppStorage(Constants.StorageKeys.autoPaste) var autoPasteEnabled = true
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) var selectedEngine: String = TranscriptionEngine.mlxWhisper.rawValue
-    @AppStorage(Constants.StorageKeys.mlxWhisperModel) var selectedMLXWhisperModel: String =
+    @AppStorage(Constants.StorageKeys.autoPaste, store: AppPreferences.defaults) var autoPasteEnabled = true
+    @AppStorage(Constants.StorageKeys.transcriptionEngine, store: AppPreferences.defaults) var selectedEngine: String = TranscriptionEngine
+        .mlxWhisper.rawValue
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) var selectedMLXWhisperModel: String =
         MLXWhisperModel.largeV3Turbo.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) var selectedDeepgramMode: String = DeepgramTranscriptionMode.nova3.rawValue
-    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) var selectedElevenLabsMode: String =
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) var selectedDeepgramMode: String =
+        DeepgramTranscriptionMode.nova3.rawValue
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode, store: AppPreferences.defaults) var selectedElevenLabsMode: String =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
-    @AppStorage(Constants.StorageKeys.localAIServerModel) var selectedLocalAIServerModel: String =
+    @AppStorage(Constants.StorageKeys.localAIServerModel, store: AppPreferences.defaults) var selectedLocalAIServerModel: String =
         LocalAIServerConfiguration.defaultModel
     /// Optional backup engine: when the primary fails with a connectivity
     /// error (server down, timeout), the dictation retries on it once.
-    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine) var fallbackEngineRawValue: String = ""
+    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine, store: AppPreferences.defaults) var fallbackEngineRawValue: String = ""
 
     // MARK: - Managers
 
@@ -188,17 +193,7 @@ class SapoWhisperViewModel: ObservableObject {
     var activeTranscriptionSessionID: UInt64?
     private var activeInputDeviceOverrideUID: String?
 
-    /// In-flight batch transcription (post-stop, engine running). Its history
-    /// row was pre-persisted as "transcribing", so Esc can cancel the engine
-    /// call and resolve the row without losing the audio.
-    private struct ActiveBatchTranscription {
-        let sessionID: UInt64
-        let historyId: Int64?
-        let audioURL: URL
-        let duration: TimeInterval
-        let task: Task<Void, Never>
-    }
-    private var activeBatchTranscription: ActiveBatchTranscription?
+    private let transcriptionOperations = DictationOperationCoordinator()
     private var lastStartHotkeyTime: CFAbsoluteTime = 0
     /// A5: single owner of mic exclusivity (monitor suspend/resume, overlap assert).
     private let captureCoordinator = AudioCaptureCoordinator.shared
@@ -233,8 +228,8 @@ class SapoWhisperViewModel: ObservableObject {
     /// no-op: streaming transcriptions have no cancellable batch task, and
     /// the post-stop gap has no pre-persisted row yet.
     private var escCancelCanAct: Bool {
-        if appState == .processing {
-            guard let active = activeBatchTranscription else { return false }
+        if appState == .processing || appState == .polishing {
+            guard let active = transcriptionOperations.active else { return false }
             return active.historyId != nil && activeTranscriptionSessionID == active.sessionID
         }
         return isStartPending || (!isStopPending && isAnyRecorderActive)
@@ -247,7 +242,7 @@ class SapoWhisperViewModel: ObservableObject {
             SapoLog.hotkey.info("Esc cancel armed, waiting for confirm")
             overlayManager.warnCancelArmed()
         case .confirmed:
-            if appState == .processing {
+            if appState == .processing || appState == .polishing {
                 cancelActiveTranscription()
             } else {
                 cancelActiveDictation()
@@ -370,9 +365,7 @@ class SapoWhisperViewModel: ObservableObject {
         // A5: the coordinator covers the begin→end window (wider than the
         // isRecording flags); the recorder flags stay as a backstop.
         AudioInputPreflightManager.shared.isCaptureActive = { [weak self] in
-            MainActor.assumeIsolated {
-                AudioCaptureCoordinator.shared.isCaptureActive || (self?.isAnyRecorderActive ?? false)
-            }
+            AudioCaptureCoordinator.shared.isCaptureActive || (self?.isAnyRecorderActive ?? false)
         }
 
         // A2: a capture that dies mid-recording (device unplugged, recovery
@@ -468,7 +461,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// translation becomes active the spoken language is unknown — reset the
     /// recognition hint to auto-detect.
     func syncTranscriptionLanguageForTranslation() {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let value =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
@@ -564,7 +557,7 @@ class SapoWhisperViewModel: ObservableObject {
                 // Esc cancela el dictado mientras graba y también la
                 // transcripción en vuelo (la fila ya está pre-persistida);
                 // requiere doble pulsación vía EscapeCancelGate.
-                self?.hotkeyManager.setCancelKeyActive(state == .recording || state == .processing) {
+                self?.hotkeyManager.setCancelKeyActive(state == .recording || state == .processing || state == .polishing) {
                     [weak self] in
                     self?.handleCancelKeyPress()
                 }
@@ -941,6 +934,10 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func canStartRecordingFromHotkey() -> Bool {
+        if transcriptionOperations.active != nil {
+            SapoLog.hotkey.info("Hotkey ignored while transcription is draining")
+            return false
+        }
         if startRecordingTask != nil {
             SapoLog.hotkey.info("Hotkey ignored while a cancelled recording start is draining")
             return false
@@ -1385,44 +1382,54 @@ class SapoWhisperViewModel: ObservableObject {
         perf: DictationPerfTimeline? = nil
     ) async {
         let sessionID = activeRecordingSessionID ?? nextRecordingSessionID()
-        context.logger.info("\(context.logLabel, privacy: .public) stopping session=\(sessionID, privacy: .public)")
-
-        var request = TranscriptionPipeline.Request(
-            sessionID: sessionID,
-            engine: context.engine,
-            engineName: context.engineName,
-            source: context.source,
-            failureLanguage: context.failureLanguage,
-            snapshotPrefix: "\(context.snapshotPrefix)-transcription",
-            logger: context.logger,
-            perf: perf
-        )
-        request.discardSilentCaptureOnTerminalFailure = true
-
         let session = context.session
         let variant = context.variant
         let language = selectedLanguage
-        await transcriptionPipeline.run(request) {
+        let preparation = StreamingCapturePreparation.prepare(
+            session: session, persister: persister, variant: variant, engineName: context.engineName,
+            language: language,
+            onStopped: { self.completeCaptureStopTransition(sessionID: sessionID, perf: perf) }
+        )
+        let capture = preparation.capture
+        let pending = preparation.pending
+        defer {
+            if let capture { persister.finishPreservedSource(capture.audioURL, pending: pending) }
+        }
+        var request = TranscriptionPipeline.Request(
+            sessionID: sessionID, engine: context.engine, engineName: context.engineName,
+            source: context.source, failureLanguage: context.failureLanguage,
+            snapshotPrefix: "\(context.snapshotPrefix)-transcription", logger: context.logger, perf: perf
+        )
+        request.discardSilentCaptureOnTerminalFailure = true
+        request.historyTarget = preparation.historyTarget
+        let audioURL = preparation.audioURL
+        await runManagedTranscription(
+            request, variant: variant, audioURL: audioURL, duration: capture?.duration ?? 0,
+            historyId: pending?.historyId
+        ) {
+            session.cancel()
+        } transcribe: {
             do {
-                let result = try await session.stop {
-                    self.completeCaptureStopTransition(sessionID: sessionID, perf: perf)
-                }
+                let result = try await session.finalizeTranscription()
+                try Task.checkCancellation()
                 self.settleReachability(variant.engine, reachable: true)
                 return TranscriptionPipeline.EngineOutput(
-                    transcript: result.transcript,
-                    audioURL: result.audioURL,
-                    duration: result.duration,
-                    language: result.language,
+                    transcript: result.transcript, audioURL: audioURL ?? result.audioURL,
+                    duration: result.duration, language: result.language,
                     engineNameOverride: result.transcriptionVariant == variant
-                        ? nil
-                        : self.historyEngineName(for: result.transcriptionVariant)
+                        ? nil : self.historyEngineName(for: result.transcriptionVariant)
                 )
             } catch {
-                return try await self.rescueFailedStream(
+                var result = try await self.rescueFailedStream(
                     error, variant: variant, session: session, language: language)
+                if let audioURL {
+                    result = TranscriptionPipeline.EngineOutput(
+                        transcript: result.transcript, audioURL: audioURL, duration: result.duration,
+                        language: result.language, engineNameOverride: result.engineNameOverride
+                    )
+                }
+                return result
             }
-        } captureResultOnFailure: {
-            session.lastCaptureResult.map { ($0.audioURL, $0.duration) }
         }
     }
 
@@ -1614,32 +1621,36 @@ class SapoWhisperViewModel: ObservableObject {
 
         let transcriptionURL = pending?.audioURL ?? effectiveAudioURL
         let transcriptionDuration = effectiveDuration
-        let pipelineRequest = request
-        let pipelineTask = Task {
-            await self.transcriptionPipeline.run(pipelineRequest) {
-                let result = try await self.transcribeWithFallback(
-                    at: transcriptionURL, primary: variant, language: language)
-                return TranscriptionPipeline.EngineOutput(
-                    transcript: result.transcript,
-                    audioURL: transcriptionURL,
-                    duration: transcriptionDuration,
-                    language: language,
-                    engineNameOverride: result.engineNameOverride
-                )
-            } captureResultOnFailure: {
-                (transcriptionURL, transcriptionDuration)
-            }
+        await runManagedTranscription(
+            request, variant: variant, audioURL: transcriptionURL, duration: transcriptionDuration,
+            historyId: pending?.historyId
+        ) {
+            let result = try await self.transcribeWithFallback(
+                at: transcriptionURL, primary: variant, language: language)
+            return TranscriptionPipeline.EngineOutput(
+                transcript: result.transcript, audioURL: transcriptionURL, duration: transcriptionDuration,
+                language: language, engineNameOverride: result.engineNameOverride
+            )
         }
-        activeBatchTranscription = ActiveBatchTranscription(
-            sessionID: sessionID,
-            historyId: pending?.historyId,
-            audioURL: transcriptionURL,
-            duration: transcriptionDuration,
-            task: pipelineTask
+    }
+
+    private func runManagedTranscription(
+        _ request: TranscriptionPipeline.Request,
+        variant: TranscriptionEngineVariant,
+        audioURL: URL?,
+        duration: TimeInterval,
+        historyId: Int64?,
+        cancelEngine: @escaping @MainActor () -> Void = {},
+        transcribe: @escaping @MainActor () async throws -> TranscriptionPipeline.EngineOutput
+    ) async {
+        let operation = DictationOperationCoordinator.Context(
+            sessionID: request.sessionID, historyId: historyId, audioURL: audioURL,
+            duration: duration, variant: variant
         )
-        await pipelineTask.value
-        if activeBatchTranscription?.sessionID == sessionID {
-            activeBatchTranscription = nil
+        await transcriptionOperations.run(operation, cancelEngine: cancelEngine) {
+            await self.transcriptionPipeline.run(request, transcribe: transcribe) {
+                audioURL.map { ($0, duration) }
+            }
         }
     }
 
@@ -1703,34 +1714,39 @@ class SapoWhisperViewModel: ObservableObject {
     /// armed when the pre-persist succeeded; otherwise cancelling could still
     /// lose the temp WAV, so Esc stays inert like before.
     func cancelActiveTranscription() {
-        guard let active = activeBatchTranscription,
-            let historyId = active.historyId,
-            activeTranscriptionSessionID == active.sessionID
-        else { return }
+        _ = interruptActiveTranscription(kind: .userCancelled, showCancellation: true)
+    }
 
-        SapoLog.hotkey.info(
-            "Transcription cancelled route=esc \(self.diagnosticContext(), privacy: .public)")
+    @discardableResult
+    private func interruptActiveTranscription(
+        kind: TranscriptionFailure.Kind,
+        showCancellation: Bool
+    ) -> Bool {
+        guard let active = transcriptionOperations.active,
+            let historyId = active.historyId,
+            let audioURL = active.audioURL,
+            activeTranscriptionSessionID == active.sessionID
+        else { return false }
+
         historyManager.markTranscriptionFailed(
             id: historyId,
-            failureCode: TranscriptionFailure(
-                kind: .userCancelled, engine: sessionVariant.displayName
-            ).diagnosticCode
+            failureCode: TranscriptionFailure(kind: kind, engine: active.variant.displayName).diagnosticCode
         )
         resumableStore.offer(
             ResumableDictation(
-                historyId: historyId,
-                audioURL: active.audioURL,
-                duration: active.duration,
-                capturedAt: Date()
-            ))
-        // Staling the session first makes the cancelled pipeline exit through
-        // the stale gate without touching UI, history, or the preserved WAV.
+                historyId: historyId, audioURL: audioURL, duration: active.duration, capturedAt: Date()
+            )
+        )
         activeTranscriptionSessionID = nil
-        activeBatchTranscription = nil
-        active.task.cancel()
+        transcriptionOperations.cancel(sessionID: active.sessionID)
         persister.clearRetryState()
-        overlayManager.showCancelled()
+        if showCancellation {
+            overlayManager.showCancelled()
+        } else {
+            overlayManager.updateState(.hidden)
+        }
         checkInitialState()
+        return true
     }
 
     /// Runs the primary engine and, on a connectivity-class failure, retries
@@ -1916,12 +1932,13 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Retry transcription with the last failed audio (fix #19: smart engine fallback)
     func retryTranscription() {
+        guard !isAnyRecorderActive, !isStartPending, !isStopPending else { return }
         guard let audioURL = persister.lastFailedAudioURL else {
             guard canStartRecordingFromHotkey() else { return }
             startRecording()
             return
         }
-        guard !isRetryInFlight else { return }
+        guard !isRetryInFlight, transcriptionOperations.active == nil else { return }
         guard activeTranscriptionSessionID == nil else { return }
         isRetryInFlight = true
 
@@ -1955,7 +1972,9 @@ class SapoWhisperViewModel: ObservableObject {
 
         Task {
             defer { isRetryInFlight = false }
-            await transcriptionPipeline.run(request) {
+            await runManagedTranscription(
+                request, variant: variant, audioURL: audioURL, duration: duration ?? 0, historyId: historyId
+            ) {
                 let result = try await self.transcribeWithFallback(
                     at: audioURL, primary: variant, language: language)
                 return TranscriptionPipeline.EngineOutput(
@@ -1965,8 +1984,6 @@ class SapoWhisperViewModel: ObservableObject {
                     language: language,
                     engineNameOverride: result.engineNameOverride
                 )
-            } captureResultOnFailure: {
-                (audioURL, duration ?? 0)
             }
         }
     }
@@ -2151,17 +2168,13 @@ class SapoWhisperViewModel: ObservableObject {
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let captureToken = await self.captureCoordinator.beginCapture(owner) else {
-                self.isStartPending = false
-                self.startRecordingTask = nil
-                return
-            }
+            var captureToken: AudioCaptureCoordinator.CaptureToken?
             var recorderDidStart = false
 
             defer {
                 self.isStartPending = false
                 self.startRecordingTask = nil
-                if !recorderDidStart {
+                if !recorderDidStart, let captureToken {
                     self.captureCoordinator.endCapture(captureToken)
                 }
             }
@@ -2169,6 +2182,9 @@ class SapoWhisperViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
 
             do {
+                guard let token = try await self.captureCoordinator.beginCapture(owner) else { return }
+                captureToken = token
+                try Task.checkCancellation()
                 let accepted = try await CaptureStartCompletionGate.perform(
                     start: start,
                     isSessionCurrent: {
@@ -2364,16 +2380,20 @@ class SapoWhisperViewModel: ObservableObject {
     func postProcessTranscript(
         _ rawText: String,
         source: String,
-        duration: TimeInterval?
+        duration: TimeInterval?,
+        historyTarget: HistoryPersistenceTarget? = nil
     ) async -> TranscriptAIResult {
-        await postProcessTranscript(rawText, source: source, duration: duration, context: .liveDictation)
+        await postProcessTranscript(
+            rawText, source: source, duration: duration, context: .liveDictation, historyTarget: historyTarget
+        )
     }
 
     func postProcessTranscript(
         _ rawText: String,
         source: String,
         duration: TimeInterval?,
-        context: PostProcessingContext
+        context: PostProcessingContext,
+        historyTarget: HistoryPersistenceTarget? = nil
     ) async -> TranscriptAIResult {
         // Live dictations honor the user's minimum-duration setting; history
         // re-runs are explicit intent and always attempt.
@@ -2383,6 +2403,9 @@ class SapoWhisperViewModel: ObservableObject {
             enforceMinimumDuration: context == .liveDictation
         )
         if willAttemptPolish {
+            if case .finalizePending(let historyId) = historyTarget {
+                historyManager.markProcessingStage(id: historyId, stage: .polishing, rawText: rawText)
+            }
             // History re-runs reuse this helper but must not drive the live
             // dictation UI: suppress the busy state + overlay, keep diagnostics.
             if context == .liveDictation {
@@ -2528,6 +2551,7 @@ class SapoWhisperViewModel: ObservableObject {
             }
             cancelPendingStopTail()
         }
+        if interruptActiveTranscription(kind: .recordingInterrupted, showCancellation: false) { return }
         guard activeTranscriptionSessionID == nil else { return }
         guard abortActiveCapturePreservingAudio(reasonLog: "sleep").aborted else { return }
 
@@ -2556,15 +2580,7 @@ class SapoWhisperViewModel: ObservableObject {
             cancelPendingStopTail()
         }
 
-        // A graceful quit mid-transcription resolves the pre-persisted row
-        // right away instead of leaving it for the next launch sweep.
-        if let active = activeBatchTranscription, let historyId = active.historyId {
-            historyManager.markTranscriptionFailed(
-                id: historyId,
-                failureCode: TranscriptionHistoryManager.interruptedTranscriptionFailureCode
-            )
-            active.task.cancel()
-        }
+        if interruptActiveTranscription(kind: .recordingInterrupted, showCancellation: false) { return }
 
         guard activeTranscriptionSessionID == nil else { return }
         _ = abortActiveCapturePreservingAudio(
@@ -2692,6 +2708,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// ready no longer disables it: the backup takes the dictation from the
     /// start, so refusing here would grey out a button that would have worked.
     var canRecord: Bool {
+        guard transcriptionOperations.active == nil || isAnyRecorderActive else { return false }
         func canRecord(_ sessions: EngineSessions) -> Bool {
             sessions.canRecord(
                 hasActiveTranscriptionSession: activeTranscriptionSessionID != nil,
@@ -2734,7 +2751,6 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
     func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?) {
         let finalText = aiResult.finalText
         let outcome = Self.copiedOutcome(for: aiResult)
-        persister.beginNewDictationDelivery()
         lastTranscription = finalText
         paste.copyToClipboard(finalText)
         overlayManager.showCopied(text: finalText, outcome: outcome)
@@ -2773,8 +2789,10 @@ extension SapoWhisperViewModel: TranscriptionPipelineHost {
         aiResult: TranscriptAIResult,
         perf: DictationPerfTimeline?,
         target: HistoryPersistenceTarget
-    ) {
-        persister.persistCompleted(
+    ) async {
+        guard !Task.isCancelled else { return }
+        persister.beginNewDictationDelivery()
+        await persister.persistCompleted(
             audioURL: audioURL,
             engine: engine,
             engineName: engineName,

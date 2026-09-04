@@ -11,7 +11,7 @@ nonisolated final class HistoryAudioStorage: Sendable {
     /// H6: user-selectable cap in Settings; enforcement trims to 80% so the
     /// sweep does not retrigger on every save.
     static var maxAudioStorageBytes: Int64 {
-        let configuredMB = UserDefaults.standard.integer(forKey: Constants.StorageKeys.historyAudioMaxMB)
+        let configuredMB = AppPreferences.defaults.integer(forKey: Constants.StorageKeys.historyAudioMaxMB)
         let megabytes = configuredMB > 0 ? configuredMB : defaultMaxStorageMB
         return Int64(megabytes) * 1024 * 1024
     }

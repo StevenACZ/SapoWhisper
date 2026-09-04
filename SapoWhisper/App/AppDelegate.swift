@@ -20,6 +20,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
         NSApp.setActivationPolicy(.accessory)
+        guard !UIPreviewMode.isRunningTests else { return }
+        if UIPreviewMode.isActive {
+            menuBarStatusController.start()
+            scheduleInitialOnboardingCheck()
+            return
+        }
         APIKeyKeychainMigration.run()
         LocalAIServerConfiguration.sanitizeStoredBaseURL()
         PolishProviderConfiguration.sanitizeStoredBaseURLs()
@@ -77,6 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard !AppRuntimePaths.isIsolated else { return }
         SapoLog.performance.info("Application became active")
         PerformanceDiagnostics.logRuntimeSnapshot(reason: "app-active")
         PreferredMicrophoneCoordinator.shared.requestReconciliation(reason: "app-active")
@@ -84,6 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !AppRuntimePaths.isIsolated else { return }
         // Safety net: restaurar volumen del sistema si la app se cierra durante grabación
         SapoWhisperAppEnvironment.shared.viewModel.handleApplicationWillTerminate()
         if let screenChangeObserver {
@@ -102,6 +110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startRemoteDictationControl() {
+        guard !AppRuntimePaths.isIsolated else { return }
         let server = RemoteDictationCommandServer()
         do {
             try server.start(
@@ -163,7 +172,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// H6: optional age-based retention. 0 (default) means never delete.
     private func runHistoryAutoDeleteIfConfigured() {
-        let days = UserDefaults.standard.integer(forKey: Constants.StorageKeys.historyAutoDeleteDays)
+        let days = AppPreferences.defaults.integer(forKey: Constants.StorageKeys.historyAutoDeleteDays)
         guard days > 0 else { return }
         Task.detached(priority: .utility) {
             let deleted = TranscriptionHistoryManager.shared.deleteEntries(olderThanDays: days)

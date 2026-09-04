@@ -9,8 +9,9 @@ struct LocalAIServerSettingsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     let isEmbedded: Bool
 
-    @AppStorage(Constants.StorageKeys.localAIServerBaseURL) private var baseURL = ""
-    @AppStorage(Constants.StorageKeys.localAIServerModel) private var model = LocalAIServerConfiguration.defaultModel
+    @AppStorage(Constants.StorageKeys.localAIServerBaseURL, store: AppPreferences.defaults) private var baseURL = ""
+    @AppStorage(Constants.StorageKeys.localAIServerModel, store: AppPreferences.defaults) private var model = LocalAIServerConfiguration
+        .defaultModel
 
     @State private var apiKey = ""
     @State private var keychainReadDenied = false

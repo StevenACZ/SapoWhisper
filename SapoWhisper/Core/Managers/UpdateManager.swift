@@ -56,10 +56,10 @@ final class UpdateManager {
     // MARK: - Lifecycle
 
     func start() {
-        guard updater == nil else { return }
+        guard !AppRuntimePaths.isIsolated, updater == nil else { return }
 
         // The passive pre-Sparkle checker stored these; clean them up once.
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         defaults.removeObject(forKey: "updateCheckETag")
         defaults.removeObject(forKey: "lastUpdateCheckAt")
 
@@ -90,7 +90,7 @@ final class UpdateManager {
 
     /// Defaults to enabled until the Settings toggle writes the key.
     private var isAutoCheckEnabled: Bool {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         guard defaults.object(forKey: Constants.StorageKeys.autoUpdateCheckEnabled) != nil else {
             return true
         }
@@ -336,7 +336,7 @@ private final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
         #if DEBUG
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.updateFeedURLOverride)
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.updateFeedURLOverride)
         #else
             nil
         #endif

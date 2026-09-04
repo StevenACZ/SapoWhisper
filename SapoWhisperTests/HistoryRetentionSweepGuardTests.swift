@@ -14,25 +14,26 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class HistoryRetentionSweepGuardTests: XCTestCase {
 
     private var manager: TranscriptionHistoryManager!
     private var tempAudioDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempAudioDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("history-retention-sweep-tests-\(UUID().uuidString)")
         manager = TranscriptionHistoryManager(databasePath: ":memory:", audioDirectory: tempAudioDir)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         allowQueries()
         manager = nil
         if let tempAudioDir {
             try? FileManager.default.removeItem(at: tempAudioDir)
         }
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - Retention delete
@@ -51,6 +52,14 @@ final class HistoryRetentionSweepGuardTests: XCTestCase {
             "the retention sweep destroyed the only copy of the in-flight dictation audio"
         )
         XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(resolved.audioPath)))
+    }
+
+    func testRetentionKeepsPolishingRowsAndTheirAudio() throws {
+        let pending = persistRow(named: "polishing", status: "polishing")
+        backdate(ids: [pending.rowID], days: 60)
+        XCTAssertEqual(manager.deleteEntries(olderThanDays: 30), 0)
+        XCTAssertEqual(manager.fetchAll().map(\.id), [pending.rowID])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(pending.audioPath)))
     }
 
     /// The guard is scoped to the in-flight status: once the pipeline resolves

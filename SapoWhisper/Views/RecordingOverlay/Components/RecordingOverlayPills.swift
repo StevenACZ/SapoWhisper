@@ -340,7 +340,7 @@ struct CompletedPillView: View {
     @State private var iconScale: CGFloat = 0
     @State private var glowFlash = 0
     @State private var showRecopied = false
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
 
     private static let contentWidth: CGFloat = 400
     private static let transcriptFontSize: CGFloat = 12

@@ -29,7 +29,7 @@ final class ConcurrentPostProcessingTests: XCTestCase {
     }
 
     func testHistoryAndLiveProcessingKeepIndependentDurationPolicies() async {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let engineKey = Constants.StorageKeys.transcriptionEngine
         let previous = defaults.object(forKey: engineKey)
         defaults.set(TranscriptionEngine.deepgram.rawValue, forKey: engineKey)

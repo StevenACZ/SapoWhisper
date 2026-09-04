@@ -12,9 +12,9 @@ final class LocalModelSelectionTests: XCTestCase {
     private var previousEngine: String?
     private var previousModel: String?
 
-    override func setUp() {
-        super.setUp()
-        let defaults = UserDefaults.standard
+    override func setUp() async throws {
+        try await super.setUp()
+        let defaults = AppPreferences.defaults
         previousEngine = defaults.string(forKey: Constants.StorageKeys.transcriptionEngine)
         previousModel = defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel)
         // Cloud engine so the ViewModel init never kicks off a local load.
@@ -24,11 +24,11 @@ final class LocalModelSelectionTests: XCTestCase {
         )
     }
 
-    override func tearDown() {
-        let defaults = UserDefaults.standard
+    override func tearDown() async throws {
+        let defaults = AppPreferences.defaults
         restore(previousEngine, key: Constants.StorageKeys.transcriptionEngine, defaults: defaults)
         restore(previousModel, key: Constants.StorageKeys.mlxWhisperModel, defaults: defaults)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func restore(_ value: String?, key: String, defaults: UserDefaults) {
@@ -51,7 +51,7 @@ final class LocalModelSelectionTests: XCTestCase {
     }
 
     private func makeViewModel(selecting model: MLXWhisperModel) throws -> SapoWhisperViewModel {
-        UserDefaults.standard.set(model.rawValue, forKey: Constants.StorageKeys.mlxWhisperModel)
+        AppPreferences.defaults.set(model.rawValue, forKey: Constants.StorageKeys.mlxWhisperModel)
         let viewModel = SapoWhisperViewModel()
         try skipIfReallyDownloaded(model, in: viewModel)
         return viewModel

@@ -15,7 +15,11 @@ nonisolated enum UIPreviewMode {
     static let isActive = ProcessInfo.processInfo.environment["SAPO_UI_PREVIEW"] == "1"
 
     /// True inside the unit-test host, which launches the full app.
-    static let isRunningTests = NSClassFromString("XCTestCase") != nil
+    static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["SAPO_TEST_HOST"] == "1"
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+    }
 
     /// Consent-sensitive launch paths (keychain access, hotkey event tap,
     /// permission windows) are skipped for preview launches and tests; both

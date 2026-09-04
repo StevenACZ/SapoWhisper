@@ -6,7 +6,8 @@ struct DeepgramSettingsCard: View {
 
     @State private var deepgramAPIKey = ""
     @State private var keychainReadDenied = false
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedMode = DeepgramTranscriptionMode.nova3.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) private var selectedMode =
+        DeepgramTranscriptionMode.nova3.rawValue
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
         self.viewModel = viewModel

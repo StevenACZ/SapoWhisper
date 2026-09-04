@@ -14,7 +14,7 @@ enum OverlayPosition: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static var configured: OverlayPosition {
-        let stored = UserDefaults.standard.string(forKey: Constants.StorageKeys.overlayPosition)
+        let stored = AppPreferences.defaults.string(forKey: Constants.StorageKeys.overlayPosition)
         return stored.flatMap(OverlayPosition.init(rawValue:)) ?? .bottom
     }
 

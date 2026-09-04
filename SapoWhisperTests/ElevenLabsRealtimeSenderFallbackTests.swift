@@ -11,6 +11,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
 
     private func stats(failedMessages: Int, drainTimedOut: Bool) -> ElevenLabsRealtimeAudioSenderStats {

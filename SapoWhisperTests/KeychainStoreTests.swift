@@ -11,6 +11,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class KeychainStoreTests: XCTestCase {
 
     private let storedPayload = [
@@ -18,14 +19,14 @@ final class KeychainStoreTests: XCTestCase {
         KeychainStore.Key.elevenLabsAPIKey.rawValue: "stored-elevenlabs",
     ]
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         KeychainStore.simulateRead(payload: nil)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         KeychainStore.simulateRead(payload: nil)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testWriteIsRejectedWhileTheReadIsDenied() {

@@ -11,7 +11,7 @@ nonisolated extension TranscriptionHistoryManager {
     /// Pre-persisted row whose engine is still running. Its History audio is
     /// the only copy of the in-flight dictation, so no delete path may remove
     /// it before the pipeline (or the launch sweep) resolves the row.
-    static let inFlightStatus = "transcribing"
+    static let processingSQLValues = HistoryEntryStatus.processingSQLValues
 
     /// H5: delete entries (and their audio) older than `days`, keeping pinned
     /// rows and rows still being transcribed. Returns the number of deleted
@@ -24,12 +24,11 @@ nonisolated extension TranscriptionHistoryManager {
         let iso = Self.isoFormatter.string(from: cutoff)
 
         let deleteSql =
-            "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0 AND status != ?;"
+            "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0 AND status NOT IN \(Self.processingSQLValues);"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
         bindText(deleteStmt, 1, iso)
-        bindText(deleteStmt, 2, Self.inFlightStatus)
         guard stepStatement(deleteStmt, operation: "deleteOlderThan") else { return 0 }
         let deleted = Int(sqlite3_changes(db))
 
@@ -50,11 +49,10 @@ nonisolated extension TranscriptionHistoryManager {
         defer { persistenceLock.unlock() }
         let paths = deletableAudioPaths()
 
-        let deleteSql = "DELETE FROM transcriptions WHERE status != ?;"
+        let deleteSql = "DELETE FROM transcriptions WHERE status NOT IN \(Self.processingSQLValues);"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
-        bindText(deleteStmt, 1, Self.inFlightStatus)
         guard stepStatement(deleteStmt, operation: "deleteAll") else { return 0 }
         let deleted = Int(sqlite3_changes(db))
 
@@ -120,12 +118,11 @@ nonisolated extension TranscriptionHistoryManager {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
         let audioPath = audioPath(for: id)
-        let deleteSql = "DELETE FROM transcriptions WHERE id = ? AND status != ?;"
+        let deleteSql = "DELETE FROM transcriptions WHERE id = ? AND status NOT IN \(Self.processingSQLValues);"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_int64(deleteStmt, 1, id)
-        bindText(deleteStmt, 2, Self.inFlightStatus)
         guard stepStatement(deleteStmt, operation: "delete"), sqlite3_changes(db) > 0 else { return }
 
         if let audioPath {
@@ -165,11 +162,10 @@ nonisolated extension TranscriptionHistoryManager {
     /// Audio referenced only by rows `deleteAll` is allowed to remove, so the
     /// in-flight take keeps its file.
     private func deletableAudioPaths() -> Set<String> {
-        let sql = "SELECT audio_path FROM transcriptions WHERE audio_path IS NOT NULL AND status != ?;"
+        let sql = "SELECT audio_path FROM transcriptions WHERE audio_path IS NOT NULL AND status NOT IN \(Self.processingSQLValues);"
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        bindText(stmt, 1, Self.inFlightStatus)
 
         var paths = Set<String>()
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -202,6 +198,6 @@ nonisolated extension HistoryEntry {
     /// Mirrors the guard `delete(id:)` and `deleteAll()` enforce in SQL, so the
     /// UI can disable a delete instead of silently no-opping it.
     var isDeletable: Bool {
-        status != TranscriptionHistoryManager.inFlightStatus
+        !isProcessing
     }
 }

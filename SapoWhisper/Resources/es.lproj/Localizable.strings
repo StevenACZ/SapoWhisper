@@ -690,3 +690,8 @@
 "settings.update_check_toggle" = "Buscar actualizaciones automáticamente";
 "settings.update_check_footnote" = "Consulta GitHub Releases una vez al día. No se envía nada.";
 "history.retranscribe_cancelling" = "Cancelando…";
+
+"history.polishing" = "Mejorando con IA";
+"history.polishing_detail" = "El texto reconocido y el audio están guardados mientras la IA termina de mejorar este dictado.";
+"history.completed" = "Completado";
+"history.audio_available_detail" = "Tu audio está guardado. Puedes escucharlo o volver a transcribirlo.";

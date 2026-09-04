@@ -55,7 +55,7 @@ make tools
 make ci-check
 ```
 
-Open `SapoWhisper.xcodeproj` and run the `SapoWhisper` scheme. See [CONTRIBUTING.md](CONTRIBUTING.md) for development details and [SECURITY.md](SECURITY.md) for the security policy.
+Open `SapoWhisper.xcodeproj` and run the `SapoWhisper` scheme. See [CONTRIBUTING.md](CONTRIBUTING.md) for development details, [ARCHITECTURE.md](ARCHITECTURE.md) for component responsibilities and invariants, and [SECURITY.md](SECURITY.md) for the security policy.
 
 ## License
 

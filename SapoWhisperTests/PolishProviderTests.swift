@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class PolishProviderTests: XCTestCase {
 
     func testPublicFinishReasonAllowsOnlyKnownMetadata() {
@@ -342,7 +343,7 @@ final class PolishProviderTests: XCTestCase {
             model: "x-ai/grok-4.6",
             apiKey: "test-key"
         )
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let key = Constants.StorageKeys.aiPolishReasoningEffort
         let previous = defaults.string(forKey: key)
         defaults.set(PolishReasoningEffort.off.rawValue, forKey: key)

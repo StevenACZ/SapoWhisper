@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class VocabularyUsageMetricsTests: XCTestCase {
 
     private func entry(

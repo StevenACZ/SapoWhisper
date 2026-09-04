@@ -27,6 +27,7 @@ import os
 /// inert under the file-based keychain and kept only as forward-compat.
 /// Revisit only if iCloud Keychain, Secure Enclave, or biometric gating is
 /// ever needed.
+@MainActor
 enum KeychainStore {
     private static let service = "oli.SapoWhisper"
 
@@ -54,7 +55,7 @@ enum KeychainStore {
         case loaded(payload: [String: String], isReliable: Bool)
     }
 
-    private static let cache = OSAllocatedUnfairLock<CacheState>(initialState: .unloaded)
+    private static var cache: CacheState = .unloaded
 
     /// cdhash of the running binary; changes on every (ad-hoc) rebuild.
     private static let currentCodeHash: String? = computeCodeHash()
@@ -73,20 +74,18 @@ enum KeychainStore {
             return string(for: key) != nil
         }
 
-        let cached: Bool? = cache.withLock { state -> Bool? in
-            guard case .loaded(let payload, _) = state else { return nil }
+        if case .loaded(let payload, _) = cache {
             return !(payload[key.rawValue] ?? "").isEmpty
         }
-        if let cached { return cached }
 
-        if let hints = UserDefaults.standard.stringArray(
+        if let hints = AppPreferences.defaults.stringArray(
             forKey: Constants.StorageKeys.keychainStoredKeyHints)
         {
             return hints.contains(key.rawValue)
         }
 
         guard
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.keychainOwnerCodeHash) != nil
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.keychainOwnerCodeHash) != nil
         else {
             return false
         }
@@ -97,10 +96,8 @@ enum KeychainStore {
     /// "Deny" on the consent dialog): secrets exist but are unreadable until
     /// a retry. UI surfaces use this to offer a recovery path.
     static var isReadDenied: Bool {
-        cache.withLock { state in
-            if case .loaded(_, false) = state { return true }
-            return false
-        }
+        if case .loaded(_, false) = cache { return true }
+        return false
     }
 
     /// Drops the denied cache and reads again, which lets macOS show the
@@ -108,27 +105,17 @@ enum KeychainStore {
     /// reliable read.
     @discardableResult
     static func retryDeniedRead() -> Bool {
-        cache.withLock { state in
-            if case .loaded(_, false) = state {
-                state = .unloaded
-            }
-        }
+        if case .loaded(_, false) = cache { cache = .unloaded }
         _ = loadPayload()
-        return cache.withLock { state in
-            if case .loaded(_, true) = state { return true }
-            return false
-        }
+        if case .loaded(_, true) = cache { return true }
+        return false
     }
 
     @discardableResult
     static func setString(_ value: String, for key: Key) -> Bool {
         // A denied read this launch means the cache may be missing keys;
         // retry the read before writing so a partial payload can't wipe them.
-        cache.withLock { state in
-            if case .loaded(_, false) = state {
-                state = .unloaded
-            }
-        }
+        if case .loaded(_, false) = cache { cache = .unloaded }
 
         var payload = loadPayload()
         // A denied read leaves the payload a stub, and writing it back would
@@ -151,36 +138,30 @@ enum KeychainStore {
     // MARK: - Consolidated payload
 
     private static func loadPayload() -> [String: String] {
-        cache.withLock { state in
-            if case .loaded(let payload, _) = state { return payload }
-            // UI preview and test launches must never hit the keychain:
-            // every ad-hoc rebuild would re-trigger the consent dialog.
-            if UIPreviewMode.skipsConsentPrompts {
-                #if DEBUG
-                    if let simulated = simulatedRead.withLock({ $0 }) {
-                        state = .loaded(payload: simulated.payload, isReliable: simulated.isReliable)
-                        return simulated.payload
-                    }
-                #endif
-                state = .loaded(payload: [:], isReliable: true)
-                return [:]
-            }
-            let (payload, isReliable) = readOrMigratePayload()
-            state = .loaded(payload: payload, isReliable: isReliable)
-            if isReliable {
-                rememberStoredKeyHints(payload)
-            }
-            return payload
+        if case .loaded(let payload, _) = cache { return payload }
+        if UIPreviewMode.skipsConsentPrompts {
+            #if DEBUG
+                if let simulated = simulatedRead {
+                    cache = .loaded(payload: simulated.payload, isReliable: simulated.isReliable)
+                    return simulated.payload
+                }
+            #endif
+            cache = .loaded(payload: [:], isReliable: true)
+            return [:]
         }
+        let (payload, isReliable) = readOrMigratePayload()
+        cache = .loaded(payload: payload, isReliable: isReliable)
+        if isReliable { rememberStoredKeyHints(payload) }
+        return payload
     }
 
     private static func persist(_ payload: [String: String]) -> Bool {
         if UIPreviewMode.skipsConsentPrompts {
-            cache.withLock { $0 = .loaded(payload: payload, isReliable: true) }
+            cache = .loaded(payload: payload, isReliable: true)
             return true
         }
         guard writePayload(payload) else { return false }
-        cache.withLock { $0 = .loaded(payload: payload, isReliable: true) }
+        cache = .loaded(payload: payload, isReliable: true)
         rememberOwnership()
         rememberStoredKeyHints(payload)
         return true
@@ -236,7 +217,7 @@ enum KeychainStore {
     private static func adoptOwnershipIfBinaryChanged(_ payload: [String: String]) {
         guard !payload.isEmpty, let currentCodeHash else { return }
         guard
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.keychainOwnerCodeHash)
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.keychainOwnerCodeHash)
                 != currentCodeHash
         else { return }
 
@@ -248,12 +229,12 @@ enum KeychainStore {
 
     private static func rememberOwnership() {
         guard let currentCodeHash else { return }
-        UserDefaults.standard.set(currentCodeHash, forKey: Constants.StorageKeys.keychainOwnerCodeHash)
+        AppPreferences.defaults.set(currentCodeHash, forKey: Constants.StorageKeys.keychainOwnerCodeHash)
     }
 
     private static func rememberStoredKeyHints(_ payload: [String: String]) {
         let hints = payload.compactMap { $0.value.isEmpty ? nil : $0.key }.sorted()
-        UserDefaults.standard.set(hints, forKey: Constants.StorageKeys.keychainStoredKeyHints)
+        AppPreferences.defaults.set(hints, forKey: Constants.StorageKeys.keychainStoredKeyHints)
     }
 
     // MARK: - Raw keychain access
@@ -335,15 +316,13 @@ enum KeychainStore {
             let isReliable: Bool
         }
 
-        private static let simulatedRead = OSAllocatedUnfairLock<SimulatedRead?>(initialState: nil)
+        private static var simulatedRead: SimulatedRead?
 
         /// Tests never reach the keychain, so a denied read is only reachable
         /// by injecting the outcome here. Pass `nil` to restore the default.
         static func simulateRead(payload: [String: String]?, isReliable: Bool = true) {
-            simulatedRead.withLock { state in
-                state = payload.map { SimulatedRead(payload: $0, isReliable: isReliable) }
-            }
-            cache.withLock { $0 = .unloaded }
+            simulatedRead = payload.map { SimulatedRead(payload: $0, isReliable: isReliable) }
+            cache = .unloaded
         }
     #endif
 }

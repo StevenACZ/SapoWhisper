@@ -136,7 +136,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     private nonisolated let monitorHealthLock = OSAllocatedUnfairLock(initialState: CFAbsoluteTime(0))
 
     private init() {
-        let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
+        let savedGain = AppPreferences.defaults.double(forKey: Constants.StorageKeys.audioGain)
         let initialGain = savedGain > 0 ? Float(savedGain) : 1.0
         self.gain = initialGain
         self.tapGain = initialGain

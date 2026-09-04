@@ -286,7 +286,7 @@ class OverlayWindowManager: ObservableObject {
         // thread, so a monitor delivered off-main can never crash.
         if let globalMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
-            handler: { _ in
+            handler: { @Sendable _ in
                 Task { @MainActor in
                     OverlayWindowManager.shared.collapseIfClickLandedOutside()
                 }
@@ -297,7 +297,7 @@ class OverlayWindowManager: ObservableObject {
 
         if let localMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
-            handler: { event in
+            handler: { @Sendable event in
                 // No window filter: even clicks delivered to the overlay
                 // window may land on its transparent margin, and the
                 // collapse check hit-tests the actual content either way.

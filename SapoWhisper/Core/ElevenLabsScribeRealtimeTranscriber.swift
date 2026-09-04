@@ -486,30 +486,22 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
     }
 
-    func stop(
-        onCaptureStopped: @escaping @MainActor @Sendable () -> Void
-    ) async throws -> StreamingDictationResult {
-        guard isStreaming || isStopping else {
-            throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName,
-                technicalDetail: "ElevenLabs realtime stream is not active"
-            )
-        }
-
+    func sealCapture() -> AudioCaptureResult? {
+        guard isStreaming || isStopping else { return nil }
         isStopping = true
         stopStartedAt = CFAbsoluteTimeGetCurrent()
-        SapoLog.recording.info("ElevenLabs realtime stop requested")
-        let captureResult = StopCaptureHandoff.perform(
-            seal: { capture.stopRecording() },
-            onStopped: onCaptureStopped
-        )
+        let result = capture.stopRecording()
         isStreaming = false
+        lastCaptureResult = result
+        return result
+    }
 
-        guard let captureResult else {
-            cleanupWebSocket()
+    func finalizeTranscription() async throws -> StreamingDictationResult {
+        defer { cleanupWebSocket() }
+        try Task.checkCancellation()
+        guard let captureResult = lastCaptureResult else {
             throw RecordingError.fileCreationFailed
         }
-        lastCaptureResult = captureResult
 
         guard captureResult.diagnostics.receivedInput else {
             cleanupWebSocket()
@@ -526,7 +518,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
         let hadUncommittedPartialBeforeFinalCommit = transcriptAccumulator.hasUncommittedPartial
         let senderStats = await audioSender.finishAndCommit(timeout: 2.0)
-        defer { cleanupWebSocket() }
 
         // Degraded stream: chunks never reached the server, so the realtime
         // transcript is missing audio the local WAV still has. Re-transcribe
@@ -540,6 +531,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             do {
                 return try await transcribeFullCaptureFallback(captureResult, reason: "sender_incomplete")
             } catch {
+                try Task.checkCancellation()
                 let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-batch-fallback")
                 guard !transcriptAccumulator.transcript.isEmpty else {
                     throw TranscriptionFailure(
@@ -574,6 +566,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
                 committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
             )
         } catch {
+            try Task.checkCancellation()
             // The stream died without committing anything usable; the local
             // WAV still has the take, so batch it instead of losing the words.
             let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-final")
@@ -637,6 +630,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         _ captureResult: AudioCaptureResult,
         reason: String
     ) async throws -> StreamingDictationResult {
+        try Task.checkCancellation()
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await ElevenLabsScribeTranscriber().transcribe(
             audioURL: captureResult.audioURL,

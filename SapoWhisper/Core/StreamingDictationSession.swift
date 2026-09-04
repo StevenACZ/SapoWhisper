@@ -36,9 +36,8 @@ protocol StreamingDictationSession: AnyObject {
     var audioLevelPublisher: AnyPublisher<Float, Never> { get }
 
     func start(microphone: String, language: String) async throws
-    func stop(
-        onCaptureStopped: @escaping @MainActor @Sendable () -> Void
-    ) async throws -> StreamingDictationResult
+    func sealCapture() -> AudioCaptureResult?
+    func finalizeTranscription() async throws -> StreamingDictationResult
     func cancel()
     func pauseRecording()
     func resumeRecording() throws

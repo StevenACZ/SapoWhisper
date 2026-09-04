@@ -83,29 +83,22 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         }
     }
 
-    func stop(
-        onCaptureStopped: @escaping @MainActor @Sendable () -> Void
-    ) async throws -> StreamingDictationResult {
-        guard isStreaming || isStopping else {
-            throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName,
-                technicalDetail: "Flux stream is not active")
-        }
-
+    func sealCapture() -> AudioCaptureResult? {
+        guard isStreaming || isStopping else { return nil }
         isStopping = true
         stopStartedAt = CFAbsoluteTimeGetCurrent()
-        SapoLog.flux.info("Flux stop requested")
-        let captureResult = StopCaptureHandoff.perform(
-            seal: { capture.stopRecording() },
-            onStopped: onCaptureStopped
-        )
+        let result = capture.stopRecording()
         isStreaming = false
+        lastCaptureResult = result
+        return result
+    }
 
-        guard let captureResult else {
-            cleanupWebSocket()
+    func finalizeTranscription() async throws -> StreamingDictationResult {
+        defer { cleanupWebSocket() }
+        try Task.checkCancellation()
+        guard let captureResult = lastCaptureResult else {
             throw RecordingError.fileCreationFailed
         }
-        lastCaptureResult = captureResult
 
         guard captureResult.diagnostics.receivedInput else {
             cleanupWebSocket()
@@ -118,7 +111,6 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         SapoLog.flux.info(
             "Flux local capture stopped elapsed=\(captureStopMs, privacy: .public)ms buffers=\(captureResult.diagnostics.inputBufferCount, privacy: .public) frames=\(captureResult.diagnostics.writtenFrameCount, privacy: .public) chunks=\(captureResult.diagnostics.emittedChunkCount, privacy: .public) firstInput=\(Int(captureResult.diagnostics.firstInputLatencyMs ?? -1), privacy: .public)ms lastBufferAge=\(Int(captureResult.diagnostics.lastBufferAgeMs ?? -1), privacy: .public)ms maxInputGap=\(Int(captureResult.diagnostics.maxInputGapMs), privacy: .public)ms bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
         )
-        defer { cleanupWebSocket() }
 
         guard let audioSenderSession else {
             SapoLog.flux.warning("Flux sender session missing; falling back to full local audio")
@@ -151,6 +143,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             try await sendCloseStream()
             transcript = try await waitForFinalTranscript(timeout: 4.0)
         } catch {
+            try Task.checkCancellation()
             let detail = TranscriptionFailure.diagnosticDetail(for: error)
             SapoLog.flux.warning(
                 "Flux final transcript failed error=\(detail, privacy: .public); falling back to full local audio"
@@ -429,6 +422,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
         _ captureResult: AudioCaptureResult,
         reason: String
     ) async throws -> StreamingDictationResult {
+        try Task.checkCancellation()
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await DeepgramBatchTranscriber().transcribe(
             audioURL: captureResult.audioURL,

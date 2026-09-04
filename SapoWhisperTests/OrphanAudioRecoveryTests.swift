@@ -12,23 +12,24 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class OrphanAudioRecoveryTests: XCTestCase {
 
     private var tempDir: URL!
     private var manager: TranscriptionHistoryManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("orphan-recovery-tests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         manager = TranscriptionHistoryManager(databasePath: ":memory:", audioDirectory: tempDir)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         manager = nil
         try? FileManager.default.removeItem(at: tempDir)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testRecoversStaleHeaderOrphanIntoFailedRow() throws {

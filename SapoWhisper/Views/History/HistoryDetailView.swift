@@ -24,13 +24,13 @@ struct HistoryDetailView: View {
     @State private var copiedResetTask: Task<Void, Never>?
     @State private var polishVersions: [PolishVersion] = []
     @Environment(\.locale) private var locale
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
 
     private var isFailed: Bool { entry.status == "failed" }
     private var isUserCancelled: Bool { entry.isUserCancelled }
     /// Pre-persisted row whose engine is still running (live only — stale
     /// ones resolve to failed at launch).
-    private var isTranscribing: Bool { !entry.isDeletable }
+    private var isTranscribing: Bool { entry.isProcessing }
 
     private var canPolish: Bool {
         entry.status == "completed"
@@ -58,6 +58,10 @@ struct HistoryDetailView: View {
                     transcriptSection
                     originalTextSection
                     polishVersionsSection
+                }
+
+                if isFailed || isUserCancelled, entry.hasRawTranscript {
+                    originalTextSection
                 }
 
                 if entry.audioFileExists, let path = entry.audioPath {
@@ -135,7 +139,7 @@ struct HistoryDetailView: View {
             .buttonStyle(.borderedProminent)
             .tint(Color.sapoGreenDark)
             .fixedSize()
-            .disabled(isFailed || entry.text.isEmpty)
+            .disabled(entry.text.isEmpty || entry.isProcessing)
 
             if isAIPolishing {
                 Button("common.cancel".localized, systemImage: "stop.circle", action: onCancelPolish)
@@ -402,20 +406,16 @@ struct HistoryDetailView: View {
             Text("history.failed".localized)
                 .font(.title3.weight(.semibold))
 
-            if let failureCode = entry.failureCode, !failureCode.isEmpty {
-                Text(failureCode)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(.orange.opacity(0.14), in: Capsule())
-                    .foregroundStyle(.orange)
-            }
-
-            Text("history.failed_detail".localized)
+            Text(entry.failureDescription)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
+
+            Text((entry.audioFileExists ? "history.audio_available_detail" : "history.audio_missing_error").localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
 
             if entry.audioFileExists {
                 Button(action: onRetranscribe) {
@@ -443,10 +443,10 @@ struct HistoryDetailView: View {
             ProgressView()
                 .controlSize(.regular)
 
-            Text("history.transcribing".localized)
+            Text((entry.entryStatus?.titleKey ?? "history.transcribing").localized)
                 .font(.title3.weight(.semibold))
 
-            Text("history.transcribing_detail".localized)
+            Text((entry.entryStatus == .polishing ? "history.polishing_detail" : "history.transcribing_detail").localized)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -473,7 +473,7 @@ struct HistoryDetailView: View {
             Text("history.cancelled".localized)
                 .font(.title3.weight(.semibold))
 
-            Text("history.cancelled_detail".localized)
+            Text((entry.audioFileExists ? "history.cancelled_detail" : "history.audio_missing_error").localized)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

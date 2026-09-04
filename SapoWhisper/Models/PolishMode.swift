@@ -37,7 +37,7 @@ enum PolishMode: String, CaseIterable, Identifiable {
         }
     }
 
-    static func current(defaults: UserDefaults = .standard) -> PolishMode {
+    static func current(defaults: UserDefaults = AppPreferences.defaults) -> PolishMode {
         let stored = defaults.string(forKey: Constants.StorageKeys.aiPolishMode)
         return stored.flatMap(PolishMode.init(rawValue:)) ?? .default
     }
@@ -45,7 +45,7 @@ enum PolishMode: String, CaseIterable, Identifiable {
     /// True when dictations will actually compact right now: compact selected,
     /// polish enabled, and a usable provider configured (key-presence hints
     /// only — never triggers a keychain prompt). Drives the recording accent.
-    static func compactIsActive(defaults: UserDefaults = .standard) -> Bool {
+    static func compactIsActive(defaults: UserDefaults = AppPreferences.defaults) -> Bool {
         defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
             && current(defaults: defaults) == .compact
             && PolishProviderConfiguration.hasUsableConfiguration(defaults: defaults)
@@ -72,14 +72,14 @@ enum PolishMinimumDuration: Int, CaseIterable, Identifiable {
             : "ai.polish.min_duration_from".localized("\(rawValue)")
     }
 
-    static func current(defaults: UserDefaults = .standard) -> PolishMinimumDuration {
+    static func current(defaults: UserDefaults = AppPreferences.defaults) -> PolishMinimumDuration {
         PolishMinimumDuration(rawValue: defaults.integer(forKey: Constants.StorageKeys.aiPolishMinDuration))
             ?? .always
     }
 
     /// True when a live dictation of `duration` seconds should be polished.
     /// Unknown durations polish (never silently withhold on missing data).
-    static func allowsPolish(duration: TimeInterval?, defaults: UserDefaults = .standard) -> Bool {
+    static func allowsPolish(duration: TimeInterval?, defaults: UserDefaults = AppPreferences.defaults) -> Bool {
         guard let duration else { return true }
         return duration >= TimeInterval(current(defaults: defaults).rawValue)
     }

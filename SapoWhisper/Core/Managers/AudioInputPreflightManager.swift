@@ -23,24 +23,19 @@ nonisolated func audioInputPreflightDecision(
     return resolvedDeviceID == nil ? .waitForExplicitInput : .skipExplicitAvailable
 }
 
-/// Warms Core Audio route metadata after device changes so hotkey recording starts faster.
+@MainActor
 final class AudioInputPreflightManager {
     static let shared = AudioInputPreflightManager()
 
     private let deviceManager: AudioDeviceManager
-    private let queue = DispatchQueue(label: "com.sapowhisper.audioPreflight", qos: .utility)
     private var cancellables = Set<AnyCancellable>()
-    private var pendingWorkItem: DispatchWorkItem?
+    private var pendingTask: Task<Void, Never>?
     private var hasStarted = false
     private var generation: UInt64 = 0
-    /// Warm-up failures in a row (queue-confined); a fresh route change or a
-    /// successful warm-up resets the budget.
     private var consecutiveWarmupFailures = 0
     private static let maxWarmupRetries = 2
 
-    /// A8: set by the ViewModel; evaluated on the main thread before each run
-    /// so the preflight engine never touches the device mid-capture.
-    var isCaptureActive: (() -> Bool)?
+    var isCaptureActive: (@MainActor () -> Bool)?
 
     private init(deviceManager: AudioDeviceManager = .shared) {
         self.deviceManager = deviceManager
@@ -67,146 +62,175 @@ final class AudioInputPreflightManager {
     private func schedulePreflight(reason: String, delayOverride: TimeInterval? = nil) {
         generation &+= 1
         let currentGeneration = generation
-        pendingWorkItem?.cancel()
-
-        let delay = max(0, delayOverride ?? deviceManager.captureRouteSettleDelay() + 0.05)
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.runPreflight(reason: reason, generation: currentGeneration)
-        }
-        pendingWorkItem = workItem
-        queue.asyncAfter(deadline: .now() + delay, execute: workItem)
-    }
-
-    private func runPreflight(reason: String, generation: UInt64) {
-        guard generation == self.generation else { return }
-
-        // A fresh trigger (route change, wake, manual) gets a fresh retry
-        // budget; only the retry path itself keeps consuming it.
+        pendingTask?.cancel()
         if reason != "warmup-retry" {
             consecutiveWarmupFailures = 0
         }
 
-        // Starting the muted warm-up engine counts as capture for TCC, so on
-        // a fresh install this background task would pop the system
-        // microphone dialog out of nowhere. The guided permission flow owns
-        // the first request; until then the route cache simply stays cold.
-        guard MicrophonePermission.isGranted else {
-            SapoLog.audioRoute.info(
-                "Audio input preflight skipped reason=\(reason, privacy: .public) permission=microphone granted=false"
-            )
+        let delay = max(0, delayOverride ?? deviceManager.captureRouteSettleDelay() + 0.05)
+        pendingTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            await self?.runPreflight(reason: reason, generation: currentGeneration)
+        }
+    }
+
+    private func runPreflight(reason: String, generation: UInt64) async {
+        guard generation == self.generation, !Task.isCancelled else { return }
+        guard MicrophonePermission.isGranted else { return }
+        let snapshot = AudioInputPreflightWorker.Snapshot(
+            selectedUID: AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
+                ?? AudioDevice.systemDefault.uid,
+            routeEpoch: AudioInputSetupQuarantine.shared.currentEpoch
+        )
+        guard snapshot.selectedUID == AudioDevice.systemDefault.uid else { return }
+
+        if isCaptureActive?() == true {
+            schedulePreflight(reason: "capture-active", delayOverride: 1.0)
             return
         }
 
-        // A8: defer instead of fighting an active capture for the device; the
-        // retry keeps the cache warm for the route in place after recording.
-        let captureActive = DispatchQueue.main.sync { isCaptureActive?() ?? false }
-        if captureActive {
-            SapoLog.audioRoute.info(
-                "Audio input preflight deferred reason=\(reason, privacy: .public) capture-active"
-            )
-            DispatchQueue.main.async { [weak self] in
-                self?.schedulePreflight(reason: "\(reason)-deferred", delayOverride: 1.0)
+        let result: AudioInputPreflightWorker.Outcome
+        do {
+            result = try await AudioInputPreflightWorker.run(snapshot: snapshot, deviceManager: deviceManager)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard generation == self.generation, !Task.isCancelled else { return }
+            let detail = LogSanitizer.errorDiagnostic(error, state: "input-preflight")
+            SapoLog.audioRoute.warning("Audio input preflight failed \(detail, privacy: .public)")
+            consecutiveWarmupFailures += 1
+            if consecutiveWarmupFailures <= Self.maxWarmupRetries {
+                schedulePreflight(reason: "warmup-retry", delayOverride: 1.2)
             }
             return
         }
-
-        let t0 = CFAbsoluteTimeGetCurrent()
-        let selectedUID =
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
-            ?? AudioDevice.systemDefault.uid
-
-        deviceManager.refreshDevices()
-        let deviceID = deviceManager.resolveSelectedInputDeviceID(for: selectedUID)
-        switch audioInputPreflightDecision(selectedUID: selectedUID, resolvedDeviceID: deviceID) {
-        case .waitForExplicitInput:
-            SapoLog.audioRoute.info(
-                "Audio input preflight skipped reason=\(reason, privacy: .public) selected-input-unavailable"
-            )
-            return
-        case .skipExplicitAvailable:
-            SapoLog.audioRoute.info(
-                "Audio input preflight skipped reason=\(reason, privacy: .public) explicit-input-owned-by-capture"
-            )
-            return
-        case .warmSystemDefault:
+        guard generation == self.generation, !Task.isCancelled else { return }
+        switch result {
+        case .warmed:
+            consecutiveWarmupFailures = 0
+            SapoLog.audioRoute.info("Audio input preflight finished reason=\(reason, privacy: .public)")
+        case .inputBusy:
+            schedulePreflight(reason: "input-busy", delayOverride: 1.0)
+        case .skipped:
             break
         }
+    }
+}
 
-        guard AudioInputActivityGate.shared.beginPreflightIfIdle() else {
-            SapoLog.audioRoute.info(
-                "Audio input preflight deferred reason=\(reason, privacy: .public) input-busy"
-            )
-            DispatchQueue.main.async { [weak self] in
-                self?.schedulePreflight(reason: "\(reason)-deferred", delayOverride: 1.0)
+nonisolated private enum AudioInputPreflightWorker {
+    struct Snapshot: Sendable {
+        let selectedUID: String
+        let routeEpoch: UInt64
+    }
+
+    enum Outcome: Sendable {
+        case warmed
+        case inputBusy
+        case skipped
+    }
+
+    static func run(snapshot: Snapshot, deviceManager: AudioDeviceManager) async throws -> Outcome {
+        let request = AudioDeadlineRequest<Outcome>()
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let attempt = AudioDeadlineAttempt<Outcome>(
+                    timeout: 5,
+                    operation: "input-preflight",
+                    worker: DispatchQueue(label: "com.sapowhisper.audioPreflight", qos: .utility),
+                    work: {
+                        try prepare(snapshot: snapshot, deviceManager: deviceManager) {
+                            cancelled.withLock { $0 }
+                        }
+                    },
+                    cleanup: { _ in },
+                    onQuarantine: { _ in
+                        cancelled.withLock { $0 = true }
+                        AudioInputSetupQuarantine.shared.quarantine(epoch: snapshot.routeEpoch)
+                    },
+                    completion: { continuation.resume(with: $0) }
+                )
+                request.install(attempt)
+                attempt.start()
             }
-            return
+        } onCancel: {
+            cancelled.withLock { $0 = true }
+            request.cancel()
         }
+    }
+
+    private static func prepare(
+        snapshot: Snapshot,
+        deviceManager: AudioDeviceManager,
+        isCancelled: @Sendable () -> Bool
+    ) throws -> Outcome {
+        guard !isCancelled(), snapshot.selectedUID == AudioDevice.systemDefault.uid,
+            AudioInputSetupQuarantine.shared.currentEpoch == snapshot.routeEpoch,
+            AudioInputSetupQuarantine.shared.canAttempt(epoch: snapshot.routeEpoch),
+            MicrophonePermission.isGranted
+        else { return .skipped }
+
+        guard AudioInputActivityGate.shared.beginPreflightIfIdle() else { return .inputBusy }
+        // A timed-out HAL call still owns the microphone until physical teardown finishes.
         defer { AudioInputActivityGate.shared.endPreflight() }
 
         let currentSelectedUID =
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
             ?? AudioDevice.systemDefault.uid
-        guard currentSelectedUID == AudioDevice.systemDefault.uid else {
-            SapoLog.audioRoute.info(
-                "Audio input preflight skipped reason=\(reason, privacy: .public) selection-changed"
-            )
-            return
-        }
         deviceManager.refreshDevices()
-        let currentDeviceID = deviceManager.resolveSelectedInputDeviceID(for: currentSelectedUID)
-        let hardwareFormat = currentDeviceID.flatMap { queryInputFormat(deviceID: $0) }
-        warmAVAudioInputNode(hardwareFormat: hardwareFormat)
-
-        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-        SapoLog.audioRoute.info(
-            "Audio input preflight finished reason=\(reason, privacy: .public) elapsed=\(elapsedMs, privacy: .public)ms"
-        )
+        let deviceID = deviceManager.resolveSelectedInputDeviceID(for: currentSelectedUID)
+        guard
+            audioInputPreflightDecision(selectedUID: currentSelectedUID, resolvedDeviceID: deviceID)
+                == .warmSystemDefault,
+            AudioInputSetupQuarantine.shared.currentEpoch == snapshot.routeEpoch
+        else { return .skipped }
+        let hardwareFormat = deviceID.flatMap { queryInputFormat(deviceID: $0) }
+        let latestSelectedUID =
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
+            ?? AudioDevice.systemDefault.uid
+        guard !isCancelled(), latestSelectedUID == snapshot.selectedUID,
+            AudioInputSetupQuarantine.shared.currentEpoch == snapshot.routeEpoch
+        else { return .skipped }
+        return try warmAVAudioInputNode(hardwareFormat: hardwareFormat) {
+            isCancelled()
+                || AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
+                    .map { $0 != snapshot.selectedUID } == true
+                || AudioInputSetupQuarantine.shared.currentEpoch != snapshot.routeEpoch
+        }
     }
 
-    /// Crash guard (three SIGABRT crash logs): every AVAudioEngine call here
-    /// runs through AudioEngineGuard because AVFAudio asserts with NSException
-    /// when the hardware format shifts mid-transition — exactly when this
-    /// warm-up fires (AirPods connecting, headset swaps). A caught exception
-    /// only means the route was still settling; retry once shortly after.
-    private func warmAVAudioInputNode(hardwareFormat: AVAudioFormat?) {
+    private static func warmAVAudioInputNode(
+        hardwareFormat: AVAudioFormat?,
+        isCancelled: @Sendable () -> Bool
+    ) throws -> Outcome {
         let engine = AVAudioEngine()
+        var tapInstalled = false
         defer {
             AudioEngineGuard.teardownAndRetire(
                 engine,
-                removeInputTap: true,
+                removeInputTap: tapInstalled,
                 operation: "preflight-teardown"
             )
         }
-        do {
-            let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "preflight-input-node")
-
-            let tapFormat = hardwareFormat ?? inputNode.outputFormat(forBus: 0)
-            guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else { return }
-
-            // L4: prepare()+reset() never touched the HAL, so the first recording
-            // still paid full route setup. A brief muted start()/stop() forces the
-            // I/O unit to open the device; the tap discards every buffer.
-            try AudioEngineGuard.installTap(
-                on: inputNode, bufferSize: 1024, format: tapFormat, operation: "preflight-install-tap"
-            ) { _, _ in }
-            inputNode.volume = 0
-            try AudioEngineGuard.prepareAndStart(engine, operation: "preflight-engine-start")
-            consecutiveWarmupFailures = 0
-        } catch {
-            let detail = LogSanitizer.errorDiagnostic(error, state: "input-preflight")
-            SapoLog.audioRoute.warning(
-                "Audio input preflight warm-up failed \(detail, privacy: .public)"
-            )
-            consecutiveWarmupFailures += 1
-            if consecutiveWarmupFailures <= Self.maxWarmupRetries {
-                DispatchQueue.main.async { [weak self] in
-                    self?.schedulePreflight(reason: "warmup-retry", delayOverride: 1.2)
-                }
-            }
+        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "preflight-input-node")
+        let tapFormat = try AudioEngineGuard.run("preflight-input-format") {
+            hardwareFormat ?? inputNode.outputFormat(forBus: 0)
         }
+        guard !isCancelled(), tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else { return .skipped }
+        try AudioEngineGuard.installTap(
+            on: inputNode, bufferSize: 1024, format: tapFormat, operation: "preflight-install-tap"
+        ) { _, _ in }
+        tapInstalled = true
+        try AudioEngineGuard.run("preflight-mute") { inputNode.volume = 0 }
+        try AudioEngineGuard.prepareAndStart(engine, operation: "preflight-engine-start")
+        return .warmed
     }
 
-    private func queryInputFormat(deviceID: AudioDeviceID) -> AVAudioFormat? {
+    private static func queryInputFormat(deviceID: AudioDeviceID) -> AVAudioFormat? {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamFormat,
             mScope: kAudioDevicePropertyScopeInput,
@@ -214,9 +238,8 @@ final class AudioInputPreflightManager {
         )
         var asbd = AudioStreamBasicDescription()
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-
-        let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &size, &asbd)
-        guard status == noErr else { return nil }
+        let result = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &size, &asbd)
+        guard result == noErr else { return nil }
         return AVAudioFormat(streamDescription: &asbd)
     }
 }

@@ -170,14 +170,7 @@ class MLXWhisperTranscriber {
     /// Snapshot root under Application Support — owned entirely by the app
     /// (never a shared HuggingFace cache).
     static var modelsRootDirectory: URL {
-        let appSupport =
-            FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask
-            ).first ?? FileManager.default.temporaryDirectory
-        return
-            appSupport
-            .appendingPathComponent("SapoWhisper")
-            .appendingPathComponent("MLXModels")
+        AppRuntimePaths.applicationSupport.appendingPathComponent("MLXModels", isDirectory: true)
     }
 
     // MARK: - Model Management
@@ -407,7 +400,7 @@ class MLXWhisperTranscriber {
         idleUnloadTimer?.invalidate()
         idleUnloadTimer = nil
 
-        let minutes = UserDefaults.standard.integer(forKey: Constants.StorageKeys.mlxWhisperUnloadAfterMinutes)
+        let minutes = AppPreferences.defaults.integer(forKey: Constants.StorageKeys.mlxWhisperUnloadAfterMinutes)
         guard minutes > 0, isModelLoaded else { return }
 
         let timer = Timer(timeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
@@ -530,20 +523,9 @@ class MLXWhisperTranscriber {
                 throw MLXWhisperError.transcriptionFailed("audio buffer allocation failed")
             }
 
-            // The input block is @Sendable; a class box keeps the one-shot
-            // flag mutable without capturing a local var in concurrent code.
-            final class FeedState: @unchecked Sendable { var fed = false }
-            let feedState = FeedState()
+            let source = AudioConverterInputSource(buffer: sourceBuffer)
             var conversionError: NSError?
-            let status = converter.convert(to: outBuffer, error: &conversionError) { _, outStatus in
-                if feedState.fed {
-                    outStatus.pointee = .noDataNow
-                    return nil
-                }
-                feedState.fed = true
-                outStatus.pointee = .haveData
-                return sourceBuffer
-            }
+            let status = converter.convert(to: outBuffer, error: &conversionError, withInputFrom: source.provide)
             if status == .error {
                 throw MLXWhisperError.transcriptionFailed(
                     conversionError?.localizedDescription ?? "audio conversion failed"

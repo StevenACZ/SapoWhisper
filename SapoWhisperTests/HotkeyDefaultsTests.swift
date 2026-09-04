@@ -12,6 +12,7 @@ import XCTest
 /// bites: an out-of-range value traps the conversion at launch, and key code 0
 /// (`kVK_ANSI_A`) is a real key that a `> 0` check silently turns back into
 /// Space.
+@MainActor
 final class HotkeyDefaultsTests: XCTestCase {
 
     private let suiteName = "test.sapowhisper.hotkey.\(UUID().uuidString)"
@@ -71,7 +72,7 @@ final class HotkeyDefaultsTests: XCTestCase {
 @MainActor
 final class PoisonedHotkeyLaunchTests: XCTestCase {
 
-    private let defaults = UserDefaults.standard
+    private let defaults = AppPreferences.defaults
     private var previousArguments: [String: Any]?
     private struct HotkeySnapshot {
         let kind: HotkeyTriggerKind
@@ -81,8 +82,8 @@ final class PoisonedHotkeyLaunchTests: XCTestCase {
     }
     private var liveHotkey: HotkeySnapshot?
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         let manager = HotkeyManager.shared
         liveHotkey = HotkeySnapshot(
             kind: manager.currentTriggerKind,
@@ -93,7 +94,7 @@ final class PoisonedHotkeyLaunchTests: XCTestCase {
         previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let previousArguments {
             defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain)
         }
@@ -106,7 +107,7 @@ final class PoisonedHotkeyLaunchTests: XCTestCase {
             manager.currentDoubleTapModifier = liveHotkey.doubleTap
         }
         liveHotkey = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testViewModelInitSurvivesANegativeStoredHotkey() throws {

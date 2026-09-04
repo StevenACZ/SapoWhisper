@@ -8,6 +8,7 @@ import os
 
 @testable import SapoWhisper
 
+@MainActor
 final class AudioCaptureCoordinatorTests: XCTestCase {
 
     private func makeCoordinator(
@@ -26,11 +27,11 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         return (coordinator, { suspendCount }, { resumeCount })
     }
 
-    func testBeginCaptureSuspendsMonitorAndMarksActive() async {
+    func testBeginCaptureSuspendsMonitorAndMarksActive() async throws {
         let (coordinator, suspendCalls, _) = makeCoordinator(monitorRunning: true)
 
         XCTAssertFalse(coordinator.isCaptureActive)
-        let token = await coordinator.beginCapture(.batchRecorder)
+        let token = try await coordinator.beginCapture(.batchRecorder)
 
         XCTAssertNotNil(token)
         XCTAssertTrue(coordinator.isCaptureActive)
@@ -38,34 +39,34 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(suspendCalls(), 1)
     }
 
-    func testEndCaptureResumesMonitorOnlyWhenItWasSuspended() async {
+    func testEndCaptureResumesMonitorOnlyWhenItWasSuspended() async throws {
         let (coordinator, _, resumeCalls) = makeCoordinator(monitorRunning: true)
 
-        guard let token = await coordinator.beginCapture(.fluxStreaming) else { return XCTFail("capture not acquired") }
+        guard let token = try await coordinator.beginCapture(.fluxStreaming) else { return XCTFail("capture not acquired") }
         coordinator.endCapture(token)
 
         XCTAssertFalse(coordinator.isCaptureActive)
         XCTAssertEqual(resumeCalls(), 1)
     }
 
-    func testEndCaptureDoesNotResumeWhenMonitorWasIdle() async {
+    func testEndCaptureDoesNotResumeWhenMonitorWasIdle() async throws {
         let (coordinator, _, resumeCalls) = makeCoordinator(monitorRunning: false)
 
-        guard let token = await coordinator.beginCapture(.batchRecorder) else { return XCTFail("capture not acquired") }
+        guard let token = try await coordinator.beginCapture(.batchRecorder) else { return XCTFail("capture not acquired") }
         coordinator.endCapture(token)
 
         XCTAssertFalse(coordinator.isCaptureActive)
         XCTAssertEqual(resumeCalls(), 0)
     }
 
-    func testStaleEndFromPreviousOwnerIsIgnored() async {
+    func testStaleEndFromPreviousOwnerIsIgnored() async throws {
         let (coordinator, _, resumeCalls) = makeCoordinator(monitorRunning: true)
 
-        guard let staleToken = await coordinator.beginCapture(.batchRecorder) else {
+        guard let staleToken = try await coordinator.beginCapture(.batchRecorder) else {
             return XCTFail("first capture not acquired")
         }
         coordinator.endActiveCapture()
-        guard let currentToken = await coordinator.beginCapture(.batchRecorder) else {
+        guard let currentToken = try await coordinator.beginCapture(.batchRecorder) else {
             return XCTFail("second capture not acquired")
         }
         coordinator.endCapture(staleToken)
@@ -76,10 +77,10 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         coordinator.endCapture(currentToken)
     }
 
-    func testEndActiveCaptureReleasesWhateverOwnerHoldsTheMic() async {
+    func testEndActiveCaptureReleasesWhateverOwnerHoldsTheMic() async throws {
         let (coordinator, _, resumeCalls) = makeCoordinator(monitorRunning: true)
 
-        _ = await coordinator.beginCapture(.elevenLabsStreaming)
+        _ = try await coordinator.beginCapture(.elevenLabsStreaming)
         coordinator.endActiveCapture()
 
         XCTAssertFalse(coordinator.isCaptureActive)
@@ -96,14 +97,14 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(resumeCalls(), 0)
     }
 
-    func testMonitorIsSuspendedOnceAcrossNestedBegins() async {
+    func testMonitorIsSuspendedOnceAcrossNestedBegins() async throws {
         let (coordinator, suspendCalls, resumeCalls) = makeCoordinator(monitorRunning: true)
 
-        guard let batchToken = await coordinator.beginCapture(.batchRecorder) else {
+        guard let batchToken = try await coordinator.beginCapture(.batchRecorder) else {
             return XCTFail("batch capture not acquired")
         }
         coordinator.endCapture(batchToken)
-        guard let fluxToken = await coordinator.beginCapture(.fluxStreaming) else {
+        guard let fluxToken = try await coordinator.beginCapture(.fluxStreaming) else {
             return XCTFail("streaming capture not acquired")
         }
         coordinator.endCapture(fluxToken)
@@ -112,10 +113,10 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         XCTAssertEqual(resumeCalls(), 2)
     }
 
-    func testCaptureGateRejectsPreflightUntilCaptureEnds() async {
+    func testCaptureGateRejectsPreflightUntilCaptureEnds() async throws {
         let gate = AudioInputActivityGate()
 
-        let firstLease = await gate.beginCapture()
+        let firstLease = try await gate.beginCapture()
         XCTAssertFalse(gate.beginPreflightIfIdle())
         gate.endCapture(firstLease)
 
@@ -126,17 +127,17 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         XCTAssertFalse(gate.beginPreflightIfIdle())
         gate.endMonitor()
 
-        let secondLease = await gate.beginCapture()
+        let secondLease = try await gate.beginCapture()
         XCTAssertFalse(gate.beginMonitorIfIdle())
         gate.endCapture(secondLease)
     }
 
-    func testCaptureWaitsUntilAnActivePreflightFinishes() async {
+    func testCaptureWaitsUntilAnActivePreflightFinishes() async throws {
         let gate = AudioInputActivityGate()
         XCTAssertTrue(gate.beginPreflightIfIdle())
         let captureReturned = OSAllocatedUnfairLock(initialState: false)
         let task = Task {
-            let lease = await gate.beginCapture()
+            let lease = try await gate.beginCapture()
             captureReturned.withLock { $0 = true }
             return lease
         }
@@ -144,12 +145,12 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertFalse(captureReturned.withLock { $0 })
         gate.endPreflight()
-        let lease = await task.value
+        let lease = try await task.value
         XCTAssertTrue(captureReturned.withLock { $0 })
         gate.endCapture(lease)
     }
 
-    func testCancelledWaitCannotReviveOrReleaseANewerCapture() async {
+    func testCancelledWaitCannotReviveOrReleaseANewerCapture() async throws {
         let gate = AudioInputActivityGate()
         XCTAssertTrue(gate.beginPreflightIfIdle())
         var suspendCount = 0
@@ -162,21 +163,42 @@ final class AudioCaptureCoordinatorTests: XCTestCase {
             activityGate: gate
         )
 
-        let cancelledStart = Task { await coordinator.beginCapture(.batchRecorder) }
+        let cancelledStart = Task { try await coordinator.beginCapture(.batchRecorder) }
         try? await Task.sleep(nanoseconds: 50_000_000)
         cancelledStart.cancel()
         coordinator.endActiveCapture()
+        do {
+            let cancelledToken = try await cancelledStart.value
+            XCTAssertNil(cancelledToken)
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
         gate.endPreflight()
-
-        let cancelledToken = await cancelledStart.value
-        XCTAssertNil(cancelledToken)
         XCTAssertFalse(coordinator.isCaptureActive)
         XCTAssertEqual(suspendCount, 0)
 
-        guard let currentToken = await coordinator.beginCapture(.batchRecorder) else {
+        guard let currentToken = try await coordinator.beginCapture(.batchRecorder) else {
             return XCTFail("replacement capture not acquired")
         }
         XCTAssertTrue(coordinator.isCaptureActive)
         coordinator.endCapture(currentToken)
     }
+    func testBlockedPreflightHasABoundedCaptureWait() async throws {
+        let gate = AudioInputActivityGate(captureWaitTimeout: .milliseconds(30))
+        XCTAssertTrue(gate.beginPreflightIfIdle())
+        let started = ContinuousClock.now
+        do {
+            _ = try await gate.beginCapture()
+            XCTFail("Expected input setup timeout")
+        } catch RecordingError.inputSetupTimedOut {
+            XCTAssertLessThan(started.duration(to: .now), .seconds(1))
+        }
+        XCTAssertFalse(gate.beginPreflightIfIdle())
+        gate.endPreflight()
+        let lease = try await gate.beginCapture()
+        gate.endCapture(lease)
+        XCTAssertTrue(gate.beginPreflightIfIdle())
+        gate.endPreflight()
+    }
+
 }

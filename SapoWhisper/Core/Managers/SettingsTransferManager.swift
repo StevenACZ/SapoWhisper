@@ -149,7 +149,7 @@ struct SettingsTransferManager {
     private let decoder: JSONDecoder
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = AppPreferences.defaults,
         readEngineKey: @escaping (KeychainStore.Key) -> String? = {
             // Presence check only (call sites test isEmpty), so gate on hasValue and
             // never trigger the macOS Keychain consent prompt on import — mirrors

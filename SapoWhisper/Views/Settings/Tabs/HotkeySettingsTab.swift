@@ -10,13 +10,16 @@ import SwiftUI
 /// Global hotkey settings tab.
 struct HotkeySettingsTab: View {
     @Environment(\.settingsTabIsSelected) private var tabIsSelected
-    @AppStorage(Constants.StorageKeys.hotkeyTriggerKind) private var hotkeyTriggerKindRaw: String =
+    @AppStorage(Constants.StorageKeys.hotkeyTriggerKind, store: AppPreferences.defaults) private var hotkeyTriggerKindRaw: String =
         Constants.Hotkey.defaultTriggerKind
-    @AppStorage(Constants.StorageKeys.hotkeyKeyCode) private var hotkeyKeyCode: Int = Int(Constants.Hotkey.defaultKeyCode)
-    @AppStorage(Constants.StorageKeys.hotkeyModifiers) private var hotkeyModifiers: Int = Int(Constants.Hotkey.defaultModifiers)
-    @AppStorage(Constants.StorageKeys.hotkeyDoubleTapModifier) private var hotkeyDoubleTapModifier: Int = Int(
-        Constants.Hotkey.defaultDoubleTapModifier
-    )
+    @AppStorage(Constants.StorageKeys.hotkeyKeyCode, store: AppPreferences.defaults) private var hotkeyKeyCode: Int = Int(
+        Constants.Hotkey.defaultKeyCode)
+    @AppStorage(Constants.StorageKeys.hotkeyModifiers, store: AppPreferences.defaults) private var hotkeyModifiers: Int = Int(
+        Constants.Hotkey.defaultModifiers)
+    @AppStorage(Constants.StorageKeys.hotkeyDoubleTapModifier, store: AppPreferences.defaults) private var hotkeyDoubleTapModifier: Int =
+        Int(
+            Constants.Hotkey.defaultDoubleTapModifier
+        )
 
     @State private var isRecordingHotkey = false
     @State private var keycapPressBounce = 0

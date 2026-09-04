@@ -20,7 +20,7 @@ make script-tests
 make test
 ```
 
-- Keep changes focused and small.
+- Keep changes focused and small. Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing subsystem boundaries or lifecycle behavior.
 - Do not commit credentials, recordings, DMGs, logs, crash reports, local docs, or signing files. The only committed audio is the reviewed, hash-pinned public fixture set in `TestAssets/LocalAITranscription/` and the four bundled app sounds in `SapoWhisper/Resources/Sounds/` (`start.wav`, `stop.wav`, `success.wav`, and `error.wav`). No user recording is an exception.
 - Keep Release output Apple Silicon only unless Intel support is explicitly re-approved.
 - Use `make release-check` before release-size or packaging changes.

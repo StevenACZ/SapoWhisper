@@ -8,24 +8,25 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class HistoryScaleTests: XCTestCase {
 
     private var manager: TranscriptionHistoryManager!
     private var tempAudioDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempAudioDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("history-tests-\(UUID().uuidString)")
         manager = TranscriptionHistoryManager(databasePath: ":memory:", audioDirectory: tempAudioDir)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         manager = nil
         if let tempAudioDir {
             try? FileManager.default.removeItem(at: tempAudioDir)
         }
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - H8: schema versioning
@@ -324,6 +325,7 @@ final class HistoryScaleTests: XCTestCase {
 
 // MARK: - Exporter
 
+@MainActor
 final class HistoryExporterTests: XCTestCase {
 
     private let entry = HistoryEntry(

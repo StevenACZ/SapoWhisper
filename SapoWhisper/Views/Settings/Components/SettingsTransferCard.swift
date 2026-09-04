@@ -112,7 +112,7 @@ struct SettingsTransferCard: View {
     }
 
     private func applyRuntimeChanges(for sections: Set<SettingsTransferSection>) {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
 
         if sections.contains(.engine) {
             if let model = MLXWhisperModel(rawValue: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel) ?? "") {

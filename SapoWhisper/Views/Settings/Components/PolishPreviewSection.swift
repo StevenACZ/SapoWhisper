@@ -12,7 +12,8 @@ import SwiftUI
 struct PolishPreviewSection: View {
     @State private var isExpanded = false
     @State private var sample = PolishSampleDictation.current
-    @AppStorage(Constants.StorageKeys.appLanguage) private var appLanguage = PolishSampleDictation.currentLanguage
+    @AppStorage(Constants.StorageKeys.appLanguage, store: AppPreferences.defaults) private var appLanguage = PolishSampleDictation
+        .currentLanguage
     @State private var state: PreviewState = .idle
 
     private enum PreviewState: Equatable {

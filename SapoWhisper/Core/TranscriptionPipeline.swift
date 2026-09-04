@@ -19,7 +19,8 @@ protocol TranscriptionPipelineHost: AnyObject {
     func handleStaleTranscriptionCompletion(audioURL: URL, sessionID: UInt64)
     func discardTerminalCapture(audioURL: URL)
 
-    func postProcessTranscript(_ rawText: String, source: String, duration: TimeInterval?) async -> TranscriptAIResult
+    func postProcessTranscript(_ rawText: String, source: String, duration: TimeInterval?, historyTarget: HistoryPersistenceTarget?) async
+        -> TranscriptAIResult
     func deliverTranscription(_ aiResult: TranscriptAIResult, perf: DictationPerfTimeline?)
     func presentTranscriptionFailure(_ failure: TranscriptionFailure)
 
@@ -32,7 +33,7 @@ protocol TranscriptionPipelineHost: AnyObject {
         aiResult: TranscriptAIResult,
         perf: DictationPerfTimeline?,
         target: HistoryPersistenceTarget
-    )
+    ) async
     func persistFailedDictation(
         audioURL: URL,
         engine: TranscriptionEngine,
@@ -134,14 +135,13 @@ final class TranscriptionPipeline {
             let aiResult = await host.postProcessTranscript(
                 output.transcript,
                 source: request.source,
-                duration: output.duration
+                duration: output.duration,
+                historyTarget: request.historyTarget
             )
             request.perf?.markPolishDone()
             guard ensureSessionCurrent(request, audioURL: output.audioURL) else { return }
 
-            host.clearActiveTranscriptionSession()
-            host.deliverTranscription(aiResult, perf: request.perf)
-            host.persistCompletedDictation(
+            await host.persistCompletedDictation(
                 audioURL: output.audioURL,
                 engine: request.engine,
                 engineName: output.engineNameOverride ?? request.engineName,
@@ -151,6 +151,9 @@ final class TranscriptionPipeline {
                 perf: request.perf,
                 target: request.historyTarget
             )
+            guard ensureSessionCurrent(request, audioURL: output.audioURL) else { return }
+            host.clearActiveTranscriptionSession()
+            host.deliverTranscription(aiResult, perf: request.perf)
         } catch {
             let captureResult = captureResultOnFailure()
             guard ensureSessionCurrent(request, audioURL: captureResult?.audioURL) else { return }

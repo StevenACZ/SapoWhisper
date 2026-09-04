@@ -27,7 +27,7 @@ nonisolated enum OverlayPillChrome {
 
     /// Which vertical side of the pill faces the dock chip (and its glass
     /// neck) for the configured overlay position.
-    static var chipOnTop: Bool {
+    @MainActor static var chipOnTop: Bool {
         OverlayPosition.configured == .top
     }
 }

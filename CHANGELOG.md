@@ -8,11 +8,21 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Streaming dictations now appear in History before finalization. Completed results open their own entry immediately, and cancellation or interruption preserves the captured audio and any text recognized before AI polish.
+- In-flight AI polish has its own History status and cannot be deleted by retention. Failure details use readable, localized explanations instead of internal codes.
+- Cancelled transcription tasks retain ownership until cleanup finishes, so a late callback cannot close a newer session. Microphone acquisition also times out safely behind a stalled preflight.
+- Tests and previews use isolated preferences and storage, skip production startup services, and suppress audio and companion side effects. Legacy dispatch callbacks now declare their actual concurrency boundary.
 - Transient microphone starts now receive a separate, bounded recovery window after the first attempt. Route settling and retry backoff share one wait, and a temporarily missing selected input can recover without switching microphones.
 - Batch and realtime engines share capture-start recovery, including Bluetooth's longer first-buffer wait. Recovery attempts are recorded at the persistent log level.
 - History processing no longer changes a concurrent live dictation's minimum-duration policy or polish state. Engine activity callbacks no longer take ownership of the live session UI.
 - Cancelling, closing or deleting a History polish stops its pending task. Late polish and retranscription results cannot recreate text versions for deleted entries.
 - A failed local build or signing check leaves the installed app intact; rollback only begins after replacement starts.
+
+### Changed
+
+- Swift 6 language mode for the app and tests, with explicit concurrency boundaries and a shared audio converter input adapter.
+- A public architecture map and smaller onboarding components with unchanged presentation.
+- Exact Release bundle measurements and a corrected default artifact path; an unused legacy provider icon was removed.
 
 ### Added
 

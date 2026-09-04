@@ -117,10 +117,10 @@ struct QuickHistoryPillView: View {
                 text: "history.cancelled".localized,
                 color: .secondary
             )
-        } else if entry.status == TranscriptionHistoryManager.inFlightStatus {
+        } else if entry.isProcessing {
             statusRow(
                 icon: "waveform.badge.magnifyingglass",
-                text: "history.transcribing".localized,
+                text: (entry.entryStatus?.titleKey ?? "history.transcribing").localized,
                 color: .secondary
             )
         } else if entry.status == "failed" {

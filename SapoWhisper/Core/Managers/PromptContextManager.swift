@@ -29,8 +29,7 @@ final class PromptContextManager {
     private let fileURL: URL
 
     private init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("SapoWhisper")
+        let appDir = AppRuntimePaths.applicationSupport
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         fileURL = appDir.appendingPathComponent("prompt_context.json")
         load()

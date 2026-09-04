@@ -9,6 +9,7 @@ import XCTest
 /// transcription path, where it could only be exercised against real engines.
 /// Splitting the decision into plain values is what makes the "primary is
 /// down, the user should not notice" contract testable at all.
+@MainActor
 final class EngineFailoverTests: XCTestCase {
 
     // MARK: - Variant mapping
@@ -236,7 +237,7 @@ final class EngineFailoverTests: XCTestCase {
 @MainActor
 final class BackupEngineSelectionTests: XCTestCase {
 
-    private let defaults = UserDefaults.standard
+    private let defaults = AppPreferences.defaults
     private var restore: [String: String?] = [:]
 
     private func set(_ value: String, forKey key: String) {
@@ -246,7 +247,7 @@ final class BackupEngineSelectionTests: XCTestCase {
         defaults.set(value, forKey: key)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for (key, previous) in restore {
             if let previous {
                 defaults.set(previous, forKey: key)
@@ -255,7 +256,7 @@ final class BackupEngineSelectionTests: XCTestCase {
             }
         }
         restore = [:]
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testLegacyStoredBackupStillSelectsTheProviderFileVariant() {

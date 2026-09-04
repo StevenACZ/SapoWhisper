@@ -202,7 +202,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                 throw RecordingError.inputDeviceUnavailable
             }
         }
-        let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
+        let savedGain = AppPreferences.defaults.double(forKey: Constants.StorageKeys.audioGain)
         let uploadQuality = AudioUploadQuality.stored()
         let setupGeneration = beginSetupGeneration()
         let inputTransport = AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: deviceUID)
