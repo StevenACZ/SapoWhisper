@@ -69,13 +69,15 @@ nonisolated enum OrphanAudioRecovery {
         for file in files {
             let name = file.lastPathComponent
             guard name.hasSuffix(".wav"), recoverablePrefixes.contains(where: name.hasPrefix) else { continue }
+            guard !ActiveRecordingMarker.ownerIsAlive(markerURL: ActiveRecordingMarker.markerURL(for: file)) else {
+                continue
+            }
             guard !referencedNames.contains(name) else { continue }
 
             let modified =
                 (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate ?? .distantPast
             if !markerAbandoned.contains(file) {
-                // No dead-owner marker: a live session may still be writing.
                 guard now.timeIntervalSince(modified) > minimumAge else { continue }
             }
 
@@ -84,6 +86,7 @@ nonisolated enum OrphanAudioRecovery {
                 continue
             }
             guard info.duration >= minimumDuration else {
+                ActiveRecordingMarker.clear(file)
                 SapoLog.recording.info(
                     "Orphan WAV skipped reason=too-short durationMs=\(Int(info.duration * 1000), privacy: .public)"
                 )
@@ -98,12 +101,14 @@ nonisolated enum OrphanAudioRecovery {
                 text: "",
                 rawText: "",
                 status: "failed",
-                failureCode: failureCode
+                failureCode: failureCode,
+                timestamp: modified
             )
             guard persisted.rowID > 0 else {
                 SapoLog.recording.error("Orphan WAV recovery insert failed")
                 continue
             }
+            ActiveRecordingMarker.clear(file)
             var recoveredURL = file
             if persisted.copiedToHistory {
                 try? fileManager.removeItem(at: file)

@@ -440,6 +440,44 @@ final class DictationHistoryPersisterTests: XCTestCase {
 
     // MARK: - Helpers
 
+    func testMergedCaptureOnlyReplacesSourcesAfterItsRowIsDurable() throws {
+        let previous = makeSourceWAV(named: "previous")
+        let current = makeSourceWAV(named: "current")
+        let merged = makeSourceWAV(named: "merged")
+        let oldId = manager.save(
+            engine: "Test", language: "es", duration: 1, text: "",
+            audioPath: previous.path, status: "failed"
+        )
+        let originalBytes = try Data(contentsOf: previous)
+        XCTAssertEqual(
+            sqlite3_exec(
+                manager.db, "CREATE TRIGGER fail_pending BEFORE INSERT ON transcriptions BEGIN SELECT RAISE(ABORT, 'fixture'); END;", nil,
+                nil, nil), SQLITE_OK)
+        let superseded = DictationHistoryPersister.SupersededCapture(historyId: oldId, currentAudioURL: current)
+
+        let failed = persister.persistPending(
+            audioURL: merged, engine: .localAIServer, engineName: "Test", language: "es", duration: 2,
+            superseding: superseded
+        )
+
+        XCTAssertNil(failed)
+        XCTAssertTrue(deleteSpy.deleted.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: previous), originalBytes)
+        XCTAssertEqual(manager.fetchAll().map(\.id), [oldId])
+        XCTAssertEqual(sqlite3_exec(manager.db, "DROP TRIGGER fail_pending;", nil, nil, nil), SQLITE_OK)
+
+        let pending = try XCTUnwrap(
+            persister.persistPending(
+                audioURL: merged, engine: .localAIServer, engineName: "Test", language: "es", duration: 2,
+                superseding: superseded
+            ))
+
+        XCTAssertEqual(manager.fetchAll().map(\.id), [pending.historyId])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pending.audioURL.path))
+        XCTAssertTrue(deleteSpy.deleted.contains(current))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: previous.path))
+    }
+
     private func makeSourceWAV(named name: String) -> URL {
         let url = tempAudioDir.appendingPathComponent("source-\(name)-\(UUID().uuidString).wav")
         FileManager.default.createFile(atPath: url.path, contents: Data(repeating: 0, count: 2048))

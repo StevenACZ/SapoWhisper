@@ -40,7 +40,7 @@ struct RecordingPillView: View {
             } else if let connectingDeviceName {
                 Text("overlay.mic_connecting".localized(connectingDeviceName))
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .transition(.opacity)
             } else if showsNoSpeechHint {
@@ -55,7 +55,7 @@ struct RecordingPillView: View {
             } else {
                 Text("overlay.recording".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .transition(.opacity)
             }
 
@@ -148,7 +148,7 @@ struct PausedPillView: View {
 
                     Text("overlay.paused".localized)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
                 .transition(.opacity)
             }
@@ -183,7 +183,7 @@ struct TranscribingPillView: View {
             } else {
                 Text("overlay.transcribing".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .transition(.opacity)
             }
         }
@@ -243,7 +243,7 @@ struct AIPolishingPillView: View {
 
             Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
 
             // L10: countdown to the polish timeout — the user sees the worst
             // case shrinking instead of an open-ended spinner.
@@ -253,7 +253,7 @@ struct AIPolishingPillView: View {
                 Text("\(remaining)s")
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .contentTransition(.numericText(countsDown: true))
                     .animation(Constants.Animation.tick, value: remaining)
             }
@@ -397,7 +397,7 @@ struct CompletedPillView: View {
         Text(text)
             .font(.system(size: Self.transcriptFontSize))
             .lineSpacing(Self.transcriptLineSpacing)
-            .foregroundColor(.primary.opacity(0.9))
+            .foregroundStyle(.primary)
             .textSelection(.enabled)
     }
 
@@ -549,11 +549,11 @@ struct CancelledPillView: View {
         HStack(spacing: 8) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 16))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text("overlay.cancelled_saved".localized)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -572,7 +572,7 @@ struct ErrorPillView: View {
 
             Text(message)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .lineLimit(3)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
@@ -591,7 +591,7 @@ struct ErrorPillView: View {
                         Text("overlay.retry".localized)
                             .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
@@ -658,7 +658,7 @@ struct DeviceChangePillView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(announcement.deviceName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(subtitle)

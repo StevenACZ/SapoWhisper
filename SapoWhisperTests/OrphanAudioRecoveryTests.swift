@@ -66,6 +66,34 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         XCTAssertEqual(second.duration, 3.0, accuracy: 0.1)
     }
 
+    func testRecoveringOldAudioDoesNotRenewItsContinueOffer() throws {
+        let wav = tempDir.appendingPathComponent("recording_old.wav")
+        try writeWAV(to: wav, seconds: 5, staleHeader: true)
+        try backdate(wav, by: 40 * 60)
+        let modified = try XCTUnwrap(wav.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+
+        let recovery = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+
+        XCTAssertEqual(recovery.count, 1)
+        XCTAssertEqual(
+            try XCTUnwrap(manager.fetchAll().first).timestamp.timeIntervalSince1970,
+            modified.timeIntervalSince1970, accuracy: 1)
+        XCTAssertNil(manager.latestResumableDictation())
+    }
+
+    func testDiscardedSubsecondTakeCanBeSweptAfterItsOwnerDies() throws {
+        let wav = tempDir.appendingPathComponent("recording_short_marked.wav")
+        try writeWAV(to: wav, seconds: 0.4, staleHeader: false)
+        try backdate(wav, by: 48 * 60 * 60)
+        let marker = ActiveRecordingMarker.markerURL(for: wav)
+        try "99999999".write(to: marker, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager).count, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertEqual(TemporaryAudioStorage.sweepStaleFiles(in: tempDir, referencedNames: []), 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wav.path))
+    }
+
     func testSkipsNonRecoverableFiles() throws {
         // Fresh file: could belong to a live session.
         let fresh = tempDir.appendingPathComponent("recording_fresh.wav")
@@ -143,6 +171,72 @@ final class OrphanAudioRecoveryTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
 
         ActiveRecordingMarker.clear(wav)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    func testLiveOwnerProtectsTenMinutePausedTakeWithOldModificationDate() throws {
+        let wav = tempDir.appendingPathComponent("recording_paused.wav")
+        try writeWAV(to: wav, seconds: 600, staleHeader: true)
+        try backdate(wav, by: 120)
+        ActiveRecordingMarker.mark(wav)
+        let original = try Data(contentsOf: wav)
+        let modified = try wav.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let marker = ActiveRecordingMarker.markerURL(for: wav)
+        let markerContents = try Data(contentsOf: marker)
+
+        let recovery = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+
+        XCTAssertEqual(recovery.count, 0)
+        XCTAssertTrue(manager.fetchAll().isEmpty)
+        XCTAssertEqual(try Data(contentsOf: wav), original)
+        XCTAssertEqual(try Data(contentsOf: marker), markerContents)
+        XCTAssertEqual(try wav.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, modified)
+    }
+
+    func testFailedRecoveryKeepsDeadMarkerForImmediateRetry() throws {
+        let wav = tempDir.appendingPathComponent("recording_retry.wav")
+        try writeWAV(to: wav, seconds: 600, staleHeader: true)
+        let marker = ActiveRecordingMarker.markerURL(for: wav)
+        try "99999999".write(to: marker, atomically: true, encoding: .utf8)
+        let rejectInsert = """
+            CREATE TEMP TRIGGER reject_recovery BEFORE INSERT ON transcriptions
+            BEGIN SELECT RAISE(ABORT, 'injected recovery insert failure'); END;
+            """
+        XCTAssertEqual(sqlite3_exec(manager.db, rejectInsert, nil, nil, nil), SQLITE_OK)
+        defer { sqlite3_exec(manager.db, "DROP TRIGGER IF EXISTS reject_recovery;", nil, nil, nil) }
+
+        let failed = OrphanAudioRecovery.recoverAbandonedRecordings(in: tempDir, historyManager: manager)
+
+        XCTAssertEqual(failed.count, 0)
+        XCTAssertTrue(manager.fetchAll().isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wav.path))
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "99999999")
+        XCTAssertEqual(
+            ActiveRecordingMarker.abandonedRecordings(in: tempDir).map { $0.resolvingSymlinksInPath() },
+            [wav.resolvingSymlinksInPath()]
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertEqual(sqlite3_exec(manager.db, "DROP TRIGGER reject_recovery;", nil, nil, nil), SQLITE_OK)
+        let modified = try XCTUnwrap(wav.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+
+        let recovered = OrphanAudioRecovery.recoverAbandonedRecordings(
+            in: tempDir, historyManager: manager, now: modified.addingTimeInterval(1)
+        )
+
+        XCTAssertEqual(recovered.count, 1)
+        XCTAssertEqual(recovered.latest?.duration ?? 0, 600, accuracy: 0.01)
+        XCTAssertEqual(manager.fetchAll().count, 1)
+        XCTAssertTrue(try XCTUnwrap(manager.fetchAll().first).audioFileExists)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: wav.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    func testAbandonedMarkerWithoutWAVIsRemoved() throws {
+        let wav = tempDir.appendingPathComponent("recording_missing.wav")
+        let marker = ActiveRecordingMarker.markerURL(for: wav)
+        try "99999999".write(to: marker, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(ActiveRecordingMarker.abandonedRecordings(in: tempDir).isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
 

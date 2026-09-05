@@ -43,12 +43,14 @@ nonisolated enum AudioFileMerger {
             commonFormat: targetFormat.commonFormat,
             interleaved: targetFormat.isInterleaved
         )
+        ActiveRecordingMarker.mark(outputURL)
 
         do {
             try append(firstFile, to: outputFile, targetFormat: targetFormat)
             try append(secondFile, to: outputFile, targetFormat: targetFormat)
         } catch {
             try? FileManager.default.removeItem(at: outputURL)
+            ActiveRecordingMarker.clear(outputURL)
             throw error
         }
 

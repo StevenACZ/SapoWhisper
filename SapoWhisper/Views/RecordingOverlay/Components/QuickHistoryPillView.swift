@@ -79,7 +79,7 @@ struct QuickHistoryPillView: View {
             HStack(spacing: 8) {
                 Text("overlay.quick_history_title".localized)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
 
                 Spacer(minLength: 16)
 
@@ -133,7 +133,7 @@ struct QuickHistoryPillView: View {
             Text(entry.text)
                 .font(.system(size: 12))
                 .lineSpacing(3.5)
-                .foregroundColor(.primary.opacity(0.9))
+                .foregroundStyle(.primary)
                 .lineLimit(4)
                 .truncationMode(.tail)
                 .textSelection(.enabled)
@@ -184,7 +184,7 @@ struct QuickHistoryPillView: View {
             } else {
                 Text(entry.compactRelativeTime)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
 
@@ -217,11 +217,11 @@ struct QuickHistoryPillView: View {
         HStack(spacing: 8) {
             Image(systemName: "clock")
                 .font(.system(size: 14))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text("overlay.quick_history_empty".localized)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Spacer(minLength: 12)
 

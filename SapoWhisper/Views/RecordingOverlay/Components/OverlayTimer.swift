@@ -12,7 +12,7 @@ struct OverlayTimer: View {
     var body: some View {
         Text(formattedDuration)
             .font(.system(size: 14, weight: .medium, design: .monospaced))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .contentTransition(.numericText())
             .animation(Constants.Animation.tick, value: formattedDuration)
     }
@@ -28,19 +28,19 @@ struct OverlayTimer: View {
 #Preview("Timer States") {
     VStack(spacing: 12) {
         HStack(spacing: 12) {
-            Text("0s").font(.caption2).foregroundColor(.secondary).frame(width: 40)
+            Text("0s").font(.caption2).foregroundStyle(.secondary).frame(width: 40)
             OverlayTimer(duration: 0)
         }
         HStack(spacing: 12) {
-            Text("5s").font(.caption2).foregroundColor(.secondary).frame(width: 40)
+            Text("5s").font(.caption2).foregroundStyle(.secondary).frame(width: 40)
             OverlayTimer(duration: 5)
         }
         HStack(spacing: 12) {
-            Text("1m 5s").font(.caption2).foregroundColor(.secondary).frame(width: 40)
+            Text("1m 5s").font(.caption2).foregroundStyle(.secondary).frame(width: 40)
             OverlayTimer(duration: 65)
         }
         HStack(spacing: 12) {
-            Text("61m").font(.caption2).foregroundColor(.secondary).frame(width: 40)
+            Text("61m").font(.caption2).foregroundStyle(.secondary).frame(width: 40)
             OverlayTimer(duration: 3661)
         }
     }

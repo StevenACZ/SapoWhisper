@@ -142,6 +142,11 @@ final class DictationHistoryPersister {
         let audioURL: URL
     }
 
+    struct SupersededCapture {
+        let historyId: Int64
+        let currentAudioURL: URL
+    }
+
     /// Persists the finished capture into History as a "transcribing" row
     /// BEFORE the engine runs, so a hang, crash, cancel, or force-quit during
     /// transcription can never lose the audio. The pipeline then finalizes
@@ -153,7 +158,8 @@ final class DictationHistoryPersister {
         engineName: String?,
         language: String,
         duration: TimeInterval,
-        preserveSource: Bool = false
+        preserveSource: Bool = false,
+        superseding: SupersededCapture? = nil
     ) -> PendingOutcome? {
         let persistedEntry = persistEntry(
             from: audioURL,
@@ -173,6 +179,10 @@ final class DictationHistoryPersister {
             return nil
         }
         if !preserveSource { cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry) }
+        if let superseding {
+            deleteSourceAudio(superseding.currentAudioURL)
+            historyManager.delete(id: superseding.historyId)
+        }
         return PendingOutcome(historyId: persistedEntry.id, audioURL: pendingAudioURL)
     }
 

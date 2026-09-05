@@ -7,7 +7,8 @@ import Foundation
 
 /// A recently cancelled or crash-recovered take the user may prepend to
 /// the next recording ("continuar dictado anterior").
-struct ResumableDictation {
+nonisolated struct ResumableDictation: Sendable {
+    static let lifetime: TimeInterval = 30 * 60
     let historyId: Int64
     let audioURL: URL
     let duration: TimeInterval
@@ -18,9 +19,6 @@ struct ResumableDictation {
 /// 30-minute expiry and audio-file-existence invalidation.
 @MainActor
 final class ResumableDictationStore {
-
-    /// Offers older than this are stale — a new dictation is a new thought.
-    private static let window: TimeInterval = 30 * 60
 
     private var resumable: ResumableDictation?
     /// The user opted into the merge via the recording pill chip.
@@ -46,7 +44,7 @@ final class ResumableDictationStore {
     /// The current offer, or nil when expired / audio gone.
     var validOffer: ResumableDictation? {
         guard let resumable else { return nil }
-        guard now().timeIntervalSince(resumable.capturedAt) < Self.window,
+        guard now().timeIntervalSince(resumable.capturedAt) < ResumableDictation.lifetime,
             fileExists(resumable.audioURL.path)
         else {
             self.resumable = nil

@@ -40,35 +40,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .utility) {
             // Rows stuck in "transcribing" (the app died mid-transcription)
             // resolve to failed first; their audio already lives in History.
-            let interrupted = TranscriptionHistoryManager.shared.recoverInterruptedTranscriptions()
+            TranscriptionHistoryManager.shared.recoverInterruptedTranscriptions()
             // Recovery first: orphaned dictation WAVs become retranscribable
             // History rows before the stale sweep can consider deleting them.
-            let recovery = OrphanAudioRecovery.recoverAbandonedRecordings()
+            OrphanAudioRecovery.recoverAbandonedRecordings()
             TemporaryAudioStorage.sweepStaleFiles(
                 referencedNames: TemporaryAudioStorage.historyReferencedNames()
             )
-            // The freshest preserved take (crashed WAV or interrupted
-            // transcription) becomes the "continue previous dictation" offer.
-            var offer: ResumableDictation?
-            if let latest = recovery.latest {
-                offer = ResumableDictation(
-                    historyId: latest.historyId,
-                    audioURL: latest.audioURL,
-                    duration: latest.duration,
-                    capturedAt: latest.modifiedAt
-                )
-            }
-            if let interrupted, let audioPath = interrupted.audioPath,
-                interrupted.timestamp > (offer?.capturedAt ?? .distantPast)
-            {
-                offer = ResumableDictation(
-                    historyId: interrupted.id,
-                    audioURL: URL(fileURLWithPath: audioPath),
-                    duration: interrupted.duration,
-                    capturedAt: interrupted.timestamp
-                )
-            }
-            if let offer, Date().timeIntervalSince(offer.capturedAt) < 30 * 60 {
+            if let offer = TranscriptionHistoryManager.shared.latestResumableDictation() {
                 await MainActor.run {
                     SapoWhisperAppEnvironment.shared.viewModel.offerResumableDictation(offer)
                 }

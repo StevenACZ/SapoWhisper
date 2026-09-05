@@ -20,6 +20,9 @@ struct SapoWhisperApp: App {
 
     init() {
         guard !UIPreviewMode.skipsConsentPrompts else { return }
+        #if DEBUG
+            STTNetworkFaultInjection.installIfRequested()
+        #endif
         PreferredMicrophoneCoordinator.shared.start()
         AudioInputPreflightManager.shared.start()
     }

@@ -695,3 +695,5 @@
 "history.polishing_detail" = "The recognized text and audio are saved while AI finishes improving this dictation.";
 "history.completed" = "Completed";
 "history.audio_available_detail" = "Your audio is saved. You can listen to it or transcribe it again.";
+
+"failure.audio_storage_failed" = "Capture stopped because the complete audio could not be saved. Check available storage and try again.";

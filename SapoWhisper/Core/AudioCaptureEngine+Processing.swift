@@ -125,14 +125,15 @@ nonisolated extension AudioCaptureEngine {
         // buffer is owned by this call, so handing it off is safe. The stop
         // path drains this queue before closing the file.
         audioWriteQueue.async { [weak self] in
+            guard let self else { return }
             do {
-                try audioFile.write(from: convertedBuffer)
-                self?.registerWrittenFrames(convertedBuffer.frameLength)
+                try self.writeBuffer(convertedBuffer, audioFile)
+                self.registerWrittenFrames(convertedBuffer.frameLength)
             } catch {
-                self?.registerWriteFailure(error)
+                self.registerWriteFailure(error)
                 let detail = LogSanitizer.errorDiagnostic(error, state: "audio-write")
                 SapoLog.recording.error(
-                    "\(self?.mode.logLabel ?? "Capture", privacy: .public) audio buffer write failed \(detail, privacy: .public)"
+                    "\(self.mode.logLabel, privacy: .public) audio buffer write failed \(detail, privacy: .public)"
                 )
             }
         }

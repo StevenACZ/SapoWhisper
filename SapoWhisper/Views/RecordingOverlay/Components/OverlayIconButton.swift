@@ -20,7 +20,7 @@ struct OverlayIconButton: View {
         let button = Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: iconSize, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .frame(width: diameter, height: diameter)
                 .background(Circle().fill(Color.primary.opacity(0.1)))
         }

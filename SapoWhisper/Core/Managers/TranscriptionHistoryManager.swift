@@ -164,7 +164,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         aiModel: String? = nil,
         aiMode: String? = nil,
         aiError: String? = nil,
-        failureCode: String? = nil
+        failureCode: String? = nil,
+        timestamp: Date = Date()
     ) -> Int64 {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
@@ -180,7 +181,7 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
 
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return -1 }
 
-        let iso = Self.isoFormatter.string(from: Date())
+        let iso = Self.isoFormatter.string(from: timestamp)
         bindText(stmt, 1, iso)
         bindText(stmt, 2, engine)
         bindText(stmt, 3, language)
@@ -276,7 +277,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
         aiModel: String? = nil,
         aiMode: String? = nil,
         aiError: String? = nil,
-        failureCode: String? = nil
+        failureCode: String? = nil,
+        timestamp: Date = Date()
     ) -> (rowID: Int64, audioPath: String?, copiedToHistory: Bool) {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
@@ -299,7 +301,8 @@ nonisolated class TranscriptionHistoryManager: @unchecked Sendable {
             aiModel: aiModel,
             aiMode: aiMode,
             aiError: aiError,
-            failureCode: failureCode
+            failureCode: failureCode,
+            timestamp: timestamp
         )
 
         // The copy + insert pair is not atomic against insert failure: when the

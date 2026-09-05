@@ -49,7 +49,7 @@ struct TranscribingIndicator: View {
         TranscribingIndicator()
         Text("Transcribiendo...")
             .font(.system(size: 13, weight: .medium))
-            .foregroundColor(.primary)
+            .foregroundStyle(.primary)
     }
     .padding(20)
 }

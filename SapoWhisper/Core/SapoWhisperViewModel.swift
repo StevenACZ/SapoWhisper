@@ -1409,6 +1409,10 @@ class SapoWhisperViewModel: ObservableObject {
         ) {
             session.cancel()
         } transcribe: {
+            if let failure = capture?.diagnostics.integrityFailure {
+                session.cancel()
+                throw failure
+            }
             do {
                 let result = try await session.finalizeTranscription()
                 try Task.checkCancellation()
@@ -1533,7 +1537,9 @@ class SapoWhisperViewModel: ObservableObject {
             return
         }
 
-        if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput {
+        if let diagnostics = audioRecorder.lastCaptureDiagnostics, !diagnostics.receivedInput,
+            diagnostics.integrityFailure == nil
+        {
             SapoLog.recording.warning(
                 "Dropping empty recording after device switch bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(diagnostics.selectedDeviceUID, privacy: .private(mask: .hash))"
             )
@@ -1556,7 +1562,7 @@ class SapoWhisperViewModel: ObservableObject {
         // threshold, so skip the network entirely. The WAV stays on disk
         // (guardrail) and no failed history row is created. A requested
         // merge bypasses the gate — the previous take carries the speech.
-        if sessionLooksSilent && mergeResumable == nil {
+        if sessionLooksSilent && mergeResumable == nil && stoppedResult?.diagnostics.integrityFailure == nil {
             activeTranscriptionSessionID = nil
             SapoLog.recording.info(
                 "No-speech fast path engaged engine=\(engine.rawValue, privacy: .public) peakDb=\(self.approximateSessionPeakDb, privacy: .public)"
@@ -1572,16 +1578,13 @@ class SapoWhisperViewModel: ObservableObject {
 
         var effectiveAudioURL = audioURL
         var effectiveDuration = duration
+        var mergedPrevious: ResumableDictation?
         if let mergeResumable {
             do {
                 let mergedURL = try AudioFileMerger.merge(first: mergeResumable.audioURL, second: audioURL)
-                audioRecorder.deleteRecording(at: audioURL)
                 effectiveAudioURL = mergedURL
                 effectiveDuration = mergeResumable.duration + duration
-                resumableStore.clearOffer()
-                // The merged take supersedes the recovered/cancelled row;
-                // keeping it would duplicate the same audio in History.
-                historyManager.delete(id: mergeResumable.historyId)
+                mergedPrevious = mergeResumable
                 SapoLog.recording.info(
                     "Continue-previous merge applied durationSec=\(Int(effectiveDuration), privacy: .public)"
                 )
@@ -1602,8 +1605,14 @@ class SapoWhisperViewModel: ObservableObject {
             engine: engine,
             engineName: historyEngineName(for: variant),
             language: language,
-            duration: effectiveDuration
+            duration: effectiveDuration,
+            superseding: mergedPrevious.map {
+                .init(historyId: $0.historyId, currentAudioURL: audioURL)
+            }
         )
+        if mergedPrevious != nil, pending != nil {
+            resumableStore.clearOffer()
+        }
 
         var request = TranscriptionPipeline.Request(
             sessionID: sessionID,
@@ -1625,6 +1634,7 @@ class SapoWhisperViewModel: ObservableObject {
             request, variant: variant, audioURL: transcriptionURL, duration: transcriptionDuration,
             historyId: pending?.historyId
         ) {
+            if let failure = stoppedResult?.diagnostics.integrityFailure { throw failure }
             let result = try await self.transcribeWithFallback(
                 at: transcriptionURL, primary: variant, language: language)
             return TranscriptionPipeline.EngineOutput(
@@ -2594,6 +2604,8 @@ class SapoWhisperViewModel: ObservableObject {
     /// Aborts like the sleep path — WAV preserved, failed row for retry — but
     /// surfaces a clear retryable error instead of hiding the overlay.
     private func handleCaptureDeviceFailure(reason: String) {
+        let failureKind: TranscriptionFailure.Kind =
+            reason == AudioCaptureEngine.storageFailureReason ? .audioStorageFailed : .recordingInterrupted
         SapoLog.recording.error(
             "Capture device failure reason=\(reason, privacy: .private(mask: .hash)) \(self.diagnosticContext(), privacy: .public)"
         )
@@ -2607,10 +2619,10 @@ class SapoWhisperViewModel: ObservableObject {
             cancelPendingStopTail()
         }
         guard activeTranscriptionSessionID == nil else { return }
-        guard abortActiveCapturePreservingAudio(reasonLog: reason).aborted else { return }
+        guard abortActiveCapturePreservingAudio(reasonLog: reason, failureKind: failureKind).aborted else { return }
 
         presentTranscriptionFailure(
-            TranscriptionFailure(kind: .recordingInterrupted, technicalDetail: reason)
+            TranscriptionFailure(kind: failureKind, technicalDetail: reason)
         )
     }
 

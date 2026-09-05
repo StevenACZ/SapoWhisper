@@ -8,6 +8,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Recording overlay text and controls keep a readable surface over bright and dark windows, following appearance, increased contrast and reduced transparency without screen polling.
+- Active and paused recordings cannot be adopted by another recovery pass. Sealed and merged takes stay recoverable until History owns them, and cancelled or recovered takes can be continued after another launch.
+- A failed audio write interrupts capture and preserves available audio with a storage error instead of silently delivering an incomplete recording. Recovery preserves original timestamps and retries failed database handoffs.
 - Streaming dictations now appear in History before finalization. Completed results open their own entry immediately, and cancellation or interruption preserves the captured audio and any text recognized before AI polish.
 - In-flight AI polish has its own History status and cannot be deleted by retention. Failure details use readable, localized explanations instead of internal codes.
 - Cancelled transcription tasks retain ownership until cleanup finishes, so a late callback cannot close a newer session. Microphone acquisition also times out safely behind a stalled preflight.

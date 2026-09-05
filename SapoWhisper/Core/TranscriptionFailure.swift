@@ -28,6 +28,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case timedOut = "timed_out"
         case audioEmpty = "audio_empty"
         case audioCorrupt = "audio_corrupt"
+        case audioStorageFailed = "audio_storage_failed"
         case recordingInterrupted = "recording_interrupted"
         case userCancelled = "user_cancelled"
         case emptyTranscription = "empty_transcription"
@@ -85,6 +86,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "failure.audio_empty".localized
         case .audioCorrupt:
             return "failure.audio_corrupt".localized
+        case .audioStorageFailed:
+            return "failure.audio_storage_failed".localized
         case .recordingInterrupted:
             return "failure.recording_interrupted".localized
         case .userCancelled:
@@ -99,7 +102,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
     /// Whether offering the user a "Retry" affordance makes sense for this failure.
     var isRetryable: Bool {
         switch kind {
-        case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .unknown:
+        case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .audioStorageFailed, .unknown:
             return true
         case .notConfigured, .auth, .outOfCredits, .planRestricted, .clientError,
             .audioEmpty, .audioCorrupt, .userCancelled, .emptyTranscription:
