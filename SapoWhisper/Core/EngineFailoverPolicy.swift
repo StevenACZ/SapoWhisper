@@ -44,7 +44,8 @@ struct EngineReachabilityLog {
 enum EngineFailoverPolicy {
 
     static let rescuableKinds: Set<TranscriptionFailure.Kind> = [
-        .network, .timedOut, .serverError, .modelOutputLimit,
+        .notConfigured, .auth, .outOfCredits, .rateLimited, .planRestricted, .clientError,
+        .network, .timedOut, .serverError, .modelOutputLimit, .unknown,
     ]
 
     static func shouldRememberAsUnreachable(_ failure: TranscriptionFailure) -> Bool {
@@ -53,6 +54,10 @@ enum EngineFailoverPolicy {
 
     static func isRescuable(_ failure: TranscriptionFailure) -> Bool {
         rescuableKinds.contains(failure.kind)
+    }
+
+    static func isStartupRescuable(_ failure: TranscriptionFailure) -> Bool {
+        isRescuable(failure) && failure.kind != .unknown && failure.kind != .modelOutputLimit
     }
 
     /// What is known about one engine at the moment a dictation starts.

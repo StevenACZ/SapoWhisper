@@ -124,7 +124,7 @@
 "config.tab_settings" = "Ajustes";
 "config.engine" = "Motor de Transcripción";
 "config.fallback_engine" = "Motor de Respaldo";
-"config.fallback_engine_description" = "Si el motor principal no responde (servidor apagado, timeout), este motor toma el dictado: al empezar cuando ya se sabe que el principal está caído, o rescatando el audio si falla al transcribir. Solo se ofrecen motores distintos al principal: dos modos del mismo proveedor se caen juntos.";
+"config.fallback_engine_description" = "Si el motor principal falla por conexión, modelo, credenciales o servicio, SapoWhisper usa el respaldo configurado y muestra qué motor tomó el relevo. Tu audio grabado se conserva. Elige otro proveedor o un modelo local que esté listo para usar.";
 "config.fallback_engine_none" = "Ninguno";
 "config.fallback_engine_not_configured" = "%@ aún no está configurado, así que el respaldo se omitirá.";
 "config.fallback_engine_live_note" = "En vivo cuando el respaldo arranca el dictado; para rescatar un audio ya grabado se usa el modelo por archivo del mismo proveedor.";
@@ -707,3 +707,6 @@
 "overlay.polish_cancelled" = "Pulido cancelado — texto anterior conservado";
 
 "failure.model_output_limit" = "%@ no pudo completar la transcripción. Prueba con otro modelo o servicio.";
+
+"overlay.backup_active" = "Usando respaldo: %@";
+"overlay.backup_primary_failed" = "%@ no pudo transcribir";

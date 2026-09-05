@@ -51,6 +51,7 @@ enum TransientRequestRetry {
         engine: String,
         operation: () async throws -> (Data, URLResponse)
     ) async throws -> (Data, HTTPURLResponse) {
+        let backoffs = TranscriptionAttemptContext.prefersConfiguredBackup ? [] : Self.backoffs
         var attempt = 0
         while true {
             try Task.checkCancellation()
@@ -85,4 +86,8 @@ enum TransientRequestRetry {
             try await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
         }
     }
+}
+
+nonisolated enum TranscriptionAttemptContext {
+    @TaskLocal static var prefersConfiguredBackup = false
 }

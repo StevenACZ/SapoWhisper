@@ -1075,8 +1075,10 @@ class SapoWhisperViewModel: ObservableObject {
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
         }
+        overlayManager.setBackupNotice(nil)
         if let startedOnBackup {
-            SapoLog.recording.info(
+            overlayManager.setBackupNotice(BackupTranscriptionNotice(primary: selectedVariant, backup: variant))
+            SapoLog.recording.notice(
                 "Dictation starting on backup engine=\(variant.rawValue, privacy: .public) reason=\(startedOnBackup.rawValue, privacy: .public)"
             )
         }
@@ -1185,6 +1187,7 @@ class SapoWhisperViewModel: ObservableObject {
             startCaptureSession(
                 sessionID: sessionID,
                 owner: context.owner,
+                microphone: mic,
                 logLabel: context.logLabel,
                 snapshotPrefix: context.snapshotPrefix,
                 playSound: playSound,
@@ -1197,6 +1200,7 @@ class SapoWhisperViewModel: ObservableObject {
             startCaptureSession(
                 sessionID: sessionID,
                 owner: .batchRecorder,
+                microphone: mic,
                 logLabel: "Recording",
                 snapshotPrefix: "recording",
                 playSound: playSound,
@@ -1419,7 +1423,11 @@ class SapoWhisperViewModel: ObservableObject {
                 throw failure
             }
             do {
-                let result = try await session.finalizeTranscription()
+                let result = try await TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(
+                    self.usableBackup(for: variant) != nil
+                ) {
+                    try await session.finalizeTranscription()
+                }
                 try Task.checkCancellation()
                 self.settleReachability(variant.engine, reachable: true)
                 return TranscriptionPipeline.EngineOutput(
@@ -1442,7 +1450,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// A live dictation that died on a connectivity-class failure still holds
+    /// A live dictation that died on a provider failure still holds
     /// its locally captured WAV, so the configured backup transcribes that
     /// instead of leaving the user a failed row. Without this the backup was
     /// dead letter for Flux and Scribe Realtime: the rescue only ever ran on
@@ -1462,8 +1470,7 @@ class SapoWhisperViewModel: ObservableObject {
         // A live dictation that already started ON the backup has nothing left
         // to fall back to; otherwise the backup's file endpoint is a genuinely
         // different path from the socket that just died.
-        guard let backup = fallbackVariant, backup != variant, isBackupEngineUsable(backup),
-            let capture = session.lastCaptureResult
+        guard let backup = usableBackup(for: variant), let capture = session.lastCaptureResult
         else { throw error }
 
         SapoLog.recording.warning(
@@ -1471,7 +1478,7 @@ class SapoWhisperViewModel: ObservableObject {
         )
         do {
             let rescued = try await transcribeOnBackup(
-                at: capture.audioURL, backup: backup, language: language)
+                at: capture.audioURL, primary: variant, backup: backup, language: language, failure: failure)
             return TranscriptionPipeline.EngineOutput(
                 transcript: rescued.transcript,
                 audioURL: capture.audioURL,
@@ -1775,7 +1782,7 @@ class SapoWhisperViewModel: ObservableObject {
         return true
     }
 
-    /// Runs the primary engine and, on a connectivity-class failure, retries
+    /// Runs the primary engine and, on a provider failure, retries
     /// once on the configured backup. Combined failures preserve the primary
     /// category and explain the backup failure to the user.
     ///
@@ -1794,17 +1801,17 @@ class SapoWhisperViewModel: ObservableObject {
         // here: rescuing an upload with the endpoint that just failed is no
         // rescue, and a dictation that already started on the backup has
         // nothing left to fall back to.
-        let backup = fallbackVariant.flatMap {
-            $0.fileTranscriptionVariant != primary.fileTranscriptionVariant
-                && isBackupEngineUsable($0, ignoreRecentFailures: ignoreRecentFailures) ? $0 : nil
-        }
+        let backup = usableBackup(for: primary, ignoreRecentFailures: ignoreRecentFailures)
 
         if let backup, reachabilityLog.isUnreachable(primary.engine, ignoringRecentFailures: ignoreRecentFailures) {
             SapoLog.recording.info(
                 "Skipping primary known unreachable engine=\(primary.engine.rawValue, privacy: .public) backup=\(backup.rawValue, privacy: .public)"
             )
             do {
-                return try await transcribeOnBackup(at: audioURL, backup: backup, language: language)
+                return try await transcribeOnBackup(
+                    at: audioURL, primary: primary, backup: backup, language: language,
+                    failure: TranscriptionFailure(kind: .network, engine: primary.displayName)
+                )
             } catch {
                 guard !Task.isCancelled else { throw error }
                 throw TranscriptionFailure.backupFailed(
@@ -1815,7 +1822,10 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         do {
-            let transcript = try await transcribeAudio(at: audioURL, using: primary, language: language)
+            let transcript = try await TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(backup != nil) {
+                try await transcribeAudio(at: audioURL, using: primary, language: language)
+            }
+            try Task.checkCancellation()
             settleReachability(primary.engine, reachable: true)
             return (transcript, nil)
         } catch {
@@ -1830,7 +1840,8 @@ class SapoWhisperViewModel: ObservableObject {
                 "Primary engine failed \(failure.diagnosticCode, privacy: .public); trying backup engine=\(backup.rawValue, privacy: .public)"
             )
             do {
-                return try await transcribeOnBackup(at: audioURL, backup: backup, language: language)
+                return try await transcribeOnBackup(
+                    at: audioURL, primary: primary, backup: backup, language: language, failure: failure)
             } catch let backupError {
                 let backupFailure = TranscriptionFailure.from(backupError, engine: backup.displayName)
                 SapoLog.recording.error(
@@ -1846,11 +1857,25 @@ class SapoWhisperViewModel: ObservableObject {
     /// about the backup says nothing about it.
     private func transcribeOnBackup(
         at audioURL: URL,
+        primary: TranscriptionEngineVariant,
         backup: TranscriptionEngineVariant,
-        language: String
+        language: String,
+        failure: TranscriptionFailure
     ) async throws -> (transcript: String, engineNameOverride: String?) {
+        try Task.checkCancellation()
+        let actualBackup = backup.fileTranscriptionVariant
+        overlayManager.setBackupNotice(BackupTranscriptionNotice(primary: primary, backup: actualBackup))
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        SapoLog.recording.notice(
+            "Backup handoff session=\(self.activeTranscriptionSessionID ?? 0, privacy: .public) primary=\(primary.rawValue, privacy: .public) backup=\(actualBackup.rawValue, privacy: .public) reason=\(failure.kind.rawValue, privacy: .public)"
+        )
         do {
             let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
+            try Task.checkCancellation()
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
+            SapoLog.recording.notice(
+                "Backup completed session=\(self.activeTranscriptionSessionID ?? 0, privacy: .public) engine=\(actualBackup.rawValue, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
+            )
             reachabilityLog.markReachable(backup.engine)
             // History must name what ran, and a live-only backup rescues an
             // existing recording through its provider's file model.
@@ -1862,6 +1887,16 @@ class SapoWhisperViewModel: ObservableObject {
             }
             throw error
         }
+    }
+
+    private func usableBackup(
+        for primary: TranscriptionEngineVariant,
+        ignoreRecentFailures: Bool = false
+    ) -> TranscriptionEngineVariant? {
+        guard let backup = fallbackVariant, backup.engine != primary.engine,
+            isBackupEngineUsable(backup, ignoreRecentFailures: ignoreRecentFailures)
+        else { return nil }
+        return backup
     }
 
     /// Whether the backup can plausibly transcribe right now. Internal so
@@ -1980,6 +2015,7 @@ class SapoWhisperViewModel: ObservableObject {
         isRetryInFlight = true
 
         transition(to: .processing, reason: "retry-start")
+        overlayManager.setBackupNotice(nil)
         overlayManager.updateState(.transcribing)
 
         // A retry transcribes a FILE, so a live primary retries through its
@@ -2193,6 +2229,7 @@ class SapoWhisperViewModel: ObservableObject {
     private func startCaptureSession(
         sessionID: UInt64,
         owner: AudioCaptureCoordinator.CaptureOwner,
+        microphone: String,
         logLabel: String,
         snapshotPrefix: String,
         playSound: Bool,
@@ -2202,11 +2239,16 @@ class SapoWhisperViewModel: ObservableObject {
         abortStarted: @escaping @MainActor @Sendable () -> Void
     ) {
         prepare()
+        let primary = sessionVariant
         startRecordingTask?.cancel()
         startRecordingTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var captureToken: AudioCaptureCoordinator.CaptureToken?
             var recorderDidStart = false
+            var captureOwner = owner
+            var startOperation = start
+            var abortOperation = abortStarted
+            var firstFailure: TranscriptionFailure?
 
             defer {
                 self.isStartPending = false
@@ -2218,57 +2260,96 @@ class SapoWhisperViewModel: ObservableObject {
 
             guard !Task.isCancelled else { return }
 
-            do {
-                guard let token = try await self.captureCoordinator.beginCapture(owner) else { return }
-                captureToken = token
-                try Task.checkCancellation()
-                let accepted = try await CaptureStartCompletionGate.perform(
-                    start: start,
-                    isSessionCurrent: {
-                        self.isStartPending && self.activeRecordingSessionID == sessionID
-                    },
-                    abortStarted: abortStarted
-                )
-                guard accepted else { return }
-                recorderDidStart = true
-                self.overlayManager.setMicConnecting(deviceName: nil)
-                let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
-                SapoLog.recording.info("\(logLabel, privacy: .public) input ready in \(readyMs, privacy: .public)ms")
-                PerformanceDiagnostics.logRuntimeSnapshot(
-                    reason: "\(snapshotPrefix)-input-ready",
-                    context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
-                    force: true
-                )
-            } catch {
-                if error is CancellationError {
+            for attempt in 0...1 {
+                do {
+                    guard let token = try await self.captureCoordinator.beginCapture(captureOwner) else { return }
+                    captureToken = token
+                    try Task.checkCancellation()
+                    let accepted = try await CaptureStartCompletionGate.perform(
+                        start: startOperation,
+                        isSessionCurrent: {
+                            self.isStartPending && self.activeRecordingSessionID == sessionID
+                        },
+                        abortStarted: abortOperation
+                    )
+                    guard accepted else { return }
+                    recorderDidStart = true
+                    self.overlayManager.setMicConnecting(deviceName: nil)
+                    let readyMs = Int((CFAbsoluteTimeGetCurrent() - triggerTime) * 1000)
+                    SapoLog.recording.info("\(logLabel, privacy: .public) input ready in \(readyMs, privacy: .public)ms")
+                    PerformanceDiagnostics.logRuntimeSnapshot(
+                        reason: "\(snapshotPrefix)-input-ready",
+                        context: self.diagnosticContext(extra: "session=\(sessionID) readyMs=\(readyMs)"),
+                        force: true
+                    )
                     return
-                }
-                guard self.activeRecordingSessionID == sessionID else {
-                    SapoLog.recording.warning(
-                        "Ignoring stale \(logLabel, privacy: .public) start failure session=\(sessionID, privacy: .public)"
+                } catch {
+                    if Task.isCancelled || error is CancellationError {
+                        return
+                    }
+                    guard self.activeRecordingSessionID == sessionID else {
+                        SapoLog.recording.warning(
+                            "Ignoring stale \(logLabel, privacy: .public) start failure session=\(sessionID, privacy: .public)"
+                        )
+                        return
+                    }
+                    let failure = TranscriptionFailure.from(error, engine: self.sessionVariant.displayName)
+                    if attempt == 0, EngineFailoverPolicy.isStartupRescuable(failure),
+                        let backup = self.usableBackup(for: primary)
+                    {
+                        if let captureToken { self.captureCoordinator.endCapture(captureToken) }
+                        captureToken = nil
+                        firstFailure = failure
+                        self.activeSessionVariant = backup
+                        self.overlayManager.setBackupNotice(BackupTranscriptionNotice(primary: primary, backup: backup))
+                        if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
+                            self.settleReachability(primary.engine, reachable: false)
+                        }
+                        SapoLog.recording.notice(
+                            "Backup handoff phase=start session=\(sessionID, privacy: .public) primary=\(primary.rawValue, privacy: .public) backup=\(backup.rawValue, privacy: .public) reason=\(failure.kind.rawValue, privacy: .public)"
+                        )
+                        if let context = self.streamingContext(for: backup) {
+                            context.session.cancel()
+                            captureOwner = context.owner
+                            let language = self.selectedLanguage
+                            startOperation = { try await context.session.start(microphone: microphone, language: language) }
+                            abortOperation = { context.session.cancel() }
+                        } else {
+                            self.audioRecorder.cancelPendingSetup()
+                            captureOwner = .batchRecorder
+                            startOperation = {
+                                try await self.captureStartSupervisor.start(microphone: microphone, targetEngine: backup.engine)
+                            }
+                            abortOperation = { self.audioRecorder.discardRecording() }
+                        }
+                        continue
+                    }
+                    let terminalFailure =
+                        firstFailure.map {
+                            TranscriptionFailure.backupFailed(primary: $0, backup: failure)
+                        } ?? failure
+                    let detail = LogSanitizer.errorDiagnostic(error, state: "capture-start")
+                    self.activeRecordingSessionID = nil
+                    self.transition(
+                        to: .error(ErrorState(message: terminalFailure.localizedDescription)),
+                        reason: "capture-start-failed")
+                    self.overlayManager.showError(message: terminalFailure.localizedDescription)
+                    AutoDuckingManager.shared.restore()
+                    if playSound && !CaptureStartSupervisor.isRecoverableInputStartError(error) {
+                        SoundManager.shared.play(.error)
+                    }
+                    PerformanceDiagnostics.logRuntimeSnapshot(
+                        reason: "\(snapshotPrefix)-input-failed",
+                        context: self.diagnosticContext(
+                            extra: "session=\(sessionID) \(detail)"
+                        ),
+                        force: true
+                    )
+                    SapoLog.recording.error(
+                        "\(logLabel, privacy: .public) failed to start \(detail, privacy: .public)"
                     )
                     return
                 }
-                let detail = LogSanitizer.errorDiagnostic(error, state: "capture-start")
-                self.activeRecordingSessionID = nil
-                self.transition(
-                    to: .error(ErrorState(message: error.localizedDescription)),
-                    reason: "capture-start-failed")
-                self.overlayManager.showError(message: error.localizedDescription)
-                AutoDuckingManager.shared.restore()
-                if playSound && !CaptureStartSupervisor.isRecoverableInputStartError(error) {
-                    SoundManager.shared.play(.error)
-                }
-                PerformanceDiagnostics.logRuntimeSnapshot(
-                    reason: "\(snapshotPrefix)-input-failed",
-                    context: self.diagnosticContext(
-                        extra: "session=\(sessionID) \(detail)"
-                    ),
-                    force: true
-                )
-                SapoLog.recording.error(
-                    "\(logLabel, privacy: .public) failed to start \(detail, privacy: .public)"
-                )
             }
         }
     }

@@ -135,6 +135,18 @@ final class EngineFailoverTests: XCTestCase {
         }
     }
 
+    func testRejectedRequestsCanSwitchProvidersWithoutCachingBadConfiguration() {
+        for status in [400, 401, 402, 403, 404, 413, 415, 422, 429] {
+            let failure = TranscriptionFailure.fromHTTP(engine: "Primary", statusCode: status, body: Data())
+            XCTAssertTrue(EngineFailoverPolicy.isRescuable(failure), "HTTP \(status)")
+            XCTAssertTrue(EngineFailoverPolicy.isStartupRescuable(failure), "HTTP \(status)")
+            XCTAssertFalse(EngineFailoverPolicy.shouldRememberAsUnreachable(failure), "HTTP \(status)")
+        }
+        for kind in [TranscriptionFailure.Kind.audioCorrupt, .recordingInterrupted, .userCancelled, .unknown] {
+            XCTAssertFalse(EngineFailoverPolicy.isStartupRescuable(.init(kind: kind)))
+        }
+    }
+
     // MARK: - Reachability memory
 
     func testExplicitRetryBypassesRecentFailuresWithoutErasingNormalTakeProtection() {
@@ -230,21 +242,20 @@ final class EngineFailoverTests: XCTestCase {
 
     // MARK: - Rescuable failures
 
-    func testOnlyConnectivityClassFailuresAreRescued() {
-        for kind in [TranscriptionFailure.Kind.network, .timedOut, .serverError] {
+    func testProviderFailuresUseBackupWhileCaptureAndCancellationDoNot() {
+        for kind in [
+            TranscriptionFailure.Kind.network, .timedOut, .serverError, .notConfigured,
+            .auth, .outOfCredits, .rateLimited, .planRestricted, .clientError, .modelOutputLimit, .unknown,
+        ] {
             XCTAssertTrue(
                 EngineFailoverPolicy.isRescuable(TranscriptionFailure(kind: kind)),
                 "\(kind.rawValue) must reach the backup"
             )
         }
 
-        // A misconfigured engine, a cancelled take, or silence are not the
-        // backup's problem — retrying them elsewhere burns credits and, for
-        // empty transcriptions, would paste hallucinated text.
         let notRescued: [TranscriptionFailure.Kind] = [
-            .notConfigured, .auth, .outOfCredits, .rateLimited, .planRestricted, .clientError,
-            .audioEmpty, .audioCorrupt, .recordingInterrupted, .userCancelled, .emptyTranscription,
-            .unknown,
+            .audioEmpty, .audioCorrupt, .audioStorageFailed, .audioPreparationFailed,
+            .recordingInterrupted, .userCancelled, .emptyTranscription,
         ]
         for kind in notRescued {
             XCTAssertFalse(

@@ -107,12 +107,23 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             throw RecordingError.noInputAfterDeviceSwitch
         }
 
+        if TranscriptionAttemptContext.prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
         let captureStopMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
         SapoLog.flux.info(
             "Flux local capture stopped elapsed=\(captureStopMs, privacy: .public)ms buffers=\(captureResult.diagnostics.inputBufferCount, privacy: .public) frames=\(captureResult.diagnostics.writtenFrameCount, privacy: .public) chunks=\(captureResult.diagnostics.emittedChunkCount, privacy: .public) firstInput=\(Int(captureResult.diagnostics.firstInputLatencyMs ?? -1), privacy: .public)ms lastBufferAge=\(Int(captureResult.diagnostics.lastBufferAgeMs ?? -1), privacy: .public)ms maxInputGap=\(Int(captureResult.diagnostics.maxInputGapMs), privacy: .public)ms bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
         )
 
         guard let audioSenderSession else {
+            if TranscriptionAttemptContext.prefersConfiguredBackup {
+                throw TranscriptionFailure(
+                    kind: .network,
+                    engine: Self.engineName,
+                    technicalDetail: "Flux sender session missing"
+                )
+            }
             SapoLog.flux.warning("Flux sender session missing; falling back to full local audio")
             return try await transcribeFullCaptureFallback(
                 captureResult,
@@ -123,7 +134,21 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             session: audioSenderSession,
             timeout: 2.0
         )
+        if TranscriptionAttemptContext.prefersConfiguredBackup {
+            try Task.checkCancellation()
+        }
+        if TranscriptionAttemptContext.prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
         if senderStats.failedChunks > 0 || senderStats.pendingChunks > 0 || senderStats.rejectedChunks > 0 {
+            if TranscriptionAttemptContext.prefersConfiguredBackup {
+                throw TranscriptionFailure(
+                    kind: senderStats.pendingChunks > 0 ? .timedOut : .network,
+                    engine: Self.engineName,
+                    technicalDetail: "Flux sender incomplete"
+                )
+            }
             SapoLog.flux.warning(
                 "Flux stream incomplete; falling back to full local audio failedChunks=\(senderStats.failedChunks, privacy: .public) pendingChunks=\(senderStats.pendingChunks, privacy: .public) rejectedChunks=\(senderStats.rejectedChunks, privacy: .public)"
             )
@@ -144,6 +169,9 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             transcript = try await waitForFinalTranscript(timeout: 4.0)
         } catch {
             try Task.checkCancellation()
+            if TranscriptionAttemptContext.prefersConfiguredBackup {
+                throw TranscriptionFailure.from(error, engine: Self.engineName)
+            }
             let detail = TranscriptionFailure.diagnosticDetail(for: error)
             SapoLog.flux.warning(
                 "Flux final transcript failed error=\(detail, privacy: .public); falling back to full local audio"
@@ -153,6 +181,10 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
                 reason: "final_transcript_failed"
             )
         }
+        if TranscriptionAttemptContext.prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
         let finalMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
         SapoLog.flux.info(
             "Flux final transcript received elapsed=\(finalMs, privacy: .public)ms characters=\(transcript.count, privacy: .public)"

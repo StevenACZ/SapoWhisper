@@ -421,6 +421,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var stopContinuation: CheckedContinuation<String, Error>?
     private var transcriptAccumulator = ElevenLabsRealtimeTranscriptAccumulator()
     private var lastStreamingError: Error?
+    private var prefersConfiguredBackup = false
     private var cancellables = Set<AnyCancellable>()
     private var stopStartedAt: CFAbsoluteTime = 0
     private var requestedLanguage = "auto"
@@ -497,7 +498,11 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     func finalizeTranscription() async throws -> StreamingDictationResult {
-        defer { cleanupWebSocket() }
+        prefersConfiguredBackup = TranscriptionAttemptContext.prefersConfiguredBackup
+        defer {
+            cleanupWebSocket()
+            prefersConfiguredBackup = false
+        }
         try Task.checkCancellation()
         guard let captureResult = lastCaptureResult else {
             throw RecordingError.fileCreationFailed
@@ -510,6 +515,10 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             throw RecordingError.noInputAfterDeviceSwitch
         }
 
+        if prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
         let captureStopMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
         SapoLog.recording.info(
             "ElevenLabs realtime local capture stopped elapsed=\(captureStopMs, privacy: .public)ms buffers=\(captureResult.diagnostics.inputBufferCount, privacy: .public) frames=\(captureResult.diagnostics.writtenFrameCount, privacy: .public) chunks=\(captureResult.diagnostics.emittedChunkCount, privacy: .public) bytes=\(captureResult.diagnostics.fileSizeBytes, privacy: .public)"
@@ -518,13 +527,22 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
         let hadUncommittedPartialBeforeFinalCommit = transcriptAccumulator.hasUncommittedPartial
         let senderStats = await audioSender.finishAndCommit(timeout: 2.0)
+        if prefersConfiguredBackup {
+            try Task.checkCancellation()
+        }
 
-        // Degraded stream: chunks never reached the server, so the realtime
-        // transcript is missing audio the local WAV still has. Re-transcribe
-        // the full take through the batch endpoint (same pattern as the Flux
-        // fallback); a failed fallback falls through so waitForFinalTranscript
-        // still salvages whatever the server already committed.
+        if prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
         if Self.shouldFallBackToBatch(senderStats: senderStats) {
+            if prefersConfiguredBackup {
+                throw TranscriptionFailure(
+                    kind: senderStats.drainTimedOut || senderStats.timedOutSends > 0 ? .timedOut : .network,
+                    engine: Self.engineName,
+                    technicalDetail: "ElevenLabs realtime sender incomplete"
+                )
+            }
             SapoLog.recording.warning(
                 "ElevenLabs realtime sender incomplete failedMessages=\(senderStats.failedMessages, privacy: .public) timedOut=\(senderStats.timedOutSends, privacy: .public) drainTimedOut=\(senderStats.drainTimedOut, privacy: .public); falling back to batch transcription"
             )
@@ -567,14 +585,30 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             )
         } catch {
             try Task.checkCancellation()
-            // The stream died without committing anything usable; the local
-            // WAV still has the take, so batch it instead of losing the words.
+            if prefersConfiguredBackup {
+                throw TranscriptionFailure.from(error, engine: Self.engineName)
+            }
             let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-final")
             SapoLog.recording.warning(
                 "ElevenLabs realtime final transcript failed \(detail, privacy: .public); falling back to batch transcription"
             )
             return try await transcribeFullCaptureFallback(captureResult, reason: "final_transcript_failed")
         }
+        if prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
+        if Self.shouldRescueUnconfirmedTail(
+            prefersBackup: prefersConfiguredBackup,
+            hasPendingPartial: transcriptAccumulator.hasUncommittedPartial,
+            receivedFinalCommit: transcriptAccumulator.committedCount > committedCountBeforeFinalCommit
+        ) {
+            throw TranscriptionFailure(
+                kind: .timedOut, engine: Self.engineName,
+                technicalDetail: "ElevenLabs final commit unconfirmed"
+            )
+        }
+
         let salvagedTranscript = salvagingPendingPartial(
             transcript,
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
@@ -611,6 +645,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             diagnostics: captureResult.diagnostics,
             transcriptionVariant: Self.liveTranscriptionVariant
         )
+    }
+
+    nonisolated static func shouldRescueUnconfirmedTail(
+        prefersBackup: Bool, hasPendingPartial: Bool, receivedFinalCommit: Bool
+    ) -> Bool {
+        prefersBackup && hasPendingPartial && !receivedFinalCommit
     }
 
     /// `pendingChunks` is deliberately not a signal here: `enqueuedChunks`
@@ -836,7 +876,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
     private func handleReceiveCompletion(_ error: Error) {
         if isStopping {
-            finishStopIfNeeded(error: nil)
+            if prefersConfiguredBackup, webSocketTask?.closeCode != .normalClosure, !isCancellation(error) {
+                lastStreamingError = error
+                finishStopIfNeeded(error: error)
+            } else {
+                finishStopIfNeeded(error: nil)
+            }
             return
         }
 
@@ -852,7 +897,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         timeout: TimeInterval,
         committedCountBeforeFinalCommit: Int
     ) async throws -> String {
-        if let lastStreamingError, transcriptAccumulator.transcript.isEmpty {
+        if let lastStreamingError, prefersConfiguredBackup || transcriptAccumulator.transcript.isEmpty {
             throw lastStreamingError
         }
 
@@ -863,7 +908,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         return try await withCheckedThrowingContinuation { continuation in
             stopContinuation = continuation
             stopTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                } catch { return }
                 self?.finishStopIfNeeded(error: nil)
             }
         }
@@ -876,7 +923,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         stopTimeoutTask = nil
 
         let transcript = transcriptAccumulator.transcript
-        if let error, transcript.isEmpty {
+        if let error, prefersConfiguredBackup || transcript.isEmpty {
             continuation.resume(throwing: error)
         } else {
             continuation.resume(returning: transcript)

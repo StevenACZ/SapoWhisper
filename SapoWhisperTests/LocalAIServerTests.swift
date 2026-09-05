@@ -282,6 +282,70 @@ final class LocalAIServerTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: audioURL), original)
     }
 
+    func testConfiguredBackupSkipsHTTPBackoffsForDataAndFileRequests() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        let original = try Data(contentsOf: audioURL)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            StubURLProtocol.handler = nil
+        }
+        for upload in [false, true] {
+            let attempts = OSAllocatedUnfairLock(initialState: 0)
+            StubURLProtocol.handler = { _ in
+                attempts.withLock { $0 += 1 }
+                return .success((status: 503, body: Data()))
+            }
+            let response = try await TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(true) {
+                var request = URLRequest(url: URL(string: "https://transcription.example/primary")!)
+                request.httpMethod = "POST"
+                if upload {
+                    return try await TransientRequestRetry.upload(
+                        for: request, fromFile: audioURL, session: session, engine: "Fixture")
+                }
+                return try await TransientRequestRetry.data(for: request, session: session, engine: "Fixture")
+            }
+            XCTAssertEqual(response.1.statusCode, 503)
+            XCTAssertEqual(attempts.withLock { $0 }, 1)
+            XCTAssertFalse(TranscriptionAttemptContext.prefersConfiguredBackup)
+        }
+        XCTAssertEqual(try Data(contentsOf: audioURL), original)
+    }
+
+    func testConfiguredBackupSkipsNetworkBackoffWithoutChangingOtherTasks() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            StubURLProtocol.handler = nil
+        }
+        let attempts = OSAllocatedUnfairLock(initialState: 0)
+        StubURLProtocol.handler = { _ in
+            attempts.withLock { $0 += 1 }
+            return .failure(URLError(.networkConnectionLost))
+        }
+        do {
+            try await TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(true) {
+                let unrelatedTaskValue = await Task.detached {
+                    TranscriptionAttemptContext.prefersConfiguredBackup
+                }.value
+                XCTAssertFalse(unrelatedTaskValue)
+                _ = try await TransientRequestRetry.data(
+                    for: URLRequest(url: URL(string: "https://transcription.example/primary")!),
+                    session: session, engine: "Fixture")
+            }
+            XCTFail("The confirmed failure must reach the backup owner")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+        }
+        XCTAssertEqual(attempts.withLock { $0 }, 1)
+        XCTAssertFalse(TranscriptionAttemptContext.prefersConfiguredBackup)
+    }
+
     // MARK: - Preflight reachability (fail fast when the server is down)
 
     /// URLProtocol stub: routes every request through a static handler so the

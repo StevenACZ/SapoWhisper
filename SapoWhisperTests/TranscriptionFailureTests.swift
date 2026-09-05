@@ -27,6 +27,17 @@ final class TranscriptionFailureTests: XCTestCase {
         XCTAssertTrue(TranscriptionFailure(kind: .network, engine: "Fixture service").localizedDescription.contains("Fixture service"))
     }
 
+    func testRejectedPrimaryKeepsRetryWhenBackupFailureIsTransient() {
+        let primary = TranscriptionFailure.fromHTTP(engine: "Primary", statusCode: 404, body: Data())
+        let backup = TranscriptionFailure.fromHTTP(engine: "Backup", statusCode: 503, body: Data())
+        let combined = TranscriptionFailure.backupFailed(primary: primary, backup: backup)
+        XCTAssertEqual(combined.kind, .clientError)
+        XCTAssertTrue(combined.isRetryable)
+        XCTAssertTrue(combined.localizedDescription.contains("Primary"))
+        XCTAssertTrue(combined.localizedDescription.contains("Backup"))
+        XCTAssertFalse(TranscriptionFailure.backupFailed(primary: primary, backup: primary).isRetryable)
+    }
+
     func testHTTP401MapsToAuth() {
         let failure = TranscriptionFailure.fromHTTP(
             engine: "ElevenLabs", statusCode: 401, body: Data("{\"detail\":\"invalid api key\"}".utf8))

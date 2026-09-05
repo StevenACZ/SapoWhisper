@@ -184,8 +184,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 let overlay = OverlayWindowManager.shared
                 overlay.updateState(.docked)
-                for _ in 0..<2 {
+                for iteration in 0..<2 {
                     try? await Task.sleep(for: .seconds(2))
+                    overlay.setBackupNotice(
+                        iteration == 0
+                            ? BackupTranscriptionNotice(primary: .localAIServer, backup: .deepgramNova3) : nil)
                     overlay.updateState(.recording(duration: 12))
                     overlay.updateAudioLevel(0.5)
                     try? await Task.sleep(for: .seconds(2))
@@ -193,6 +196,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     try? await Task.sleep(for: .seconds(2))
                     overlay.updateState(.transcribing)
                     try? await Task.sleep(for: .seconds(2))
+                    overlay.showCopied(text: "", autoDismissAfter: 5)
+                    try? await Task.sleep(for: .seconds(5))
                     overlay.hide()
                 }
             }

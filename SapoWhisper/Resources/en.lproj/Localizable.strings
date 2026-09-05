@@ -124,7 +124,7 @@
 "config.tab_settings" = "Settings";
 "config.engine" = "Transcription Engine";
 "config.fallback_engine" = "Backup Engine";
-"config.fallback_engine_description" = "If the main engine is unreachable (server off, timeout), this engine takes the dictation: from the start when the primary is already known to be down, or by rescuing the audio when transcription fails. Only engines other than your main one are offered — two modes of the same provider go down together.";
+"config.fallback_engine_description" = "If your main engine fails because of a connection, model, credential, or service problem, SapoWhisper uses your configured backup and shows which engine took over. Your recorded audio is preserved. Choose a different provider or a local model that is ready to use.";
 "config.fallback_engine_none" = "None";
 "config.fallback_engine_not_configured" = "%@ is not configured yet, so the backup will be skipped.";
 "config.fallback_engine_live_note" = "Live when the backup starts the dictation; rescuing an already-recorded take uses the same provider's file model.";
@@ -707,3 +707,6 @@
 "overlay.polish_cancelled" = "Polish cancelled — previous text preserved";
 
 "failure.model_output_limit" = "%@ could not finish transcribing. Try another model or service.";
+
+"overlay.backup_active" = "Using backup: %@";
+"overlay.backup_primary_failed" = "%@ could not transcribe";

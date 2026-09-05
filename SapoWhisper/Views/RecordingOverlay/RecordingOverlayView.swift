@@ -118,19 +118,10 @@ struct RecordingOverlayView: View {
         )
     }
 
-    /// Sequential content hand-off on active-to-active swaps (old leaves
-    /// fast, new enters right after). Blur-replace adds the material feel;
-    /// Reduce Motion keeps the plain crossfade.
     private var contentSwapTransition: AnyTransition {
-        if reduceMotion {
-            return .asymmetric(
-                insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
-                removal: .opacity.animation(.easeOut(duration: 0.1))
-            )
-        }
-        return .asymmetric(
-            insertion: AnyTransition(.blurReplace).animation(.easeIn(duration: 0.16).delay(0.1)),
-            removal: AnyTransition(.blurReplace).animation(.easeOut(duration: 0.1))
+        .asymmetric(
+            insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
+            removal: .opacity.animation(.easeOut(duration: 0.1))
         )
     }
 
@@ -139,12 +130,29 @@ struct RecordingOverlayView: View {
         // active-to-active swap so the pill morphs once while the texts hand
         // off sequentially.
         ZStack {
-            contentForState
-                .id(stateCategory)
-                .transition(contentSwapTransition)
+            VStack(spacing: 8) {
+                contentForState
+                if manager.state.showsBackupNotice, let notice = manager.backupNotice {
+                    VStack(spacing: 3) {
+                        Label(notice.title, systemImage: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.sapoGreen)
+                        Text(notice.detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: 320)
+                    .transition(.opacity)
+                }
+            }
+            .id(stateCategory)
+            .transition(contentSwapTransition)
         }
         .padding(.horizontal, OverlayPillChrome.horizontalPadding)
         .padding(.vertical, OverlayPillChrome.verticalPadding)
+        .clipShape(OverlayPillChrome.pillShape)
         .overlayPillChrome()
         // Micro-bounce on state swaps — subtle scale pop for tactile
         // feedback. Phase-driven so a swap mid-bounce can never leave the

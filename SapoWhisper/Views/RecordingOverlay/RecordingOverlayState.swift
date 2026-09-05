@@ -3,6 +3,14 @@
 //  SapoWhisper
 import Foundation
 
+struct BackupTranscriptionNotice: Equatable {
+    let primary: TranscriptionEngineVariant
+    let backup: TranscriptionEngineVariant
+
+    var title: String { "overlay.backup_active".localized(backup.displayName) }
+    var detail: String { "overlay.backup_primary_failed".localized(primary.displayName) }
+}
+
 /// What the post-dictation "Copied" toast should confirm beyond the copy
 /// itself: a compact polish shows how much was trimmed, and a polish that
 /// shipped the raw transcript (guard rejection / provider failure) says so
@@ -61,6 +69,15 @@ enum RecordingOverlayState: Equatable {
             return false
         default:
             return true
+        }
+    }
+
+    var showsBackupNotice: Bool {
+        switch self {
+        case .recording, .paused, .transcribing, .polishing, .copied:
+            return true
+        default:
+            return false
         }
     }
 

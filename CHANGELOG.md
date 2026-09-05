@@ -8,6 +8,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The configured backup now rescues rejected models/requests and provider configuration, authentication, quota and rate-limit failures. Usable backups bypass primary request backoffs and same-provider live recovery after confirmed failures; cancelled or invalid captures do not trigger rescue. The overlay names the failed primary and active backup through completion, and combined failures retain Retry when either service can recover.
+
 - Local Whisper retries decoder output limits without glossary bias and, if needed, with bounded smaller windows instead of accepting incomplete text. Unresolved limits preserve the recording and allow the configured backup.
 - Old notification timers cannot dismiss a newer overlay. Longer errors allow more reading time and stay visible while hovered.
 - Processing exposes a cancel action when its audio or previous text can be preserved. Cancelling an overlay re-polish prevents late clipboard and History updates.

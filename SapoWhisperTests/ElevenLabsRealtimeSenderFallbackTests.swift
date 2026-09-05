@@ -28,6 +28,21 @@ final class ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
         )
     }
 
+    func testUnconfirmedPartialUsesBackupButCompletedSpeechKeepsRealtime() {
+        XCTAssertTrue(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: true, hasPendingPartial: true, receivedFinalCommit: false))
+        XCTAssertFalse(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: true, hasPendingPartial: true, receivedFinalCommit: true))
+        XCTAssertFalse(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: true, hasPendingPartial: false, receivedFinalCommit: false))
+        XCTAssertFalse(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: false, hasPendingPartial: true, receivedFinalCommit: false))
+    }
+
     func testDrainTimeoutFallsBackToBatchDespiteZeroFailedMessages() {
         let timedOut = stats(failedMessages: 0, drainTimedOut: true)
 

@@ -18,6 +18,7 @@ class OverlayWindowManager: ObservableObject {
 
     @Published private(set) var state: RecordingOverlayState = .hidden
     @Published private(set) var cancellationMessage: String?
+    @Published private(set) var backupNotice: BackupTranscriptionNotice?
 
     /// Live "no voice?" hint while recording (NS2): set by the ViewModel when
     /// the session peak stays under the silence threshold for a few seconds.
@@ -129,6 +130,22 @@ class OverlayWindowManager: ObservableObject {
 
     // MARK: - Public Methods
 
+    func setBackupNotice(_ notice: BackupTranscriptionNotice?) {
+        guard backupNotice != notice else { return }
+        withAnimation(motionAnimation(Constants.Animation.morph)) {
+            backupNotice = notice
+        }
+        guard let notice else { return }
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: "\(notice.detail). \(notice.title)",
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+            ]
+        )
+    }
+
     /// Creates the overlay window and rests it as the always-visible dock
     /// chip: recording morphs out of the chip and every dismissal collapses
     /// back into it.
@@ -216,6 +233,7 @@ class OverlayWindowManager: ObservableObject {
         guard !Constants.Animation.reduceMotion else {
             hideAnticipation = false
             state = .docked
+            backupNotice = nil
             SapoLog.overlay.info("Overlay collapsed to dock")
             return
         }
@@ -238,6 +256,7 @@ class OverlayWindowManager: ObservableObject {
             withAnimation(Constants.Animation.droplet) {
                 self.hideAnticipation = false
                 self.state = .docked
+                self.backupNotice = nil
             }
             SapoLog.overlay.info("Overlay collapsed to dock")
         }
@@ -408,6 +427,9 @@ class OverlayWindowManager: ObservableObject {
 
     /// Actualiza el estado del overlay
     func updateState(_ newState: RecordingOverlayState) {
+        if newState != .hidden, !newState.showsBackupNotice {
+            backupNotice = nil
+        }
         transientDismissTask?.cancel()
         transientDismissTask = nil
         // Leaving the completed state through any path invalidates its
@@ -557,7 +579,7 @@ class OverlayWindowManager: ObservableObject {
 
         // The raw-fallback notice carries real information ("nothing was
         // polished") — hold it longer than the plain confirmation.
-        let dismissAfter = outcome == .aiSkipped ? max(delay, 3.5) : delay
+        let dismissAfter = backupNotice != nil ? max(delay, 5) : (outcome == .aiSkipped ? max(delay, 3.5) : delay)
         scheduleTransientDismiss(after: dismissAfter)
     }
 

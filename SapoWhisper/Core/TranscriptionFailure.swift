@@ -45,17 +45,20 @@ struct TranscriptionFailure: LocalizedError, Equatable {
     /// Pre-localized message that wins over `kind`'s default text. Used to preserve the
     /// specific wording of engine-domain errors (model not loaded, permission denied, ...).
     let messageOverride: String?
+    let retryableOverride: Bool?
 
     init(
         kind: Kind,
         engine: String? = nil,
         technicalDetail: String? = nil,
-        messageOverride: String? = nil
+        messageOverride: String? = nil,
+        retryableOverride: Bool? = nil
     ) {
         self.kind = kind
         self.engine = engine
         self.technicalDetail = technicalDetail
         self.messageOverride = messageOverride
+        self.retryableOverride = retryableOverride
     }
 
     // MARK: - User-facing text
@@ -107,6 +110,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
 
     /// Whether offering the user a "Retry" affordance makes sense for this failure.
     var isRetryable: Bool {
+        if let retryableOverride { return retryableOverride }
         switch kind {
         case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .audioStorageFailed,
             .audioPreparationFailed, .modelOutputLimit, .unknown:
@@ -139,7 +143,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
                 primary.engine ?? "failure.generic_engine".localized,
                 backup.engine ?? "failure.generic_engine".localized,
                 backup.localizedDescription
-            )
+            ),
+            retryableOverride: primary.isRetryable || backup.isRetryable
         )
     }
 
