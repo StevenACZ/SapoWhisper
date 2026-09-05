@@ -573,7 +573,7 @@
 "failure.plan_restricted" = "%@: tu plan no permite esta función.";
 "failure.client_error" = "%@: la solicitud fue rechazada. Revisá el audio o la configuración.";
 "failure.server_error" = "%@: el servicio falló temporalmente. Reintentá.";
-"failure.network" = "Sin conexión a internet. Revisá tu red y reintentá.";
+"failure.network" = "No se pudo conectar con %@. Revisa la conexión o la disponibilidad del servicio e inténtalo de nuevo.";
 "failure.timed_out" = "La transcripción tardó demasiado. Reintentá.";
 "failure.audio_empty" = "No se grabó audio. Revisá tu micrófono.";
 "failure.audio_corrupt" = "La grabación se dañó y no se pudo procesar.";
@@ -699,3 +699,9 @@
 "failure.audio_storage_failed" = "La captura se detuvo porque no se pudo guardar el audio completo. Revisa el espacio disponible e inténtalo de nuevo.";
 
 "failure.audio_preparation_failed" = "No se pudo preparar la grabación para enviarla. Revisa el espacio disponible e inténtalo de nuevo.";
+
+"failure.backup_failed" = "No se pudo transcribir con %@ ni con el respaldo %@. %@";
+
+"overlay.cancel_processing" = "Cancelar procesamiento";
+
+"overlay.polish_cancelled" = "Pulido cancelado — texto anterior conservado";

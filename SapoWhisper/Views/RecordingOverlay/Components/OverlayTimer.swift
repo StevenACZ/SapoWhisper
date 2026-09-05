@@ -14,6 +14,7 @@ struct OverlayTimer: View {
             .font(.system(size: 14, weight: .medium, design: .monospaced))
             .foregroundStyle(.secondary)
             .contentTransition(.numericText())
+            .drawingGroup()
             .animation(Constants.Animation.tick, value: formattedDuration)
     }
 

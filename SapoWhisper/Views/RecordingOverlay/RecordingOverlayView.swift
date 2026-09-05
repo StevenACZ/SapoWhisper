@@ -206,10 +206,17 @@ struct RecordingOverlayView: View {
             )
 
         case .transcribing:
-            TranscribingPillView(cancelWarningActive: manager.isCancelWarningArmed)
+            TranscribingPillView(
+                cancelWarningActive: manager.isCancelWarningArmed,
+                onCancel: manager.canCancelProcessing?() == true ? manager.onCancelProcessing : nil
+            )
 
         case .polishing(let timeoutSeconds, let compact):
-            AIPolishingPillView(timeoutSeconds: timeoutSeconds, compact: compact)
+            AIPolishingPillView(
+                timeoutSeconds: timeoutSeconds, compact: compact,
+                cancelWarningActive: manager.isCancelWarningArmed,
+                onCancel: manager.canCancelProcessing?() == true ? manager.onCancelProcessing : nil
+            )
 
         case .copied(let outcome):
             CopiedPillView(outcome: outcome)
@@ -233,10 +240,11 @@ struct RecordingOverlayView: View {
             )
 
         case .cancelled:
-            CancelledPillView()
+            CancelledPillView(message: manager.cancellationMessage)
 
         case .error(let message, let isRetryable):
             ErrorPillView(message: message, onRetry: isRetryable ? manager.onRetry : nil)
+                .onHover { manager.setErrorHover($0) }
 
         case .deviceChange(let announcement):
             DeviceChangePillView(announcement: announcement)

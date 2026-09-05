@@ -27,7 +27,10 @@ struct EngineReachabilityLog {
         unreachableSince.removeValue(forKey: engine)
     }
 
-    func isUnreachable(_ engine: TranscriptionEngine, at now: Date = Date()) -> Bool {
+    func isUnreachable(
+        _ engine: TranscriptionEngine, at now: Date = Date(), ignoringRecentFailures: Bool = false
+    ) -> Bool {
+        guard !ignoringRecentFailures else { return false }
         guard let since = unreachableSince[engine] else { return false }
         return now.timeIntervalSince(since) < Self.unreachableTTL
     }

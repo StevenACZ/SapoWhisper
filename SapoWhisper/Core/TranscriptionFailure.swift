@@ -80,7 +80,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case .serverError:
             return "failure.server_error".localized(engineName)
         case .network:
-            return "failure.network".localized
+            return "failure.network".localized(engineName)
         case .timedOut:
             return "failure.timed_out".localized
         case .audioEmpty:
@@ -125,6 +125,19 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "\(diagnosticCode) detail=\(technicalDetail)"
         }
         return diagnosticCode
+    }
+
+    static func backupFailed(primary: TranscriptionFailure, backup: TranscriptionFailure) -> TranscriptionFailure {
+        TranscriptionFailure(
+            kind: primary.kind,
+            engine: primary.engine,
+            technicalDetail: "primary=\(primary.diagnosticCode) backup=\(backup.diagnosticCode)",
+            messageOverride: "failure.backup_failed".localized(
+                primary.engine ?? "failure.generic_engine".localized,
+                backup.engine ?? "failure.generic_engine".localized,
+                backup.localizedDescription
+            )
+        )
     }
 
     nonisolated static func diagnosticDetail(for error: Error) -> String {

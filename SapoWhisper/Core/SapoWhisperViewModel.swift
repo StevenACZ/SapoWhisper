@@ -172,7 +172,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// translation chip).
     private var lastDictationRawText: String?
     private var lastDictationDuration: TimeInterval?
-    private var isRepolishInFlight = false
+    private var repolishTask: Task<Void, Never>?
 
     // Reentrancy guard for retryTranscription: a second Retry (double click /
     // repeated hotkey) before the in-flight retry resolves would transcribe and
@@ -223,16 +223,18 @@ class SapoWhisperViewModel: ObservableObject {
     /// pause/resume so an armed press never crosses a phase boundary.
     private var escapeCancelGate = EscapeCancelGate()
 
-    /// A confirmed Esc must be able to act. Arming outside these windows
-    /// would flash "Esc again to cancel" for a cancel that is a guaranteed
-    /// no-op: streaming transcriptions have no cancellable batch task, and
-    /// the post-stop gap has no pre-persisted row yet.
+    private var canCancelActiveTranscription: Bool {
+        guard let active = transcriptionOperations.active else { return false }
+        return active.historyId != nil && active.audioURL != nil
+            && activeTranscriptionSessionID == active.sessionID
+    }
+
+    private var canCancelProcessing: Bool {
+        canCancelActiveTranscription || (repolishTask.map { !$0.isCancelled } ?? false)
+    }
+
     private var escCancelCanAct: Bool {
-        if appState == .processing || appState == .polishing {
-            guard let active = transcriptionOperations.active else { return false }
-            return active.historyId != nil && activeTranscriptionSessionID == active.sessionID
-        }
-        return isStartPending || (!isStopPending && isAnyRecorderActive)
+        canCancelProcessing || isStartPending || (!isStopPending && isAnyRecorderActive)
     }
 
     func handleCancelKeyPress() {
@@ -242,8 +244,8 @@ class SapoWhisperViewModel: ObservableObject {
             SapoLog.hotkey.info("Esc cancel armed, waiting for confirm")
             overlayManager.warnCancelArmed()
         case .confirmed:
-            if appState == .processing || appState == .polishing {
-                cancelActiveTranscription()
+            if canCancelProcessing {
+                cancelProcessing()
             } else {
                 cancelActiveDictation()
             }
@@ -395,6 +397,8 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Configura callbacks del overlay (pause/resume/retry/chips)
     private func setupOverlayCallbacks() {
+        overlayManager.canCancelProcessing = { [weak self] in self?.canCancelProcessing == true }
+        overlayManager.onCancelProcessing = { [weak self] in self?.cancelProcessing() }
         overlayManager.onPauseToggle = { [weak self] in
             Task { @MainActor in
                 self?.togglePause()
@@ -934,6 +938,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     private func canStartRecordingFromHotkey() -> Bool {
+        guard repolishTask == nil else { return false }
         if transcriptionOperations.active != nil {
             SapoLog.hotkey.info("Hotkey ignored while transcription is draining")
             return false
@@ -1476,7 +1481,8 @@ class SapoWhisperViewModel: ObservableObject {
             let backupFailure = TranscriptionFailure.from(backupError, engine: backup.displayName)
             SapoLog.recording.error(
                 "Backup engine also failed \(backupFailure.logSummary, privacy: .public)")
-            throw error
+            guard !Task.isCancelled else { throw backupError }
+            throw TranscriptionFailure.backupFailed(primary: failure, backup: backupFailure)
         }
     }
 
@@ -1727,12 +1733,20 @@ class SapoWhisperViewModel: ObservableObject {
         _ = interruptActiveTranscription(kind: .userCancelled, showCancellation: true)
     }
 
+    private func cancelProcessing() {
+        if interruptActiveTranscription(kind: .userCancelled, showCancellation: true) { return }
+        guard let repolishTask, !repolishTask.isCancelled else { return }
+        repolishTask.cancel()
+        transition(to: .idle, reason: "repolish-cancelled")
+        overlayManager.showCancelled(message: "overlay.polish_cancelled".localized)
+    }
+
     @discardableResult
     private func interruptActiveTranscription(
         kind: TranscriptionFailure.Kind,
         showCancellation: Bool
     ) -> Bool {
-        guard let active = transcriptionOperations.active,
+        guard canCancelActiveTranscription, let active = transcriptionOperations.active,
             let historyId = active.historyId,
             let audioURL = active.audioURL,
             activeTranscriptionSessionID == active.sessionID
@@ -1760,9 +1774,8 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Runs the primary engine and, on a connectivity-class failure, retries
-    /// once on the configured backup. When both fail, the PRIMARY failure is
-    /// presented — it is the root cause the user should fix; the backup's
-    /// failure only goes to the log.
+    /// once on the configured backup. Combined failures preserve the primary
+    /// category and explain the backup failure to the user.
     ///
     /// A primary already proved down — by the probe that ran while the user
     /// was still dictating, or by a failure minutes ago — is skipped outright:
@@ -1772,7 +1785,8 @@ class SapoWhisperViewModel: ObservableObject {
     private func transcribeWithFallback(
         at audioURL: URL,
         primary: TranscriptionEngineVariant,
-        language: String
+        language: String,
+        ignoreRecentFailures: Bool = false
     ) async throws -> (transcript: String, engineNameOverride: String?) {
         // Compared on the file variant, because that is what actually runs
         // here: rescuing an upload with the endpoint that just failed is no
@@ -1780,14 +1794,22 @@ class SapoWhisperViewModel: ObservableObject {
         // nothing left to fall back to.
         let backup = fallbackVariant.flatMap {
             $0.fileTranscriptionVariant != primary.fileTranscriptionVariant
-                && isBackupEngineUsable($0) ? $0 : nil
+                && isBackupEngineUsable($0, ignoreRecentFailures: ignoreRecentFailures) ? $0 : nil
         }
 
-        if let backup, reachabilityLog.isUnreachable(primary.engine) {
+        if let backup, reachabilityLog.isUnreachable(primary.engine, ignoringRecentFailures: ignoreRecentFailures) {
             SapoLog.recording.info(
                 "Skipping primary known unreachable engine=\(primary.engine.rawValue, privacy: .public) backup=\(backup.rawValue, privacy: .public)"
             )
-            return try await transcribeOnBackup(at: audioURL, backup: backup, language: language)
+            do {
+                return try await transcribeOnBackup(at: audioURL, backup: backup, language: language)
+            } catch {
+                guard !Task.isCancelled else { throw error }
+                throw TranscriptionFailure.backupFailed(
+                    primary: TranscriptionFailure(kind: .network, engine: primary.displayName),
+                    backup: TranscriptionFailure.from(error, engine: backup.displayName)
+                )
+            }
         }
 
         do {
@@ -1809,7 +1831,8 @@ class SapoWhisperViewModel: ObservableObject {
                 let backupFailure = TranscriptionFailure.from(backupError, engine: backup.displayName)
                 SapoLog.recording.error(
                     "Backup engine also failed \(backupFailure.logSummary, privacy: .public)")
-                throw error
+                guard !Task.isCancelled else { throw backupError }
+                throw TranscriptionFailure.backupFailed(primary: failure, backup: backupFailure)
             }
         }
     }
@@ -1839,8 +1862,8 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Whether the backup can plausibly transcribe right now. Internal so
     /// Settings can hint at a misconfigured backup.
-    func isBackupEngineUsable(_ backup: TranscriptionEngineVariant) -> Bool {
-        isEngineConfigured(backup) && !isKnownUnreachable(backup)
+    func isBackupEngineUsable(_ backup: TranscriptionEngineVariant, ignoreRecentFailures: Bool = false) -> Bool {
+        isEngineConfigured(backup) && !isKnownUnreachable(backup, ignoreRecentFailures: ignoreRecentFailures)
     }
 
     /// Configured to run at all: credentials present, or — for MLX — a model
@@ -1854,9 +1877,9 @@ class SapoWhisperViewModel: ObservableObject {
     /// Being offline counts as unreachable rather than unusable: the engine is
     /// configured fine, the network it needs is simply gone — so a local
     /// backup takes over instead of the dictation failing.
-    private func isKnownUnreachable(_ variant: TranscriptionEngineVariant) -> Bool {
+    private func isKnownUnreachable(_ variant: TranscriptionEngineVariant, ignoreRecentFailures: Bool = false) -> Bool {
         if variant.requiresInternet && NetworkReachability.shared.isOffline { return true }
-        return reachabilityLog.isUnreachable(variant.engine)
+        return reachabilityLog.isUnreachable(variant.engine, ignoringRecentFailures: ignoreRecentFailures)
     }
 
     /// What the failover policy knows about one variant right now.
@@ -1948,7 +1971,7 @@ class SapoWhisperViewModel: ObservableObject {
             startRecording()
             return
         }
-        guard !isRetryInFlight, transcriptionOperations.active == nil else { return }
+        guard !isRetryInFlight, transcriptionOperations.active == nil, repolishTask == nil else { return }
         guard activeTranscriptionSessionID == nil else { return }
         isRetryInFlight = true
 
@@ -1986,7 +2009,7 @@ class SapoWhisperViewModel: ObservableObject {
                 request, variant: variant, audioURL: audioURL, duration: duration ?? 0, historyId: historyId
             ) {
                 let result = try await self.transcribeWithFallback(
-                    at: audioURL, primary: variant, language: language)
+                    at: audioURL, primary: variant, language: language, ignoreRecentFailures: true)
                 return TranscriptionPipeline.EngineOutput(
                     transcript: result.transcript,
                     audioURL: audioURL,
@@ -2475,35 +2498,21 @@ class SapoWhisperViewModel: ObservableObject {
     /// the first delivery already pasted, the user decides where this goes.
     func repolishLastTranscription() {
         guard case .idle = appState else { return }
-        guard !isRepolishInFlight else { return }
+        guard repolishTask == nil else { return }
         guard let rawText = lastDictationRawText, !rawText.isEmpty else { return }
 
-        isRepolishInFlight = true
         let duration = lastDictationDuration
         let historyId = persister.lastCompletedHistoryId
         let generation = persister.dictationGeneration
-        transition(to: .polishing, reason: "repolish-start")
-        let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
-        overlayManager.updateState(
-            .polishing(
-                timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
-                    forText: rawText,
-                    duration: duration,
-                    usesLocalBudget: usesLocalPolishBudget,
-                    mode: PolishMode.current()
-                ),
-                compact: PolishMode.current() == .compact
-            )
-        )
-
-        Task { @MainActor in
-            defer { isRepolishInFlight = false }
+        repolishTask = Task { @MainActor in
+            defer { repolishTask = nil }
             let result = await transcriptPostProcessor.process(
                 rawText: rawText,
                 duration: duration,
                 provider: nil,
                 enforceMinimumDuration: false
             )
+            guard !Task.isCancelled else { return }
             logAIResult(result, source: "overlay-repolish")
 
             lastTranscription = result.finalText
@@ -2527,6 +2536,19 @@ class SapoWhisperViewModel: ObservableObject {
                 )
             }
         }
+        transition(to: .polishing, reason: "repolish-start")
+        let usesLocalPolishBudget = PolishProviderConfiguration.configuredEndpointUsesLocalTimeoutBudget()
+        overlayManager.updateState(
+            .polishing(
+                timeoutSeconds: TranscriptPostProcessor.totalPolishBudget(
+                    forText: rawText,
+                    duration: duration,
+                    usesLocalBudget: usesLocalPolishBudget,
+                    mode: PolishMode.current()
+                ),
+                compact: PolishMode.current() == .compact
+            )
+        )
     }
 
     private func logAIResult(_ result: TranscriptAIResult, source: String) {

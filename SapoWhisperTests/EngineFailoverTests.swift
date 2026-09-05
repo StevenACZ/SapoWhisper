@@ -126,6 +126,17 @@ final class EngineFailoverTests: XCTestCase {
 
     // MARK: - Reachability memory
 
+    func testExplicitRetryBypassesRecentFailuresWithoutErasingNormalTakeProtection() {
+        var log = EngineReachabilityLog()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        for engine in [TranscriptionEngine.localAIServer, .deepgram] {
+            log.markUnreachable(engine, at: now)
+            XCTAssertTrue(log.isUnreachable(engine, at: now))
+            XCTAssertFalse(log.isUnreachable(engine, at: now, ignoringRecentFailures: true))
+            XCTAssertTrue(log.isUnreachable(engine, at: now))
+        }
+    }
+
     func testUnreachableEngineIsRememberedUntilTheTTLExpires() {
         let start = Date(timeIntervalSince1970: 1_000_000)
         var log = EngineReachabilityLog()

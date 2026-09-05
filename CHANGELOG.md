@@ -8,6 +8,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Old notification timers cannot dismiss a newer overlay. Longer errors allow more reading time and stay visible while hovered.
+- Processing exposes a cancel action when its audio or previous text can be preserved. Cancelling an overlay re-polish prevents late clipboard and History updates.
+- Connection failures identify the service and explain a failed backup without incorrectly declaring the internet offline. Explicit retries recheck providers instead of waiting for recent-failure cache entries to expire.
+- The recording meter preserves visible differences between normal and loud speech, responds faster when speech stops, and respects Reduce Motion without changing captured audio.
 - Recording overlay and dock chip use one opaque, appearance-aware surface with readable text over bright and dark windows. State changes no longer show an offset glass layer or background color bleed-through; no screen polling is needed.
 - Active and paused recordings cannot be adopted by another recovery pass. Sealed and merged takes stay recoverable until History owns them, and cancelled or recovered takes can be continued after another launch.
 - A failed audio write interrupts capture and preserves available audio with a storage error instead of silently delivering an incomplete recording. Recovery preserves original timestamps and retries failed database handoffs.
@@ -23,6 +27,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Recording bars animate in their own Core Animation layers, and the numeric timer has an isolated drawing surface.
+- Menu bar content is created when opened and released after closing, stopping hidden recording timers and animations. Its whole-second caption updates only when the displayed second changes.
 - Long Local AI Server uploads prepare a private multipart file in bounded chunks and stream it, reducing memory used to prepare large recordings. Temporary upload files are removed after success, failure or cancellation.
 - Swift 6 language mode for the app and tests, with explicit concurrency boundaries and a shared audio converter input adapter.
 - A public architecture map and smaller onboarding components with unchanged presentation.

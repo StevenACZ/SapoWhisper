@@ -10,6 +10,23 @@ import XCTest
 @MainActor
 final class TranscriptionFailureTests: XCTestCase {
 
+    func testCombinedFailureNamesBothServicesAndPreservesThePrimaryRetryPolicy() {
+        let primary = TranscriptionFailure(kind: .network, engine: "Primary")
+        let backup = TranscriptionFailure(kind: .auth, engine: "Backup")
+        let failure = TranscriptionFailure.backupFailed(primary: primary, backup: backup)
+        XCTAssertEqual(failure.kind, .network)
+        XCTAssertEqual(failure.engine, "Primary")
+        XCTAssertTrue(failure.isRetryable)
+        XCTAssertTrue(failure.localizedDescription.contains("Primary"))
+        XCTAssertTrue(failure.localizedDescription.contains("Backup"))
+        XCTAssertTrue(failure.localizedDescription.contains(backup.localizedDescription))
+        XCTAssertEqual(failure.technicalDetail, "primary=Primary/network backup=Backup/auth")
+    }
+
+    func testNetworkFailureNamesTheUnavailableService() {
+        XCTAssertTrue(TranscriptionFailure(kind: .network, engine: "Fixture service").localizedDescription.contains("Fixture service"))
+    }
+
     func testHTTP401MapsToAuth() {
         let failure = TranscriptionFailure.fromHTTP(
             engine: "ElevenLabs", statusCode: 401, body: Data("{\"detail\":\"invalid api key\"}".utf8))

@@ -47,6 +47,7 @@ addresses, and machine-specific workflow details.
 - Every captured or merged WAV keeps its recovery marker until durable History ownership or deliberate deletion. Preserve merge sources until the combined pending row exists; recovery must skip live owners regardless of file age.
 - Credentials belong in Keychain; configuration checks use `KeychainStore.hasValue`, not credential reads.
 - Never show an action that cannot execute in the current state; derive visibility and execution from the same predicate.
+- Create popover content on opening and release it after closing. Isolate continuously animated bars and numeric text from shared drawing layers; verify hidden subscriptions and glyph work disappear from runtime profiles.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.
 - Ask before `git add`, `git commit`, `git push`, PR creation, merge, rebase, reset, or destructive git operations.
 

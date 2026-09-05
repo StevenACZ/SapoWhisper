@@ -171,6 +171,7 @@ struct PausedPillView: View {
 
 struct TranscribingPillView: View {
     var cancelWarningActive: Bool = false
+    var onCancel: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -185,6 +186,9 @@ struct TranscribingPillView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .transition(.opacity)
+            }
+            if let onCancel {
+                OverlayIconButton(systemName: "xmark", label: "overlay.cancel_processing".localized, action: onCancel)
             }
         }
     }
@@ -232,6 +236,8 @@ struct CompactModeChip: View {
 struct AIPolishingPillView: View {
     let timeoutSeconds: UInt64
     var compact: Bool = false
+    var cancelWarningActive: Bool = false
+    var onCancel: (() -> Void)?
 
     @State private var startedAt = Date()
 
@@ -241,9 +247,13 @@ struct AIPolishingPillView: View {
             PillDivider()
             TranscribingIndicator(color: compact ? .compactMode : .aiPolish)
 
-            Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.primary)
+            if cancelWarningActive {
+                CancelWarningHint()
+            } else {
+                Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+            }
 
             // L10: countdown to the polish timeout — the user sees the worst
             // case shrinking instead of an open-ended spinner.
@@ -256,6 +266,9 @@ struct AIPolishingPillView: View {
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText(countsDown: true))
                     .animation(Constants.Animation.tick, value: remaining)
+            }
+            if let onCancel {
+                OverlayIconButton(systemName: "xmark", label: "overlay.cancel_processing".localized, action: onCancel)
             }
         }
         .onAppear { startedAt = Date() }
@@ -543,13 +556,15 @@ struct DockedChipView: View {
 }
 
 struct CancelledPillView: View {
+    var message: String? = nil
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)
 
-            Text("overlay.cancelled_saved".localized)
+            Text(message ?? "overlay.cancelled_saved".localized)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
         }
