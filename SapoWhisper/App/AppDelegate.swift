@@ -179,6 +179,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// UI preview launches open the requested window directly, with no
     /// permission or onboarding windows competing for focus.
+    #if DEBUG
+        private func previewOverlayTransitions() {
+            Task { @MainActor in
+                let overlay = OverlayWindowManager.shared
+                overlay.updateState(.docked)
+                for _ in 0..<2 {
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.updateState(.recording(duration: 12))
+                    overlay.updateAudioLevel(0.5)
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.updateState(.paused(duration: 12))
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.updateState(.transcribing)
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.hide()
+                }
+            }
+        }
+    #endif
+
     private func presentPreviewScreen() {
         switch UIPreviewMode.screen {
         case "history":
@@ -187,6 +207,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             WelcomeWindowController.shared.show()
         case "settings":
             menuBarStatusController.openSettingsWindow()
+        #if DEBUG
+            case "overlay":
+                previewOverlayTransitions()
+        #endif
         default:
             break
         }

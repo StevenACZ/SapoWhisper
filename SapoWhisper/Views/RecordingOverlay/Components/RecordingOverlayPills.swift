@@ -499,8 +499,6 @@ struct CompletedPillView: View {
 struct DockedChipView: View {
     /// True while a droplet pill floats detached above the chip.
     var isExpanded: Bool = false
-    /// Overlay glass namespace; nil (previews) renders glass without an ID.
-    var glassNamespace: Namespace.ID? = nil
     var onTap: () -> Void
 
     @State private var isHovering = false
@@ -517,7 +515,7 @@ struct DockedChipView: View {
                 // background, now self-contained.
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .overlayChipChrome(glassNamespace: glassNamespace)
+                .overlayChipChrome()
                 // Squash-and-stretch splash as the droplet detaches from or falls
                 // back into the chip — sells the "drop separating" read on both
                 // directions. Phase-driven so rapid open/close toggles can never
