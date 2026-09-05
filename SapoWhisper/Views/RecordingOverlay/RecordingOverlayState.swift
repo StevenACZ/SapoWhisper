@@ -8,6 +8,7 @@ struct BackupTranscriptionNotice: Equatable {
     let backup: TranscriptionEngineVariant
 
     var title: String { "overlay.backup_active".localized(backup.displayName) }
+    var completedTitle: String { "overlay.backup_completed".localized(backup.displayName) }
     var detail: String { "overlay.backup_primary_failed".localized(primary.displayName) }
 }
 

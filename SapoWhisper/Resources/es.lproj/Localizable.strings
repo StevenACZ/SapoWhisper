@@ -710,3 +710,4 @@
 
 "overlay.backup_active" = "Usando respaldo: %@";
 "overlay.backup_primary_failed" = "%@ no pudo transcribir";
+"overlay.backup_completed" = "Transcrito con %@ (respaldo)";

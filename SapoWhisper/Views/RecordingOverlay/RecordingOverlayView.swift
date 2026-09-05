@@ -134,9 +134,12 @@ struct RecordingOverlayView: View {
                 contentForState
                 if manager.state.showsBackupNotice, let notice = manager.backupNotice {
                     VStack(spacing: 3) {
-                        Label(notice.title, systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.sapoGreen)
+                        Label(
+                            stateCategory == "copied" ? notice.completedTitle : notice.title,
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        .font(.system(size: stateCategory == "copied" ? 11 : 12, weight: .medium))
+                        .foregroundStyle(stateCategory == "copied" ? Color.secondary : Color.sapoGreenText)
                         Text(notice.detail)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -154,6 +157,11 @@ struct RecordingOverlayView: View {
         .padding(.vertical, OverlayPillChrome.verticalPadding)
         .clipShape(OverlayPillChrome.pillShape)
         .overlayPillChrome()
+        .overlay {
+            if case .copied(let outcome) = manager.state {
+                CopiedPillGlow(outcome: outcome)
+            }
+        }
         // Micro-bounce on state swaps — subtle scale pop for tactile
         // feedback. Phase-driven so a swap mid-bounce can never leave the
         // pill stuck scaled up (the old detached asyncAfter could).

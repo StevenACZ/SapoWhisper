@@ -282,16 +282,10 @@ struct CopiedPillView: View {
     var outcome: CopiedOutcome = .standard
 
     @State private var iconScale: CGFloat = 0
-    @State private var glowFlash = 0
 
     /// Text/glyph tint: the contrast-safe green variant, not the fill green.
     private var accent: Color {
         outcome == .aiSkipped ? .sapoError : .sapoGreenText
-    }
-
-    /// The decorative outline flash keeps the brand fill green.
-    private var glowColor: Color {
-        outcome == .aiSkipped ? .sapoError : .sapoGreen
     }
 
     private var icon: String {
@@ -310,7 +304,7 @@ struct CopiedPillView: View {
                 .scaleEffect(iconScale)
 
             Text(label)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(accent)
 
             if case .compacted(let percentReduced) = outcome, percentReduced > 0 {
@@ -323,24 +317,38 @@ struct CopiedPillView: View {
                     .background(Capsule().fill(Color.compactMode.opacity(0.16)))
             }
         }
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
-            [glowColor, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
-            content.overlay(glowStroke(color: glowColor, intensity: glow, chipOnTop: chipOnTop))
-        } keyframes: { _ in
-            PillGlowFlashKeyframes()
-        }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
                 iconScale = 1.0
             }
         }
-        .task {
-            if let delay = glowFlashDelay() {
-                try? await Task.sleep(for: delay)
-                guard !Task.isCancelled else { return }
+
+    }
+}
+
+struct CopiedPillGlow: View {
+    let outcome: CopiedOutcome
+    @State private var glowFlash = 0
+
+    private var color: Color { outcome == .aiSkipped ? .sapoError : .sapoGreen }
+
+    var body: some View {
+        Color.clear
+            .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
+                [color, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
+                content.overlay(glowStroke(color: color, intensity: glow, chipOnTop: chipOnTop, expandsToChrome: false))
+            } keyframes: { _ in
+                PillGlowFlashKeyframes()
             }
-            glowFlash += 1
-        }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task {
+                if let delay = glowFlashDelay() {
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return }
+                }
+                glowFlash += 1
+            }
     }
 }
 
@@ -753,7 +761,9 @@ private func glowFlashDelay() -> Duration? {
 /// neck read as a cut-off border.
 /// Negative padding pushes the stroke back out over the pill chrome that the
 /// hosting view applies around this content.
-nonisolated private func glowStroke(color: Color, intensity: Double, chipOnTop: Bool) -> some View {
+nonisolated private func glowStroke(
+    color: Color, intensity: Double, chipOnTop: Bool, expandsToChrome: Bool = true
+) -> some View {
     let tint = color.opacity(0.4 * intensity)
     return OverlayPillChrome.pillShape
         .strokeBorder(
@@ -768,8 +778,8 @@ nonisolated private func glowStroke(color: Color, intensity: Double, chipOnTop: 
             ),
             lineWidth: 1.5
         )
-        .padding(.horizontal, -OverlayPillChrome.horizontalPadding)
-        .padding(.vertical, -OverlayPillChrome.verticalPadding)
+        .padding(.horizontal, expandsToChrome ? -OverlayPillChrome.horizontalPadding : 0)
+        .padding(.vertical, expandsToChrome ? -OverlayPillChrome.verticalPadding : 0)
 }
 
 /// One-shot pill outline flash timeline: short delay, ~0.3 s flash in, hold,
