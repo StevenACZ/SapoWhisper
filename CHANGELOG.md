@@ -28,6 +28,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- README now includes the app icon and concise installation, recovery, and personal-vocabulary guidance; contributor notes cover isolated tests and release preparation.
 - Recording bars animate in their own Core Animation layers, and the numeric timer has an isolated drawing surface.
 - Menu bar content is created when opened and released after closing, stopping hidden recording timers and animations. Its whole-second caption updates only when the displayed second changes.
 - Long Local AI Server uploads prepare a private multipart file in bounded chunks and stream it, reducing memory used to prepare large recordings. Temporary upload files are removed after success, failure or cancellation.

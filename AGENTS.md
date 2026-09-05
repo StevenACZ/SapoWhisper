@@ -64,6 +64,8 @@ make release-check
 - `make format` and `make lint` inspect changed Swift files by default.
 - `make test` runs the `SapoWhisperTests` unit bundle.
 - `make ci-check` runs lint, secret/audio scans, script tests, a Debug build, and unit tests.
+- Finish active dictations before app-hosted tests; keep physical microphone tests explicitly opt-in. Never use the normal personal profile as a test fixture.
+- Keep README concise and user-facing, CHANGELOG entries under `Unreleased` until the release cut, and ownership contracts in ARCHITECTURE. Reuse the tracked app icon for README artwork.
 - Run `git diff --check` before staging or reporting a patch done.
 - For public changes, scan the diff for credentials, private paths, local addresses, raw transcripts, and private workflow details before commit/push.
 
