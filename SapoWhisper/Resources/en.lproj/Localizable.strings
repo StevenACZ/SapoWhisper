@@ -705,3 +705,5 @@
 "overlay.cancel_processing" = "Cancel processing";
 
 "overlay.polish_cancelled" = "Polish cancelled — previous text preserved";
+
+"failure.model_output_limit" = "%@ could not finish transcribing. Try another model or service.";

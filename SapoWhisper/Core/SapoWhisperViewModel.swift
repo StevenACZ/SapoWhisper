@@ -1455,7 +1455,9 @@ class SapoWhisperViewModel: ObservableObject {
     ) async throws -> TranscriptionPipeline.EngineOutput {
         let failure = TranscriptionFailure.from(error, engine: variant.displayName)
         guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
-        settleReachability(variant.engine, reachable: false)
+        if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
+            settleReachability(variant.engine, reachable: false)
+        }
 
         // A live dictation that already started ON the backup has nothing left
         // to fall back to; otherwise the backup's file endpoint is a genuinely
@@ -1819,7 +1821,9 @@ class SapoWhisperViewModel: ObservableObject {
         } catch {
             let failure = TranscriptionFailure.from(error, engine: primary.displayName)
             guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
-            settleReachability(primary.engine, reachable: false)
+            if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
+                settleReachability(primary.engine, reachable: false)
+            }
             guard let backup else { throw error }
 
             SapoLog.recording.warning(
@@ -1853,7 +1857,7 @@ class SapoWhisperViewModel: ObservableObject {
             return (transcript, historyEngineName(for: backup.fileTranscriptionVariant))
         } catch {
             let failure = TranscriptionFailure.from(error, engine: backup.displayName)
-            if EngineFailoverPolicy.isRescuable(failure) {
+            if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
                 reachabilityLog.markUnreachable(backup.engine)
             }
             throw error

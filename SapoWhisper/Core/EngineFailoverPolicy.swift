@@ -43,12 +43,13 @@ struct EngineReachabilityLog {
 /// testable without a live engine, a server, or a clock.
 enum EngineFailoverPolicy {
 
-    /// Engine failures a backup may rescue: the primary is unreachable or
-    /// erroring server-side — not misconfigured, and not a problem with the
-    /// audio itself.
     static let rescuableKinds: Set<TranscriptionFailure.Kind> = [
-        .network, .timedOut, .serverError,
+        .network, .timedOut, .serverError, .modelOutputLimit,
     ]
+
+    static func shouldRememberAsUnreachable(_ failure: TranscriptionFailure) -> Bool {
+        [.network, .timedOut, .serverError].contains(failure.kind)
+    }
 
     static func isRescuable(_ failure: TranscriptionFailure) -> Bool {
         rescuableKinds.contains(failure.kind)

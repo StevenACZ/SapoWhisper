@@ -124,6 +124,17 @@ final class EngineFailoverTests: XCTestCase {
         )
     }
 
+    func testModelOutputLimitCanUseTheConfiguredBackup() {
+        let failure = TranscriptionFailure(kind: .modelOutputLimit, engine: "Local model")
+        XCTAssertTrue(failure.isRetryable)
+        XCTAssertTrue(EngineFailoverPolicy.isRescuable(failure))
+        XCTAssertTrue(failure.localizedDescription.contains("Local model"))
+        XCTAssertFalse(EngineFailoverPolicy.shouldRememberAsUnreachable(failure))
+        for kind in [TranscriptionFailure.Kind.network, .timedOut, .serverError] {
+            XCTAssertTrue(EngineFailoverPolicy.shouldRememberAsUnreachable(.init(kind: kind)))
+        }
+    }
+
     // MARK: - Reachability memory
 
     func testExplicitRetryBypassesRecentFailuresWithoutErasingNormalTakeProtection() {

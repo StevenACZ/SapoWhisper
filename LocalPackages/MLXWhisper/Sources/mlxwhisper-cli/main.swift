@@ -179,7 +179,7 @@ do {
         guard let result = finalOutput else { fail("Stream ended without a result") }
         output = result
     } else {
-        output = model.generate(audio: audio, generationParameters: parameters)
+        output = try model.generateCancellable(audio: audio, generationParameters: parameters)
     }
     let elapsed = Date().timeIntervalSince(start)
 
@@ -191,6 +191,7 @@ do {
         String(
             format: "transcribe=%.2fs  rtf=%.3f  tokens=%d  peakMem=%.2fGB",
             elapsed, rtf, output.generationTokens, output.peakMemoryUsage))
+    print("decoder retries: \(output.decodingRetries)")
     if let detected = output.language {
         print("language: \(detected)")
     }

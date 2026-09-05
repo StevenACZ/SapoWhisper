@@ -462,6 +462,9 @@ class MLXWhisperTranscriber {
                 language: languageCode,
                 initialPrompt: initialPrompt
             )
+            if output.decodingRetries > 0 {
+                SapoLog.recording.notice("MLX decoding recovered output limits retries=\(output.decodingRetries, privacy: .public)")
+            }
             let transcription = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
             SapoLog.recording.info(
                 "MLX transcription complete chars=\(transcription.count, privacy: .public) seconds=\(String(format: "%.2f", output.totalTime), privacy: .public) promptTokens=\(output.promptTokens, privacy: .public)"
@@ -472,6 +475,13 @@ class MLXWhisperTranscriber {
             // CancellationError itself.
             SapoLog.recording.info("MLX transcription cancelled")
             throw CancellationError()
+        } catch WhisperDecodingError.outputLimit {
+            let failure = TranscriptionFailure(
+                kind: .modelOutputLimit, engine: TranscriptionEngine.mlxWhisper.displayName,
+                technicalDetail: "WhisperDecodingError.outputLimit"
+            )
+            errorMessage = failure.localizedDescription
+            throw failure
         } catch let error as MLXWhisperError {
             errorMessage = error.localizedDescription
             throw error

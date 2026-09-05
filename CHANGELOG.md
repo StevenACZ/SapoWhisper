@@ -8,6 +8,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Local Whisper retries decoder output limits without glossary bias and, if needed, with bounded smaller windows instead of accepting incomplete text. Unresolved limits preserve the recording and allow the configured backup.
 - Old notification timers cannot dismiss a newer overlay. Longer errors allow more reading time and stay visible while hovered.
 - Processing exposes a cancel action when its audio or previous text can be preserved. Cancelling an overlay re-polish prevents late clipboard and History updates.
 - Connection failures identify the service and explain a failed backup without incorrectly declaring the internet offline. Explicit retries recheck providers instead of waiting for recent-failure cache entries to expire.

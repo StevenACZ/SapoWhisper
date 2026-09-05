@@ -705,3 +705,5 @@
 "overlay.cancel_processing" = "Cancelar procesamiento";
 
 "overlay.polish_cancelled" = "Pulido cancelado — texto anterior conservado";
+
+"failure.model_output_limit" = "%@ no pudo completar la transcripción. Prueba con otro modelo o servicio.";

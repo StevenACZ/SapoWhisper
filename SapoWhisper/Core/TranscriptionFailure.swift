@@ -26,6 +26,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case serverError = "server_error"
         case network
         case timedOut = "timed_out"
+        case modelOutputLimit = "model_output_limit"
         case audioEmpty = "audio_empty"
         case audioCorrupt = "audio_corrupt"
         case audioStorageFailed = "audio_storage_failed"
@@ -83,6 +84,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "failure.network".localized(engineName)
         case .timedOut:
             return "failure.timed_out".localized
+        case .modelOutputLimit:
+            return "failure.model_output_limit".localized(engineName)
         case .audioEmpty:
             return "failure.audio_empty".localized
         case .audioCorrupt:
@@ -106,7 +109,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
     var isRetryable: Bool {
         switch kind {
         case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .audioStorageFailed,
-            .audioPreparationFailed, .unknown:
+            .audioPreparationFailed, .modelOutputLimit, .unknown:
             return true
         case .notConfigured, .auth, .outOfCredits, .planRestricted, .clientError,
             .audioEmpty, .audioCorrupt, .userCancelled, .emptyTranscription:

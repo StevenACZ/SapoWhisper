@@ -46,86 +46,19 @@ public final class WhisperModel: Module {
         )
     }
 
-    /// Completion-only entry point (mlxwhisper-cli); the app path is the
-    /// throwing `generateCancellable`, which honors Task cancellation.
+    @available(*, deprecated, message: "Use generateCancellable to preserve decoding failures.")
     public func generate(
         audio: MLXArray,
         generationParameters: STTGenerateParameters
     ) -> STTOutput {
-        do {
-            return try generateCancellable(audio: audio, generationParameters: generationParameters)
-        } catch {
-            // Only Task cancellation escapes the decode loop; outside a
-            // cancelled task this path is unreachable.
-            return STTOutput(text: "")
-        }
+        (try? generateCancellable(audio: audio, generationParameters: generationParameters)) ?? STTOutput(text: "")
     }
 
-    /// Same as `generate(audio:generationParameters:)` but checks Task
-    /// cancellation between 30s windows and decode steps, throwing
-    /// `CancellationError` so callers can tell a cancel from a failure.
     public func generateCancellable(
         audio: MLXArray,
         generationParameters: STTGenerateParameters
     ) throws -> STTOutput {
-        let startTime = Date()
-        let mono = audio.ndim > 1 ? audio.mean(axis: -1) : audio
-        let chunks = chunkAudioFor30sWindows(mono)
-        let initialPromptTokens = encodeInitialPrompt(generationParameters.initialPrompt)
-
-        var allText: [String] = []
-        var allSegments: [[String: Any]] = []
-        var totalPromptTokens = 0
-        var totalGenerationTokens = 0
-        var detectedLanguage: String? = nil
-        var detectedLanguageToken: Int? = nil
-
-        for (index, chunk) in chunks.enumerated() {
-            try Task.checkCancellation()
-            if generationParameters.verbose {
-                let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
-                print(
-                    "[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s"
-                )
-            }
-            let (text, promptTokens, generationTokens, lang, langToken) = try transcribeChunk(
-                audio: chunk.audio,
-                generationParameters: generationParameters,
-                initialPromptTokens: initialPromptTokens,
-                languageTokenId: detectedLanguageToken
-            )
-            totalPromptTokens += promptTokens
-            totalGenerationTokens += generationTokens
-            if detectedLanguage == nil { detectedLanguage = lang }
-            if detectedLanguageToken == nil { detectedLanguageToken = langToken }
-
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                allText.append(trimmed)
-                let endSeconds = Double(chunk.offsetSeconds) + Double(chunk.audio.dim(0)) / Double(WhisperAudioConfig.sampleRate)
-                allSegments.append([
-                    "text": trimmed,
-                    "start": Double(chunk.offsetSeconds),
-                    "end": endSeconds,
-                ])
-            }
-        }
-
-        let elapsed = Date().timeIntervalSince(startTime)
-        let combined = allText.joined(separator: " ")
-
-        return STTOutput(
-            text: combined,
-            segments: allSegments.isEmpty ? nil : allSegments,
-            language: detectedLanguage ?? generationParameters.language,
-            promptTokens: totalPromptTokens,
-            generationTokens: totalGenerationTokens,
-            totalTokens: totalPromptTokens + totalGenerationTokens,
-            promptTps: elapsed > 0 ? Double(totalPromptTokens) / elapsed : 0,
-            generationTps: elapsed > 0 ? Double(totalGenerationTokens) / elapsed : 0,
-            totalTime: elapsed,
-            peakMemoryUsage: Double(Memory.peakMemory) / 1e9
-        )
+        try generateOutput(audio: audio, generationParameters: generationParameters)
     }
 
     public func generateStream(
@@ -133,104 +66,97 @@ public final class WhisperModel: Module {
         generationParameters: STTGenerateParameters
     ) -> AsyncThrowingStream<STTGeneration, Error> {
         AsyncThrowingStream { continuation in
-            let startTime = Date()
-            let mono = audio.ndim > 1 ? audio.mean(axis: -1) : audio
-            let chunks = chunkAudioFor30sWindows(mono)
-            let initialPromptTokens = encodeInitialPrompt(generationParameters.initialPrompt)
-
-            var allText: [String] = []
-            var allSegments: [[String: Any]] = []
-            var totalPromptTokens = 0
-            var totalGenerationTokens = 0
-            var detectedLanguage: String? = nil
-            var detectedLanguageToken: Int? = nil
-
             do {
-                for (index, chunk) in chunks.enumerated() {
-                    try Task.checkCancellation()
-                    if generationParameters.verbose {
-                        let endSeconds = chunk.offsetSeconds + Float(chunk.audio.dim(0)) / Float(WhisperAudioConfig.sampleRate)
-                        print(
-                            "[Whisper] chunk \(index + 1)/\(chunks.count) \(String(format: "%.1f", chunk.offsetSeconds))s..\(String(format: "%.1f", endSeconds))s"
-                        )
-                    }
-
-                    let (text, promptTokens, generationTokens, lang, langToken) = try transcribeChunk(
-                        audio: chunk.audio,
-                        generationParameters: generationParameters,
-                        initialPromptTokens: initialPromptTokens,
-                        languageTokenId: detectedLanguageToken,
-                        onTokenDelta: { delta in
-                            if !delta.isEmpty {
-                                continuation.yield(.token(delta))
-                            }
-                        }
-                    )
-                    totalPromptTokens += promptTokens
-                    totalGenerationTokens += generationTokens
-                    if detectedLanguage == nil { detectedLanguage = lang }
-                    if detectedLanguageToken == nil { detectedLanguageToken = langToken }
-
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        allText.append(trimmed)
-                        let endSeconds = Double(chunk.offsetSeconds) + Double(chunk.audio.dim(0)) / Double(WhisperAudioConfig.sampleRate)
-                        allSegments.append([
-                            "text": trimmed,
-                            "start": Double(chunk.offsetSeconds),
-                            "end": endSeconds,
-                        ])
-                    }
+                let output = try generateOutput(audio: audio, generationParameters: generationParameters) {
+                    continuation.yield(.token($0))
                 }
+                continuation.yield(.result(output))
+                continuation.finish()
             } catch {
                 continuation.finish(throwing: error)
-                return
+            }
+        }
+    }
+
+    private func generateOutput(
+        audio: MLXArray,
+        generationParameters: STTGenerateParameters,
+        onSegment: ((String) -> Void)? = nil
+    ) throws -> STTOutput {
+        let startTime = Date()
+        let mono = audio.ndim > 1 ? audio.mean(axis: -1) : audio
+        var windows = WhisperDecodingWindow.initial(sampleCount: mono.dim(0))
+        let initialPromptTokens = encodeInitialPrompt(generationParameters.initialPrompt)
+        var allText: [String] = []
+        var allSegments: [[String: Any]] = []
+        var totalPromptTokens = 0
+        var totalGenerationTokens = 0
+        var decodingRetries = 0
+        var detectedLanguage: String?
+        var detectedLanguageToken: Int?
+        var index = 0
+
+        while index < windows.count {
+            try Task.checkCancellation()
+            let window = windows[index]
+            if generationParameters.verbose {
+                print(
+                    "[Whisper] window start=\(window.range.lowerBound) samples=\(window.range.count) depth=\(window.retryDepth) glossary=\(window.usesInitialPrompt && !initialPromptTokens.isEmpty)"
+                )
+            }
+            let (text, promptTokens, generationTokens, language, languageToken, finished) = try transcribeChunk(
+                audio: mono[window.range],
+                generationParameters: generationParameters,
+                initialPromptTokens: window.usesInitialPrompt ? initialPromptTokens : [],
+                languageTokenId: detectedLanguageToken
+            )
+            try Task.checkCancellation()
+            totalPromptTokens += promptTokens
+            totalGenerationTokens += generationTokens
+            if detectedLanguage == nil { detectedLanguage = language }
+            if detectedLanguageToken == nil { detectedLanguageToken = languageToken }
+
+            guard finished else {
+                if window.usesInitialPrompt, !initialPromptTokens.isEmpty {
+                    decodingRetries += 1
+                    windows[index].usesInitialPrompt = false
+                    continue
+                }
+                let replacements = try window.splitAfterOutputLimit()
+                decodingRetries += replacements.count
+                windows.replaceSubrange(index...index, with: replacements)
+                continue
             }
 
-            let elapsed = Date().timeIntervalSince(startTime)
-            let combined = allText.joined(separator: " ")
-
-            let output = STTOutput(
-                text: combined,
-                segments: allSegments.isEmpty ? nil : allSegments,
-                language: detectedLanguage ?? generationParameters.language,
-                promptTokens: totalPromptTokens,
-                generationTokens: totalGenerationTokens,
-                totalTokens: totalPromptTokens + totalGenerationTokens,
-                promptTps: elapsed > 0 ? Double(totalPromptTokens) / elapsed : 0,
-                generationTps: elapsed > 0 ? Double(totalGenerationTokens) / elapsed : 0,
-                totalTime: elapsed,
-                peakMemoryUsage: Double(Memory.peakMemory) / 1e9
-            )
-            continuation.yield(.result(output))
-            continuation.finish()
-        }
-    }
-
-    // MARK: - Chunking
-
-    private struct AudioChunk {
-        let audio: MLXArray
-        let offsetSeconds: Float
-    }
-
-    private func chunkAudioFor30sWindows(_ audio: MLXArray) -> [AudioChunk] {
-        let sampleRate = WhisperAudioConfig.sampleRate
-        let windowSamples = WhisperAudioConfig.chunkLengthSamples
-        let totalSamples = audio.dim(0)
-        if totalSamples <= windowSamples {
-            return [AudioChunk(audio: audio, offsetSeconds: 0)]
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let separator = allText.isEmpty ? "" : " "
+                allText.append(trimmed)
+                allSegments.append([
+                    "text": trimmed,
+                    "start": Double(window.range.lowerBound) / Double(WhisperAudioConfig.sampleRate),
+                    "end": Double(window.range.upperBound) / Double(WhisperAudioConfig.sampleRate),
+                ])
+                onSegment?(separator + trimmed)
+            }
+            index += 1
         }
 
-        var chunks: [AudioChunk] = []
-        var start = 0
-        while start < totalSamples {
-            let end = min(start + windowSamples, totalSamples)
-            let slice = audio[start..<end]
-            chunks.append(AudioChunk(audio: slice, offsetSeconds: Float(start) / Float(sampleRate)))
-            start = end
-        }
-        return chunks
+        try Task.checkCancellation()
+        let elapsed = Date().timeIntervalSince(startTime)
+        return STTOutput(
+            text: allText.joined(separator: " "),
+            segments: allSegments.isEmpty ? nil : allSegments,
+            language: detectedLanguage ?? generationParameters.language,
+            promptTokens: totalPromptTokens,
+            generationTokens: totalGenerationTokens,
+            totalTokens: totalPromptTokens + totalGenerationTokens,
+            decodingRetries: decodingRetries,
+            promptTps: elapsed > 0 ? Double(totalPromptTokens) / elapsed : 0,
+            generationTps: elapsed > 0 ? Double(totalGenerationTokens) / elapsed : 0,
+            totalTime: elapsed,
+            peakMemoryUsage: Double(Memory.peakMemory) / 1e9
+        )
     }
 
     // MARK: - Single-chunk transcription
@@ -281,9 +207,8 @@ public final class WhisperModel: Module {
         audio: MLXArray,
         generationParameters: STTGenerateParameters,
         initialPromptTokens: [Int] = [],
-        languageTokenId: Int? = nil,
-        onTokenDelta: ((String) -> Void)? = nil
-    ) throws -> (text: String, promptTokens: Int, generationTokens: Int, language: String?, languageTokenId: Int?) {
+        languageTokenId: Int? = nil
+    ) throws -> (text: String, promptTokens: Int, generationTokens: Int, language: String?, languageTokenId: Int?, finished: Bool) {
         guard let tokenizer else {
             fatalError("WhisperTokenizer not loaded — call fromDirectory before generate.")
         }
@@ -319,9 +244,7 @@ public final class WhisperModel: Module {
         eval(logits)
 
         var generated: [Int] = []
-        // Decode-and-diff: re-decode the full token list each step and emit only
-        // the new suffix, so multi-token UTF-8 sequences stream cleanly.
-        var previousText = ""
+        var finished = false
         let beginSuppress = generationConfig?.beginSuppressTokens ?? [tokenizer.endOfTextId]
         let suppress = generationConfig?.suppressTokens ?? []
 
@@ -347,22 +270,11 @@ public final class WhisperModel: Module {
             stepLogits = suppressFromIndex(stepLogits, fromIndex: tokenizer.timestampBeginId)
 
             let nextToken = sample(stepLogits, temperature: generationParameters.temperature)
-            if nextToken == tokenizer.endOfTextId { break }
-            generated.append(nextToken)
-
-            if let onTokenDelta {
-                let textSoFar = tokenizer.decode(tokens: generated)
-                if textSoFar != previousText {
-                    let delta: String
-                    if textSoFar.hasPrefix(previousText) {
-                        delta = String(textSoFar.dropFirst(previousText.count))
-                    } else {
-                        delta = textSoFar
-                    }
-                    onTokenDelta(delta)
-                    previousText = textSoFar
-                }
+            if nextToken == tokenizer.endOfTextId {
+                finished = true
+                break
             }
+            generated.append(nextToken)
 
             let position = promptIds.count + step
             let tokenArray = MLXArray([Int32(nextToken)]).expandedDimensions(axis: 0)
@@ -394,7 +306,7 @@ public final class WhisperModel: Module {
                 break
             }
         }
-        return (text, promptIds.count, generated.count, language, resolvedLanguageToken)
+        return (text, promptIds.count, generated.count, language, resolvedLanguageToken, finished)
     }
 
     private func sample(_ logits: MLXArray, temperature: Float) -> Int {
