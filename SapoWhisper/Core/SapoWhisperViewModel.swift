@@ -1293,7 +1293,7 @@ class SapoWhisperViewModel: ObservableObject {
         let tailPadding = Self.stopTailPadding(for: sessionVariant)
         let stopRequestTime = CFAbsoluteTimeGetCurrent()
         let perf = DictationPerfTimeline(engine: perfEngine)
-        logger.info(
+        logger.notice(
             "\(logLabel, privacy: .public) stop hotkey accepted tailPadding=\(Int(tailPadding * 1000), privacy: .public)ms"
         )
         PerformanceDiagnostics.logRuntimeSnapshot(

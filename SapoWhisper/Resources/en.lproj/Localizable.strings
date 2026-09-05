@@ -697,3 +697,5 @@
 "history.audio_available_detail" = "Your audio is saved. You can listen to it or transcribe it again.";
 
 "failure.audio_storage_failed" = "Capture stopped because the complete audio could not be saved. Check available storage and try again.";
+
+"failure.audio_preparation_failed" = "Could not prepare the recording for upload. Check available storage and try again.";

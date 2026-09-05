@@ -94,7 +94,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start(
                 onToggle: {
-                    SapoLog.recording.info("Authenticated remote dictation toggle received")
+                    SapoLog.recording.notice("Authenticated remote dictation toggle received")
                     SapoWhisperAppEnvironment.shared.viewModel.toggleRecording(
                         inputDeviceUID: DictationStateBroadcaster.remoteInputDeviceUID
                     )

@@ -31,13 +31,33 @@ enum TransientRequestRetry {
         session: URLSession = .shared,
         engine: String
     ) async throws -> (Data, HTTPURLResponse) {
+        try await perform(engine: engine) {
+            try await session.data(for: request)
+        }
+    }
+
+    static func upload(
+        for request: URLRequest,
+        fromFile fileURL: URL,
+        session: URLSession = .shared,
+        engine: String
+    ) async throws -> (Data, HTTPURLResponse) {
+        try await perform(engine: engine) {
+            try await session.upload(for: request, fromFile: fileURL)
+        }
+    }
+
+    private static func perform(
+        engine: String,
+        operation: () async throws -> (Data, URLResponse)
+    ) async throws -> (Data, HTTPURLResponse) {
         var attempt = 0
         while true {
             try Task.checkCancellation()
             let data: Data
             let response: URLResponse
             do {
-                (data, response) = try await session.data(for: request)
+                (data, response) = try await operation()
             } catch let error as URLError
                 where retryableURLErrorCodes.contains(error.code) && attempt < backoffs.count
             {

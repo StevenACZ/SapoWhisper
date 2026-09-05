@@ -23,6 +23,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Long Local AI Server uploads prepare a private multipart file in bounded chunks and stream it, reducing memory used to prepare large recordings. Temporary upload files are removed after success, failure or cancellation.
 - Swift 6 language mode for the app and tests, with explicit concurrency boundaries and a shared audio converter input adapter.
 - A public architecture map and smaller onboarding components with unchanged presentation.
 - Exact Release bundle measurements and a corrected default artifact path; an unused legacy provider icon was removed.

@@ -1,5 +1,6 @@
 #if DEBUG
     import Foundation
+    import os
 
     nonisolated final class STTNetworkFaultInjection: URLProtocol, @unchecked Sendable {
         private static let failures = Set(
@@ -28,7 +29,8 @@
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
         override func startLoading() {
-            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            SapoLog.recording.notice("QA STT network failure injected")
+            client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
         }
 
         override func stopLoading() {}

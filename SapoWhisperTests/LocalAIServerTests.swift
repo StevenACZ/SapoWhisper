@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import os
 
 @testable import SapoWhisper
 
@@ -145,6 +146,140 @@ final class LocalAIServerTests: XCTestCase {
             model: "m", languageCode: "es", vocabularyPrompt: "Glossary: SapoWhisper.")
         XCTAssertTrue(fields.contains { $0.name == "language" && $0.value == "es" })
         XCTAssertTrue(fields.contains { $0.name == "prompt" && $0.value == "Glossary: SapoWhisper." })
+    }
+
+    func testFileUploadRequestKeepsAuthorizationOutOfMultipartAndPreservesFields() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        let audio = try Data(contentsOf: audioURL)
+        let payload = try await LocalAIServerTranscriber.makeTranscriptionRequest(
+            baseURL: URL(string: "https://transcription.example/v1")!,
+            model: "fixture-model", audioURL: audioURL, languageCode: "es",
+            vocabularyPrompt: "Glossary: fixture.\r\nNext line.", apiKey: "  fixture-bearer-only  "
+        )
+        defer { payload.body.remove() }
+        XCTAssertEqual(payload.request.url?.path, "/v1/audio/transcriptions")
+        XCTAssertEqual(payload.request.httpMethod, "POST")
+        XCTAssertEqual(payload.request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-bearer-only")
+        XCTAssertNil(payload.request.httpBody)
+        XCTAssertNil(payload.request.httpBodyStream)
+        XCTAssertEqual(payload.body.audioByteCount, audio.count)
+        let contentType = try XCTUnwrap(payload.request.value(forHTTPHeaderField: "Content-Type"))
+        XCTAssertTrue(contentType.hasPrefix("multipart/form-data; boundary=Boundary-"))
+        let boundary = try XCTUnwrap(contentType.components(separatedBy: "boundary=").last)
+        let data = try Data(contentsOf: payload.body.fileURL)
+        let text = String(decoding: data, as: UTF8.self)
+        for (name, value) in [
+            ("model", "fixture-model"), ("response_format", "json"), ("vad_filter", "true"),
+            ("language", "es"), ("prompt", "Glossary: fixture.  Next line."),
+        ] {
+            XCTAssertTrue(text.contains("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n"))
+        }
+        XCTAssertTrue(text.contains("name=\"file\"; filename=\"recording.wav\"\r\nContent-Type: audio/wav\r\n\r\n"))
+        XCTAssertFalse(text.contains("fixture-bearer-only"))
+        XCTAssertEqual(try Data(contentsOf: audioURL), audio)
+    }
+
+    func testFileUploadRetriesTransientTransportAndServerFailures() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        let body = try FileMultipartBody.create(audioURL: audioURL, fields: [], boundary: "Retry")
+        defer { body.remove() }
+        let attempts = OSAllocatedUnfairLock(initialState: 0)
+        let bodyURL = body.fileURL
+        StubURLProtocol.handler = { _ in
+            XCTAssertTrue(FileManager.default.fileExists(atPath: bodyURL.path))
+            let attempt = attempts.withLock { value in
+                value += 1
+                return value
+            }
+            if attempt == 1 { return .failure(URLError(.networkConnectionLost)) }
+            return .success((status: attempt == 2 ? 503 : 200, body: Data("done".utf8)))
+        }
+        defer { StubURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: URL(string: "https://transcription.example/upload")!)
+        request.httpMethod = "POST"
+        let (data, response) = try await TransientRequestRetry.upload(
+            for: request, fromFile: bodyURL, session: session, engine: "Fixture"
+        )
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertEqual(data, Data("done".utf8))
+        XCTAssertEqual(attempts.withLock { $0 }, 3)
+        XCTAssertEqual(TransientRequestRetry.backoffs, [1, 3])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+    }
+
+    func testTranscriptionRemovesUploadBodyOnSuccessAndHTTPFailure() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        let original = try Data(contentsOf: audioURL)
+        let directory = TemporaryAudioStorage.directory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for status in [200, 400] {
+            let before = Set(try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))
+            let observed = OSAllocatedUnfairLock(initialState: [URL]())
+            await withLocalAIServerDefaults {
+                StubURLProtocol.handler = { request in
+                    if request.url?.path.hasSuffix("/health") == true {
+                        return .success((status: 200, body: Data()))
+                    }
+                    let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+                    observed.withLock { $0 = files.filter { $0.pathExtension == "body" && !before.contains($0) } }
+                    return .success((status: status, body: Data(#"{"text":"fixture result"}"#.utf8)))
+                }
+                do {
+                    _ = try await makeStubbedTranscriber().transcribe(audioURL: audioURL, language: "es")
+                    XCTAssertEqual(status, 200)
+                } catch {
+                    XCTAssertEqual(status, 400)
+                    XCTAssertEqual((error as? TranscriptionFailure)?.kind, .clientError)
+                }
+            }
+            let bodies = observed.withLock { $0 }
+            XCTAssertEqual(bodies.count, 1)
+            for body in bodies { XCTAssertFalse(FileManager.default.fileExists(atPath: body.path)) }
+            XCTAssertEqual(try Data(contentsOf: audioURL), original)
+        }
+    }
+
+    func testCancellationDuringUploadRetryRemovesBodyAndPreservesSource() async throws {
+        let audioURL = try makeValidWAV()
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        let original = try Data(contentsOf: audioURL)
+        let directory = TemporaryAudioStorage.directory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let before = Set(try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))
+        let observed = OSAllocatedUnfairLock(initialState: [URL]())
+        let upload = expectation(description: "Upload reached retryable response")
+        await withLocalAIServerDefaults {
+            StubURLProtocol.handler = { request in
+                if request.url?.path.hasSuffix("/health") == true {
+                    return .success((status: 200, body: Data()))
+                }
+                let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+                observed.withLock { $0 = files.filter { $0.pathExtension == "body" && !before.contains($0) } }
+                upload.fulfill()
+                return .success((status: 503, body: Data()))
+            }
+            let transcriber = makeStubbedTranscriber()
+            let task = Task { try await transcriber.transcribe(audioURL: audioURL, language: "es") }
+            await fulfillment(of: [upload], timeout: 3)
+            task.cancel()
+            do {
+                _ = try await task.value
+                XCTFail("Cancelled upload must not succeed")
+            } catch {
+                XCTAssertTrue(error is CancellationError || (error as? TranscriptionFailure)?.kind == .userCancelled)
+            }
+        }
+        let bodies = observed.withLock { $0 }
+        XCTAssertEqual(bodies.count, 1)
+        for body in bodies { XCTAssertFalse(FileManager.default.fileExists(atPath: body.path)) }
+        XCTAssertEqual(try Data(contentsOf: audioURL), original)
     }
 
     // MARK: - Preflight reachability (fail fast when the server is down)

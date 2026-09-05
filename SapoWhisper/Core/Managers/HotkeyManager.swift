@@ -572,7 +572,7 @@ class HotkeyManager: ObservableObject {
             now: now
         ) {
         case .trigger:
-            SapoLog.hotkey.info(
+            SapoLog.hotkey.notice(
                 "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
             )
             DispatchQueue.main.async { [weak self] in

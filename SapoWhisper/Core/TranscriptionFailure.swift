@@ -29,6 +29,7 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case audioEmpty = "audio_empty"
         case audioCorrupt = "audio_corrupt"
         case audioStorageFailed = "audio_storage_failed"
+        case audioPreparationFailed = "audio_preparation_failed"
         case recordingInterrupted = "recording_interrupted"
         case userCancelled = "user_cancelled"
         case emptyTranscription = "empty_transcription"
@@ -88,6 +89,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "failure.audio_corrupt".localized
         case .audioStorageFailed:
             return "failure.audio_storage_failed".localized
+        case .audioPreparationFailed:
+            return "failure.audio_preparation_failed".localized
         case .recordingInterrupted:
             return "failure.recording_interrupted".localized
         case .userCancelled:
@@ -102,7 +105,8 @@ struct TranscriptionFailure: LocalizedError, Equatable {
     /// Whether offering the user a "Retry" affordance makes sense for this failure.
     var isRetryable: Bool {
         switch kind {
-        case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .audioStorageFailed, .unknown:
+        case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .audioStorageFailed,
+            .audioPreparationFailed, .unknown:
             return true
         case .notConfigured, .auth, .outOfCredits, .planRestricted, .clientError,
             .audioEmpty, .audioCorrupt, .userCancelled, .emptyTranscription:
@@ -194,6 +198,9 @@ extension TranscriptionFailure {
     /// Recognizes failures already of this type, `URLError`, and the
     /// engine-domain error enums; everything else becomes `.unknown`.
     static func from(_ error: Error, engine: String? = nil) -> TranscriptionFailure {
+        if error is CancellationError {
+            return TranscriptionFailure(kind: .userCancelled, engine: engine, technicalDetail: "CancellationError")
+        }
         if let failure = error as? TranscriptionFailure {
             return failure
         }

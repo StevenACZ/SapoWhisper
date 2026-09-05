@@ -697,3 +697,5 @@
 "history.audio_available_detail" = "Tu audio está guardado. Puedes escucharlo o volver a transcribirlo.";
 
 "failure.audio_storage_failed" = "La captura se detuvo porque no se pudo guardar el audio completo. Revisa el espacio disponible e inténtalo de nuevo.";
+
+"failure.audio_preparation_failed" = "No se pudo preparar la grabación para enviarla. Revisa el espacio disponible e inténtalo de nuevo.";

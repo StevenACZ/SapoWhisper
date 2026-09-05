@@ -27,6 +27,7 @@ The app uses Swift 6 with MainActor default isolation and complete strict concur
 - `HistoryEntryStatus` defines processing states used by both UI and SQL deletion/recovery guards. Recognized text is saved before AI polish; interruption leaves the text and audio recoverable.
 - `AudioInputPreflightManager` owns scheduling on MainActor and performs bounded hardware work off-main. `AudioInputActivityGate` makes microphone acquisition cancellable and bounded even when a preflight is stuck.
 - `AudioConverterInputSource` owns converter feed state under a lock across capture, file merge and local-model decoding.
+- `FileMultipartBody` prepares Local AI Server uploads off-main with bounded file reads and private temporary-file ownership. `TransientRequestRetry` shares one retry policy across in-memory and file upload requests. The original recording stays owned by History.
 - `AppPreferences.defaults` preserves the normal preferences store and gives tests/previews an isolated process suite. `AppRuntimePaths` similarly isolates their file storage. Test startup skips migrations, cleanup, updates, companion control and unsolicited audio effects.
 
 ## Capture, engines, and persistence
