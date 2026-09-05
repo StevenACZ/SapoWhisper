@@ -44,6 +44,7 @@ addresses, and machine-specific workflow details.
 ## Guardrails
 
 - Apply the capture, persistence, polish, and window invariants in [ARCHITECTURE.md](ARCHITECTURE.md#guardrails).
+- Every captured or merged WAV keeps its recovery marker until durable History ownership or deliberate deletion. Preserve merge sources until the combined pending row exists; recovery must skip live owners regardless of file age.
 - Credentials belong in Keychain; configuration checks use `KeychainStore.hasValue`, not credential reads.
 - Never show an action that cannot execute in the current state; derive visibility and execution from the same predicate.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.
