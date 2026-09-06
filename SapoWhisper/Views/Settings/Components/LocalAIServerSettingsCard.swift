@@ -15,7 +15,9 @@ struct LocalAIServerSettingsCard: View {
 
     @State private var apiKey = ""
     @State private var keychainReadDenied = false
-    @State private var testState: TestState = .idle
+    @State private var testTask: Task<Void, Never>?
+    @State private var testGeneration: UInt64 = 0
+    @State private var testObservation: EngineReachabilityLog.Observation?
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {
         self.viewModel = viewModel
@@ -36,17 +38,18 @@ struct LocalAIServerSettingsCard: View {
             apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
             keychainReadDenied = KeychainStore.isReadDenied
         }
+        .onDisappear { resetConnectionTest() }
         .onChange(of: baseURL) { _, newValue in
+            resetConnectionTest()
             let sanitized = LocalAIServerConfiguration.sanitizedBaseURLForStorage(newValue)
             if sanitized != newValue {
                 baseURL = sanitized
                 return
             }
-            testState = .idle
             viewModel.setEngine(.localAIServer)
         }
         .onChange(of: model) { _, _ in
-            testState = .idle
+            resetConnectionTest()
             viewModel.setEngine(.localAIServer)
         }
         .onChange(of: apiKey) { _, newValue in
@@ -54,7 +57,7 @@ struct LocalAIServerSettingsCard: View {
             guard trimmed != (KeychainStore.string(for: .localAIServerAPIKey) ?? "") else { return }
             KeychainStore.setString(trimmed, for: .localAIServerAPIKey)
             viewModel.setEngine(.localAIServer)
-            testState = .idle
+            resetConnectionTest()
         }
     }
 
@@ -122,33 +125,58 @@ struct LocalAIServerSettingsCard: View {
                         .font(.caption)
                 }
                 .buttonStyle(.bordered)
-                .disabled(!canTest || testState == .running)
+                .disabled(!canTest || viewModel.localAIServerConnectionState == .checking)
 
                 testStateView
                 Spacer()
             }
+            Text("config.local_ai_test_scope".localized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var statusRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: canTest ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundColor(canTest ? .sapoGreen : .orange)
-            Text(canTest ? "config.local_ai_configured".localized : "config.local_ai_missing".localized)
+            Image(systemName: statusPresentation.icon)
+                .foregroundStyle(statusPresentation.color)
+            Text(statusPresentation.title)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var statusPresentation: (icon: String, title: String, color: Color) {
+        guard canTest else { return ("xmark.circle.fill", "config.local_ai_missing".localized, .orange) }
+        switch viewModel.localAIServerConnectionState {
+        case .unchecked:
+            return ("questionmark.circle", "config.local_ai_unchecked".localized, .secondary)
+        case .checking:
+            return ("arrow.triangle.2.circlepath", "config.local_ai_checking".localized, .secondary)
+        case .reachable:
+            return ("network", "config.local_ai_reachable".localized, .secondary)
+        case .transcribed:
+            return ("checkmark.circle.fill", "config.local_ai_transcribed".localized, .sapoGreen)
+        case .verified(let modelAvailable):
+            return (
+                modelAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                modelAvailable ? "config.local_ai_verified".localized : "config.local_ai_model_unverified".localized,
+                modelAvailable ? .sapoGreen : .orange
+            )
+        case .failed:
+            return ("exclamationmark.triangle.fill", "config.local_ai_last_failed".localized, .orange)
         }
     }
 
     @ViewBuilder
     private var testStateView: some View {
-        switch testState {
-        case .idle:
+        switch viewModel.localAIServerConnectionState {
+        case .unchecked, .reachable, .transcribed:
             EmptyView()
-        case .running:
-            ProgressView()
-                .controlSize(.small)
-        case .success(let modelAvailable):
+        case .checking:
+            ProgressView().controlSize(.small)
+        case .verified(let modelAvailable):
             Label(
                 modelAvailable ? "config.local_ai_test_success".localized : "config.local_ai_test_model_unlisted".localized,
                 systemImage: modelAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
@@ -156,7 +184,7 @@ struct LocalAIServerSettingsCard: View {
             .font(.caption)
             .foregroundStyle(modelAvailable ? Color.sapoGreenText : Color.orange)
             .lineLimit(2)
-        case .failure(let message):
+        case .failed(let message):
             Label(message, systemImage: "xmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(Color.sapoError)
@@ -176,31 +204,46 @@ struct LocalAIServerSettingsCard: View {
         )
     }
 
+    private func resetConnectionTest() {
+        testTask?.cancel()
+        testTask = nil
+        testGeneration &+= 1
+        if let testObservation { viewModel.cancelLocalAIServerConnectionTest(testObservation) }
+        testObservation = nil
+    }
+
     private func testConnection() {
-        testState = .running
+        resetConnectionTest()
+        let generation = testGeneration
         let baseURL = baseURL
         let model = model
         let apiKey = apiKey
-        Task { @MainActor in
+        let observation = viewModel.beginLocalAIServerConnectionTest()
+        testObservation = observation
+        testTask = Task { @MainActor in
             do {
                 let result = try await viewModel.localAIServerTranscriber.testConnection(
                     baseURL: baseURL,
                     model: model,
                     apiKey: apiKey
                 )
-                testState = .success(modelAvailable: result.modelAvailable)
+                guard !Task.isCancelled, generation == testGeneration,
+                    baseURL == self.baseURL, model == self.model, apiKey == self.apiKey
+                else { return }
+                viewModel.completeLocalAIServerConnectionTest(observation, modelAvailable: result.modelAvailable)
+                testTask = nil
+                testObservation = nil
             } catch {
-                testState = .failure(error.localizedDescription)
+                guard !Task.isCancelled, generation == testGeneration,
+                    baseURL == self.baseURL, model == self.model, apiKey == self.apiKey
+                else { return }
+                viewModel.failLocalAIServerConnectionTest(observation, error: error)
+                testTask = nil
+                testObservation = nil
             }
         }
     }
 
-    private enum TestState: Equatable {
-        case idle
-        case running
-        case success(modelAvailable: Bool)
-        case failure(String)
-    }
 }
 
 #Preview("Local AI Server Settings") {

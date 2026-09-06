@@ -711,3 +711,11 @@
 "overlay.backup_active" = "Usando respaldo: %@";
 "overlay.backup_primary_failed" = "%@ no pudo transcribir";
 "overlay.backup_completed" = "Transcrito con %@ (respaldo)";
+"config.local_ai_unchecked" = "Configuración guardada · conexión sin comprobar";
+"config.local_ai_checking" = "Comprobando conexión…";
+"config.local_ai_verified" = "Conexión verificada";
+"config.local_ai_last_failed" = "El último intento falló";
+"config.local_ai_reachable" = "El servidor responde · transcripción sin verificar";
+"config.local_ai_transcribed" = "Última transcripción correcta";
+"config.local_ai_model_unverified" = "Servidor conectado · modelo no listado";
+"config.local_ai_test_scope" = "Esta prueba comprueba la conexión y la lista de modelos. Un dictado verifica la transcripción; si falla, puede tomar el relevo tu motor de respaldo.";

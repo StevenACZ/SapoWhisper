@@ -88,6 +88,20 @@ class SapoWhisperViewModel: ObservableObject {
 
     @Published private(set) var appState: AppState = .idle
     @Published private(set) var lastTranscription: String = ""
+    @Published private(set) var localAIServerConnectionState: LocalAIServerConnectionState = .unchecked
+
+    enum LocalAIServerConnectionState: Equatable {
+        case unchecked
+        case checking
+        case reachable
+        case verified(modelAvailable: Bool)
+        case transcribed
+        case failed(message: String)
+    }
+
+    private(set) var localAIServerConfigurationRevision: UInt64 = 0
+    private var localConnectionTestObservation: EngineReachabilityLog.Observation?
+    private var connectionStateBeforeTest: LocalAIServerConnectionState = .unchecked
     @Published var showSettings = false
 
     /// 10 Hz dictation ticker kept OFF the ObservableObject: as @Published it
@@ -856,6 +870,14 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Cambia el motor de transcripcion
     func setEngine(_ engine: TranscriptionEngine) {
+        if engine == .localAIServer {
+            localAIServerConfigurationRevision &+= 1
+            reachabilityProbeTask?.cancel()
+            reachabilityProbeTask = nil
+            localConnectionTestObservation = nil
+            reachabilityLog.markReachable(.localAIServer)
+            localAIServerConnectionState = .unchecked
+        }
         cancelSelectedMLXModelLoad()
         selectedEngine = engine.rawValue
 
@@ -1463,9 +1485,7 @@ class SapoWhisperViewModel: ObservableObject {
     ) async throws -> TranscriptionPipeline.EngineOutput {
         let failure = TranscriptionFailure.from(error, engine: variant.displayName)
         guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
-        if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
-            settleReachability(variant.engine, reachable: false)
-        }
+        recordEngineFailure(failure, engine: variant.engine)
 
         // A live dictation that already started ON the backup has nothing left
         // to fall back to; otherwise the backup's file endpoint is a genuinely
@@ -1821,19 +1841,18 @@ class SapoWhisperViewModel: ObservableObject {
             }
         }
 
+        let configurationRevision = localAIServerConfigurationRevision
         do {
             let transcript = try await TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(backup != nil) {
                 try await transcribeAudio(at: audioURL, using: primary, language: language)
             }
             try Task.checkCancellation()
-            settleReachability(primary.engine, reachable: true)
+            recordTranscriptionOutcome(primary.engine, configurationRevision: configurationRevision)
             return (transcript, nil)
         } catch {
             let failure = TranscriptionFailure.from(error, engine: primary.displayName)
             guard !Task.isCancelled, EngineFailoverPolicy.isRescuable(failure) else { throw error }
-            if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
-                settleReachability(primary.engine, reachable: false)
-            }
+            recordTranscriptionOutcome(primary.engine, configurationRevision: configurationRevision, failure: failure)
             guard let backup else { throw error }
 
             SapoLog.recording.warning(
@@ -1852,9 +1871,6 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
-    /// Marked straight on the log rather than through `settleReachability`:
-    /// the probe that call would cancel belongs to the PRIMARY, and a verdict
-    /// about the backup says nothing about it.
     private func transcribeOnBackup(
         at audioURL: URL,
         primary: TranscriptionEngineVariant,
@@ -1869,6 +1885,7 @@ class SapoWhisperViewModel: ObservableObject {
         SapoLog.recording.notice(
             "Backup handoff session=\(self.activeTranscriptionSessionID ?? 0, privacy: .public) primary=\(primary.rawValue, privacy: .public) backup=\(actualBackup.rawValue, privacy: .public) reason=\(failure.kind.rawValue, privacy: .public)"
         )
+        let configurationRevision = localAIServerConfigurationRevision
         do {
             let transcript = try await transcribeAudio(at: audioURL, using: backup, language: language)
             try Task.checkCancellation()
@@ -1876,15 +1893,13 @@ class SapoWhisperViewModel: ObservableObject {
             SapoLog.recording.notice(
                 "Backup completed session=\(self.activeTranscriptionSessionID ?? 0, privacy: .public) engine=\(actualBackup.rawValue, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
             )
-            reachabilityLog.markReachable(backup.engine)
+            recordTranscriptionOutcome(backup.engine, configurationRevision: configurationRevision)
             // History must name what ran, and a live-only backup rescues an
             // existing recording through its provider's file model.
             return (transcript, historyEngineName(for: backup.fileTranscriptionVariant))
         } catch {
             let failure = TranscriptionFailure.from(error, engine: backup.displayName)
-            if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
-                reachabilityLog.markUnreachable(backup.engine)
-            }
+            recordTranscriptionOutcome(backup.engine, configurationRevision: configurationRevision, failure: failure)
             throw error
         }
     }
@@ -1970,13 +1985,98 @@ class SapoWhisperViewModel: ObservableObject {
     /// and a server answering `/health` while failing transcriptions would
     /// erase the very failure that must skip it.
     private func settleReachability(_ engine: TranscriptionEngine, reachable: Bool) {
-        reachabilityProbeTask?.cancel()
-        reachabilityProbeTask = nil
+        if engine == .localAIServer {
+            reachabilityProbeTask?.cancel()
+            reachabilityProbeTask = nil
+            localConnectionTestObservation = nil
+            localAIServerConnectionState =
+                reachable
+                ? .transcribed
+                : .failed(message: TranscriptionFailure(kind: .network, engine: engine.displayName).localizedDescription)
+        }
         if reachable {
             reachabilityLog.markReachable(engine)
         } else {
             reachabilityLog.markUnreachable(engine)
         }
+    }
+
+    func recordTranscriptionOutcome(
+        _ engine: TranscriptionEngine,
+        configurationRevision: UInt64,
+        failure: TranscriptionFailure? = nil
+    ) {
+        guard engine != .localAIServer || configurationRevision == localAIServerConfigurationRevision else { return }
+        if let failure {
+            recordEngineFailure(failure, engine: engine)
+        } else {
+            settleReachability(engine, reachable: true)
+        }
+    }
+
+    private func recordEngineFailure(_ failure: TranscriptionFailure, engine: TranscriptionEngine) {
+        if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
+            settleReachability(engine, reachable: false)
+        } else if engine == .localAIServer {
+            reachabilityProbeTask?.cancel()
+            reachabilityProbeTask = nil
+            localConnectionTestObservation = nil
+            reachabilityLog.markReachable(engine)
+        }
+        if engine == .localAIServer {
+            localAIServerConnectionState = .failed(message: failure.localizedDescription)
+        }
+    }
+
+    func beginLocalAIServerConnectionTest() -> EngineReachabilityLog.Observation {
+        reachabilityProbeTask?.cancel()
+        reachabilityProbeTask = nil
+        if localAIServerConnectionState != .checking {
+            connectionStateBeforeTest = localAIServerConnectionState
+        }
+        let observation = reachabilityLog.beginObservation(for: .localAIServer)
+        localConnectionTestObservation = observation
+        localAIServerConnectionState = .checking
+        return observation
+    }
+
+    @discardableResult
+    func completeLocalAIServerConnectionTest(
+        _ observation: EngineReachabilityLog.Observation,
+        modelAvailable: Bool
+    ) -> Bool {
+        guard localConnectionTestObservation == observation else { return false }
+        localConnectionTestObservation = nil
+        guard reachabilityLog.apply(observation, reachable: true) else {
+            if localAIServerConnectionState == .checking { localAIServerConnectionState = connectionStateBeforeTest }
+            return false
+        }
+        localAIServerConnectionState = .verified(modelAvailable: modelAvailable)
+        SapoLog.recording.notice("Local AI Server availability refreshed source=connection_test")
+        return true
+    }
+
+    func failLocalAIServerConnectionTest(_ observation: EngineReachabilityLog.Observation, error: Error) {
+        guard localConnectionTestObservation == observation else { return }
+        localConnectionTestObservation = nil
+        let failure: TranscriptionFailure
+        if case LocalAIServerConnectionError.server(let statusCode, _) = error {
+            failure = TranscriptionFailure.fromHTTP(
+                engine: TranscriptionEngine.localAIServer.displayName, statusCode: statusCode, body: Data())
+        } else {
+            failure = TranscriptionFailure.from(error, engine: TranscriptionEngine.localAIServer.displayName)
+        }
+        guard reachabilityLog.apply(observation, reachable: !EngineFailoverPolicy.shouldRememberAsUnreachable(failure)) else {
+            if localAIServerConnectionState == .checking { localAIServerConnectionState = connectionStateBeforeTest }
+            return
+        }
+        localAIServerConnectionState = .failed(message: failure.localizedDescription)
+    }
+
+    func cancelLocalAIServerConnectionTest(_ observation: EngineReachabilityLog.Observation) {
+        guard localConnectionTestObservation == observation else { return }
+        localConnectionTestObservation = nil
+        if localAIServerConnectionState == .checking { localAIServerConnectionState = connectionStateBeforeTest }
     }
 
     /// Probes the primary in the background while the dictation runs. Only the
@@ -1989,13 +2089,19 @@ class SapoWhisperViewModel: ObservableObject {
         reachabilityProbeTask = nil
         guard variant.engine == .localAIServer else { return }
 
+        let observation = reachabilityLog.observation(for: .localAIServer)
         reachabilityProbeTask = Task { [weak self] in
             guard let isAlive = await self?.localAIServerTranscriber.probeReachability() else { return }
-            guard let self, !Task.isCancelled else { return }
-            if isAlive {
-                self.reachabilityLog.markReachable(.localAIServer)
-            } else {
-                self.reachabilityLog.markUnreachable(.localAIServer)
+            guard let self, !Task.isCancelled,
+                self.reachabilityLog.apply(observation, reachable: isAlive)
+            else { return }
+            self.localAIServerConnectionState =
+                isAlive
+                ? .reachable
+                : .failed(
+                    message: TranscriptionFailure(kind: .network, engine: TranscriptionEngine.localAIServer.displayName)
+                        .localizedDescription)
+            if !isAlive {
                 SapoLog.recording.warning(
                     "Local AI Server probe failed mid-dictation; the backup takes this take")
             }
@@ -2302,9 +2408,7 @@ class SapoWhisperViewModel: ObservableObject {
                         firstFailure = failure
                         self.activeSessionVariant = backup
                         self.overlayManager.setBackupNotice(BackupTranscriptionNotice(primary: primary, backup: backup))
-                        if EngineFailoverPolicy.shouldRememberAsUnreachable(failure) {
-                            self.settleReachability(primary.engine, reachable: false)
-                        }
+                        self.recordEngineFailure(failure, engine: primary.engine)
                         SapoLog.recording.notice(
                             "Backup handoff phase=start session=\(sessionID, privacy: .public) primary=\(primary.rawValue, privacy: .public) backup=\(backup.rawValue, privacy: .public) reason=\(failure.kind.rawValue, privacy: .public)"
                         )

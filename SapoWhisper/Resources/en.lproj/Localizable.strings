@@ -711,3 +711,11 @@
 "overlay.backup_active" = "Using backup: %@";
 "overlay.backup_primary_failed" = "%@ could not transcribe";
 "overlay.backup_completed" = "Transcribed with %@ (backup)";
+"config.local_ai_unchecked" = "Configuration saved · connection not checked";
+"config.local_ai_checking" = "Checking connection…";
+"config.local_ai_verified" = "Connection verified";
+"config.local_ai_last_failed" = "Last attempt failed";
+"config.local_ai_reachable" = "Server responded · transcription not verified";
+"config.local_ai_transcribed" = "Last transcription successful";
+"config.local_ai_model_unverified" = "Server connected · model not listed";
+"config.local_ai_test_scope" = "This test checks the connection and model list. A dictation verifies transcription; if it fails, your configured backup can take over.";

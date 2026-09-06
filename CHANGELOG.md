@@ -8,6 +8,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Local AI Server settings distinguish saved configuration, server reachability, connection checks and successful transcription. Changing configuration or passing a connection test clears stale fallback cooldowns for the next dictation; late checks cannot overwrite newer results.
+
 - The backup selector gives every engine icon a consistent column and more space before its name, preserving the green tint in the native control and menu.
 
 - Copied confirmations use one outline around the complete overlay, with a clearer success heading and a secondary summary of the backup that transcribed the audio.
