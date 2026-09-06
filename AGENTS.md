@@ -71,6 +71,7 @@ make release-check
 - `make test` runs the `SapoWhisperTests` unit bundle.
 - `make ci-check` runs lint, secret/audio scans, script tests, a Debug build, and unit tests.
 - Finish active dictations before app-hosted tests; keep physical microphone tests explicitly opt-in. Never use the normal personal profile as a test fixture.
+- Generated apps under `build/` must be unregistered from LaunchServices after builds/tests; register the installed app only. Multiple registered builds can confuse macOS local-network identity.
 - Keep README concise and user-facing, CHANGELOG entries under `Unreleased` until the release cut, and ownership contracts in ARCHITECTURE. Reuse the tracked app icon for README artwork.
 - Run `git diff --check` before staging or reporting a patch done.
 - For public changes, scan the diff for credentials, private paths, local addresses, raw transcripts, and private workflow details before commit/push.

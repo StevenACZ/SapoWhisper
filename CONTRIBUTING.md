@@ -68,3 +68,8 @@ The eventual release also requires the version/build update, Developer ID signin
 notarized and stapled app and DMG, a ZIP of that app, and a signed Sparkle appcast.
 Validate the mounted DMG and extracted ZIP before publication; the README or a
 successful development build alone is not evidence that distribution is ready.
+
+Developer commands clean up LaunchServices registrations for generated app bundles
+inside this repository’s `build/` directory. Keep custom DerivedData there to use
+that cleanup; direct Xcode builds or packaging paths outside it need separate
+registration cleanup. The installed app is registered by `make install-dev`.

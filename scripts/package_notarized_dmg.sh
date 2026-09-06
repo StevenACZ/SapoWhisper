@@ -103,7 +103,13 @@ xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null
 echo "==> Building $APP_NAME ($CONFIGURATION)"
 SOURCE_ROOT="$(pwd)"
 C_PATH_FLAGS="-fmacro-prefix-map=$SOURCE_ROOT=."
-xcodebuild \
+BUILT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
+BUILD_RUNNER=(xcodebuild)
+DERIVED_ABSOLUTE="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$DERIVED_DATA")"
+if [[ ( "$DERIVED_ABSOLUTE" == "$SOURCE_ROOT/build" || "$DERIVED_ABSOLUTE" == "$SOURCE_ROOT/build/"* ) && "$APP_NAME" == SapoWhisper ]]; then
+  BUILD_RUNNER=(python3 scripts/with_unregistered_build_app.py --app "$BUILT_APP" -- xcodebuild)
+fi
+"${BUILD_RUNNER[@]}" \
   -quiet \
   -project SapoWhisper.xcodeproj \
   -scheme SapoWhisper \
@@ -123,7 +129,6 @@ xcodebuild \
   OTHER_CODE_SIGN_FLAGS="--timestamp" \
   clean build
 
-BUILT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
 if [[ ! -d "$BUILT_APP" ]]; then
   echo "Built app not found: $BUILT_APP" >&2
   exit 66

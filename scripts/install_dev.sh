@@ -59,6 +59,7 @@ fi
 INSTALL_STARTED=1
 ditto "$APP_SRC" "$APP_DST"
 codesign --verify --deep --strict "$APP_DST"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DST"
 open "$APP_DST"
 
 CDHASH="$(codesign -dvvv "$APP_DST" 2>&1 | sed -n 's/^CDHash=//p' | head -1)"

@@ -75,12 +75,14 @@ lint-all: tools
 		$(SWIFT_SOURCE_DIR)
 
 build:
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
+	python3 scripts/with_unregistered_build_app.py --app "$(DEBUG_DERIVED_DATA)/Build/Products/Debug/SapoWhisper.app" -- \
+		xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
 		-derivedDataPath $(DEBUG_DERIVED_DATA) $(XCODE_FLAGS) build
 
 test:
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
+	python3 scripts/with_unregistered_build_app.py --app "$(DEBUG_DERIVED_DATA)/Build/Products/Debug/SapoWhisper.app" -- \
+		xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Debug -destination 'platform=macOS,arch=arm64' \
 		-derivedDataPath $(DEBUG_DERIVED_DATA) $(XCODE_FLAGS) test
 
@@ -89,9 +91,11 @@ script-tests:
 	bash scripts/test_secrets_scan.sh
 	python3 scripts/test_stt_benchmark_vocabulary.py
 	python3 scripts/test_ai_polish_history_replay.py
+	python3 scripts/test_build_app_registration.py
 
 release:
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
+	python3 scripts/with_unregistered_build_app.py --app "$(RELEASE_APP)" -- \
+		xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-configuration Release -destination 'generic/platform=macOS' \
 		-derivedDataPath $(RELEASE_DERIVED_DATA) $(XCODE_FLAGS) \
 		OTHER_CFLAGS='$$(inherited) $(RELEASE_C_PATH_FLAGS)' \
