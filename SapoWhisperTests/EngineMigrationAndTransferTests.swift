@@ -496,6 +496,98 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertEqual(hotkeyManager.currentModifiers, 256)
     }
 
+    func testImportNormalizesLegacyRealtimeBackupsWithoutChangingPrimaryRealtimeModes() throws {
+        for (legacy, batch, primary) in [
+            ("deepgram_flux_live", "deepgram_nova3", TranscriptionEngine.elevenLabsScribe),
+            ("elevenlabs_scribe_realtime", "elevenlabs_scribe_batch", TranscriptionEngine.deepgram),
+        ] {
+            try withBackupTransferFixture { defaults, manager in
+                var document = try manager.decodedDocument(from: manager.encodedSettings())
+                document.unsetPreferenceKeys = nil
+                var preferences = try XCTUnwrap(document.preferences)
+                preferences.fallbackTranscriptionEngine = legacy
+                preferences.transcriptionEngine = primary.rawValue
+                preferences.deepgramTranscriptionMode = DeepgramTranscriptionMode.fluxLive.rawValue
+                preferences.elevenLabsTranscriptionMode = ElevenLabsTranscriptionMode.scribeV2Realtime.rawValue
+                document.preferences = preferences
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                let imported = try manager.decodedDocument(from: encoder.encode(document))
+
+                try manager.importDocument(imported, sections: [.engine])
+
+                XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.fallbackTranscriptionEngine), batch)
+                XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.transcriptionEngine), primary.rawValue)
+                XCTAssertEqual(
+                    defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode),
+                    DeepgramTranscriptionMode.fluxLive.rawValue
+                )
+                XCTAssertEqual(
+                    defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode),
+                    ElevenLabsTranscriptionMode.scribeV2Realtime.rawValue
+                )
+            }
+        }
+    }
+
+    func testExportNormalizesObsoleteBackupWithoutMutatingPrimaryModesOrSourcePreferences() throws {
+        for (legacy, batch, primary) in [
+            ("deepgram_flux_live", "deepgram_nova3", TranscriptionEngine.elevenLabsScribe),
+            ("elevenlabs_scribe_realtime", "elevenlabs_scribe_batch", TranscriptionEngine.deepgram),
+        ] {
+            try withBackupTransferFixture { defaults, manager in
+                defaults.set(legacy, forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+                defaults.set(primary.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
+                defaults.set(DeepgramTranscriptionMode.fluxLive.rawValue, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+                defaults.set(
+                    ElevenLabsTranscriptionMode.scribeV2Realtime.rawValue, forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
+
+                let exported = try manager.decodedDocument(from: manager.encodedSettings())
+                let preferences = try XCTUnwrap(exported.preferences)
+
+                XCTAssertEqual(preferences.fallbackTranscriptionEngine, batch)
+                XCTAssertEqual(preferences.transcriptionEngine, primary.rawValue)
+                XCTAssertEqual(preferences.deepgramTranscriptionMode, DeepgramTranscriptionMode.fluxLive.rawValue)
+                XCTAssertEqual(preferences.elevenLabsTranscriptionMode, ElevenLabsTranscriptionMode.scribeV2Realtime.rawValue)
+                XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.fallbackTranscriptionEngine), legacy)
+                XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.transcriptionEngine), primary.rawValue)
+                XCTAssertEqual(
+                    defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode),
+                    DeepgramTranscriptionMode.fluxLive.rawValue
+                )
+                XCTAssertEqual(
+                    defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode),
+                    ElevenLabsTranscriptionMode.scribeV2Realtime.rawValue
+                )
+            }
+        }
+    }
+
+    private func withBackupTransferFixture(
+        _ body: (UserDefaults, SettingsTransferManager) throws -> Void
+    ) throws {
+        let suite = "test.transfer.batch-backup.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            vocabularyManager: VocabularyManager(fileURL: directory.appendingPathComponent("vocabulary.json")),
+            promptContextManager: PromptContextManager(fileURL: directory.appendingPathComponent("context.json")),
+            backupDirectory: directory.appendingPathComponent("backups"),
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in
+                XCTFail("Engine preference transfer must not write credentials")
+                return false
+            }
+        )
+        try body(defaults, manager)
+    }
+
     func testPortablePreferencesRoundTripAndHistoryOptIn() throws {
         let sourceSuite = "test.transfer.source.\(UUID().uuidString)"
         let targetSuite = "test.transfer.target.\(UUID().uuidString)"
@@ -505,7 +597,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             source.removePersistentDomain(forName: sourceSuite)
             target.removePersistentDomain(forName: targetSuite)
         }
-        source.set("deepgram_flux_live", forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+        source.set("deepgram_nova3", forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
         source.set(2048, forKey: Constants.StorageKeys.historyAudioMaxMB)
         source.set(90, forKey: Constants.StorageKeys.historyAutoDeleteDays)
         source.set("compact", forKey: Constants.StorageKeys.aiPolishMode)

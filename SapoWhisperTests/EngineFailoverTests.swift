@@ -60,9 +60,9 @@ final class EngineFailoverTests: XCTestCase {
         XCTAssertEqual(TranscriptionEngineVariant.stored("mlx_whisper"), .mlxWhisper)
         XCTAssertEqual(TranscriptionEngineVariant.stored("local_ai_server"), .localAIServer)
 
-        // New values round-trip untouched.
+        // Stored realtime backups migrate to the provider file model.
         for variant in TranscriptionEngineVariant.allCases {
-            XCTAssertEqual(TranscriptionEngineVariant.stored(variant.rawValue), variant)
+            XCTAssertEqual(TranscriptionEngineVariant.stored(variant.rawValue), variant.fileTranscriptionVariant)
         }
 
         XCTAssertNil(TranscriptionEngineVariant.stored(""))
@@ -96,6 +96,11 @@ final class EngineFailoverTests: XCTestCase {
             TranscriptionEngineVariant.deepgramNova3.fileTranscriptionVariant,
             TranscriptionEngineVariant.elevenLabsScribeBatch.fileTranscriptionVariant
         )
+    }
+
+    func testBackupCandidatesOnlyContainCompleteRecordingEngines() {
+        XCTAssertEqual(
+            Set(TranscriptionEngineVariant.backupCandidates), [.mlxWhisper, .localAIServer, .deepgramNova3, .elevenLabsScribeBatch])
     }
 
     func testOnlyLiveVariantsAreStreaming() {
@@ -372,12 +377,12 @@ final class BackupEngineSelectionTests: XCTestCase {
             )
         }
 
-        // A different provider is a real backup, live mode included.
+        // Legacy realtime selections on a different provider migrate to its file model.
         set(
             TranscriptionEngineVariant.elevenLabsScribeRealtime.rawValue,
             forKey: Constants.StorageKeys.fallbackTranscriptionEngine
         )
-        XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .elevenLabsScribeRealtime)
+        XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .elevenLabsScribeBatch)
     }
 
     /// The legacy migration must not resurrect a same-provider backup: before
@@ -389,6 +394,20 @@ final class BackupEngineSelectionTests: XCTestCase {
         set("deepgram", forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
 
         XCTAssertNil(SapoWhisperViewModel().fallbackVariant)
+    }
+
+    func testLaunchMigratesRealtimeBackupsWithoutChangingMainMode() {
+        for (stored, expected): (TranscriptionEngineVariant, TranscriptionEngineVariant) in [
+            (.deepgramFluxLive, .deepgramNova3), (.elevenLabsScribeRealtime, .elevenLabsScribeBatch),
+        ] {
+            set(TranscriptionEngine.localAIServer.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
+            set(DeepgramTranscriptionMode.fluxLive.rawValue, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+            set(stored.rawValue, forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+            let viewModel = SapoWhisperViewModel()
+            XCTAssertEqual(viewModel.fallbackVariant, expected)
+            XCTAssertEqual(viewModel.fallbackEngineRawValue, expected.rawValue)
+            XCTAssertEqual(viewModel.currentDeepgramMode, .fluxLive)
+        }
     }
 
     func testPrimaryVariantFollowsTheModePicker() {

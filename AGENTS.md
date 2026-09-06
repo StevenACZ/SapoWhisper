@@ -47,6 +47,7 @@ addresses, and machine-specific workflow details.
 - Every captured or merged WAV keeps its recovery marker until durable History ownership or deliberate deletion. Preserve merge sources until the combined pending row exists; recovery must skip live owners regardless of file age.
 - Apply recognition corrections exactly once in `TranscriptPostProcessor`; provider adapters must not apply saved replacements before the shared pass.
 - Background health probes must not invalidate an explicit connection test; actual transcription outcomes remain authoritative.
+- Backups use only complete-recording variants; normalize legacy realtime backup selections on launch and settings transfer. Realtime main engines remain available.
 - Automatic retention must preserve failed/in-flight recordings, pins and active extensions. Determine the newest capture by timestamp, not insertion ID; an accepted continuation cannot expire while recording.
 - Credentials belong in Keychain; configuration checks use `KeychainStore.hasValue`, not credential reads.
 - Never show an action that cannot execute in the current state; derive visibility and execution from the same predicate.

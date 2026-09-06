@@ -42,7 +42,9 @@ extension SettingsTransferManager {
             aiPolishCustomBaseURL: defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
                 .flatMap(ProviderURLSecurity.sanitizedValidURLString)
         )
-        preferences.fallbackTranscriptionEngine = defaults.string(forKey: Constants.StorageKeys.fallbackTranscriptionEngine) ?? ""
+        preferences.fallbackTranscriptionEngine =
+            TranscriptionEngineVariant.stored(
+                defaults.string(forKey: Constants.StorageKeys.fallbackTranscriptionEngine) ?? "")?.rawValue ?? ""
         preferences.historyAudioMaxMB = intValue(
             forKey: Constants.StorageKeys.historyAudioMaxMB, defaultValue: HistoryAudioStorage.defaultMaxStorageMB)
         preferences.historyAutoDeleteDays = intValue(forKey: Constants.StorageKeys.historyAutoDeleteDays, defaultValue: 0)
@@ -94,7 +96,9 @@ extension SettingsTransferManager {
         }
 
         if sections.contains(.engine) {
-            setIfPresent(preferences.fallbackTranscriptionEngine, key: Constants.StorageKeys.fallbackTranscriptionEngine)
+            setIfPresent(
+                preferences.fallbackTranscriptionEngine.map { TranscriptionEngineVariant.stored($0)?.rawValue ?? "" },
+                key: Constants.StorageKeys.fallbackTranscriptionEngine)
             setIfPresent(preferences.mlxWhisperUnloadAfterMinutes, key: Constants.StorageKeys.mlxWhisperUnloadAfterMinutes)
             // Old export files may carry removed engines; map them like the launch migration.
             let importedEngine = EnginePortfolioMigration.migratedEngine(

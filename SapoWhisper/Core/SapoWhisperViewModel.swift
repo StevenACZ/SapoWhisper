@@ -384,6 +384,9 @@ class SapoWhisperViewModel: ObservableObject {
 
     init(transcriptPostProcessor: any TranscriptPostProcessing = TranscriptPostProcessor()) {
         self.transcriptPostProcessor = transcriptPostProcessor
+        if let backup = TranscriptionEngineVariant.stored(fallbackEngineRawValue), backup.rawValue != fallbackEngineRawValue {
+            fallbackEngineRawValue = backup.rawValue
+        }
         setupBindings()
         checkInitialState()
         // Before setupHotkey: Carbon registers whatever the manager holds, and
@@ -1913,8 +1916,6 @@ class SapoWhisperViewModel: ObservableObject {
                 "Backup completed session=\(self.activeTranscriptionSessionID ?? 0, privacy: .public) engine=\(actualBackup.rawValue, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
             )
             recordTranscriptionOutcome(backup.engine, configurationRevision: configurationRevision)
-            // History must name what ran, and a live-only backup rescues an
-            // existing recording through its provider's file model.
             return (transcript, historyEngineName(for: backup.fileTranscriptionVariant))
         } catch {
             let failure = TranscriptionFailure.from(error, engine: backup.displayName)
@@ -1969,8 +1970,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Which variant takes this dictation. A primary that is not configured,
     /// is offline, or that a probe already proved down hands the take to the
-    /// backup BEFORE the mic opens — and a live backup then dictates natively
-    /// instead of rescuing a finished recording. nil means nothing can record.
+    /// backup BEFORE the mic opens. nil means nothing can record.
     private func resolveStartVariant(
         selected: TranscriptionEngineVariant
     ) -> (variant: TranscriptionEngineVariant, startedOnBackup: EngineFailoverPolicy.Reason?)? {

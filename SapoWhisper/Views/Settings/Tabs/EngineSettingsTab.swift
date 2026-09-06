@@ -87,7 +87,7 @@ struct EngineSettingsTab: View {
     /// The stored value falls back to "none" at runtime if the user later
     /// selects its engine as the primary.
     private var fallbackCandidates: [TranscriptionEngineVariant] {
-        TranscriptionEngineVariant.allCases.filter { $0.engine != currentVariant.engine }
+        TranscriptionEngineVariant.backupCandidates.filter { $0.engine != currentVariant.engine }
     }
 
     private var selectedFallbackEngine: TranscriptionEngineVariant? {
@@ -109,7 +109,7 @@ struct EngineSettingsTab: View {
     // Native menu labels consume image bounds, so spacing and tint are rendered into the cached icons.
     private static let fallbackIcons: [String: NSImage] = {
         var icons: [String: NSImage] = [:]
-        for symbol in Set(TranscriptionEngineVariant.allCases.map(\.icon)) {
+        for symbol in Set(TranscriptionEngineVariant.backupCandidates.map(\.icon)) {
             let renderer = ImageRenderer(
                 content: Image(systemName: symbol)
                     .font(.system(size: 13))
@@ -160,11 +160,6 @@ struct EngineSettingsTab: View {
                         )
                         .font(.caption)
                         .foregroundColor(.orange)
-                    } else if backup.isStreaming {
-                        Text("config.fallback_engine_live_note".localized)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
