@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Transcription engine settings coordinator.
@@ -105,6 +106,26 @@ struct EngineSettingsTab: View {
         )
     }
 
+    // Native menu labels consume image bounds, so spacing and tint are rendered into the cached icons.
+    private static let fallbackIcons: [String: NSImage] = {
+        var icons: [String: NSImage] = [:]
+        for symbol in Set(TranscriptionEngineVariant.allCases.map(\.icon)) {
+            let renderer = ImageRenderer(
+                content: Image(systemName: symbol)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.sapoGreen)
+                    .frame(width: 20, height: 16)
+                    .padding(.trailing, 8)
+            )
+            renderer.scale = 2
+            if let image = renderer.nsImage {
+                image.isTemplate = false
+                icons[symbol] = image
+            }
+        }
+        return icons
+    }()
+
     private var fallbackEngineCard: some View {
         SettingsCard(icon: "arrow.triangle.2.circlepath", title: "config.fallback_engine".localized) {
             VStack(alignment: .leading, spacing: 8) {
@@ -113,10 +134,16 @@ struct EngineSettingsTab: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Picker("", selection: fallbackSelection) {
+                Picker("config.fallback_engine".localized, selection: fallbackSelection) {
                     Text("config.fallback_engine_none".localized).tag("")
                     ForEach(fallbackCandidates) { variant in
-                        Label(variant.displayName, systemImage: variant.icon).tag(variant.rawValue)
+                        Label {
+                            Text(variant.displayName)
+                        } icon: {
+                            Image(nsImage: Self.fallbackIcons[variant.icon] ?? NSImage())
+                                .renderingMode(.original)
+                        }
+                        .tag(variant.rawValue)
                     }
                 }
                 .pickerStyle(.menu)

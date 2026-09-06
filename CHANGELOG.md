@@ -8,6 +8,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The backup selector gives every engine icon a consistent column and more space before its name, preserving the green tint in the native control and menu.
+
 - Copied confirmations use one outline around the complete overlay, with a clearer success heading and a secondary summary of the backup that transcribed the audio.
 
 - The configured backup now rescues rejected models/requests and provider configuration, authentication, quota and rate-limit failures. Usable backups bypass primary request backoffs and same-provider live recovery after confirmed failures; cancelled or invalid captures do not trigger rescue. The overlay names the failed primary and active backup through completion, and combined failures retain Retry when either service can recover.
