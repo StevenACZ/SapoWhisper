@@ -3,7 +3,10 @@
 # Local/private documentation
 FUTURE_FEATURES.md
 DMG/
-docs/
+docs/*
+!docs/images/
+docs/images/*
+!docs/images/settings.png
 
 # macOS system files
 .DS_Store

@@ -55,7 +55,7 @@ public struct STTGenerateParameters: Sendable {
 
 /// Events emitted during speech-to-text streaming generation.
 public enum STTGeneration: Sendable {
-    /// A generated text token during transcription
+    /// Accepted text delta; incomplete decoder attempts are never published.
     case token(String)
     /// Final transcription result
     case result(STTOutput)
@@ -75,6 +75,7 @@ public struct STTOutput: @unchecked Sendable {
     public let generationTokens: Int
     /// Total number of tokens processed.
     public let totalTokens: Int
+    public let decodingRetries: Int
     /// Prompt processing tokens per second.
     public let promptTps: Double
     /// Generation tokens per second.
@@ -91,6 +92,7 @@ public struct STTOutput: @unchecked Sendable {
         promptTokens: Int = 0,
         generationTokens: Int = 0,
         totalTokens: Int = 0,
+        decodingRetries: Int = 0,
         promptTps: Double = 0.0,
         generationTps: Double = 0.0,
         totalTime: Double = 0.0,
@@ -102,6 +104,7 @@ public struct STTOutput: @unchecked Sendable {
         self.promptTokens = promptTokens
         self.generationTokens = generationTokens
         self.totalTokens = totalTokens
+        self.decodingRetries = decodingRetries
         self.promptTps = promptTps
         self.generationTps = generationTps
         self.totalTime = totalTime

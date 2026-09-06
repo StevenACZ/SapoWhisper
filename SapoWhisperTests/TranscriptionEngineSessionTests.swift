@@ -132,7 +132,7 @@ final class TranscriptionEngineSessionTests: XCTestCase {
     /// to a cloud value first so the ViewModel's init does not kick off a
     /// local model load.
     func testEngineSessionsMapEachEngineToItsConcreteTranscribers() {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let key = Constants.StorageKeys.transcriptionEngine
         let previous = defaults.string(forKey: key)
         defaults.set(TranscriptionEngine.deepgram.rawValue, forKey: key)

@@ -1,4 +1,6 @@
+import Combine
 import XCTest
+import os
 
 @testable import SapoWhisper
 
@@ -9,6 +11,7 @@ import XCTest
 /// transcription path, where it could only be exercised against real engines.
 /// Splitting the decision into plain values is what makes the "primary is
 /// down, the user should not notice" contract testable at all.
+@MainActor
 final class EngineFailoverTests: XCTestCase {
 
     // MARK: - Variant mapping
@@ -57,9 +60,9 @@ final class EngineFailoverTests: XCTestCase {
         XCTAssertEqual(TranscriptionEngineVariant.stored("mlx_whisper"), .mlxWhisper)
         XCTAssertEqual(TranscriptionEngineVariant.stored("local_ai_server"), .localAIServer)
 
-        // New values round-trip untouched.
+        // Stored realtime backups migrate to the provider file model.
         for variant in TranscriptionEngineVariant.allCases {
-            XCTAssertEqual(TranscriptionEngineVariant.stored(variant.rawValue), variant)
+            XCTAssertEqual(TranscriptionEngineVariant.stored(variant.rawValue), variant.fileTranscriptionVariant)
         }
 
         XCTAssertNil(TranscriptionEngineVariant.stored(""))
@@ -95,6 +98,11 @@ final class EngineFailoverTests: XCTestCase {
         )
     }
 
+    func testBackupCandidatesOnlyContainCompleteRecordingEngines() {
+        XCTAssertEqual(
+            Set(TranscriptionEngineVariant.backupCandidates), [.mlxWhisper, .localAIServer, .deepgramNova3, .elevenLabsScribeBatch])
+    }
+
     func testOnlyLiveVariantsAreStreaming() {
         XCTAssertEqual(
             Set(TranscriptionEngineVariant.allCases.filter(\.isStreaming)),
@@ -123,7 +131,41 @@ final class EngineFailoverTests: XCTestCase {
         )
     }
 
+    func testModelOutputLimitCanUseTheConfiguredBackup() {
+        let failure = TranscriptionFailure(kind: .modelOutputLimit, engine: "Local model")
+        XCTAssertTrue(failure.isRetryable)
+        XCTAssertTrue(EngineFailoverPolicy.isRescuable(failure))
+        XCTAssertTrue(failure.localizedDescription.contains("Local model"))
+        XCTAssertFalse(EngineFailoverPolicy.shouldRememberAsUnreachable(failure))
+        for kind in [TranscriptionFailure.Kind.network, .timedOut, .serverError] {
+            XCTAssertTrue(EngineFailoverPolicy.shouldRememberAsUnreachable(.init(kind: kind)))
+        }
+    }
+
+    func testRejectedRequestsCanSwitchProvidersWithoutCachingBadConfiguration() {
+        for status in [400, 401, 402, 403, 404, 413, 415, 422, 429] {
+            let failure = TranscriptionFailure.fromHTTP(engine: "Primary", statusCode: status, body: Data())
+            XCTAssertTrue(EngineFailoverPolicy.isRescuable(failure), "HTTP \(status)")
+            XCTAssertTrue(EngineFailoverPolicy.isStartupRescuable(failure), "HTTP \(status)")
+            XCTAssertFalse(EngineFailoverPolicy.shouldRememberAsUnreachable(failure), "HTTP \(status)")
+        }
+        for kind in [TranscriptionFailure.Kind.audioCorrupt, .recordingInterrupted, .userCancelled, .unknown] {
+            XCTAssertFalse(EngineFailoverPolicy.isStartupRescuable(.init(kind: kind)))
+        }
+    }
+
     // MARK: - Reachability memory
+
+    func testExplicitRetryBypassesRecentFailuresWithoutErasingNormalTakeProtection() {
+        var log = EngineReachabilityLog()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        for engine in [TranscriptionEngine.localAIServer, .deepgram] {
+            log.markUnreachable(engine, at: now)
+            XCTAssertTrue(log.isUnreachable(engine, at: now))
+            XCTAssertFalse(log.isUnreachable(engine, at: now, ignoringRecentFailures: true))
+            XCTAssertTrue(log.isUnreachable(engine, at: now))
+        }
+    }
 
     func testUnreachableEngineIsRememberedUntilTheTTLExpires() {
         let start = Date(timeIntervalSince1970: 1_000_000)
@@ -157,6 +199,60 @@ final class EngineFailoverTests: XCTestCase {
         log.markUnreachable(.localAIServer, at: start)
         XCTAssertFalse(log.isUnreachable(.deepgram, at: start))
         XCTAssertFalse(log.isUnreachable(.mlxWhisper, at: start))
+    }
+
+    func testVerifiedRecoveryRestoresPrimaryBeforeCooldownExpires() {
+        var log = EngineReachabilityLog()
+        let now = Date()
+        log.markUnreachable(.localAIServer, at: now)
+        let check = log.beginObservation(for: .localAIServer)
+        XCTAssertTrue(log.isUnreachable(.localAIServer, at: now))
+        XCTAssertTrue(log.apply(check, reachable: true, at: now))
+        let primary = EngineFailoverPolicy.Availability(
+            isUsable: true, isKnownUnreachable: log.isUnreachable(.localAIServer, at: now))
+        XCTAssertEqual(EngineFailoverPolicy.decision(primary: primary, backup: .healthy), .primary)
+    }
+
+    func testOldProbeCannotRestoreCooldownAfterConfigurationChanges() {
+        var log = EngineReachabilityLog()
+        let oldProbe = log.observation(for: .localAIServer)
+        log.markReachable(.localAIServer)
+        XCTAssertFalse(log.apply(oldProbe, reachable: false))
+        XCTAssertFalse(log.isUnreachable(.localAIServer))
+    }
+
+    func testOldConnectionSuccessCannotEraseNewerTranscriptionFailure() {
+        var log = EngineReachabilityLog()
+        let check = log.beginObservation(for: .localAIServer)
+        log.markUnreachable(.localAIServer)
+        XCTAssertFalse(log.apply(check, reachable: true))
+        XCTAssertTrue(log.isUnreachable(.localAIServer))
+    }
+
+    func testNewConnectionTestInvalidatesPriorProbeWithoutClearingCooldown() {
+        var log = EngineReachabilityLog()
+        log.markUnreachable(.localAIServer)
+        let oldProbe = log.observation(for: .localAIServer)
+        _ = log.beginObservation(for: .localAIServer)
+        XCTAssertFalse(log.apply(oldProbe, reachable: true))
+        XCTAssertTrue(log.isUnreachable(.localAIServer))
+    }
+
+    func testBackupSuccessDoesNotInvalidatePrimaryObservation() {
+        var log = EngineReachabilityLog()
+        let primaryProbe = log.observation(for: .localAIServer)
+        log.markReachable(.deepgram)
+        XCTAssertTrue(log.apply(primaryProbe, reachable: false))
+        XCTAssertTrue(log.isUnreachable(.localAIServer))
+        XCTAssertFalse(log.isUnreachable(.deepgram))
+    }
+
+    func testAnObservationCannotApplyTwice() {
+        var log = EngineReachabilityLog()
+        let check = log.beginObservation(for: .localAIServer)
+        XCTAssertTrue(log.apply(check, reachable: true))
+        XCTAssertFalse(log.apply(check, reachable: false))
+        XCTAssertFalse(log.isUnreachable(.localAIServer))
     }
 
     // MARK: - Start decision
@@ -207,21 +303,20 @@ final class EngineFailoverTests: XCTestCase {
 
     // MARK: - Rescuable failures
 
-    func testOnlyConnectivityClassFailuresAreRescued() {
-        for kind in [TranscriptionFailure.Kind.network, .timedOut, .serverError] {
+    func testProviderFailuresUseBackupWhileCaptureAndCancellationDoNot() {
+        for kind in [
+            TranscriptionFailure.Kind.network, .timedOut, .serverError, .notConfigured,
+            .auth, .outOfCredits, .rateLimited, .planRestricted, .clientError, .modelOutputLimit, .unknown,
+        ] {
             XCTAssertTrue(
                 EngineFailoverPolicy.isRescuable(TranscriptionFailure(kind: kind)),
                 "\(kind.rawValue) must reach the backup"
             )
         }
 
-        // A misconfigured engine, a cancelled take, or silence are not the
-        // backup's problem — retrying them elsewhere burns credits and, for
-        // empty transcriptions, would paste hallucinated text.
         let notRescued: [TranscriptionFailure.Kind] = [
-            .notConfigured, .auth, .outOfCredits, .rateLimited, .planRestricted, .clientError,
-            .audioEmpty, .audioCorrupt, .recordingInterrupted, .userCancelled, .emptyTranscription,
-            .unknown,
+            .audioEmpty, .audioCorrupt, .audioStorageFailed, .audioPreparationFailed,
+            .recordingInterrupted, .userCancelled, .emptyTranscription,
         ]
         for kind in notRescued {
             XCTAssertFalse(
@@ -236,7 +331,7 @@ final class EngineFailoverTests: XCTestCase {
 @MainActor
 final class BackupEngineSelectionTests: XCTestCase {
 
-    private let defaults = UserDefaults.standard
+    private let defaults = AppPreferences.defaults
     private var restore: [String: String?] = [:]
 
     private func set(_ value: String, forKey key: String) {
@@ -246,7 +341,7 @@ final class BackupEngineSelectionTests: XCTestCase {
         defaults.set(value, forKey: key)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for (key, previous) in restore {
             if let previous {
                 defaults.set(previous, forKey: key)
@@ -255,7 +350,7 @@ final class BackupEngineSelectionTests: XCTestCase {
             }
         }
         restore = [:]
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testLegacyStoredBackupStillSelectsTheProviderFileVariant() {
@@ -282,12 +377,12 @@ final class BackupEngineSelectionTests: XCTestCase {
             )
         }
 
-        // A different provider is a real backup, live mode included.
+        // Legacy realtime selections on a different provider migrate to its file model.
         set(
             TranscriptionEngineVariant.elevenLabsScribeRealtime.rawValue,
             forKey: Constants.StorageKeys.fallbackTranscriptionEngine
         )
-        XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .elevenLabsScribeRealtime)
+        XCTAssertEqual(SapoWhisperViewModel().fallbackVariant, .elevenLabsScribeBatch)
     }
 
     /// The legacy migration must not resurrect a same-provider backup: before
@@ -301,6 +396,20 @@ final class BackupEngineSelectionTests: XCTestCase {
         XCTAssertNil(SapoWhisperViewModel().fallbackVariant)
     }
 
+    func testLaunchMigratesRealtimeBackupsWithoutChangingMainMode() {
+        for (stored, expected): (TranscriptionEngineVariant, TranscriptionEngineVariant) in [
+            (.deepgramFluxLive, .deepgramNova3), (.elevenLabsScribeRealtime, .elevenLabsScribeBatch),
+        ] {
+            set(TranscriptionEngine.localAIServer.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
+            set(DeepgramTranscriptionMode.fluxLive.rawValue, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+            set(stored.rawValue, forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+            let viewModel = SapoWhisperViewModel()
+            XCTAssertEqual(viewModel.fallbackVariant, expected)
+            XCTAssertEqual(viewModel.fallbackEngineRawValue, expected.rawValue)
+            XCTAssertEqual(viewModel.currentDeepgramMode, .fluxLive)
+        }
+    }
+
     func testPrimaryVariantFollowsTheModePicker() {
         set(TranscriptionEngine.deepgram.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
         set(
@@ -309,4 +418,214 @@ final class BackupEngineSelectionTests: XCTestCase {
         )
         XCTAssertEqual(SapoWhisperViewModel().currentVariant, .deepgramFluxLive)
     }
+    private func configuredLocalServerViewModel(baseURL: String = "http://127.0.0.1:9876") -> SapoWhisperViewModel {
+        set(TranscriptionEngine.localAIServer.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
+        set(baseURL, forKey: Constants.StorageKeys.localAIServerBaseURL)
+        set("test-model", forKey: Constants.StorageKeys.localAIServerModel)
+        return SapoWhisperViewModel()
+    }
+
+    private final class ProbeProvider: URLProtocol {
+        nonisolated static let host = "connection-probe-race-fixture.invalid"
+        nonisolated static let onRequest = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
+
+        override class func canInit(with request: URLRequest) -> Bool { request.url?.host == host }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func stopLoading() {}
+
+        override func startLoading() {
+            Self.onRequest.withLock { $0 }?()
+            guard let url = request.url,
+                let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)
+            else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+                return
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data())
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    private func proveBackgroundProbeCanComplete(in viewModel: SapoWhisperViewModel) async {
+        let requested = expectation(description: "Fixture received background health request")
+        let published = expectation(description: "Background health result was applied")
+        ProbeProvider.onRequest.withLock { $0 = { requested.fulfill() } }
+        let subscription = viewModel.$localAIServerConnectionState
+            .first { $0 == .reachable }
+            .sink { _ in published.fulfill() }
+        viewModel.startReachabilityProbe(for: .localAIServer)
+        await fulfillment(of: [requested, published], timeout: 3)
+        subscription.cancel()
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .reachable)
+    }
+
+    private func attemptBackgroundProbeDuringManualCheck(in viewModel: SapoWhisperViewModel) async {
+        let unexpected = expectation(description: "Manual check owns the provider observation")
+        unexpected.isInverted = true
+        ProbeProvider.onRequest.withLock { $0 = { unexpected.fulfill() } }
+        viewModel.startReachabilityProbe(for: .localAIServer)
+        await fulfillment(of: [unexpected], timeout: 0.25)
+        ProbeProvider.onRequest.withLock { $0 = nil }
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .checking)
+    }
+
+    func testPendingManualConnectionSuccessKeepsAuthorityOverBackgroundProbeAndClearsCooldown() async throws {
+        try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
+        XCTAssertTrue(URLProtocol.registerClass(ProbeProvider.self))
+        defer {
+            ProbeProvider.onRequest.withLock { $0 = nil }
+            URLProtocol.unregisterClass(ProbeProvider.self)
+        }
+        let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")
+        await proveBackgroundProbeCanComplete(in: viewModel)
+        let initialFailure = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.failLocalAIServerConnectionTest(initialFailure, error: URLError(.timedOut))
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+
+        let manualCheck = viewModel.beginLocalAIServerConnectionTest()
+        await attemptBackgroundProbeDuringManualCheck(in: viewModel)
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(manualCheck, modelAvailable: true))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .verified(modelAvailable: true))
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testPendingManualConnectionFailureKeepsAuthorityAndItsCooldownPolicy() async throws {
+        try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
+        XCTAssertTrue(URLProtocol.registerClass(ProbeProvider.self))
+        defer {
+            ProbeProvider.onRequest.withLock { $0 = nil }
+            URLProtocol.unregisterClass(ProbeProvider.self)
+        }
+        for statusCode in [503, 401] {
+            let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")
+            await proveBackgroundProbeCanComplete(in: viewModel)
+            let initialFailure = viewModel.beginLocalAIServerConnectionTest()
+            viewModel.failLocalAIServerConnectionTest(initialFailure, error: URLError(.timedOut))
+            XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+
+            let manualCheck = viewModel.beginLocalAIServerConnectionTest()
+            await attemptBackgroundProbeDuringManualCheck(in: viewModel)
+            XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+            viewModel.failLocalAIServerConnectionTest(
+                manualCheck, error: LocalAIServerConnectionError.server(statusCode: statusCode, body: ""))
+            guard case .failed = viewModel.localAIServerConnectionState else {
+                XCTFail("Manual failure must publish even when a background probe was requested")
+                continue
+            }
+            XCTAssertEqual(viewModel.isBackupEngineUsable(.localAIServer), statusCode == 401)
+        }
+    }
+
+    func testSavingServerURLImmediatelyClearsFailureWithoutConnectionTest() {
+        let viewModel = configuredLocalServerViewModel()
+        let failed = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.failLocalAIServerConnectionTest(failed, error: URLError(.notConnectedToInternet))
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        let stale = viewModel.beginLocalAIServerConnectionTest()
+        let revision = viewModel.localAIServerConfigurationRevision
+
+        viewModel.updateLocalAIServerSettings(baseURL: "http://127.0.0.1:9877")
+
+        XCTAssertEqual(AppPreferences.defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL), "http://127.0.0.1:9877")
+        XCTAssertGreaterThan(viewModel.localAIServerConfigurationRevision, revision)
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+        viewModel.failLocalAIServerConnectionTest(stale, error: URLError(.timedOut))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testSavingServerModelImmediatelyInvalidatesPreviousAttempt() {
+        let viewModel = configuredLocalServerViewModel()
+        let revision = viewModel.localAIServerConfigurationRevision
+        viewModel.updateLocalAIServerSettings(model: "new-model")
+        XCTAssertEqual(AppPreferences.defaults.string(forKey: Constants.StorageKeys.localAIServerModel), "new-model")
+        viewModel.recordTranscriptionOutcome(.localAIServer, configurationRevision: revision, failure: .init(kind: .network))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testConnectionRecoveryUpdatesStatusAndRoutingTogether() {
+        let viewModel = configuredLocalServerViewModel()
+        let failedCheck = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.failLocalAIServerConnectionTest(failedCheck, error: URLError(.cannotConnectToHost))
+        guard case .failed = viewModel.localAIServerConnectionState else { return XCTFail("Expected failed status") }
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        XCTAssertTrue(viewModel.isBackupEngineConfigured(.localAIServer))
+
+        let recoveredCheck = viewModel.beginLocalAIServerConnectionTest()
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .checking)
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(recoveredCheck, modelAvailable: true))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .verified(modelAvailable: true))
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testConfigurationChangeDiscardsOldConnectionResultAndCooldown() {
+        let viewModel = configuredLocalServerViewModel()
+        let failedCheck = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.failLocalAIServerConnectionTest(failedCheck, error: URLError(.timedOut))
+        let oldCheck = viewModel.beginLocalAIServerConnectionTest()
+        set("http://127.0.0.1:9877", forKey: Constants.StorageKeys.localAIServerBaseURL)
+        viewModel.setEngine(.localAIServer)
+        viewModel.failLocalAIServerConnectionTest(oldCheck, error: URLError(.cannotConnectToHost))
+        XCTAssertFalse(viewModel.completeLocalAIServerConnectionTest(oldCheck, modelAvailable: true))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testCancelledOrReplacedConnectionChecksCannotPublishLateResults() {
+        let viewModel = configuredLocalServerViewModel()
+        let initial = viewModel.beginLocalAIServerConnectionTest()
+        XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(initial, modelAvailable: false))
+        let oldCheck = viewModel.beginLocalAIServerConnectionTest()
+        let newCheck = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.cancelLocalAIServerConnectionTest(oldCheck)
+        XCTAssertFalse(viewModel.completeLocalAIServerConnectionTest(oldCheck, modelAvailable: true))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .checking)
+        viewModel.cancelLocalAIServerConnectionTest(newCheck)
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .verified(modelAvailable: false))
+        XCTAssertFalse(viewModel.completeLocalAIServerConnectionTest(newCheck, modelAvailable: true))
+    }
+
+    func testConnectionHTTPFailuresFollowProviderCooldownPolicy() {
+        let viewModel = configuredLocalServerViewModel()
+        for statusCode in [503, 401] {
+            let check = viewModel.beginLocalAIServerConnectionTest()
+            viewModel.failLocalAIServerConnectionTest(
+                check, error: LocalAIServerConnectionError.server(statusCode: statusCode, body: ""))
+            guard case .failed = viewModel.localAIServerConnectionState else { return XCTFail("Expected failed status") }
+            XCTAssertEqual(viewModel.isBackupEngineUsable(.localAIServer), statusCode == 401)
+        }
+    }
+
+    func testOldServerTranscriptionCannotChangeNewServerStatusOrRouting() {
+        let viewModel = configuredLocalServerViewModel()
+        let oldRevision = viewModel.localAIServerConfigurationRevision
+        set("http://127.0.0.1:9877", forKey: Constants.StorageKeys.localAIServerBaseURL)
+        viewModel.setEngine(.localAIServer)
+        let check = viewModel.beginLocalAIServerConnectionTest()
+        XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(check, modelAvailable: true))
+        for failure: TranscriptionFailure? in [.init(kind: .network), nil] {
+            viewModel.recordTranscriptionOutcome(.localAIServer, configurationRevision: oldRevision, failure: failure)
+            XCTAssertEqual(viewModel.localAIServerConnectionState, .verified(modelAvailable: true))
+            XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+        }
+    }
+
+    func testCurrentServerTranscriptionOutranksConnectionChecks() {
+        let viewModel = configuredLocalServerViewModel()
+        let revision = viewModel.localAIServerConfigurationRevision
+        let check = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.recordTranscriptionOutcome(
+            .localAIServer, configurationRevision: revision, failure: .init(kind: .network))
+        XCTAssertFalse(viewModel.completeLocalAIServerConnectionTest(check, modelAvailable: true))
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        viewModel.recordTranscriptionOutcome(.localAIServer, configurationRevision: revision)
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .transcribed)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
 }

@@ -1,14 +1,7 @@
-//
-//  CaptureStartSupervisor.swift
-//  SapoWhisper
-//
-
 import Foundation
 import os
 
-/// The slice of `AudioCaptureEngine` the batch start/recovery loop drives;
-/// tests substitute a fake recorder.
-nonisolated protocol BatchCaptureStarting: AnyObject, Sendable {
+nonisolated protocol CaptureStarting: AnyObject, Sendable {
     var selectedDeviceUID: String { get set }
     func prepareInputDeviceForRecording() -> TimeInterval
     func startRecording(targetEngine: TranscriptionEngine?, onPCMChunk: AudioCaptureEngine.PCMChunkHandler?) async throws
@@ -17,137 +10,93 @@ nonisolated protocol BatchCaptureStarting: AnyObject, Sendable {
     func discardRecording()
 }
 
-extension AudioCaptureEngine: BatchCaptureStarting {}
+extension AudioCaptureEngine: CaptureStarting {}
 
-/// Start-with-recovery for the batch recorder: route-settle delays, the
-/// first-input-buffer gate, transient-failure classification, and a retry
-/// budget that widens on Bluetooth inputs. Makes no AVAudioEngine calls
-/// itself — everything goes through `BatchCaptureStarting`.
 @MainActor
 final class CaptureStartSupervisor {
-
-    private enum Timing {
-        static let firstInputBufferTimeout: TimeInterval = 0.8
-        static let startRetryBudget: TimeInterval = 1.0
-        /// Bluetooth inputs renegotiate the link when the mic opens (AirPods
-        /// switch A2DP→HFP, 1–3 s of dead air). The default timeouts declared the
-        /// capture failed while the handshake was still in flight, so BT inputs
-        /// get a wider first-buffer window and retry budget.
-        static let bluetoothFirstInputBufferTimeout: TimeInterval = 2.5
-        static let bluetoothStartRetryBudget: TimeInterval = 5.0
-        static let startRetryBackoffs: [TimeInterval] = [0.15, 0.30]
-    }
-
-    private let recorder: any BatchCaptureStarting
+    private let recorder: any CaptureStarting
+    private let mode: AudioCaptureEngine.Mode
     private let transport: (String) -> AudioDeviceTransport
     private let routeSettleDelay: () -> TimeInterval
+    private let now: () -> TimeInterval
     private let sleep: (TimeInterval) async -> Void
 
     init(
-        recorder: any BatchCaptureStarting,
+        recorder: any CaptureStarting,
+        mode: AudioCaptureEngine.Mode = .batch,
         transport: @escaping (String) -> AudioDeviceTransport = {
             AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: $0)
         },
         routeSettleDelay: @escaping () -> TimeInterval = { AudioDeviceManager.shared.captureRouteSettleDelay() },
-        sleep: @escaping (TimeInterval) async -> Void = { try? await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) }
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        sleep: @escaping (TimeInterval) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
     ) {
         self.recorder = recorder
+        self.mode = mode
         self.transport = transport
         self.routeSettleDelay = routeSettleDelay
+        self.now = now
         self.sleep = sleep
     }
 
-    func start(microphone: String, targetEngine: TranscriptionEngine) async throws {
-        let transport = self.transport(microphone)
-        let retryBudget = transport == .bluetooth ? Timing.bluetoothStartRetryBudget : Timing.startRetryBudget
-        if transport == .bluetooth {
-            SapoLog.recording.info("Capture start on Bluetooth input, using extended timeouts")
-        }
-        let deadline = CFAbsoluteTimeGetCurrent() + retryBudget
+    func start(
+        microphone: String,
+        targetEngine: TranscriptionEngine? = nil,
+        onPCMChunk: AudioCaptureEngine.PCMChunkHandler? = nil
+    ) async throws {
+        let bluetooth = transport(microphone) == .bluetooth
+        let firstInputTimeout: TimeInterval = bluetooth ? 2.5 : (mode == .streaming ? 1.2 : 0.8)
+        let retryBudget: TimeInterval = bluetooth ? 5 : (mode == .streaming ? 3 : 1)
+        let backoffs: [TimeInterval] = mode == .streaming ? [0.25, 0.60] : [0.15, 0.30]
+        let startedAt = now()
+        var recoveryDeadline: TimeInterval?
         var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
 
         for attempt in 1...3 {
-            guard !Task.isCancelled else { throw CancellationError() }
+            try Task.checkCancellation()
+            recorder.selectedDeviceUID = microphone
+            let routeDelay = max(recorder.prepareInputDeviceForRecording(), routeSettleDelay())
+            let delay = max(routeDelay, attempt == 1 ? 0 : backoffs[attempt - 2])
+            if let recoveryDeadline, now() + delay >= recoveryDeadline { break }
+            if delay > 0 {
+                await sleep(delay)
+            }
+            try Task.checkCancellation()
+            if let recoveryDeadline, now() >= recoveryDeadline { break }
 
             do {
-                let didStart = try await attemptStart(
-                    microphone: microphone,
-                    targetEngine: targetEngine,
-                    attempt: attempt,
-                    minimumDelay: attempt == 1 ? 0 : Timing.startRetryBackoffs[attempt - 2],
-                    firstInputTimeout: transport == .bluetooth
-                        ? Timing.bluetoothFirstInputBufferTimeout : Timing.firstInputBufferTimeout
-                )
-                if didStart {
+                try await recorder.startRecording(targetEngine: targetEngine, onPCMChunk: onPCMChunk)
+                let receivedInput = await recorder.waitForFirstInputBuffer(timeout: firstInputTimeout)
+                try Task.checkCancellation()
+                if receivedInput {
                     if attempt > 1 {
-                        SapoLog.recording.info("Capture recovered on retry after route transition")
+                        SapoLog.recording.notice(
+                            "Capture start recovered mode=\(self.mode.opPrefix, privacy: .public) attempt=\(attempt, privacy: .public) elapsedMs=\(Int((self.now() - startedAt) * 1000), privacy: .public)"
+                        )
                     }
                     return
                 }
-                lastFailure = RecordingError.noInputAfterDeviceSwitch
+                throw RecordingError.noInputAfterDeviceSwitch
             } catch {
-                if error is CancellationError {
-                    throw error
-                }
+                recorder.discardRecording()
+                if error is CancellationError { throw error }
                 lastFailure = error
             }
 
-            recorder.discardRecording()
-
+            let classification = classifyRecordingStartFailure(
+                lastFailure,
+                routeTransitionActive: routeDelay > 0 || routeSettleDelay() > 0
+            )
+            guard classification.isTransient else { throw lastFailure }
             guard attempt < 3 else { break }
-
-            let routeTransitionActive = routeSettleDelay() > 0
-            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
-            guard classification.isTransient else {
-                throw lastFailure
-            }
-
-            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
-            guard remainingBudget > 0 else { break }
-
-            let retryDelay = min(
-                remainingBudget,
-                max(Timing.startRetryBackoffs[attempt - 1], routeSettleDelay())
+            // The initial HAL setup has its own deadline; it must not consume the recovery window.
+            if recoveryDeadline == nil { recoveryDeadline = now() + retryBudget }
+            SapoLog.recording.notice(
+                "Capture start retry mode=\(self.mode.opPrefix, privacy: .public) reason=\(classification.reason, privacy: .public) attempt=\(attempt + 1, privacy: .public)/3 elapsedMs=\(Int((self.now() - startedAt) * 1000), privacy: .public)"
             )
-
-            SapoLog.recording.warning(
-                "Capture transient start failure reason=\(classification.reason, privacy: .public) attempt=\(attempt + 1, privacy: .public)/3 retryAfterMs=\(Int(retryDelay * 1000), privacy: .public)"
-            )
-            await sleep(retryDelay)
         }
 
         throw lastFailure
-    }
-
-    private func attemptStart(
-        microphone: String,
-        targetEngine: TranscriptionEngine,
-        attempt: Int,
-        minimumDelay: TimeInterval,
-        firstInputTimeout: TimeInterval
-    ) async throws -> Bool {
-        recorder.selectedDeviceUID = microphone
-        let settleDelay = max(minimumDelay, recorder.prepareInputDeviceForRecording())
-        if settleDelay > 0 {
-            let settleMs = Int(settleDelay * 1000)
-            SapoLog.recording.info("Delaying recorder start for route settle \(settleMs, privacy: .public)ms")
-            await sleep(settleDelay)
-        }
-
-        guard !Task.isCancelled else { return false }
-
-        try await recorder.startRecording(targetEngine: targetEngine, onPCMChunk: nil)
-        let receivedInput = await recorder.waitForFirstInputBuffer(timeout: firstInputTimeout)
-        if receivedInput {
-            return true
-        }
-
-        let diagnostics = recorder.currentCaptureDiagnostics()
-        let inputDescription = diagnostics.selectedDeviceUID == "default" ? "system-default" : diagnostics.selectedDeviceUID
-        SapoLog.recording.warning(
-            "Capture no-input attempt=\(attempt, privacy: .public) timeoutMs=\(Int(firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public) input=\(inputDescription, privacy: .private(mask: .hash))"
-        )
-        return false
     }
 
     static func isRecoverableInputStartError(_ error: Error) -> Bool {

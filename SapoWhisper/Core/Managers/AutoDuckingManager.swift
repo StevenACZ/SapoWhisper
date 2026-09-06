@@ -50,13 +50,13 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     // MARK: - Settings (read from UserDefaults)
 
     private var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: Constants.StorageKeys.autoDuckingEnabled)
+        AppPreferences.defaults.bool(forKey: Constants.StorageKeys.autoDuckingEnabled)
     }
 
     /// Porcentaje de reducción (0.0 = sin reducción, 1.0 = silenciar completamente)
     /// Default: 0.5 (reduce al 50% del volumen original)
     private var duckAmount: Double {
-        let amount = UserDefaults.standard.double(forKey: Constants.StorageKeys.autoDuckingAmount)
+        let amount = AppPreferences.defaults.double(forKey: Constants.StorageKeys.autoDuckingAmount)
         // Si nunca se configuró (0.0), usar default 0.5
         return amount > 0 ? amount : 0.8
     }
@@ -89,6 +89,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
 
     /// Reduce el volumen del sistema al nivel configurado con una rampa suave
     func duck() {
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
         queue.async { [weak self] in
             self?._duck()
         }
@@ -96,6 +97,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
 
     /// Restaura el volumen del sistema al nivel original
     func restore() {
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
         queue.async { [weak self] in
             self?._restore()
         }
@@ -103,6 +105,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
 
     /// Restaura forzosamente sin rampa ni verificar isEnabled (para app termination)
     func forceRestore() {
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
         queue.sync { [weak self] in
             guard let self else { return }
             self.fadeGeneration &+= 1

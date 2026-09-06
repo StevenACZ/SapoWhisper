@@ -17,6 +17,7 @@ final class TranscriptionPipelineTests: XCTestCase {
         var sessionLooksSilent = false
         var currentSessionID: UInt64? = 7
         var becomesStaleDuringPolish = false
+        var onPersist: (() async -> Void)?
 
         var polishedTranscripts: [(rawText: String, source: String, duration: TimeInterval?)] = []
         var deliveredTexts: [String] = []
@@ -49,7 +50,7 @@ final class TranscriptionPipelineTests: XCTestCase {
         }
 
         func postProcessTranscript(
-            _ rawText: String, source: String, duration: TimeInterval?
+            _ rawText: String, source: String, duration: TimeInterval?, historyTarget: HistoryPersistenceTarget?
         ) async -> TranscriptAIResult {
             polishedTranscripts.append((rawText, source, duration))
             if becomesStaleDuringPolish {
@@ -83,8 +84,9 @@ final class TranscriptionPipelineTests: XCTestCase {
             aiResult: TranscriptAIResult,
             perf: DictationPerfTimeline?,
             target: HistoryPersistenceTarget
-        ) {
+        ) async {
             completedPersists.append((audioURL, engineName, language, aiResult.finalText, target))
+            await onPersist?()
         }
 
         func persistFailedDictation(
@@ -128,6 +130,39 @@ final class TranscriptionPipelineTests: XCTestCase {
             duration: 4.2,
             language: "es"
         )
+    }
+
+    func testDeliveryWaitsForHistoryPersistence() async {
+        let host = HostSpy()
+        let gate = AsyncStream<Void>.makeStream()
+        host.onPersist = { for await _ in gate.stream { break } }
+        let pipeline = TranscriptionPipeline(host: host)
+        let task = Task {
+            await pipeline.run(makeRequest()) {
+                self.makeOutput()
+            } captureResultOnFailure: {
+                nil
+            }
+        }
+        for _ in 0..<1000 where host.completedPersists.isEmpty { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertEqual(host.completedPersists.count, 1)
+        XCTAssertTrue(host.deliveredTexts.isEmpty)
+        gate.continuation.finish()
+        await task.value
+        XCTAssertEqual(host.deliveredTexts.count, 1)
+    }
+
+    func testStalePersistenceCompletionNeverDelivers() async {
+        let host = HostSpy()
+        host.onPersist = { host.currentSessionID = nil }
+        let pipeline = TranscriptionPipeline(host: host)
+        await pipeline.run(makeRequest()) {
+            self.makeOutput()
+        } captureResultOnFailure: {
+            nil
+        }
+        XCTAssertEqual(host.completedPersists.count, 1)
+        XCTAssertTrue(host.deliveredTexts.isEmpty)
     }
 
     // MARK: - Happy path

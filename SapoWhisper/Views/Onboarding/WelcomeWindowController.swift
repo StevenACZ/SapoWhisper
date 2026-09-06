@@ -45,7 +45,7 @@ final class WelcomeWindowController: NSWindowController {
     /// Fresh install or upgrade where the previous engine was removed and no
     /// usable engine remains. Existing configured setups never see the flow.
     static var isOnboardingNeeded: Bool {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         guard !defaults.bool(forKey: Constants.StorageKeys.onboardingComplete) else { return false }
         guard !hasUsableEngine else {
             // Configured before this flow existed — mark complete silently.
@@ -115,7 +115,7 @@ final class WelcomeWindowController: NSWindowController {
     }
 
     private func markCompletedAndClose() {
-        UserDefaults.standard.set(true, forKey: Constants.StorageKeys.onboardingComplete)
+        AppPreferences.defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
         SapoLog.lifecycle.info("Welcome flow completed")
         closeWindow()
     }
@@ -123,7 +123,7 @@ final class WelcomeWindowController: NSWindowController {
     /// An explicit Close counts as "seen": the flow must never auto-reappear
     /// on later launches. The menu bar still offers the tour and setup hints.
     private func dismissForGood() {
-        UserDefaults.standard.set(true, forKey: Constants.StorageKeys.onboardingComplete)
+        AppPreferences.defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
         SapoLog.lifecycle.info("Welcome flow dismissed")
         closeWindow()
     }

@@ -21,11 +21,11 @@ struct HistoryRowView: View {
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            } else if entry.status == "transcribing" {
+            } else if entry.isProcessing {
                 HStack(spacing: 4) {
-                    Image(systemName: "waveform.badge.magnifyingglass")
+                    Image(systemName: entry.entryStatus?.symbol ?? "waveform.badge.magnifyingglass")
                         .font(.caption)
-                    Text("history.transcribing".localized)
+                    Text((entry.entryStatus?.titleKey ?? "history.transcribing").localized)
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)

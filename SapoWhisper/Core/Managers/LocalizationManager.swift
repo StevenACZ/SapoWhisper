@@ -22,7 +22,7 @@ class LocalizationManager: ObservableObject {
         Locale.preferredLanguages.first?.hasPrefix("es") == true ? "es" : "en"
     }
 
-    @AppStorage("appLanguage") var language: String = LocalizationManager.systemDefaultLanguage {
+    @AppStorage("appLanguage", store: AppPreferences.defaults) var language: String = LocalizationManager.systemDefaultLanguage {
         didSet {
             updateBundle()
         }
@@ -42,7 +42,7 @@ class LocalizationManager: ObservableObject {
 
     private nonisolated init() {
         let language =
-            UserDefaults.standard.string(forKey: "appLanguage")
+            AppPreferences.defaults.string(forKey: "appLanguage")
             ?? Self.systemDefaultLanguage
         activeBundle = Self.resolveBundle(for: language)
     }

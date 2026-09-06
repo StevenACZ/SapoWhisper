@@ -65,9 +65,6 @@ struct RecordingTimerRow: View {
     }
 }
 
-/// Live "Recording... Ns" caption behind its own subscription, for the same
-/// reason as RecordingTimerRow: the caption is the only header element that
-/// needs the 10 Hz duration ticks.
 struct RecordingStatusCaption: View {
     let durationPublisher: AnyPublisher<TimeInterval, Never>
 
@@ -77,7 +74,7 @@ struct RecordingStatusCaption: View {
         Text("menu.recording".localized(String(Int(duration))))
             .font(.caption)
             .foregroundColor(.secondary)
-            .onReceive(durationPublisher) { duration = $0 }
+            .onReceive(durationPublisher.map { $0.rounded(.down) }.removeDuplicates()) { duration = $0 }
     }
 }
 

@@ -11,6 +11,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
 
     private func stats(failedMessages: Int, drainTimedOut: Bool) -> ElevenLabsRealtimeAudioSenderStats {
@@ -25,6 +26,21 @@ final class ElevenLabsRealtimeSenderFallbackTests: XCTestCase {
             timedOutSends: 0,
             drainTimedOut: drainTimedOut
         )
+    }
+
+    func testUnconfirmedPartialUsesBackupButCompletedSpeechKeepsRealtime() {
+        XCTAssertTrue(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: true, hasPendingPartial: true, receivedFinalCommit: false))
+        XCTAssertFalse(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: true, hasPendingPartial: true, receivedFinalCommit: true))
+        XCTAssertFalse(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: true, hasPendingPartial: false, receivedFinalCommit: false))
+        XCTAssertFalse(
+            ElevenLabsScribeRealtimeTranscriber.shouldRescueUnconfirmedTail(
+                prefersBackup: false, hasPendingPartial: true, receivedFinalCommit: false))
     }
 
     func testDrainTimeoutFallsBackToBatchDespiteZeroFailedMessages() {

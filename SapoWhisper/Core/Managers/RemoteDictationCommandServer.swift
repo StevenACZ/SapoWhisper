@@ -161,7 +161,7 @@ final class RemoteDictationCommandServer {
         )
         let descriptor = try Self.makeListeningSocket(at: socketURL)
         let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
-        source.setEventHandler {
+        source.setEventHandler { @Sendable in
             Self.acceptPendingConnections(
                 from: descriptor,
                 validator: validator,
@@ -169,9 +169,8 @@ final class RemoteDictationCommandServer {
                 isRecording: isRecording
             )
         }
-        source.setCancelHandler {
+        source.setCancelHandler { @Sendable in
             Darwin.close(descriptor)
-            Darwin.unlink(socketURL.path)
         }
         source.activate()
 
@@ -182,6 +181,7 @@ final class RemoteDictationCommandServer {
     func stop() {
         source?.cancel()
         source = nil
+        if let socketURL { Darwin.unlink(socketURL.path) }
         socketURL = nil
     }
 

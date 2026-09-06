@@ -69,26 +69,13 @@ nonisolated extension AudioCaptureEngine {
             AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate))
         )
         var didPublishLevel = false
-        // This converter's input block is a pull-style data provider invoked
-        // synchronously inside convert() on this thread (not a stored/escaping
-        // callback), so a plain captured flag suffices — no need to heap-allocate
-        // a lock per buffer. AVFAudio is imported @preconcurrency, so the closure
-        // is not forced @Sendable.
-        var inputConsumed = false
+        let input = AudioConverterInputSource(buffer: buffer)
 
         while true {
             guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: frameCapacity) else { return }
 
             var error: NSError?
-            let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
-                if inputConsumed {
-                    outStatus.pointee = .noDataNow
-                    return nil
-                }
-                inputConsumed = true
-                outStatus.pointee = .haveData
-                return buffer
-            }
+            let status = converter.convert(to: convertedBuffer, error: &error, withInputFrom: input.provide)
 
             switch status {
             case .haveData:
@@ -138,14 +125,15 @@ nonisolated extension AudioCaptureEngine {
         // buffer is owned by this call, so handing it off is safe. The stop
         // path drains this queue before closing the file.
         audioWriteQueue.async { [weak self] in
+            guard let self else { return }
             do {
-                try audioFile.write(from: convertedBuffer)
-                self?.registerWrittenFrames(convertedBuffer.frameLength)
+                try self.writeBuffer(convertedBuffer, audioFile)
+                self.registerWrittenFrames(convertedBuffer.frameLength)
             } catch {
-                self?.registerWriteFailure(error)
+                self.registerWriteFailure(error)
                 let detail = LogSanitizer.errorDiagnostic(error, state: "audio-write")
                 SapoLog.recording.error(
-                    "\(self?.mode.logLabel ?? "Capture", privacy: .public) audio buffer write failed \(detail, privacy: .public)"
+                    "\(self.mode.logLabel, privacy: .public) audio buffer write failed \(detail, privacy: .public)"
                 )
             }
         }

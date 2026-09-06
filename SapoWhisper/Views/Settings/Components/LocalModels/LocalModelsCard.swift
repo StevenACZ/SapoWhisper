@@ -12,9 +12,9 @@ struct LocalModelsCard: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     let isEmbedded: Bool
 
-    @AppStorage(Constants.StorageKeys.mlxWhisperModel) private var selectedModel =
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) private var selectedModel =
         MLXWhisperModel.largeV3Turbo.rawValue
-    @AppStorage(Constants.StorageKeys.mlxWhisperUnloadAfterMinutes) private var unloadAfterMinutes = 0
+    @AppStorage(Constants.StorageKeys.mlxWhisperUnloadAfterMinutes, store: AppPreferences.defaults) private var unloadAfterMinutes = 0
 
     /// R4: 0 keeps the model in RAM; other values unload it after idle.
     private static let unloadOptionsMinutes = [0, 15, 30, 60]

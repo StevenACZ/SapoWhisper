@@ -124,10 +124,9 @@
 "config.tab_settings" = "Settings";
 "config.engine" = "Transcription Engine";
 "config.fallback_engine" = "Backup Engine";
-"config.fallback_engine_description" = "If the main engine is unreachable (server off, timeout), this engine takes the dictation: from the start when the primary is already known to be down, or by rescuing the audio when transcription fails. Only engines other than your main one are offered — two modes of the same provider go down together.";
+"config.fallback_engine_description" = "If your main engine fails because of a connection, model, credential, or service problem, SapoWhisper uses your configured backup and shows which engine took over. Your recorded audio is preserved. Choose a different provider or a local model that is ready to use. Backup engines process the complete recording; realtime modes are available only as the main engine.";
 "config.fallback_engine_none" = "None";
 "config.fallback_engine_not_configured" = "%@ is not configured yet, so the backup will be skipped.";
-"config.fallback_engine_live_note" = "Live when the backup starts the dictation; rescuing an already-recorded take uses the same provider's file model.";
 "config.engine_summary" = "Current Setup";
 "config.engine_summary_engine" = "Engine";
 "config.engine_summary_mode" = "Mode";
@@ -546,7 +545,7 @@
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrate settings";
-"settings.transfer.desc" = "Export a portable JSON file to move preferences, vocabulary, prompts, and context to another Mac. Microphone selection, system permissions, and Google credentials imported as a file are not included.";
+"settings.transfer.desc" = "Export a portable JSON file to move preferences, vocabulary, prompts, and context to another Mac. Microphone selection, system permissions, API keys, and credential files are not included.";
 "settings.transfer.export" = "Export settings";
 "settings.transfer.import" = "Import settings";
 "settings.transfer.export_panel_message" = "Save SapoWhisper portable settings.";
@@ -573,7 +572,7 @@
 "failure.plan_restricted" = "%@: your plan doesn't allow this feature.";
 "failure.client_error" = "%@: the request was rejected. Check the audio or your settings.";
 "failure.server_error" = "%@: the service failed temporarily. Please retry.";
-"failure.network" = "No internet connection. Check your network and retry.";
+"failure.network" = "Could not connect to %@. Check your connection or the service availability and try again.";
 "failure.timed_out" = "Transcription took too long. Please retry.";
 "failure.audio_empty" = "No audio was recorded. Check your microphone.";
 "failure.audio_corrupt" = "The recording was damaged and could not be processed.";
@@ -599,7 +598,7 @@
 "settings.history_auto_delete" = "Auto-delete old entries";
 "settings.history_auto_delete_never" = "Never";
 "settings.history_auto_delete_days" = "After %@ days";
-"settings.history_retention_desc" = "When the audio limit is exceeded, the oldest recordings are removed first (pinned entries last). Auto-delete runs at launch and keeps pinned entries.";
+"settings.history_retention_desc" = "Automatic cleanup removes unprotected completed entries. Kept, extended, interrupted and processing recordings are preserved; the most recent take also survives the audio limit. Age-based cleanup runs at launch.";
 
 /* Welcome flow */
 "welcome.window_title" = "Welcome to SapoWhisper";
@@ -690,3 +689,73 @@
 "settings.update_check_toggle" = "Check for updates automatically";
 "settings.update_check_footnote" = "Checks GitHub Releases once a day. Nothing is sent.";
 "history.retranscribe_cancelling" = "Cancelling…";
+
+"history.polishing" = "Improving with AI";
+"history.polishing_detail" = "The recognized text and audio are saved while AI finishes improving this dictation.";
+"history.completed" = "Completed";
+"history.audio_available_detail" = "Your audio is saved. You can listen to it or transcribe it again.";
+
+"failure.audio_storage_failed" = "Capture stopped because the complete audio could not be saved. Check available storage and try again.";
+
+"failure.audio_preparation_failed" = "Could not prepare the recording for upload. Check available storage and try again.";
+
+"failure.backup_failed" = "Could not transcribe with %@ or its backup %@. %@";
+
+"overlay.cancel_processing" = "Cancel processing";
+
+"overlay.polish_cancelled" = "Polish cancelled — previous text preserved";
+
+"failure.model_output_limit" = "%@ could not finish transcribing. Try another model or service.";
+
+"overlay.backup_active" = "Using backup: %@";
+"overlay.backup_primary_failed" = "%@ could not transcribe";
+"overlay.backup_completed" = "Transcribed with %@ (backup)";
+"config.local_ai_unchecked" = "Configuration saved · connection not checked";
+"config.local_ai_checking" = "Checking connection…";
+"config.local_ai_verified" = "Connection verified";
+"config.local_ai_last_failed" = "Last attempt failed";
+"config.local_ai_reachable" = "Server responded · transcription not verified";
+"config.local_ai_transcribed" = "Last transcription successful";
+"config.local_ai_model_unverified" = "Server connected · model not listed";
+"config.local_ai_test_scope" = "Changes are saved automatically. This test checks the connection and model list. A dictation verifies transcription; if it fails, your configured backup can take over.";
+
+"settings.transfer.section_history" = "History retention";
+"settings.transfer.section_history_desc" = "Audio storage limit and automatic deletion. May remove unprotected history or audio.";
+"settings.transfer.invalid_document" = "The settings file contains invalid or missing values. Nothing was imported.";
+"settings.transfer.vocabulary_mode" = "Vocabulary import";
+"settings.transfer.vocabulary_combine" = "Combine";
+"settings.transfer.vocabulary_replace" = "Replace";
+"settings.transfer.vocabulary_combine_desc" = "Keep existing terms and replacements. Add new entries and preserve local conflicts and recognition hints.";
+"settings.transfer.vocabulary_replace_desc" = "Replace all saved terms, replacements, and recognition hints with this file.";
+"history.retention_unprotect" = "Allow automatic cleanup";
+"history.retention_keep" = "Keep recording";
+"history.retention_extend" = "Keep 30 more days";
+"history.retention_protected" = "Protected from automatic deletion. You can still delete this entry yourself.";
+"history.retention_recovery" = "Pending or interrupted recordings are kept for recovery and excluded from automatic cleanup.";
+"history.retention_until" = "Protected from automatic cleanup until %@.";
+"history.retention_no_age" = "No age-based deletion. The audio storage limit can still remove unprotected recordings.";
+"history.retention_due" = "Eligible for automatic cleanup. Choose Keep recording to protect it.";
+"history.retention_days" = "Age-based deletion in approximately %@ days. The storage limit may remove it sooner.";
+"settings.history_protected_limit" = "Protected recordings exceed the audio limit and have been kept. Export or delete recordings to free space.";
+
+"settings.transfer.backup_created" = "Pre-import backup: %@";
+
+"settings.transfer.file_write_failed" = "Import failed while saving files. Previous settings were restored. Backup: %@";
+
+"settings.transfer.rollback_failed" = "Import failed and could not fully restore the previous files. Restore from the backup: %@";
+
+"history.continue_recording" = "Continue recording";
+
+"history.continue_recording_detail" = "Add more audio to this recording. The combined audio will be transcribed using the selected provider’s file mode.";
+
+"settings.transfer.summary_engine" = "Engine in this file";
+
+"settings.transfer.summary_backup" = "Backup in this file";
+
+"settings.transfer.summary_none" = "None";
+
+"settings.transfer.summary_vocabulary" = "%d vocabulary terms · %d automatic corrections";
+
+"config.fallback_engine_unavailable" = "%@ is configured but temporarily unavailable. It will be tried again after recovery.";
+
+"history.retry_current" = "Retry with current engine";

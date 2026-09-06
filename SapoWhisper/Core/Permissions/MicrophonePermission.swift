@@ -119,7 +119,7 @@ nonisolated enum MicrophonePermission {
             return false
         }
         let selectedUID =
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.selectedMicrophone)
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
             ?? AudioDevice.systemDefault.uid
         guard microphonePermissionShouldProbeAudioInput(selectedUID: selectedUID) else {
             return false

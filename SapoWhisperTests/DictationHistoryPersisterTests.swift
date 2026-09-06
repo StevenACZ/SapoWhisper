@@ -40,8 +40,8 @@ final class DictationHistoryPersisterTests: XCTestCase {
     private var deleteSpy: DeleteSpy!
     private var persister: DictationHistoryPersister!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempAudioDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("dictation-persister-tests-\(UUID().uuidString)")
         manager = TranscriptionHistoryManager(databasePath: ":memory:", audioDirectory: tempAudioDir)
@@ -50,14 +50,14 @@ final class DictationHistoryPersisterTests: XCTestCase {
         persister = DictationHistoryPersister(historyManager: manager) { spy.record($0) }
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         persister = nil
         deleteSpy = nil
         manager = nil
         if let tempAudioDir {
             try? FileManager.default.removeItem(at: tempAudioDir)
         }
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - Aborted captures
@@ -178,7 +178,7 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertEqual(persister.lastFailedAudioURL, retryAudio, "retry state stays armed for another retry")
     }
 
-    func testCompletedRetryUpdatesRowInPlaceAndClearsRetryState() throws {
+    func testCompletedRetryUpdatesRowInPlaceAndClearsRetryState() async throws {
         let source = makeSourceWAV(named: "retry-completes")
         persister.persistFailed(
             audioURL: source,
@@ -201,7 +201,7 @@ final class DictationHistoryPersisterTests: XCTestCase {
             error: nil,
             elapsedMs: 1
         )
-        persister.persistCompleted(
+        await persister.persistCompleted(
             audioURL: retryAudio,
             engine: .mlxWhisper,
             engineName: "MLX Whisper",
@@ -254,7 +254,7 @@ final class DictationHistoryPersisterTests: XCTestCase {
         XCTAssertEqual(deleteSpy.deleted, [source], "the temp WAV is cleaned once the copy exists")
     }
 
-    func testFinalizePendingSuccessFillsRowInPlace() throws {
+    func testFinalizePendingSuccessFillsRowInPlace() async throws {
         let source = makeSourceWAV(named: "pending-success")
         let pending = try XCTUnwrap(
             persister.persistPending(
@@ -274,7 +274,7 @@ final class DictationHistoryPersisterTests: XCTestCase {
             error: nil,
             elapsedMs: 1
         )
-        persister.persistCompleted(
+        await persister.persistCompleted(
             audioURL: pending.audioURL,
             engine: .localAIServer,
             engineName: "Local AI Server · test-model",
@@ -439,6 +439,44 @@ final class DictationHistoryPersisterTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    func testMergedCaptureOnlyReplacesSourcesAfterItsRowIsDurable() throws {
+        let previous = makeSourceWAV(named: "previous")
+        let current = makeSourceWAV(named: "current")
+        let merged = makeSourceWAV(named: "merged")
+        let oldId = manager.save(
+            engine: "Test", language: "es", duration: 1, text: "",
+            audioPath: previous.path, status: "failed"
+        )
+        let originalBytes = try Data(contentsOf: previous)
+        XCTAssertEqual(
+            sqlite3_exec(
+                manager.db, "CREATE TRIGGER fail_pending BEFORE INSERT ON transcriptions BEGIN SELECT RAISE(ABORT, 'fixture'); END;", nil,
+                nil, nil), SQLITE_OK)
+        let superseded = DictationHistoryPersister.SupersededCapture(historyId: oldId, currentAudioURL: current)
+
+        let failed = persister.persistPending(
+            audioURL: merged, engine: .localAIServer, engineName: "Test", language: "es", duration: 2,
+            superseding: superseded
+        )
+
+        XCTAssertNil(failed)
+        XCTAssertTrue(deleteSpy.deleted.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: previous), originalBytes)
+        XCTAssertEqual(manager.fetchAll().map(\.id), [oldId])
+        XCTAssertEqual(sqlite3_exec(manager.db, "DROP TRIGGER fail_pending;", nil, nil, nil), SQLITE_OK)
+
+        let pending = try XCTUnwrap(
+            persister.persistPending(
+                audioURL: merged, engine: .localAIServer, engineName: "Test", language: "es", duration: 2,
+                superseding: superseded
+            ))
+
+        XCTAssertEqual(manager.fetchAll().map(\.id), [pending.historyId])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pending.audioURL.path))
+        XCTAssertTrue(deleteSpy.deleted.contains(current))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: previous.path))
+    }
 
     private func makeSourceWAV(named name: String) -> URL {
         let url = tempAudioDir.appendingPathComponent("source-\(name)-\(UUID().uuidString).wav")

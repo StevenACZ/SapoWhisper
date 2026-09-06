@@ -17,6 +17,8 @@ class OverlayWindowManager: ObservableObject {
     // MARK: - Published Properties
 
     @Published private(set) var state: RecordingOverlayState = .hidden
+    @Published private(set) var cancellationMessage: String?
+    @Published private(set) var backupNotice: BackupTranscriptionNotice?
 
     /// Live "no voice?" hint while recording (NS2): set by the ViewModel when
     /// the session peak stays under the silence threshold for a few seconds.
@@ -74,6 +76,9 @@ class OverlayWindowManager: ObservableObject {
 
     // MARK: - Callbacks
 
+    var canCancelProcessing: (() -> Bool)?
+    var onCancelProcessing: (() -> Void)?
+
     /// Callback para toggle de pausa/resume (configurado por el ViewModel)
     var onPauseToggle: (() -> Void)?
 
@@ -104,6 +109,7 @@ class OverlayWindowManager: ObservableObject {
     private var hostingView: NSHostingView<RecordingOverlayView>?
     private var presentationRevision: UInt = 0
     private var completedDismissTask: Task<Void, Never>?
+    private var transientDismissTask: Task<Void, Never>?
     /// Global+local mouse monitors active while the completed or quick
     /// history pill is open, so a click anywhere outside collapses it back
     /// into the dock chip.
@@ -123,6 +129,22 @@ class OverlayWindowManager: ObservableObject {
     }
 
     // MARK: - Public Methods
+
+    func setBackupNotice(_ notice: BackupTranscriptionNotice?) {
+        guard backupNotice != notice else { return }
+        withAnimation(motionAnimation(Constants.Animation.morph)) {
+            backupNotice = notice
+        }
+        guard let notice else { return }
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: "\(notice.detail). \(notice.title)",
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+            ]
+        )
+    }
 
     /// Creates the overlay window and rests it as the always-visible dock
     /// chip: recording morphs out of the chip and every dismissal collapses
@@ -190,6 +212,8 @@ class OverlayWindowManager: ObservableObject {
     /// never disappears: the chip is the overlay's resting state, and hovering
     /// it reopens the last transcription.
     func hide() {
+        transientDismissTask?.cancel()
+        transientDismissTask = nil
         guard overlayWindow != nil else { return }
         guard state.stateCategory != "docked" else { return }
 
@@ -209,6 +233,7 @@ class OverlayWindowManager: ObservableObject {
         guard !Constants.Animation.reduceMotion else {
             hideAnticipation = false
             state = .docked
+            backupNotice = nil
             SapoLog.overlay.info("Overlay collapsed to dock")
             return
         }
@@ -231,6 +256,7 @@ class OverlayWindowManager: ObservableObject {
             withAnimation(Constants.Animation.droplet) {
                 self.hideAnticipation = false
                 self.state = .docked
+                self.backupNotice = nil
             }
             SapoLog.overlay.info("Overlay collapsed to dock")
         }
@@ -286,7 +312,7 @@ class OverlayWindowManager: ObservableObject {
         // thread, so a monitor delivered off-main can never crash.
         if let globalMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
-            handler: { _ in
+            handler: { @Sendable _ in
                 Task { @MainActor in
                     OverlayWindowManager.shared.collapseIfClickLandedOutside()
                 }
@@ -297,7 +323,7 @@ class OverlayWindowManager: ObservableObject {
 
         if let localMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown],
-            handler: { event in
+            handler: { @Sendable event in
                 // No window filter: even clicks delivered to the overlay
                 // window may land on its transparent margin, and the
                 // collapse check hit-tests the actual content either way.
@@ -401,6 +427,11 @@ class OverlayWindowManager: ObservableObject {
 
     /// Actualiza el estado del overlay
     func updateState(_ newState: RecordingOverlayState) {
+        if newState != .hidden, !newState.showsBackupNotice {
+            backupNotice = nil
+        }
+        transientDismissTask?.cancel()
+        transientDismissTask = nil
         // Leaving the completed state through any path invalidates its
         // pending auto-dismiss so it cannot hide the next state.
         if case .completed = newState {
@@ -548,13 +579,8 @@ class OverlayWindowManager: ObservableObject {
 
         // The raw-fallback notice carries real information ("nothing was
         // polished") — hold it longer than the plain confirmation.
-        let dismissAfter = outcome == .aiSkipped ? max(delay, 3.5) : delay
-        Task {
-            try? await Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
-            if case .copied = self.state {
-                self.hide()
-            }
-        }
+        let dismissAfter = backupNotice != nil ? max(delay, 5) : (outcome == .aiSkipped ? max(delay, 3.5) : delay)
+        scheduleTransientDismiss(after: dismissAfter)
     }
 
     /// Muestra el pill expandido con el texto final y las acciones de
@@ -591,15 +617,11 @@ class OverlayWindowManager: ObservableObject {
 
     /// Brief confirmation after an Esc cancel: the audio was preserved in
     /// History, so the dictation is recoverable — not lost.
-    func showCancelled(autoDismissAfter delay: TimeInterval = 2.5) {
+    func showCancelled(message: String? = nil, autoDismissAfter delay: TimeInterval = 2.5) {
+        cancellationMessage = message
         updateState(.cancelled)
 
-        Task {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            if case .cancelled = self.state {
-                self.hide()
-            }
-        }
+        scheduleTransientDismiss(after: delay)
     }
 
     /// Shows a device-route event, morphing between phases in place: the
@@ -625,12 +647,7 @@ class OverlayWindowManager: ObservableObject {
         case .fallback: delay = 4.0
         }
 
-        Task {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            if case .deviceChange(let current) = self.state, current == announcement {
-                self.hide()
-            }
-        }
+        scheduleTransientDismiss(after: delay)
     }
 
     /// First Esc landed: heartbeat the pill and show the "Esc again" hint for
@@ -741,22 +758,34 @@ class OverlayWindowManager: ObservableObject {
         updateState(.error(message: message, isRetryable: isRetryable))
 
         // Auto-ocultar despues del delay
-        Task {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            if case .error = self.state {
-                self.hide()
-            }
-        }
+        scheduleTransientDismiss(after: delay)
     }
 
-    /// Kind-aware error presentation: no-speech dismisses fast with no retry
-    /// affordance; everything else keeps the standard 5s + retry behavior.
     func showError(_ errorState: ErrorState) {
         showError(
             message: errorState.message,
             isRetryable: errorState.isNoSpeech ? false : errorState.isRetryable,
-            autoDismissAfter: errorState.isNoSpeech ? 1.8 : 5.0
+            autoDismissAfter: errorState.isNoSpeech ? 1.8 : min(12, max(5, Double(errorState.message.count) / 20))
         )
+    }
+
+    func setErrorHover(_ hovering: Bool) {
+        guard case .error = state else { return }
+        if hovering {
+            transientDismissTask?.cancel()
+            transientDismissTask = nil
+        } else {
+            scheduleTransientDismiss(after: 3)
+        }
+    }
+
+    private func scheduleTransientDismiss(after delay: TimeInterval) {
+        transientDismissTask?.cancel()
+        transientDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            self.hide()
+        }
     }
 
     /// Toggles the live "no voice?" pill while recording.

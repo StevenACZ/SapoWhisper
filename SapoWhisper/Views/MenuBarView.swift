@@ -18,8 +18,8 @@ struct MenuBarView: View {
     var openWelcomeAction: (() -> Void)?
     var openAboutAction: (() -> Void)?
     var closeMenuBarAction: (() -> Void)?
-    @AppStorage(Constants.StorageKeys.onboardingComplete) private var onboardingComplete = false
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.onboardingComplete, store: AppPreferences.defaults) private var onboardingComplete = false
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
     @State private var isHoveringRecord = false
     @State private var pulseAnimation = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

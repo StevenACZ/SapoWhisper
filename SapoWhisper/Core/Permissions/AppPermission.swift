@@ -24,7 +24,7 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
     /// the guided flow only while that trigger kind is selected.
     static var required: [AppPermission] {
         let triggerKind =
-            UserDefaults.standard.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
+            AppPreferences.defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
             ?? Constants.Hotkey.defaultTriggerKind
         if triggerKind == HotkeyTriggerKind.doubleModifier.rawValue {
             return [.microphone, .accessibility, .inputMonitoring]

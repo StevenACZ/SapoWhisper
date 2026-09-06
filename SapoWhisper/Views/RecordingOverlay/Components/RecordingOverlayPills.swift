@@ -40,7 +40,7 @@ struct RecordingPillView: View {
             } else if let connectingDeviceName {
                 Text("overlay.mic_connecting".localized(connectingDeviceName))
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .transition(.opacity)
             } else if showsNoSpeechHint {
@@ -55,7 +55,7 @@ struct RecordingPillView: View {
             } else {
                 Text("overlay.recording".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .transition(.opacity)
             }
 
@@ -148,7 +148,7 @@ struct PausedPillView: View {
 
                     Text("overlay.paused".localized)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                 }
                 .transition(.opacity)
             }
@@ -171,6 +171,7 @@ struct PausedPillView: View {
 
 struct TranscribingPillView: View {
     var cancelWarningActive: Bool = false
+    var onCancel: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -183,8 +184,11 @@ struct TranscribingPillView: View {
             } else {
                 Text("overlay.transcribing".localized)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .transition(.opacity)
+            }
+            if let onCancel {
+                OverlayIconButton(systemName: "xmark", label: "overlay.cancel_processing".localized, action: onCancel)
             }
         }
     }
@@ -232,6 +236,8 @@ struct CompactModeChip: View {
 struct AIPolishingPillView: View {
     let timeoutSeconds: UInt64
     var compact: Bool = false
+    var cancelWarningActive: Bool = false
+    var onCancel: (() -> Void)?
 
     @State private var startedAt = Date()
 
@@ -241,9 +247,13 @@ struct AIPolishingPillView: View {
             PillDivider()
             TranscribingIndicator(color: compact ? .compactMode : .aiPolish)
 
-            Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
+            if cancelWarningActive {
+                CancelWarningHint()
+            } else {
+                Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+            }
 
             // L10: countdown to the polish timeout — the user sees the worst
             // case shrinking instead of an open-ended spinner.
@@ -253,9 +263,12 @@ struct AIPolishingPillView: View {
                 Text("\(remaining)s")
                     .font(.system(size: 12, weight: .medium))
                     .monospacedDigit()
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .contentTransition(.numericText(countsDown: true))
                     .animation(Constants.Animation.tick, value: remaining)
+            }
+            if let onCancel {
+                OverlayIconButton(systemName: "xmark", label: "overlay.cancel_processing".localized, action: onCancel)
             }
         }
         .onAppear { startedAt = Date() }
@@ -269,16 +282,10 @@ struct CopiedPillView: View {
     var outcome: CopiedOutcome = .standard
 
     @State private var iconScale: CGFloat = 0
-    @State private var glowFlash = 0
 
     /// Text/glyph tint: the contrast-safe green variant, not the fill green.
     private var accent: Color {
         outcome == .aiSkipped ? .sapoError : .sapoGreenText
-    }
-
-    /// The decorative outline flash keeps the brand fill green.
-    private var glowColor: Color {
-        outcome == .aiSkipped ? .sapoError : .sapoGreen
     }
 
     private var icon: String {
@@ -297,7 +304,7 @@ struct CopiedPillView: View {
                 .scaleEffect(iconScale)
 
             Text(label)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(accent)
 
             if case .compacted(let percentReduced) = outcome, percentReduced > 0 {
@@ -310,24 +317,38 @@ struct CopiedPillView: View {
                     .background(Capsule().fill(Color.compactMode.opacity(0.16)))
             }
         }
-        .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
-            [glowColor, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
-            content.overlay(glowStroke(color: glowColor, intensity: glow, chipOnTop: chipOnTop))
-        } keyframes: { _ in
-            PillGlowFlashKeyframes()
-        }
         .onAppear {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.5).delay(0.1)) {
                 iconScale = 1.0
             }
         }
-        .task {
-            if let delay = glowFlashDelay() {
-                try? await Task.sleep(for: delay)
-                guard !Task.isCancelled else { return }
+
+    }
+}
+
+struct CopiedPillGlow: View {
+    let outcome: CopiedOutcome
+    @State private var glowFlash = 0
+
+    private var color: Color { outcome == .aiSkipped ? .sapoError : .sapoGreen }
+
+    var body: some View {
+        Color.clear
+            .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
+                [color, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
+                content.overlay(glowStroke(color: color, intensity: glow, chipOnTop: chipOnTop, expandsToChrome: false))
+            } keyframes: { _ in
+                PillGlowFlashKeyframes()
             }
-            glowFlash += 1
-        }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task {
+                if let delay = glowFlashDelay() {
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return }
+                }
+                glowFlash += 1
+            }
     }
 }
 
@@ -340,7 +361,7 @@ struct CompletedPillView: View {
     @State private var iconScale: CGFloat = 0
     @State private var glowFlash = 0
     @State private var showRecopied = false
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
 
     private static let contentWidth: CGFloat = 400
     private static let transcriptFontSize: CGFloat = 12
@@ -397,7 +418,7 @@ struct CompletedPillView: View {
         Text(text)
             .font(.system(size: Self.transcriptFontSize))
             .lineSpacing(Self.transcriptLineSpacing)
-            .foregroundColor(.primary.opacity(0.9))
+            .foregroundStyle(.primary)
             .textSelection(.enabled)
     }
 
@@ -499,8 +520,6 @@ struct CompletedPillView: View {
 struct DockedChipView: View {
     /// True while a droplet pill floats detached above the chip.
     var isExpanded: Bool = false
-    /// Overlay glass namespace; nil (previews) renders glass without an ID.
-    var glassNamespace: Namespace.ID? = nil
     var onTap: () -> Void
 
     @State private var isHovering = false
@@ -517,7 +536,7 @@ struct DockedChipView: View {
                 // background, now self-contained.
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .overlayChipChrome(glassNamespace: glassNamespace)
+                .overlayChipChrome()
                 // Squash-and-stretch splash as the droplet detaches from or falls
                 // back into the chip — sells the "drop separating" read on both
                 // directions. Phase-driven so rapid open/close toggles can never
@@ -545,15 +564,17 @@ struct DockedChipView: View {
 }
 
 struct CancelledPillView: View {
+    var message: String? = nil
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 16))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
-            Text("overlay.cancelled_saved".localized)
+            Text(message ?? "overlay.cancelled_saved".localized)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -572,7 +593,7 @@ struct ErrorPillView: View {
 
             Text(message)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .lineLimit(3)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
@@ -591,7 +612,7 @@ struct ErrorPillView: View {
                         Text("overlay.retry".localized)
                             .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
@@ -658,7 +679,7 @@ struct DeviceChangePillView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(announcement.deviceName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(subtitle)
@@ -740,7 +761,9 @@ private func glowFlashDelay() -> Duration? {
 /// neck read as a cut-off border.
 /// Negative padding pushes the stroke back out over the pill chrome that the
 /// hosting view applies around this content.
-nonisolated private func glowStroke(color: Color, intensity: Double, chipOnTop: Bool) -> some View {
+nonisolated private func glowStroke(
+    color: Color, intensity: Double, chipOnTop: Bool, expandsToChrome: Bool = true
+) -> some View {
     let tint = color.opacity(0.4 * intensity)
     return OverlayPillChrome.pillShape
         .strokeBorder(
@@ -755,8 +778,8 @@ nonisolated private func glowStroke(color: Color, intensity: Double, chipOnTop: 
             ),
             lineWidth: 1.5
         )
-        .padding(.horizontal, -OverlayPillChrome.horizontalPadding)
-        .padding(.vertical, -OverlayPillChrome.verticalPadding)
+        .padding(.horizontal, expandsToChrome ? -OverlayPillChrome.horizontalPadding : 0)
+        .padding(.vertical, expandsToChrome ? -OverlayPillChrome.verticalPadding : 0)
 }
 
 /// One-shot pill outline flash timeline: short delay, ~0.3 s flash in, hold,

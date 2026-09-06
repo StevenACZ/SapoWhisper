@@ -43,12 +43,14 @@ nonisolated enum AudioFileMerger {
             commonFormat: targetFormat.commonFormat,
             interleaved: targetFormat.isInterleaved
         )
+        ActiveRecordingMarker.mark(outputURL)
 
         do {
             try append(firstFile, to: outputFile, targetFormat: targetFormat)
             try append(secondFile, to: outputFile, targetFormat: targetFormat)
         } catch {
             try? FileManager.default.removeItem(at: outputURL)
+            ActiveRecordingMarker.clear(outputURL)
             throw error
         }
 
@@ -85,7 +87,7 @@ nonisolated enum AudioFileMerger {
             throw MergeError.converterCreationFailed
         }
 
-        var reachedEnd = false
+        let source = AudioConverterInputSource(file: input, maximumFrames: chunkFrameCapacity)
         let outputCapacity = AVAudioFrameCount(
             ceil(Double(chunkFrameCapacity) * targetFormat.sampleRate / inputFormat.sampleRate) + 64
         )
@@ -95,44 +97,8 @@ nonisolated enum AudioFileMerger {
                 throw MergeError.unreadableInput
             }
 
-            var readError: Error?
-            let status = converter.convert(to: outputBuffer, error: nil) { packetCount, outStatus in
-                // Same EOF discipline as above: never read at exact EOF.
-                if reachedEnd || input.framePosition >= input.length {
-                    reachedEnd = true
-                    outStatus.pointee = .endOfStream
-                    return nil
-                }
-                guard
-                    let inputBuffer = AVAudioPCMBuffer(
-                        pcmFormat: inputFormat,
-                        frameCapacity: min(packetCount, chunkFrameCapacity)
-                    )
-                else {
-                    outStatus.pointee = .endOfStream
-                    reachedEnd = true
-                    return nil
-                }
-                do {
-                    try input.read(into: inputBuffer)
-                } catch {
-                    readError = error
-                    outStatus.pointee = .endOfStream
-                    reachedEnd = true
-                    return nil
-                }
-                if inputBuffer.frameLength == 0 {
-                    outStatus.pointee = .endOfStream
-                    reachedEnd = true
-                    return nil
-                }
-                outStatus.pointee = .haveData
-                return inputBuffer
-            }
-
-            if let readError {
-                throw readError
-            }
+            let status = converter.convert(to: outputBuffer, error: nil, withInputFrom: source.provide)
+            if let readError = source.readError { throw readError }
 
             if outputBuffer.frameLength > 0 {
                 try output.write(from: outputBuffer)

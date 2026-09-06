@@ -88,6 +88,28 @@ func loadAudioSamples(url: URL) throws -> [Float] {
 // MARK: - Argument parsing
 
 var arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.first == "download" {
+    guard arguments.count == 4,
+        arguments[2].range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil
+    else { fail("Usage: mlxwhisper-cli download <repo> <pinned-revision> <model-root>") }
+    do {
+        let repo = arguments[1]
+        let root = URL(fileURLWithPath: arguments[3], isDirectory: true)
+        let destination = WhisperModelDownloader.modelDirectory(repo: repo, root: root)
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            fail("Download requires a new model directory; an existing snapshot cannot prove the requested revision")
+        }
+        _ = try await WhisperModelDownloader.download(repo: repo, revision: arguments[2], root: root)
+        guard WhisperModelDownloader.isDownloaded(repo: repo, root: root) else {
+            fail("Model download did not produce a complete snapshot")
+        }
+        print("model download complete bytes=\(WhisperModelDownloader.sizeOnDisk(repo: repo, root: root))")
+        exit(0)
+    } catch {
+        let failure = error as NSError
+        fail("Model download failed: \(failure.domain)/\(failure.code)")
+    }
+}
 guard arguments.count >= 2 else {
     fail("Usage: mlxwhisper-cli <model-dir> <audio.wav> [--language es] [--prompt \"...\"] [--stream]")
 }
@@ -157,7 +179,7 @@ do {
         guard let result = finalOutput else { fail("Stream ended without a result") }
         output = result
     } else {
-        output = model.generate(audio: audio, generationParameters: parameters)
+        output = try model.generateCancellable(audio: audio, generationParameters: parameters)
     }
     let elapsed = Date().timeIntervalSince(start)
 
@@ -169,6 +191,7 @@ do {
         String(
             format: "transcribe=%.2fs  rtf=%.3f  tokens=%d  peakMem=%.2fGB",
             elapsed, rtf, output.generationTokens, output.peakMemoryUsage))
+    print("decoder retries: \(output.decodingRetries)")
     if let detected = output.language {
         print("language: \(detected)")
     }

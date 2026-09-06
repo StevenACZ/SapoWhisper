@@ -28,7 +28,7 @@ enum EnginePortfolioMigration {
         "whisperkit_downloaded_models",
     ]
 
-    static func run(defaults: UserDefaults = .standard, fileManager: FileManager = .default) {
+    static func run(defaults: UserDefaults = AppPreferences.defaults, fileManager: FileManager = .default) {
         migrateSelectedEngineIfNeeded(defaults: defaults)
         purgeRemovedArtifacts(defaults: defaults, fileManager: fileManager)
     }
@@ -80,6 +80,7 @@ enum EnginePortfolioMigration {
             SapoLog.lifecycle.info("Purged removed engine preference key=\(key, privacy: .public)")
         }
 
+        guard !AppRuntimePaths.isIsolated else { return }
         deleteWhisperKitModelCaches(fileManager: fileManager)
 
         guard

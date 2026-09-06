@@ -19,6 +19,10 @@ struct SapoWhisperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
+        guard !UIPreviewMode.skipsConsentPrompts else { return }
+        #if DEBUG
+            STTNetworkFaultInjection.installIfRequested()
+        #endif
         PreferredMicrophoneCoordinator.shared.start()
         AudioInputPreflightManager.shared.start()
     }

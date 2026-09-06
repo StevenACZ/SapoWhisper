@@ -202,8 +202,8 @@ struct AudioCaptureStrictInputTests {
             contentsOf: sourceRoot.appendingPathComponent("Managers/AudioInputPreflightManager.swift"), encoding: .utf8)
         let preflightBody = try functionBody(
             in: preflight,
-            start: "private func runPreflight",
-            end: "private func warmAVAudioInputNode"
+            start: "private static func prepare(",
+            end: "private static func warmAVAudioInputNode("
         )
         try expectOrder(
             "audioInputPreflightDecision(",
@@ -218,8 +218,8 @@ struct AudioCaptureStrictInputTests {
 
         let warmupBody = try functionBody(
             in: preflight,
-            start: "private func warmAVAudioInputNode",
-            end: "private func queryInputFormat"
+            start: "private static func warmAVAudioInputNode(",
+            end: "private static func queryInputFormat"
         )
         #expect(!warmupBody.contains("AudioUnitSetProperty"))
 

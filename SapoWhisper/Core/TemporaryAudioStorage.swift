@@ -37,15 +37,7 @@ nonisolated enum TemporaryAudioStorage {
         "recording_", "flux_recording_", "mic_test_raw_", "mic_test_compressed_",
     ]
 
-    static var directory: URL {
-        let base =
-            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return
-            base
-            .appendingPathComponent("oli.SapoWhisper", isDirectory: true)
-            .appendingPathComponent("audio-temp", isDirectory: true)
-    }
+    static var directory: URL { AppRuntimePaths.temporaryAudio }
 
     /// Returns a fresh UUID-named WAV URL, creating the directory if needed.
     static func makeWAVURL(prefix: String) -> URL {
@@ -71,12 +63,14 @@ nonisolated enum TemporaryAudioStorage {
     /// set means the reference scan failed and nothing may be deleted.
     static func sweepStaleFiles(now: Date = Date(), referencedNames: Set<String>?) {
         var removed = sweepStaleFiles(in: directory, now: now, referencedNames: referencedNames)
-        removed += sweepStaleFiles(
-            in: FileManager.default.temporaryDirectory,
-            now: now,
-            referencedNames: referencedNames,
-            legacyPrefixesOnly: true
-        )
+        if !AppRuntimePaths.isIsolated {
+            removed += sweepStaleFiles(
+                in: FileManager.default.temporaryDirectory,
+                now: now,
+                referencedNames: referencedNames,
+                legacyPrefixesOnly: true
+            )
+        }
 
         if removed > 0 {
             SapoLog.recording.info("Temp audio sweep removed=\(removed, privacy: .public)")

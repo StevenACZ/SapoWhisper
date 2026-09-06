@@ -64,10 +64,10 @@ final class DictationHistoryPersister {
         aiResult: TranscriptAIResult,
         perf: DictationPerfTimeline?,
         target: HistoryPersistenceTarget
-    ) {
+    ) async {
         switch target {
         case .insertNew:
-            scheduleCompletedPersistence(
+            await persistNewCompleted(
                 from: audioURL,
                 engine: engine,
                 engineName: engineName,
@@ -142,6 +142,11 @@ final class DictationHistoryPersister {
         let audioURL: URL
     }
 
+    struct SupersededCapture {
+        let historyId: Int64
+        let currentAudioURL: URL
+    }
+
     /// Persists the finished capture into History as a "transcribing" row
     /// BEFORE the engine runs, so a hang, crash, cancel, or force-quit during
     /// transcription can never lose the audio. The pipeline then finalizes
@@ -152,7 +157,9 @@ final class DictationHistoryPersister {
         engine: TranscriptionEngine,
         engineName: String?,
         language: String,
-        duration: TimeInterval
+        duration: TimeInterval,
+        preserveSource: Bool = false,
+        superseding: SupersededCapture? = nil
     ) -> PendingOutcome? {
         let persistedEntry = persistEntry(
             from: audioURL,
@@ -171,8 +178,19 @@ final class DictationHistoryPersister {
             SapoLog.recording.warning("Pre-transcription persist unavailable; using legacy flow")
             return nil
         }
-        cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry)
+        if !preserveSource { cleanupSourceAudioIfSafe(sourceURL: audioURL, persistedEntry: persistedEntry) }
+        if let superseding {
+            deleteSourceAudio(superseding.currentAudioURL)
+            historyManager.delete(id: superseding.historyId)
+        }
         return PendingOutcome(historyId: persistedEntry.id, audioURL: pendingAudioURL)
+    }
+
+    func finishPreservedSource(_ sourceURL: URL, pending: PendingOutcome?) {
+        guard let pending, pending.audioURL.standardizedFileURL != sourceURL.standardizedFileURL,
+            historyManager.ownsAudioFile(at: pending.audioURL)
+        else { return }
+        deleteSourceAudio(sourceURL)
     }
 
     /// Persistence half of the abort paths (sleep, device failure, cancel,
@@ -241,11 +259,8 @@ final class DictationHistoryPersister {
         deleteSourceAudio(audioURL)
     }
 
-    /// L3: completed dictations persist off the paste path. The audio copy and
-    /// the SQLite insert run on a background task; the UI is already idle.
-    /// Failed dictations keep the synchronous path because the retry UI needs
-    /// the persisted row id immediately.
-    private func scheduleCompletedPersistence(
+    /// Legacy rowless captures still copy off MainActor, but delivery waits for their stable History identity.
+    private func persistNewCompleted(
         from sourceURL: URL,
         engine: TranscriptionEngine,
         engineName: String?,
@@ -253,9 +268,9 @@ final class DictationHistoryPersister {
         duration: TimeInterval,
         aiResult: TranscriptAIResult,
         perf: DictationPerfTimeline?
-    ) {
+    ) async {
         let generation = dictationGeneration
-        Task.detached(priority: .utility) { [weak self] in
+        await Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
             let t0 = CFAbsoluteTimeGetCurrent()
             let persistedEntry = self.persistEntry(
@@ -269,7 +284,7 @@ final class DictationHistoryPersister {
             )
             self.cleanupSourceAudioIfSafe(sourceURL: sourceURL, persistedEntry: persistedEntry)
             let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-            SapoLog.performance.info("History persisted off paste path elapsed=\(elapsedMs, privacy: .public)ms")
+            SapoLog.performance.info("History persistence completed elapsed=\(elapsedMs, privacy: .public)ms")
             perf?.reportPersist(elapsedMs: elapsedMs)
 
             // Hand the row id back so an overlay re-polish can update it —
@@ -280,7 +295,7 @@ final class DictationHistoryPersister {
                 guard self.dictationGeneration == generation else { return }
                 self.lastCompletedHistoryId = rowID
             }
-        }
+        }.value
     }
 
     nonisolated private func persistEntry(

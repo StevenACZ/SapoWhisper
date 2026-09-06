@@ -49,9 +49,7 @@ nonisolated enum TranscriptionEngineVariant: String, CaseIterable, Identifiable 
     }
 
     /// The variant that transcribes an existing recording for this provider.
-    /// Flux and Scribe Realtime are live-only models, and replaying a finished
-    /// file through their socket is slower and strictly less accurate than the
-    /// same provider's file endpoint on the same audio.
+    /// Used for History requests and normalization of legacy realtime backups.
     var fileTranscriptionVariant: TranscriptionEngineVariant {
         switch self {
         case .deepgramFluxLive:
@@ -62,6 +60,8 @@ nonisolated enum TranscriptionEngineVariant: String, CaseIterable, Identifiable 
             return self
         }
     }
+
+    static var backupCandidates: [Self] { allCases.filter { !$0.isStreaming } }
 
     var requiresInternet: Bool { engine.requiresInternet }
 
@@ -152,12 +152,12 @@ nonisolated enum TranscriptionEngineVariant: String, CaseIterable, Identifiable 
         }
     }
 
-    /// Resolves a stored backup selection. Values written while the picker
+    /// Resolves a stored backup selection to its file mode. Values written while the picker
     /// still stored plain engines ("deepgram", "elevenlabs_scribe") map to that
     /// brand's file variant — which is the only thing the old picker ever ran.
     static func stored(_ rawValue: String) -> TranscriptionEngineVariant? {
         if let variant = TranscriptionEngineVariant(rawValue: rawValue) {
-            return variant
+            return variant.fileTranscriptionVariant
         }
         switch TranscriptionEngine(rawValue: rawValue) {
         case .mlxWhisper:

@@ -10,6 +10,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class EscapeCancelGateTests: XCTestCase {
 
     private final class Clock {

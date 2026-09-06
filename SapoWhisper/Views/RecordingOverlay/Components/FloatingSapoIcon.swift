@@ -126,27 +126,27 @@ struct FloatingSapoIcon: View {
     HStack(spacing: 24) {
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .recording, size: 44)
-            Text("Recording").font(.caption2).foregroundColor(.secondary)
+            Text("Recording").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .paused, size: 44)
-            Text("Paused").font(.caption2).foregroundColor(.secondary)
+            Text("Paused").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .transcribing, size: 44)
-            Text("Transcribing").font(.caption2).foregroundColor(.secondary)
+            Text("Transcribing").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .polishing, size: 44)
-            Text("AI").font(.caption2).foregroundColor(.secondary)
+            Text("AI").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .completed, size: 44)
-            Text("Completed").font(.caption2).foregroundColor(.secondary)
+            Text("Completed").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .error, size: 44)
-            Text("Error").font(.caption2).foregroundColor(.secondary)
+            Text("Error").font(.caption2).foregroundStyle(.secondary)
         }
     }
     .padding(24)
@@ -156,19 +156,19 @@ struct FloatingSapoIcon: View {
     HStack(spacing: 20) {
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .recording, size: 24)
-            Text("24px").font(.caption2).foregroundColor(.secondary)
+            Text("24px").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .recording, size: 30)
-            Text("30px").font(.caption2).foregroundColor(.secondary)
+            Text("30px").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .recording, size: 44)
-            Text("44px").font(.caption2).foregroundColor(.secondary)
+            Text("44px").font(.caption2).foregroundStyle(.secondary)
         }
         VStack(spacing: 6) {
             FloatingSapoIcon(state: .recording, size: 60)
-            Text("60px").font(.caption2).foregroundColor(.secondary)
+            Text("60px").font(.caption2).foregroundStyle(.secondary)
         }
     }
     .padding(24)

@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class PolishContentDiffGuardTests: XCTestCase {
 
     // MARK: - Digit runs

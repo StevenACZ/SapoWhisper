@@ -11,24 +11,25 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class HistoryDeleteGuardTests: XCTestCase {
 
     private var manager: TranscriptionHistoryManager!
     private var tempAudioDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempAudioDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("history-delete-guard-tests-\(UUID().uuidString)")
         manager = TranscriptionHistoryManager(databasePath: ":memory:", audioDirectory: tempAudioDir)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         manager = nil
         if let tempAudioDir {
             try? FileManager.default.removeItem(at: tempAudioDir)
         }
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testDeleteAllKeepsInFlightRowAndItsAudio() throws {
@@ -87,6 +88,59 @@ final class HistoryDeleteGuardTests: XCTestCase {
 
         XCTAssertEqual(entries.first { $0.id == inFlight.rowID }?.isDeletable, false)
         XCTAssertEqual(entries.first { $0.id == completed.rowID }?.isDeletable, true)
+    }
+
+    func testLatePolishCannotRecreateDeletedHistoryText() {
+        let id = manager.save(engine: "test", language: "en", duration: 2, text: "original")
+        manager.delete(id: id)
+
+        manager.updateAIProcessing(
+            id: id, finalText: "late result", rawText: "original", aiStatus: .applied,
+            aiModel: "test", aiMode: "normal", aiError: nil
+        )
+
+        XCTAssertTrue(manager.fetchAll().isEmpty)
+        XCTAssertTrue(manager.polishVersions(for: id).isEmpty)
+    }
+
+    func testLateRetranscriptionCannotRecreateClearedHistoryText() {
+        let id = manager.save(engine: "test", language: "en", duration: 2, text: "original")
+        manager.deleteAll()
+
+        manager.updateRetranscription(
+            id: id, engine: "test", finalText: "late result", rawText: "original",
+            aiStatus: .applied, aiModel: "test", aiMode: "normal", aiError: nil
+        )
+
+        XCTAssertTrue(manager.fetchAll().isEmpty)
+        XCTAssertTrue(manager.polishVersions(for: id).isEmpty)
+    }
+
+    func testPolishingRowCannotBeDeletedAndRecoversRecognizedText() throws {
+        let entry = persistRow(named: "", status: "transcribing")
+        manager.markProcessingStage(id: entry.rowID, stage: .polishing, rawText: "Recognized before interruption")
+        XCTAssertEqual(manager.fetchAll().first?.entryStatus, .polishing)
+        XCTAssertFalse(try XCTUnwrap(manager.fetchAll().first).isDeletable)
+        manager.delete(id: entry.rowID)
+        XCTAssertEqual(manager.deleteAll(), 0)
+        XCTAssertEqual(manager.fetchAll().map(\.id), [entry.rowID])
+        _ = manager.recoverInterruptedTranscriptions()
+        let recovered = try XCTUnwrap(manager.fetchAll().first)
+        XCTAssertEqual(recovered.entryStatus, .failed)
+        XCTAssertEqual(recovered.rawText, "Recognized before interruption")
+        XCTAssertEqual(recovered.text, "Recognized before interruption")
+        XCTAssertEqual(recovered.failureKind, .recordingInterrupted)
+        XCTAssertTrue(recovered.isDeletable)
+        XCTAssertTrue(recovered.audioFileExists)
+    }
+
+    func testAStaleProcessingUpdateCannotReviveACancelledRow() throws {
+        let entry = persistRow(named: "", status: "transcribing")
+        manager.markTranscriptionFailed(id: entry.rowID, failureCode: "test/user_cancelled")
+        manager.markProcessingStage(id: entry.rowID, stage: .polishing, rawText: "late text")
+        let cancelled = try XCTUnwrap(manager.fetchAll().first)
+        XCTAssertTrue(cancelled.isUserCancelled)
+        XCTAssertEqual(cancelled.rawText, "")
     }
 
     // MARK: - Helpers

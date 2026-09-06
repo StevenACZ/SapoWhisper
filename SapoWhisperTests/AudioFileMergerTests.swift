@@ -32,7 +32,11 @@ final class AudioFileMergerTests: XCTestCase {
         let second = try writeTone(seconds: 3.0, sampleRate: 16_000, name: "second.wav")
 
         let merged = try AudioFileMerger.merge(first: first, second: second)
-        defer { try? FileManager.default.removeItem(at: merged) }
+        defer {
+            try? FileManager.default.removeItem(at: merged)
+            ActiveRecordingMarker.clear(merged)
+        }
+        XCTAssertTrue(ActiveRecordingMarker.ownerIsAlive(markerURL: ActiveRecordingMarker.markerURL(for: merged)))
 
         let file = try AVAudioFile(forReading: merged)
         let duration = Double(file.length) / file.processingFormat.sampleRate
@@ -50,7 +54,10 @@ final class AudioFileMergerTests: XCTestCase {
         let second = try writeTone(seconds: 1.0, sampleRate: 16_000, name: "second16.wav")
 
         let merged = try AudioFileMerger.merge(first: first, second: second)
-        defer { try? FileManager.default.removeItem(at: merged) }
+        defer {
+            try? FileManager.default.removeItem(at: merged)
+            ActiveRecordingMarker.clear(merged)
+        }
 
         let file = try AVAudioFile(forReading: merged)
         XCTAssertEqual(file.processingFormat.sampleRate, 16_000, "output must use the current take's format")

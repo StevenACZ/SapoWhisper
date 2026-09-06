@@ -12,7 +12,7 @@ nonisolated enum PolishSampleDictation {
     }
 
     nonisolated static var currentLanguage: String {
-        UserDefaults.standard.string(forKey: Constants.StorageKeys.appLanguage)
+        AppPreferences.defaults.string(forKey: Constants.StorageKeys.appLanguage)
             ?? LocalizationManager.systemDefaultLanguage
     }
 

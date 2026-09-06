@@ -17,17 +17,48 @@ struct EngineReachabilityLog {
     /// next take rather than after a restart.
     static let unreachableTTL: TimeInterval = 90
 
+    struct Observation: Equatable {
+        fileprivate let engine: TranscriptionEngine
+        fileprivate let revision: UInt64
+    }
+
     private var unreachableSince: [TranscriptionEngine: Date] = [:]
+    private var revisions: [TranscriptionEngine: UInt64] = [:]
+
+    func observation(for engine: TranscriptionEngine) -> Observation {
+        Observation(engine: engine, revision: revisions[engine, default: 0])
+    }
+
+    mutating func beginObservation(for engine: TranscriptionEngine) -> Observation {
+        revisions[engine, default: 0] &+= 1
+        return observation(for: engine)
+    }
+
+    @discardableResult
+    mutating func apply(_ observation: Observation, reachable: Bool, at now: Date = Date()) -> Bool {
+        guard revisions[observation.engine, default: 0] == observation.revision else { return false }
+        if reachable {
+            markReachable(observation.engine)
+        } else {
+            markUnreachable(observation.engine, at: now)
+        }
+        return true
+    }
 
     mutating func markUnreachable(_ engine: TranscriptionEngine, at now: Date = Date()) {
+        revisions[engine, default: 0] &+= 1
         unreachableSince[engine] = now
     }
 
     mutating func markReachable(_ engine: TranscriptionEngine) {
+        revisions[engine, default: 0] &+= 1
         unreachableSince.removeValue(forKey: engine)
     }
 
-    func isUnreachable(_ engine: TranscriptionEngine, at now: Date = Date()) -> Bool {
+    func isUnreachable(
+        _ engine: TranscriptionEngine, at now: Date = Date(), ignoringRecentFailures: Bool = false
+    ) -> Bool {
+        guard !ignoringRecentFailures else { return false }
         guard let since = unreachableSince[engine] else { return false }
         return now.timeIntervalSince(since) < Self.unreachableTTL
     }
@@ -40,15 +71,21 @@ struct EngineReachabilityLog {
 /// testable without a live engine, a server, or a clock.
 enum EngineFailoverPolicy {
 
-    /// Engine failures a backup may rescue: the primary is unreachable or
-    /// erroring server-side — not misconfigured, and not a problem with the
-    /// audio itself.
     static let rescuableKinds: Set<TranscriptionFailure.Kind> = [
-        .network, .timedOut, .serverError,
+        .notConfigured, .auth, .outOfCredits, .rateLimited, .planRestricted, .clientError,
+        .network, .timedOut, .serverError, .modelOutputLimit, .unknown,
     ]
+
+    static func shouldRememberAsUnreachable(_ failure: TranscriptionFailure) -> Bool {
+        [.network, .timedOut, .serverError].contains(failure.kind)
+    }
 
     static func isRescuable(_ failure: TranscriptionFailure) -> Bool {
         rescuableKinds.contains(failure.kind)
+    }
+
+    static func isStartupRescuable(_ failure: TranscriptionFailure) -> Bool {
+        isRescuable(failure) && failure.kind != .unknown && failure.kind != .modelOutputLimit
     }
 
     /// What is known about one engine at the moment a dictation starts.

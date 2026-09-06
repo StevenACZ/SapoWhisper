@@ -12,7 +12,7 @@ import SwiftUI
 struct PolishModelPicker: View {
     let endpoint: PolishEndpoint
     @Binding var model: String
-    var defaults: UserDefaults = .standard
+    var defaults: UserDefaults = AppPreferences.defaults
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {

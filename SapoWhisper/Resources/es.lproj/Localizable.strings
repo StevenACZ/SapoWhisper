@@ -124,10 +124,9 @@
 "config.tab_settings" = "Ajustes";
 "config.engine" = "Motor de Transcripción";
 "config.fallback_engine" = "Motor de Respaldo";
-"config.fallback_engine_description" = "Si el motor principal no responde (servidor apagado, timeout), este motor toma el dictado: al empezar cuando ya se sabe que el principal está caído, o rescatando el audio si falla al transcribir. Solo se ofrecen motores distintos al principal: dos modos del mismo proveedor se caen juntos.";
+"config.fallback_engine_description" = "Si el motor principal falla por conexión, modelo, credenciales o servicio, SapoWhisper usa el respaldo configurado y muestra qué motor tomó el relevo. Tu audio grabado se conserva. Elige otro proveedor o un modelo local que esté listo para usar. Los motores de respaldo procesan la grabación completa; los modos en tiempo real solo están disponibles como motor principal.";
 "config.fallback_engine_none" = "Ninguno";
 "config.fallback_engine_not_configured" = "%@ aún no está configurado, así que el respaldo se omitirá.";
-"config.fallback_engine_live_note" = "En vivo cuando el respaldo arranca el dictado; para rescatar un audio ya grabado se usa el modelo por archivo del mismo proveedor.";
 "config.engine_summary" = "Configuración actual";
 "config.engine_summary_engine" = "Motor";
 "config.engine_summary_mode" = "Modo";
@@ -546,7 +545,7 @@
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrar configuración";
-"settings.transfer.desc" = "Exporta un JSON portable para mover preferencias, vocabulario, prompts y contexto a otra Mac. El micrófono, permisos del sistema y credenciales Google importadas como archivo no se incluyen.";
+"settings.transfer.desc" = "Exporta un JSON portable para mover preferencias, vocabulario, prompts y contexto a otra Mac. El micrófono, los permisos del sistema, las claves API y los archivos de credenciales no se incluyen.";
 "settings.transfer.export" = "Exportar configuración";
 "settings.transfer.import" = "Importar configuración";
 "settings.transfer.export_panel_message" = "Guarda la configuración portable de SapoWhisper.";
@@ -573,7 +572,7 @@
 "failure.plan_restricted" = "%@: tu plan no permite esta función.";
 "failure.client_error" = "%@: la solicitud fue rechazada. Revisá el audio o la configuración.";
 "failure.server_error" = "%@: el servicio falló temporalmente. Reintentá.";
-"failure.network" = "Sin conexión a internet. Revisá tu red y reintentá.";
+"failure.network" = "No se pudo conectar con %@. Revisa la conexión o la disponibilidad del servicio e inténtalo de nuevo.";
 "failure.timed_out" = "La transcripción tardó demasiado. Reintentá.";
 "failure.audio_empty" = "No se grabó audio. Revisá tu micrófono.";
 "failure.audio_corrupt" = "La grabación se dañó y no se pudo procesar.";
@@ -599,7 +598,7 @@
 "settings.history_auto_delete" = "Borrar entradas antiguas";
 "settings.history_auto_delete_never" = "Nunca";
 "settings.history_auto_delete_days" = "Tras %@ días";
-"settings.history_retention_desc" = "Al superar el límite de audio se eliminan primero las grabaciones más antiguas (las fijadas al final). El borrado automático se ejecuta al iniciar y conserva las entradas fijadas.";
+"settings.history_retention_desc" = "La limpieza automática elimina entradas completadas sin protección. Conserva las fijadas, aplazadas, interrumpidas y en proceso; el límite de audio también respeta el dictado más reciente. El borrado por antigüedad se ejecuta al iniciar.";
 
 /* Welcome flow */
 "welcome.window_title" = "Bienvenido a SapoWhisper";
@@ -690,3 +689,73 @@
 "settings.update_check_toggle" = "Buscar actualizaciones automáticamente";
 "settings.update_check_footnote" = "Consulta GitHub Releases una vez al día. No se envía nada.";
 "history.retranscribe_cancelling" = "Cancelando…";
+
+"history.polishing" = "Mejorando con IA";
+"history.polishing_detail" = "El texto reconocido y el audio están guardados mientras la IA termina de mejorar este dictado.";
+"history.completed" = "Completado";
+"history.audio_available_detail" = "Tu audio está guardado. Puedes escucharlo o volver a transcribirlo.";
+
+"failure.audio_storage_failed" = "La captura se detuvo porque no se pudo guardar el audio completo. Revisa el espacio disponible e inténtalo de nuevo.";
+
+"failure.audio_preparation_failed" = "No se pudo preparar la grabación para enviarla. Revisa el espacio disponible e inténtalo de nuevo.";
+
+"failure.backup_failed" = "No se pudo transcribir con %@ ni con el respaldo %@. %@";
+
+"overlay.cancel_processing" = "Cancelar procesamiento";
+
+"overlay.polish_cancelled" = "Pulido cancelado — texto anterior conservado";
+
+"failure.model_output_limit" = "%@ no pudo completar la transcripción. Prueba con otro modelo o servicio.";
+
+"overlay.backup_active" = "Usando respaldo: %@";
+"overlay.backup_primary_failed" = "%@ no pudo transcribir";
+"overlay.backup_completed" = "Transcrito con %@ (respaldo)";
+"config.local_ai_unchecked" = "Configuración guardada · conexión sin comprobar";
+"config.local_ai_checking" = "Comprobando conexión…";
+"config.local_ai_verified" = "Conexión verificada";
+"config.local_ai_last_failed" = "El último intento falló";
+"config.local_ai_reachable" = "El servidor responde · transcripción sin verificar";
+"config.local_ai_transcribed" = "Última transcripción correcta";
+"config.local_ai_model_unverified" = "Servidor conectado · modelo no listado";
+"config.local_ai_test_scope" = "Los cambios se guardan automáticamente. Esta prueba comprueba la conexión y la lista de modelos. Un dictado verifica la transcripción; si falla, puede tomar el relevo tu motor de respaldo.";
+
+"settings.transfer.section_history" = "Retención del historial";
+"settings.transfer.section_history_desc" = "Límite de audio y eliminación automática. Puede borrar historial o audio sin protección.";
+"settings.transfer.invalid_document" = "El archivo contiene valores inválidos o faltantes. No se importó nada.";
+"settings.transfer.vocabulary_mode" = "Importar vocabulario";
+"settings.transfer.vocabulary_combine" = "Combinar";
+"settings.transfer.vocabulary_replace" = "Reemplazar";
+"settings.transfer.vocabulary_combine_desc" = "Conserva los términos y reemplazos existentes. Añade entradas nuevas y mantiene las preferencias locales si hay conflictos.";
+"settings.transfer.vocabulary_replace_desc" = "Reemplaza todos los términos, reemplazos y pistas de reconocimiento guardados con los de este archivo.";
+"history.retention_unprotect" = "Permitir limpieza automática";
+"history.retention_keep" = "Conservar grabación";
+"history.retention_extend" = "Conservar 30 días más";
+"history.retention_protected" = "Protegida frente a la eliminación automática. Puedes borrar esta entrada manualmente.";
+"history.retention_recovery" = "Las grabaciones pendientes o interrumpidas se conservan para recuperarlas y quedan fuera de la limpieza automática.";
+"history.retention_until" = "Protegida frente a la limpieza automática hasta el %@.";
+"history.retention_no_age" = "Sin borrado por antigüedad. El límite de espacio puede eliminar grabaciones sin protección.";
+"history.retention_due" = "Puede eliminarse en la próxima limpieza automática. Elige Conservar grabación para protegerla.";
+"history.retention_days" = "Borrado por antigüedad en aproximadamente %@ días. El límite de espacio puede adelantarlo.";
+"settings.history_protected_limit" = "Las grabaciones protegidas superan el límite de audio y se han conservado. Exporta o elimina grabaciones para liberar espacio.";
+
+"settings.transfer.backup_created" = "Copia previa a la importación: %@";
+
+"settings.transfer.file_write_failed" = "La importación falló al guardar archivos. Se restauraron los ajustes anteriores. Copia: %@";
+
+"settings.transfer.rollback_failed" = "La importación falló y no pudo restaurar todos los archivos anteriores. Restaura la copia: %@";
+
+"history.continue_recording" = "Continuar grabando";
+
+"history.continue_recording_detail" = "Añade más audio a esta grabación. El audio unido se transcribirá con el modo por archivo del proveedor seleccionado.";
+
+"settings.transfer.summary_engine" = "Motor del archivo";
+
+"settings.transfer.summary_backup" = "Respaldo del archivo";
+
+"settings.transfer.summary_none" = "Ninguno";
+
+"settings.transfer.summary_vocabulary" = "%d palabras de vocabulario · %d correcciones automáticas";
+
+"config.fallback_engine_unavailable" = "%@ está configurado, pero no está disponible temporalmente. Se volverá a intentar tras recuperarse.";
+
+"history.retry_current" = "Reintentar con el motor actual";

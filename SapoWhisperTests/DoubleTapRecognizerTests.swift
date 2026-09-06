@@ -31,8 +31,8 @@ final class DoubleTapRecognizerTests: XCTestCase {
         recognizer.handle(targetOnlyDown: false, targetUp: false, otherFlagsActive: true, now: time)
     }
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         recognizer = DoubleTapRecognizer()
     }
 

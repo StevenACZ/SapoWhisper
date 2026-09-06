@@ -7,7 +7,14 @@ import Foundation
 import NaturalLanguage
 import os
 
-final class TranscriptPostProcessor {
+protocol TranscriptPostProcessing {
+    func willAttemptPolish(rawText: String, duration: TimeInterval?, enforceMinimumDuration: Bool) -> Bool
+    func process(
+        rawText: String, duration: TimeInterval?, provider: PolishProviderConfiguration?, enforceMinimumDuration: Bool
+    ) async -> TranscriptAIResult
+}
+
+final class TranscriptPostProcessor: TranscriptPostProcessing {
     private static let maximumPolishResponses = 3
 
     private struct GuardedPolishResponse: Sendable {
@@ -181,7 +188,7 @@ final class TranscriptPostProcessor {
             return result
         }
 
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let enabled = defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
         guard enabled else {
             return finish(finalText: transcript, status: .none)
@@ -811,7 +818,7 @@ final class TranscriptPostProcessor {
     }
 
     /// Output language as configured right now (Settings/menu-bar selection).
-    static func configuredOutputLanguage(defaults: UserDefaults = .standard) -> TranscriptPolishOutputLanguage {
+    static func configuredOutputLanguage(defaults: UserDefaults = AppPreferences.defaults) -> TranscriptPolishOutputLanguage {
         let storedValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
             ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue
@@ -833,7 +840,7 @@ final class TranscriptPostProcessor {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         guard defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled) else { return false }
         if enforceMinimumDuration, !PolishMinimumDuration.allowsPolish(duration: duration, defaults: defaults) {
             return false

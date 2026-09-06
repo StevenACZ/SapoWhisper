@@ -39,7 +39,7 @@ final class PreferredMicrophoneCoordinator {
 
     init(
         deviceManager: any PreferredMicrophoneDeviceManaging = AudioDeviceManager.shared,
-        userDefaults: UserDefaults = .standard,
+        userDefaults: UserDefaults = AppPreferences.defaults,
         scheduleWork: @escaping (TimeInterval, DispatchWorkItem) -> Void = { delay, workItem in
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
         }

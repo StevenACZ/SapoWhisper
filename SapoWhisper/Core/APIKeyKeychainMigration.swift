@@ -16,7 +16,7 @@ enum APIKeyKeychainMigration {
         (Constants.StorageKeys.elevenLabsAPIKey, .elevenLabsAPIKey),
     ]
 
-    static func run(defaults: UserDefaults = .standard) {
+    static func run(defaults: UserDefaults = AppPreferences.defaults) {
         for migration in migrations {
             guard let legacyValue = defaults.string(forKey: migration.defaultsKey) else { continue }
 

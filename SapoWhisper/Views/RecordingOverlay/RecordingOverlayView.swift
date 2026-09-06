@@ -25,9 +25,6 @@ struct RecordingOverlayView: View {
 
     @State private var pillBounceTrigger = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Shared glass identity space (macOS 26): the droplet pill and dock chip
-    /// carry stable IDs here so their Liquid Glass shapes fuse on detach/absorb.
-    @Namespace private var glassNamespace
 
     private var stateCategory: String { manager.state.stateCategory }
     private var isActive: Bool { stateCategory != "hidden" && stateCategory != "docked" }
@@ -45,7 +42,7 @@ struct RecordingOverlayView: View {
     }
 
     var body: some View {
-        contentStack
+        pillAndChipStack
             .fixedSize()
             // Publish where the real content sits inside the mostly-transparent
             // surface, so the outside-click collapse can compare against the
@@ -83,20 +80,6 @@ struct RecordingOverlayView: View {
             }
     }
 
-    /// On macOS 26 the pill and chip render inside one glass container so
-    /// their Liquid Glass shapes blend while the droplet detaches/absorbs;
-    /// older systems lay out the same stack with the material chrome.
-    @ViewBuilder
-    private var contentStack: some View {
-        if #available(macOS 26, *) {
-            GlassEffectContainer(spacing: 24) {
-                pillAndChipStack
-            }
-        } else {
-            pillAndChipStack
-        }
-    }
-
     private var pillAndChipStack: some View {
         VStack(spacing: 0) {
             if chipOnTop {
@@ -119,7 +102,6 @@ struct RecordingOverlayView: View {
     private var chip: some View {
         DockedChipView(
             isExpanded: isActive,
-            glassNamespace: glassNamespace,
             onTap: { manager.dockChipTapped() }
         )
     }
@@ -127,9 +109,7 @@ struct RecordingOverlayView: View {
     /// The droplet grows out of the chip's edge and collapses back into it,
     /// with scale anchored at the chip side. The enter stays fully opaque so
     /// the detach reads as a drop separating from the resting chip; the exit
-    /// adds a fade because the shrinking droplet loses its glass neck early
-    /// and a hard opaque mini-pill floating over the chip read as cut off —
-    /// dissolving while it shrinks sells "absorbed by the chip".
+    /// adds a fade as the pill returns to the chip.
     private var dropletTransition: AnyTransition {
         let anchor: UnitPoint = chipOnTop ? .top : .bottom
         return .asymmetric(
@@ -138,19 +118,10 @@ struct RecordingOverlayView: View {
         )
     }
 
-    /// Sequential content hand-off on active-to-active swaps (old leaves
-    /// fast, new enters right after). Blur-replace adds the material feel;
-    /// Reduce Motion keeps the plain crossfade.
     private var contentSwapTransition: AnyTransition {
-        if reduceMotion {
-            return .asymmetric(
-                insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
-                removal: .opacity.animation(.easeOut(duration: 0.1))
-            )
-        }
-        return .asymmetric(
-            insertion: AnyTransition(.blurReplace).animation(.easeIn(duration: 0.16).delay(0.1)),
-            removal: AnyTransition(.blurReplace).animation(.easeOut(duration: 0.1))
+        .asymmetric(
+            insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
+            removal: .opacity.animation(.easeOut(duration: 0.1))
         )
     }
 
@@ -159,13 +130,38 @@ struct RecordingOverlayView: View {
         // active-to-active swap so the pill morphs once while the texts hand
         // off sequentially.
         ZStack {
-            contentForState
-                .id(stateCategory)
-                .transition(contentSwapTransition)
+            VStack(spacing: 8) {
+                contentForState
+                if manager.state.showsBackupNotice, let notice = manager.backupNotice {
+                    VStack(spacing: 3) {
+                        Label(
+                            stateCategory == "copied" ? notice.completedTitle : notice.title,
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        .font(.system(size: stateCategory == "copied" ? 11 : 12, weight: .medium))
+                        .foregroundStyle(stateCategory == "copied" ? Color.secondary : Color.sapoGreenText)
+                        Text(notice.detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: 320)
+                    .transition(.opacity)
+                }
+            }
+            .id(stateCategory)
+            .transition(contentSwapTransition)
         }
         .padding(.horizontal, OverlayPillChrome.horizontalPadding)
         .padding(.vertical, OverlayPillChrome.verticalPadding)
-        .overlayPillChrome(glassNamespace: glassNamespace)
+        .clipShape(OverlayPillChrome.pillShape)
+        .overlayPillChrome()
+        .overlay {
+            if case .copied(let outcome) = manager.state {
+                CopiedPillGlow(outcome: outcome)
+            }
+        }
         // Micro-bounce on state swaps — subtle scale pop for tactile
         // feedback. Phase-driven so a swap mid-bounce can never leave the
         // pill stuck scaled up (the old detached asyncAfter could).
@@ -226,10 +222,17 @@ struct RecordingOverlayView: View {
             )
 
         case .transcribing:
-            TranscribingPillView(cancelWarningActive: manager.isCancelWarningArmed)
+            TranscribingPillView(
+                cancelWarningActive: manager.isCancelWarningArmed,
+                onCancel: manager.canCancelProcessing?() == true ? manager.onCancelProcessing : nil
+            )
 
         case .polishing(let timeoutSeconds, let compact):
-            AIPolishingPillView(timeoutSeconds: timeoutSeconds, compact: compact)
+            AIPolishingPillView(
+                timeoutSeconds: timeoutSeconds, compact: compact,
+                cancelWarningActive: manager.isCancelWarningArmed,
+                onCancel: manager.canCancelProcessing?() == true ? manager.onCancelProcessing : nil
+            )
 
         case .copied(let outcome):
             CopiedPillView(outcome: outcome)
@@ -253,10 +256,11 @@ struct RecordingOverlayView: View {
             )
 
         case .cancelled:
-            CancelledPillView()
+            CancelledPillView(message: manager.cancellationMessage)
 
         case .error(let message, let isRetryable):
             ErrorPillView(message: message, onRetry: isRetryable ? manager.onRetry : nil)
+                .onHover { manager.setErrorHover($0) }
 
         case .deviceChange(let announcement):
             DeviceChangePillView(announcement: announcement)

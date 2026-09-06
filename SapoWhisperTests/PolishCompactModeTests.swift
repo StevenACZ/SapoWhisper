@@ -7,20 +7,21 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class PolishCompactModeTests: XCTestCase {
 
     private var defaults: UserDefaults!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         defaults = UserDefaults(suiteName: "PolishCompactModeTests")!
         defaults.removePersistentDomain(forName: "PolishCompactModeTests")
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: "PolishCompactModeTests")
         defaults = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - PolishMode

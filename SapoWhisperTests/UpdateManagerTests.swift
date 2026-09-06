@@ -15,8 +15,8 @@ final class UpdateManagerTests: XCTestCase {
 
     private var manager: UpdateManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         manager = UpdateManager()
     }
 

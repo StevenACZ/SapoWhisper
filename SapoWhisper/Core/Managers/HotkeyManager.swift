@@ -121,7 +121,7 @@ class HotkeyManager: ObservableObject {
 
     private init() {
         // Cargar valores guardados o usar defaults
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let savedTriggerKind = defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
         let savedModifiers = defaults.integer(forKey: Constants.StorageKeys.hotkeyModifiers)
         let savedDoubleTapModifier = defaults.integer(forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
@@ -298,8 +298,8 @@ class HotkeyManager: ObservableObject {
             hotkeyRef = nil
             currentKeyCode = UInt32(kVK_Space)
             currentModifiers = UInt32(optionKey)
-            UserDefaults.standard.set(Int(currentKeyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
-            UserDefaults.standard.set(Int(currentModifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
+            AppPreferences.defaults.set(Int(currentKeyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
+            AppPreferences.defaults.set(Int(currentModifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
             let retryStatus = RegisterEventHotKey(
                 currentKeyCode, currentModifiers, hotkeyID, GetApplicationEventTarget(), 0, &hotkeyRef)
             if retryStatus == noErr {
@@ -394,19 +394,14 @@ class HotkeyManager: ObservableObject {
                     let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                     // The tap runs on CFRunLoopGetMain; make the C→MainActor
                     // hop explicit (same rationale as the Carbon handler).
-                    return MainActor.assumeIsolated {
+                    MainActor.assumeIsolated {
                         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                             manager.enableEventTap()
-                            return Unmanaged.passUnretained(event)
+                        } else if type == .flagsChanged {
+                            manager.handleFlagsChanged(event)
                         }
-
-                        guard type == .flagsChanged else {
-                            return Unmanaged.passUnretained(event)
-                        }
-
-                        manager.handleFlagsChanged(event)
-                        return Unmanaged.passUnretained(event)
                     }
+                    return Unmanaged.passUnretained(event)
                 },
                 userInfo: Unmanaged.passUnretained(self).toOpaque()
             )
@@ -531,10 +526,10 @@ class HotkeyManager: ObservableObject {
         currentModifiers = modifiers
         currentDoubleTapModifier = HotkeyDoubleTapModifier.option(for: doubleTapModifier).carbonValue
 
-        UserDefaults.standard.set(triggerKind.rawValue, forKey: Constants.StorageKeys.hotkeyTriggerKind)
-        UserDefaults.standard.set(Int(keyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
-        UserDefaults.standard.set(Int(modifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
-        UserDefaults.standard.set(Int(currentDoubleTapModifier), forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
+        AppPreferences.defaults.set(triggerKind.rawValue, forKey: Constants.StorageKeys.hotkeyTriggerKind)
+        AppPreferences.defaults.set(Int(keyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
+        AppPreferences.defaults.set(Int(modifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
+        AppPreferences.defaults.set(Int(currentDoubleTapModifier), forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
 
         if let callback = hotkeyCallback {
             registerHotkey(callback: callback)
@@ -577,7 +572,7 @@ class HotkeyManager: ObservableObject {
             now: now
         ) {
         case .trigger:
-            SapoLog.hotkey.info(
+            SapoLog.hotkey.notice(
                 "Double modifier hotkey accepted modifier=\(option.symbol, privacy: .public)"
             )
             DispatchQueue.main.async { [weak self] in

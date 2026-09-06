@@ -98,10 +98,17 @@ nonisolated extension AudioCaptureEngine {
     func registerWriteFailure(_ error: Error) {
         captureStateLock.lock()
         failedWriteCount += 1
+        let shouldNotify = failedWriteCount == 1
         if firstWriteError == nil {
             firstWriteError = LogSanitizer.errorDiagnostic(error, state: "audio-write")
         }
         captureStateLock.unlock()
+        guard shouldNotify else { return }
+        let generation = setupGenerationQueue.sync { activeSetupGeneration }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isSetupGenerationCurrent(generation), self.isRecording else { return }
+            self.onCaptureInterrupted?(Self.storageFailureReason)
+        }
     }
 
     func registerEmittedChunk() -> Int {

@@ -1,164 +1,236 @@
-//
-//  MiniEqualizerView.swift
-//  SapoWhisper
-//
-
+import AppKit
 import Combine
 import SwiftUI
 
-/// Compact recorder meter with deterministic bars and bounded animation work.
-///
-/// The incoming level is the source's -60..0 dB normalization, which crushes
-/// speech into the middle of the scale. The view re-expands the speech band
-/// (gating room noise to a flat baseline), applies a fast-attack/slow-release
-/// envelope, and ripples it outward from the center bar so the bars visibly
-/// follow the voice instead of scaling one shared value.
 struct MiniEqualizerView: View {
     let audioLevelPublisher: AnyPublisher<Float, Never>
-    /// Odd count keeps a single center bar for the outward ripple.
     var barCount: Int = 5
-    /// While the input is still handshaking (Bluetooth), no real levels
-    /// arrive; a gentle travelling wave shows the meter is alive and waiting
-    /// instead of a dead flat line.
     var isConnecting: Bool = false
-    /// Recording red by default; compact mode recolors the meter so the user
-    /// knows from the first second which polish mode this dictation gets.
     var barColor: Color = .recording
 
-    @State private var envelope: CGFloat = 0
-    @State private var barLevels: [CGFloat] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let barWidth: CGFloat = 4
-    private let barSpacing: CGFloat = 2.5
-    private let maxHeight: CGFloat = 20
-    private let minHeight: CGFloat = 4
+    var body: some View {
+        RecordingMeterRepresentable(
+            publisher: audioLevelPublisher,
+            barCount: max(0, barCount),
+            isConnecting: isConnecting,
+            color: NSColor(barColor),
+            reduceMotion: reduceMotion
+        )
+        .frame(width: CGFloat(max(0, barCount)) * 6.5 - (barCount > 0 ? 2.5 : 0), height: 20)
+    }
+}
 
-    // Speech window over the source's -60..0 dB scale: below ~-44 dB reads as
-    // silence (flat bars), ~-14 dB and louder pins the meter at full height.
-    private let silenceFloor: CGFloat = 0.27
-    private let speechCeiling: CGFloat = 0.77
+private struct RecordingMeterRepresentable: NSViewRepresentable {
+    let publisher: AnyPublisher<Float, Never>
+    let barCount: Int
+    let isConnecting: Bool
+    let color: NSColor
+    let reduceMotion: Bool
 
-    private var centerIndex: Int { barCount / 2 }
-
-    /// Center bar carries the full envelope; height falls off toward the
-    /// edges so the wave keeps its peaked silhouette at any width.
-    private func weight(for index: Int) -> CGFloat {
-        let distance = CGFloat(abs(index - centerIndex))
-        let falloff = centerIndex == 0 ? 0 : distance / CGFloat(centerIndex)
-        return max(0.55, 1.0 - falloff * 0.42)
+    func makeNSView(context: Context) -> RecordingMeterNSView {
+        let view = RecordingMeterNSView()
+        updateNSView(view, context: context)
+        return view
     }
 
-    var body: some View {
-        // The connecting wave is derived from the timeline clock instead of a
-        // manual sleep loop: pausing is free, there is no phase state, and the
-        // look is unchanged (same 120 ms cadence and easing as the old loop).
-        TimelineView(.animation(minimumInterval: 0.12, paused: !isConnecting || reduceMotion)) { context in
-            let levels = isConnecting ? connectingLevels(at: context.date) : barLevels
-            HStack(spacing: barSpacing) {
-                ForEach(0..<barCount, id: \.self) { index in
-                    // Fixed frame + y-scale instead of animating the frame
-                    // height: every 100 ms level tick used to run a window-wide
-                    // layout pass per animation frame (and redraw the pill's
-                    // text glyphs, which share the drawing layer) — ~13% of a
-                    // core for the whole recording. A transform animates in
-                    // Core Animation without touching layout.
-                    Capsule()
-                        .fill(barColor.opacity(barOpacity(levels, index)))
-                        .frame(width: barWidth, height: maxHeight)
-                        .scaleEffect(x: 1, y: barScale(levels, index), anchor: .center)
+    func updateNSView(_ view: RecordingMeterNSView, context: Context) {
+        view.configure(self)
+    }
+
+    static func dismantleNSView(_ view: RecordingMeterNSView, coordinator: ()) {
+        view.stop()
+    }
+}
+
+private final class RecordingMeterNSView: NSView {
+    private var configuration: RecordingMeterRepresentable?
+    private var bars: [CALayer] = []
+    private var levels: [CGFloat] = []
+    private var audioSubscription: AnyCancellable?
+    private var connectingSubscription: AnyCancellable?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(_ next: RecordingMeterRepresentable) {
+        let previous = configuration
+        configuration = next
+        let countChanged = bars.count != next.barCount
+        if countChanged {
+            bars.forEach { $0.removeFromSuperlayer() }
+            bars = (0..<next.barCount).map { _ in
+                let bar = CALayer()
+                bar.bounds = CGRect(x: 0, y: 0, width: 4, height: 20)
+                bar.cornerRadius = 2
+                layer?.addSublayer(bar)
+                return bar
+            }
+            levels = Array(repeating: 0, count: next.barCount)
+            needsLayout = true
+        }
+        if countChanged || previous?.color != next.color {
+            updateColors()
+        }
+        let phaseChanged = previous?.isConnecting != next.isConnecting
+        let motionChanged = previous?.reduceMotion != next.reduceMotion
+        if countChanged || phaseChanged || motionChanged {
+            if next.isConnecting || previous?.isConnecting == true {
+                levels = connectingLevels()
+            }
+            render(animated: false)
+            updateConnectingSubscription()
+        }
+        startAudioSubscription()
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let width = CGFloat(bars.count) * 6.5 - (bars.isEmpty ? 0 : 2.5)
+        for (index, bar) in bars.enumerated() {
+            bar.position = CGPoint(x: (bounds.width - width) / 2 + CGFloat(index) * 6.5 + 2, y: bounds.midY)
+        }
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            stop()
+            return
+        }
+        updateColors()
+        render(animated: false)
+        startAudioSubscription()
+        updateConnectingSubscription()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColors()
+    }
+
+    func stop() {
+        audioSubscription?.cancel()
+        audioSubscription = nil
+        connectingSubscription?.cancel()
+        connectingSubscription = nil
+        bars.forEach { $0.removeAllAnimations() }
+    }
+
+    private func startAudioSubscription() {
+        guard window != nil, audioSubscription == nil, let configuration else { return }
+        // Keep the attached meter's source across unrelated SwiftUI updates.
+        audioSubscription = configuration.publisher.receive(on: RunLoop.main).sink { [weak self] level in
+            // receive(on:) establishes the main-run-loop callback boundary.
+            MainActor.assumeIsolated {
+                guard let self, self.window != nil, self.configuration?.isConnecting == false else { return }
+                let next = RecordingMeterLevels.advance(CGFloat(level), previous: self.levels)
+                guard next != self.levels else { return }
+                self.levels = next
+                self.render(animated: true)
+            }
+        }
+    }
+
+    private func updateConnectingSubscription() {
+        connectingSubscription?.cancel()
+        connectingSubscription = nil
+        guard window != nil, let configuration, configuration.isConnecting, !configuration.reduceMotion else { return }
+        connectingSubscription = Timer.publish(every: 0.12, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in
+                // Timer publishes only on the main run loop.
+                MainActor.assumeIsolated {
+                    guard let self, self.window != nil, self.configuration?.isConnecting == true else { return }
+                    self.levels = self.connectingLevels()
+                    self.render(animated: true)
                 }
             }
-            // Isolate the animating bars into their own Metal-backed layer.
-            // Without this, SwiftUI flattens the bars into the pill's shared
-            // drawing layer, and the per-tick fill/scale animations force a
-            // CPU re-render of that whole layer every frame — including the
-            // pill's text glyphs, whose CoreGraphics bitmap buffers also
-            // accumulate (~1 MB/s resident growth per recording session).
-            .drawingGroup()
-            .animation(isConnecting ? .easeInOut(duration: 0.12) : nil, value: levels)
+    }
+
+    private func connectingLevels() -> [CGFloat] {
+        guard configuration?.reduceMotion == false else {
+            return Array(repeating: 0.18, count: bars.count)
         }
-        .frame(height: maxHeight)
-        .onAppear {
-            if barLevels.count != barCount {
-                barLevels = Array(repeating: 0, count: barCount)
+        let phase = (Date.timeIntervalSinceReferenceDate * (0.55 / 0.12))
+            .truncatingRemainder(dividingBy: 2 * .pi)
+        return bars.indices.map { index in
+            let distance = Double(abs(index - bars.count / 2))
+            return CGFloat(0.10 + 0.16 * (1 + sin(phase - distance * 0.9)) / 2)
+        }
+    }
+
+    private func updateColors() {
+        guard let configuration else { return }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bars.forEach { $0.backgroundColor = configuration.color.cgColor }
+            CATransaction.commit()
+        }
+    }
+
+    private func render(animated: Bool) {
+        guard let configuration else { return }
+        let shouldAnimate = animated && !configuration.reduceMotion && window != nil
+        let center = bars.count / 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, bar) in bars.enumerated() {
+            let distance = CGFloat(abs(index - center))
+            let falloff = center == 0 ? 0 : distance / CGFloat(center)
+            let weight = max(0.55, 1 - falloff * 0.42)
+            let scale = min(20, 4 + 16 * levels[index] * weight) / 20
+            let opacity = Float(0.5 + levels[index] * 0.5)
+            let presentation = bar.presentation()
+            let oldScale = presentation?.transform.m22 ?? bar.transform.m22
+            let oldOpacity = presentation?.opacity ?? bar.opacity
+            bar.transform = CATransform3DMakeScale(1, scale, 1)
+            bar.opacity = opacity
+            if shouldAnimate {
+                animate(bar, key: "transform.scale.y", from: oldScale, to: scale)
+                animate(bar, key: "opacity", from: CGFloat(oldOpacity), to: CGFloat(opacity))
+            } else {
+                bar.removeAllAnimations()
             }
         }
-        .onReceive(audioLevelPublisher.receive(on: RunLoop.main)) { audioLevel in
-            ingest(CGFloat(audioLevel))
-        }
-        .onChange(of: isConnecting) { _, connecting in
-            // The wave never writes state; freeze its current levels into the
-            // live meter when the handshake ends so real levels ripple from
-            // where the wave left off instead of snapping to a flat line.
-            guard !connecting, barLevels.count == barCount else { return }
-            barLevels = connectingLevels(at: Date())
-        }
+        CATransaction.commit()
     }
 
-    /// Low-amplitude sine travelling outward from the center: clearly alive,
-    /// clearly not voice. Real levels take over the moment they arrive.
-    /// Reduce Motion holds the meter at the wave's resting level instead.
-    private func connectingLevels(at date: Date) -> [CGFloat] {
-        guard !reduceMotion else {
-            return Array(repeating: 0.18, count: barCount)
-        }
-
-        // Same pace as the old loop, which advanced the phase 0.55 per 120 ms.
-        let phase = (date.timeIntervalSinceReferenceDate * (0.55 / 0.12))
-            .truncatingRemainder(dividingBy: 2 * .pi)
-        return (0..<barCount).map { index in
-            let distance = Double(abs(index - centerIndex))
-            let wave = (1 + sin(phase - distance * 0.9)) / 2
-            return CGFloat(0.10 + 0.16 * wave)
-        }
+    private func animate(_ bar: CALayer, key: String, from: CGFloat, to: CGFloat) {
+        let animation = CABasicAnimation(keyPath: key)
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = configuration?.isConnecting == true ? 0.12 : 0.075
+        animation.timingFunction = CAMediaTimingFunction(
+            name: configuration?.isConnecting == true ? .easeInEaseOut : .easeOut
+        )
+        bar.add(animation, forKey: key)
     }
+}
 
-    private func ingest(_ rawLevel: CGFloat) {
-        guard barLevels.count == barCount, !isConnecting else { return }
-        let banded = min(1, max(0, (rawLevel - silenceFloor) / (speechCeiling - silenceFloor)))
-        let shaped = banded > 0 ? CGFloat(pow(Double(banded), 0.85)) : 0
-
-        // Attack near 1 so a word onset or a sharp sound lands on the very
-        // next tick (levels only arrive ~10x/s); the slow release keeps the
-        // decay readable.
-        let attack: CGFloat = 0.85
-        let release: CGFloat = 0.25
-        let blend = shaped > envelope ? attack : release
-        var nextEnvelope = envelope + (shaped - envelope) * blend
-        if nextEnvelope < 0.015 { nextEnvelope = 0 }
-
-        // Skip state writes (and re-renders) while everything is already flat.
-        if nextEnvelope == 0, envelope == 0, barLevels.allSatisfy({ $0 == 0 }) { return }
-
-        envelope = nextEnvelope
-
-        // Center bar carries the live envelope; neighbors echo previous ticks
-        // so speech ripples outward and silence collapses back to a flat line.
-        var levels = barLevels
-        for index in 0..<barCount where index != centerIndex {
-            let towardCenter = index < centerIndex ? index + 1 : index - 1
-            levels[index] = barLevels[towardCenter]
+nonisolated enum RecordingMeterLevels {
+    static func advance(_ rawLevel: CGFloat, previous: [CGFloat]) -> [CGFloat] {
+        guard !previous.isEmpty else { return [] }
+        let level = rawLevel.isFinite ? min(1, max(0, (rawLevel - 0.27) / 0.73)) : 0
+        let center = previous.count / 2
+        var levels = previous
+        for index in previous.indices where index != center {
+            let source = index < center ? min(center, index + 2) : max(center, index - 2)
+            levels[index] = previous[source]
         }
-        levels[centerIndex] = nextEnvelope
-
-        withAnimation(.easeOut(duration: 0.09)) {
-            barLevels = levels
-        }
-    }
-
-    private func barScale(_ levels: [CGFloat], _ index: Int) -> CGFloat {
-        barHeight(levels, index) / maxHeight
-    }
-
-    private func barHeight(_ levels: [CGFloat], _ index: Int) -> CGFloat {
-        guard levels.indices.contains(index) else { return minHeight }
-        let activeHeight = (maxHeight - minHeight) * levels[index] * weight(for: index)
-        return min(maxHeight, minHeight + activeHeight)
-    }
-
-    private func barOpacity(_ levels: [CGFloat], _ index: Int) -> Double {
-        guard levels.indices.contains(index) else { return 0.5 }
-        return 0.5 + Double(levels[index]) * 0.5
+        levels[center] = level
+        return levels
     }
 }

@@ -7,7 +7,36 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class TranscriptionFailureTests: XCTestCase {
+
+    func testCombinedFailureNamesBothServicesAndPreservesThePrimaryRetryPolicy() {
+        let primary = TranscriptionFailure(kind: .network, engine: "Primary")
+        let backup = TranscriptionFailure(kind: .auth, engine: "Backup")
+        let failure = TranscriptionFailure.backupFailed(primary: primary, backup: backup)
+        XCTAssertEqual(failure.kind, .network)
+        XCTAssertEqual(failure.engine, "Primary")
+        XCTAssertTrue(failure.isRetryable)
+        XCTAssertTrue(failure.localizedDescription.contains("Primary"))
+        XCTAssertTrue(failure.localizedDescription.contains("Backup"))
+        XCTAssertTrue(failure.localizedDescription.contains(backup.localizedDescription))
+        XCTAssertEqual(failure.technicalDetail, "primary=Primary/network backup=Backup/auth")
+    }
+
+    func testNetworkFailureNamesTheUnavailableService() {
+        XCTAssertTrue(TranscriptionFailure(kind: .network, engine: "Fixture service").localizedDescription.contains("Fixture service"))
+    }
+
+    func testRejectedPrimaryKeepsRetryWhenBackupFailureIsTransient() {
+        let primary = TranscriptionFailure.fromHTTP(engine: "Primary", statusCode: 404, body: Data())
+        let backup = TranscriptionFailure.fromHTTP(engine: "Backup", statusCode: 503, body: Data())
+        let combined = TranscriptionFailure.backupFailed(primary: primary, backup: backup)
+        XCTAssertEqual(combined.kind, .clientError)
+        XCTAssertTrue(combined.isRetryable)
+        XCTAssertTrue(combined.localizedDescription.contains("Primary"))
+        XCTAssertTrue(combined.localizedDescription.contains("Backup"))
+        XCTAssertFalse(TranscriptionFailure.backupFailed(primary: primary, backup: primary).isRetryable)
+    }
 
     func testHTTP401MapsToAuth() {
         let failure = TranscriptionFailure.fromHTTP(

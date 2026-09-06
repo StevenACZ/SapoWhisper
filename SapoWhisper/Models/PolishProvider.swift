@@ -355,7 +355,7 @@ enum PolishReasoningEffort: String, CaseIterable, Identifiable {
         }
     }
 
-    static func current(defaults: UserDefaults = .standard) -> PolishReasoningEffort {
+    static func current(defaults: UserDefaults = AppPreferences.defaults) -> PolishReasoningEffort {
         let stored = defaults.string(forKey: Constants.StorageKeys.aiPolishReasoningEffort)
         return stored.flatMap(PolishReasoningEffort.init(rawValue:)) ?? .default
     }
@@ -389,7 +389,7 @@ struct PolishProviderConfiguration {
         endpoint == .localServer || Self.isLocalNetworkHost(baseURL.host)
     }
 
-    static func current(defaults: UserDefaults = .standard) -> PolishProviderConfiguration? {
+    static func current(defaults: UserDefaults = AppPreferences.defaults) -> PolishProviderConfiguration? {
         configuration(
             for: currentEndpoint(defaults: defaults),
             model: nil,
@@ -397,7 +397,7 @@ struct PolishProviderConfiguration {
         )
     }
 
-    static func migrateExplicitModelSelection(defaults: UserDefaults = .standard) {
+    static func migrateExplicitModelSelection(defaults: UserDefaults = AppPreferences.defaults) {
         guard !defaults.bool(forKey: Constants.StorageKeys.aiPolishExplicitModelMigration) else { return }
         defaults.set(true, forKey: Constants.StorageKeys.aiPolishExplicitModelMigration)
         guard defaults.bool(forKey: Constants.StorageKeys.onboardingComplete) else { return }
@@ -416,7 +416,7 @@ struct PolishProviderConfiguration {
     static func configuration(
         for endpoint: PolishEndpoint,
         model: String?,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = AppPreferences.defaults
     ) -> PolishProviderConfiguration? {
         let model = model ?? storedModel(for: endpoint, defaults: defaults)
         let baseURLInput = storedBaseURLInput(for: endpoint, defaults: defaults)
@@ -431,13 +431,13 @@ struct PolishProviderConfiguration {
         return PolishProviderConfiguration(endpoint: endpoint, baseURL: baseURL, model: model, apiKey: apiKey)
     }
 
-    static func currentEndpoint(defaults: UserDefaults = .standard) -> PolishEndpoint {
+    static func currentEndpoint(defaults: UserDefaults = AppPreferences.defaults) -> PolishEndpoint {
         let endpointValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
         return PolishEndpoint(rawValue: endpointValue) ?? .default
     }
 
-    static func configuredEndpointUsesLocalTimeoutBudget(defaults: UserDefaults = .standard) -> Bool {
+    static func configuredEndpointUsesLocalTimeoutBudget(defaults: UserDefaults = AppPreferences.defaults) -> Bool {
         let endpoint = currentEndpoint(defaults: defaults)
         guard endpoint != .localServer else { return true }
 
@@ -449,7 +449,7 @@ struct PolishProviderConfiguration {
     }
 
     static func hostedEndpointIsPausedOffline(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = AppPreferences.defaults,
         isOffline: Bool = NetworkReachability.shared.isOffline
     ) -> Bool {
         defaults.bool(forKey: Constants.StorageKeys.aiPolishEnabled)
@@ -460,7 +460,7 @@ struct PolishProviderConfiguration {
     /// Like `current() != nil`, but checks key presence through KeychainStore's
     /// hints so launch and settings surfaces can gate on it without triggering
     /// a keychain consent prompt.
-    static func hasUsableConfiguration(defaults: UserDefaults = .standard) -> Bool {
+    static func hasUsableConfiguration(defaults: UserDefaults = AppPreferences.defaults) -> Bool {
         let endpointValue =
             defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint) ?? PolishEndpoint.default.rawValue
         let endpoint = PolishEndpoint(rawValue: endpointValue) ?? .default
@@ -490,11 +490,11 @@ struct PolishProviderConfiguration {
     /// Recorded at use time (never while typing in Settings, which would fill
     /// the list with partial names); the history "polish with…" menu reads it
     /// so a model stays offered after the user moves the endpoint to another.
-    static func recentModels(for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) -> [String] {
+    static func recentModels(for endpoint: PolishEndpoint, defaults: UserDefaults = AppPreferences.defaults) -> [String] {
         defaults.stringArray(forKey: recentModelsStorageKey(for: endpoint)) ?? []
     }
 
-    static func recordRecentModel(_ model: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
+    static func recordRecentModel(_ model: String, for endpoint: PolishEndpoint, defaults: UserDefaults = AppPreferences.defaults) {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         var models = recentModels(for: endpoint, defaults: defaults).filter { $0 != trimmed }
@@ -506,7 +506,7 @@ struct PolishProviderConfiguration {
     /// configured endpoint contributes its current model plus its recents.
     /// Gates on key-presence hints only — building a menu must never trigger
     /// a keychain consent prompt.
-    static func availableModelOptions(defaults: UserDefaults = .standard) -> [PolishModelOption] {
+    static func availableModelOptions(defaults: UserDefaults = AppPreferences.defaults) -> [PolishModelOption] {
         let current = currentEndpoint(defaults: defaults)
         let endpoints = [current] + PolishEndpoint.allCases.filter { $0 != current }
 
@@ -533,7 +533,7 @@ struct PolishProviderConfiguration {
 
     static func storedModel(
         for endpoint: PolishEndpoint,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = AppPreferences.defaults,
         allowLegacyFallback: Bool = true
     ) -> String {
         let scoped = (defaults.string(forKey: modelStorageKey(for: endpoint)) ?? "")
@@ -551,7 +551,7 @@ struct PolishProviderConfiguration {
         return endpoint.defaultModel
     }
 
-    static func setStoredModel(_ model: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
+    static func setStoredModel(_ model: String, for endpoint: PolishEndpoint, defaults: UserDefaults = AppPreferences.defaults) {
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
         defaults.set(trimmed, forKey: modelStorageKey(for: endpoint))
         if endpoint == currentEndpoint(defaults: defaults) {
@@ -561,7 +561,7 @@ struct PolishProviderConfiguration {
 
     static func storedBaseURLInput(
         for endpoint: PolishEndpoint,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = AppPreferences.defaults,
         allowLegacyFallback: Bool = true
     ) -> String {
         guard endpoint.usesEditableBaseURL else { return endpoint.defaultBaseURL }
@@ -578,7 +578,7 @@ struct PolishProviderConfiguration {
         return endpoint.defaultBaseURL
     }
 
-    static func setStoredBaseURLInput(_ baseURL: String, for endpoint: PolishEndpoint, defaults: UserDefaults = .standard) {
+    static func setStoredBaseURLInput(_ baseURL: String, for endpoint: PolishEndpoint, defaults: UserDefaults = AppPreferences.defaults) {
         guard endpoint.usesEditableBaseURL else { return }
         let safeValue = sanitizedBaseURLForStorage(baseURL)
         defaults.set(safeValue, forKey: baseURLStorageKey(for: endpoint))
@@ -587,7 +587,7 @@ struct PolishProviderConfiguration {
         }
     }
 
-    static func sanitizeStoredBaseURLs(defaults: UserDefaults = .standard) {
+    static func sanitizeStoredBaseURLs(defaults: UserDefaults = AppPreferences.defaults) {
         for endpoint in PolishEndpoint.allCases where endpoint.usesEditableBaseURL {
             let key = baseURLStorageKey(for: endpoint)
             guard let stored = defaults.string(forKey: key) else { continue }

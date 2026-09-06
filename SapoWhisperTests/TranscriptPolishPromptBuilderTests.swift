@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class TranscriptPolishPromptBuilderTests: XCTestCase {
 
     private func makeSystem(
@@ -173,6 +174,7 @@ final class TranscriptPolishPromptBuilderTests: XCTestCase {
     }
 }
 
+@MainActor
 final class TranscriptChunkingTests: XCTestCase {
 
     func testShortTextStaysWhole() {
@@ -249,6 +251,7 @@ final class TranscriptChunkingTests: XCTestCase {
     }
 }
 
+@MainActor
 final class RecentDictationContextTests: XCTestCase {
 
     private func entry(

@@ -15,7 +15,7 @@ nonisolated enum AudioUploadQuality: String, CaseIterable, Identifiable, Codable
 
     var id: String { rawValue }
 
-    static func stored(in defaults: UserDefaults = .standard) -> AudioUploadQuality {
+    static func stored(in defaults: UserDefaults = AppPreferences.defaults) -> AudioUploadQuality {
         guard let rawValue = defaults.string(forKey: Constants.StorageKeys.audioUploadQuality) else {
             return defaultValue
         }

@@ -11,7 +11,7 @@ struct ElevenLabsSettingsCard: View {
 
     @State private var elevenLabsAPIKey = ""
     @State private var keychainReadDenied = false
-    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedMode =
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode, store: AppPreferences.defaults) private var selectedMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
 
     init(viewModel: SapoWhisperViewModel, isEmbedded: Bool = false) {

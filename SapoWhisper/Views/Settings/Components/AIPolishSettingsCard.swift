@@ -11,16 +11,18 @@ import os
 /// Paste a key, press Test, done — the single adaptive prompt handles the
 /// rest, so there are no mode or duration pickers.
 struct AIPolishSettingsCard: View {
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishMode) private var aiPolishModeValue = PolishMode.default.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishMinDuration) private var aiPolishMinDurationValue =
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishMode, store: AppPreferences.defaults) private var aiPolishModeValue = PolishMode.default
+        .rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishMinDuration, store: AppPreferences.defaults) private var aiPolishMinDurationValue =
         PolishMinimumDuration.always.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage, store: AppPreferences.defaults) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishEndpoint) private var endpointValue = PolishEndpoint.default.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishReasoningEffort) private var reasoningEffortValue =
+    @AppStorage(Constants.StorageKeys.aiPolishEndpoint, store: AppPreferences.defaults) private var endpointValue = PolishEndpoint.default
+        .rawValue
+    @AppStorage(Constants.StorageKeys.aiPolishReasoningEffort, store: AppPreferences.defaults) private var reasoningEffortValue =
         PolishReasoningEffort.default.rawValue
-    @AppStorage(Constants.StorageKeys.language) private var transcriptionLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.language, store: AppPreferences.defaults) private var transcriptionLanguage = "auto"
 
     @State private var model = PolishEndpoint.default.defaultModel
     @State private var baseURL = PolishEndpoint.default.defaultBaseURL

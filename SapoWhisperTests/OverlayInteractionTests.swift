@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class OverlayOutsideClickTests: XCTestCase {
 
     /// The fixed 640×440 surface is mostly transparent margin; the collapse

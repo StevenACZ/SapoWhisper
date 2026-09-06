@@ -96,8 +96,8 @@ struct AudioLevelMeterView: View {
     let deviceUID: String
 
     @State private var isEnabled = false
-    @AppStorage(Constants.StorageKeys.audioGain) private var gain: Double = 1.0
-    @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
+    @AppStorage(Constants.StorageKeys.audioGain, store: AppPreferences.defaults) private var gain: Double = 1.0
+    @AppStorage(Constants.StorageKeys.audioUploadQuality, store: AppPreferences.defaults) private var audioUploadQuality =
         AudioUploadQuality.defaultValue.rawValue
     @Environment(\.settingsTabIsSelected) private var tabIsSelected
 
@@ -255,7 +255,7 @@ private struct MicLevelReadout: View {
 private struct MicSampleRecordingSection: View {
     @ObservedObject var monitor: AudioLevelMonitor
 
-    @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
+    @AppStorage(Constants.StorageKeys.audioUploadQuality, store: AppPreferences.defaults) private var audioUploadQuality =
         AudioUploadQuality.defaultValue.rawValue
 
     var body: some View {

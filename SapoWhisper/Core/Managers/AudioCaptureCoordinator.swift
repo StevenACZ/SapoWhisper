@@ -13,68 +13,75 @@ nonisolated final class AudioInputActivityGate: @unchecked Sendable {
 
     static let shared = AudioInputActivityGate()
 
-    private let condition = NSCondition()
-    private let waitQueue = DispatchQueue(label: "com.sapowhisper.audioInput.activity", qos: .userInitiated)
+    private let lock = NSLock()
     private var nextCaptureLeaseID: UInt64 = 0
     private var activeCaptureLeaseID: UInt64?
     private var preflightActive = false
     private var monitorActive = false
+    private let captureWaitTimeout: Duration
 
-    func beginCapture() async -> CaptureLease {
-        await withCheckedContinuation { continuation in
-            waitQueue.async { [self] in
-                condition.lock()
-                nextCaptureLeaseID &+= 1
-                let lease = CaptureLease(id: nextCaptureLeaseID)
-                activeCaptureLeaseID = lease.id
-                while preflightActive {
-                    condition.wait()
-                }
-                condition.unlock()
-                continuation.resume(returning: lease)
+    init(captureWaitTimeout: Duration = .seconds(5)) {
+        self.captureWaitTimeout = captureWaitTimeout
+    }
+
+    func beginCapture() async throws -> CaptureLease {
+        let lease = lock.withLock {
+            nextCaptureLeaseID &+= 1
+            let lease = CaptureLease(id: nextCaptureLeaseID)
+            activeCaptureLeaseID = lease.id
+            return lease
+        }
+        let deadline = ContinuousClock.now.advanced(by: captureWaitTimeout)
+        do {
+            while lock.withLock({ preflightActive }) {
+                try Task.checkCancellation()
+                guard ContinuousClock.now < deadline else { throw RecordingError.inputSetupTimedOut }
+                try await Task.sleep(for: .milliseconds(20))
             }
+            try Task.checkCancellation()
+            return lease
+        } catch {
+            endCapture(lease)
+            throw error
         }
     }
 
     func endCapture(_ lease: CaptureLease) {
-        condition.lock()
+        lock.lock()
         guard activeCaptureLeaseID == lease.id else {
-            condition.unlock()
+            lock.unlock()
             return
         }
         activeCaptureLeaseID = nil
-        condition.broadcast()
-        condition.unlock()
+        lock.unlock()
     }
 
     func beginPreflightIfIdle() -> Bool {
-        condition.lock()
-        defer { condition.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         guard activeCaptureLeaseID == nil, !preflightActive, !monitorActive else { return false }
         preflightActive = true
         return true
     }
 
     func endPreflight() {
-        condition.lock()
+        lock.lock()
         preflightActive = false
-        condition.broadcast()
-        condition.unlock()
+        lock.unlock()
     }
 
     func beginMonitorIfIdle() -> Bool {
-        condition.lock()
-        defer { condition.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         guard activeCaptureLeaseID == nil, !preflightActive, !monitorActive else { return false }
         monitorActive = true
         return true
     }
 
     func endMonitor() {
-        condition.lock()
+        lock.lock()
         monitorActive = false
-        condition.broadcast()
-        condition.unlock()
+        lock.unlock()
     }
 }
 
@@ -82,6 +89,7 @@ nonisolated final class AudioInputActivityGate: @unchecked Sendable {
 /// recorder, Flux streaming, ElevenLabs realtime) acquires the mic here before
 /// starting, which guarantees the Settings level monitor is suspended first
 /// and makes accidental concurrent captures loud instead of silent.
+@MainActor
 final class AudioCaptureCoordinator {
 
     static let shared = AudioCaptureCoordinator()
@@ -97,7 +105,6 @@ final class AudioCaptureCoordinator {
         fileprivate let lease: AudioInputActivityGate.CaptureLease
     }
 
-    private let lock = NSLock()
     private var activeToken: CaptureToken?
     private var shouldResumeMonitor = false
 
@@ -120,32 +127,26 @@ final class AudioCaptureCoordinator {
     /// True from `beginCapture` until the matching release. Used by the
     /// preflight manager (A8) to stay away from the device mid-capture.
     var isCaptureActive: Bool {
-        lock.lock()
-        defer { lock.unlock() }
         return activeToken != nil
     }
 
     var currentOwner: CaptureOwner? {
-        lock.lock()
-        defer { lock.unlock() }
         return activeToken?.owner
     }
 
     /// Acquires the mic for a capture path. Suspends the level monitor when it
     /// was running. Overlapping captures are a state-machine bug upstream:
     /// they are logged, asserted in debug builds, and the new owner wins.
-    func beginCapture(_ owner: CaptureOwner) async -> CaptureToken? {
-        let lease = await activityGate.beginCapture()
+    func beginCapture(_ owner: CaptureOwner) async throws -> CaptureToken? {
+        let lease = try await activityGate.beginCapture()
         guard !Task.isCancelled else {
             activityGate.endCapture(lease)
             return nil
         }
         let token = CaptureToken(owner: owner, lease: lease)
-        lock.lock()
         let previousOwner = activeToken?.owner
         activeToken = token
         let alreadySuspended = shouldResumeMonitor
-        lock.unlock()
 
         if let previousOwner, previousOwner != owner {
             SapoLog.recording.error(
@@ -157,9 +158,7 @@ final class AudioCaptureCoordinator {
         guard !alreadySuspended else { return token }
         let didSuspend = suspendMonitor()
         if didSuspend {
-            lock.lock()
             shouldResumeMonitor = true
-            lock.unlock()
         }
         return token
     }
@@ -167,15 +166,12 @@ final class AudioCaptureCoordinator {
     /// Releases the mic when `token` still holds it; stale releases from an
     /// older capture are ignored so a late cleanup cannot kill a new session.
     func endCapture(_ token: CaptureToken) {
-        lock.lock()
         guard activeToken == token else {
-            lock.unlock()
             return
         }
         activeToken = nil
         let resume = shouldResumeMonitor
         shouldResumeMonitor = false
-        lock.unlock()
         activityGate.endCapture(token.lease)
 
         if resume {
@@ -186,12 +182,10 @@ final class AudioCaptureCoordinator {
     /// Releases whatever capture is active. For generic cleanup paths (sleep
     /// abort, error teardown) that do not know which engine was recording.
     func endActiveCapture() {
-        lock.lock()
         let token = activeToken
         activeToken = nil
         let resume = shouldResumeMonitor
         shouldResumeMonitor = false
-        lock.unlock()
         if let token {
             activityGate.endCapture(token.lease)
         }

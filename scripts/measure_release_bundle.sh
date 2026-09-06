@@ -24,6 +24,7 @@ fi
 
 candidate_paths=(
   "${1:-}"
+  "build/audit-release/Build/Products/Release/SapoWhisper.app"
   "build/Build/Products/Release/SapoWhisper.app"
   "build/audit-after-release/Build/Products/Release/SapoWhisper.app"
   "build/audit-baseline-release/Build/Products/Release/SapoWhisper.app"
@@ -55,6 +56,12 @@ du -sh "$app_path"
 [[ -f "$binary_path" ]] && du -sh "$binary_path"
 [[ -d "$resources_path" ]] && du -sh "$resources_path"
 [[ -d "$frameworks_path" ]] && du -sh "$frameworks_path"
+echo
+
+echo "Exact bundle size (allocated KiB; logical regular-file bytes, excluding symlinks)"
+du -sk "$app_path"
+find "$app_path" -type f -exec stat -f '%z' {} + \
+  | awk '{ bytes += $1 } END { printf "Logical bytes: %.0f\n", bytes }'
 echo
 
 if [[ -f "$binary_path" ]]; then

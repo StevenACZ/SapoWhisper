@@ -27,6 +27,7 @@ struct HistorySidebarView: View {
                             ForEach(section.entries) { entry in
                                 HistoryRowView(entry: entry)
                                     .tag(entry)
+                                    .accessibilityIdentifier("history-entry-\(entry.id)")
                                     .contextMenu {
                                         contextMenuItems(for: entry)
                                     }

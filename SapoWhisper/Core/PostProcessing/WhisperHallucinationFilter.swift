@@ -19,7 +19,7 @@ import Foundation
 /// Free-phrase hallucinations ("Thank you.") are NOT handled here — they are
 /// indistinguishable from real speech in text form. The server-side VAD filter
 /// (`vad_filter=true`) is the layer that kills those before decoding.
-enum WhisperHallucinationFilter {
+nonisolated enum WhisperHallucinationFilter {
 
     enum Outcome: Equatable {
         /// Clean transcript (repetition loops already collapsed).

@@ -37,8 +37,9 @@ struct HistoryView: View {
     @State private var retranscribeEntry: HistoryEntry?
     @State private var selectedRetranscribeEngine: TranscriptionEngine = .mlxWhisper
     @State private var isRetranscribing = false
+    @State private var activeRetranscribeID: Int64?
     @State private var retranscribeTask: Task<Void, Never>?
-    @State private var aiPolishingEntryIDs: Set<Int64> = []
+    @State private var aiPolishTasks: [Int64: Task<Void, Never>] = [:]
     @State private var showErrorAlert = false
     @State private var actionErrorMessage = ""
     @State private var showNoticeAlert = false
@@ -73,6 +74,7 @@ struct HistoryView: View {
                 titleVisibility: .visible
             ) {
                 Button("history.delete".localized, role: .destructive) {
+                    cancelAllPolishTasks()
                     TranscriptionHistoryManager.shared.deleteEntries(olderThanDays: Self.deleteOldThresholdDays)
                     selectedEntry = nil
                     loadEntries()
@@ -86,6 +88,7 @@ struct HistoryView: View {
                 titleVisibility: .visible
             ) {
                 Button("history.delete".localized, role: .destructive) {
+                    cancelAllPolishTasks()
                     TranscriptionHistoryManager.shared.deleteAll()
                     selectedEntry = nil
                     loadEntries()
@@ -126,6 +129,8 @@ struct HistoryView: View {
             }
             .onDisappear {
                 searchTask?.cancel()
+                retranscribeTask?.cancel()
+                cancelAllPolishTasks()
             }
             // Window already open when the overlay pill asks for an entry.
             .onReceive(NotificationCenter.default.publisher(for: HistoryFocusRequest.notification)) { _ in
@@ -179,12 +184,28 @@ struct HistoryView: View {
                 if let entry = selectedEntry {
                     HistoryDetailView(
                         entry: entry,
-                        isAIPolishing: aiPolishingEntryIDs.contains(entry.id),
+                        isAIPolishing: aiPolishTasks[entry.id] != nil,
+                        isRetryingTranscription: activeRetranscribeID == entry.id,
+                        onCancelTranscription: { retranscribeTask?.cancel() },
+                        onCancelPolish: { aiPolishTasks[entry.id]?.cancel() },
                         onCopy: { PasteManager.copyToClipboard(entry.text) },
                         onPolishWithAI: { option in handlePolishWithAI(entry, option: option) },
                         onRetranscribe: { handleRetranscribe(entry) },
+                        canRetryTranscription: !isRetranscribing && !entry.isProcessing,
+                        onRetryTranscription: {
+                            guard !isRetranscribing, retranscribeTask == nil else { return }
+                            selectedRetranscribeEngine = viewModel.currentEngine
+                            performRetranscription(for: entry)
+                        },
                         onDownloadAudio: { handleDownloadAudio(entry) },
                         onTogglePin: { handleTogglePin(entry) },
+                        onExtendRetention: { handleExtendRetention(entry) },
+                        canContinueRecording: activeRetranscribeID != entry.id && viewModel.canContinueHistoryEntry(entry),
+                        onContinueRecording: {
+                            guard activeRetranscribeID != entry.id, viewModel.canContinueHistoryEntry(entry) else { return }
+                            if let audioPath = entry.audioPath { HistoryAudioPlayerController.shared.stopIfLoaded(path: audioPath) }
+                            viewModel.continueHistoryEntry(entry)
+                        },
                         onDelete: { showDeleteConfirmation = true }
                     )
                 } else {
@@ -308,30 +329,42 @@ struct HistoryView: View {
         selectedEntry = entries.first { $0.id == entry.id }
     }
 
+    private func handleExtendRetention(_ entry: HistoryEntry) {
+        guard TranscriptionHistoryManager.shared.extendRetention(id: entry.id) else { return }
+        loadEntries()
+        selectedEntry = entries.first { $0.id == entry.id }
+    }
+
     private func handleDelete(_ entry: HistoryEntry) {
         guard entry.isDeletable else { return }
+        aiPolishTasks[entry.id]?.cancel()
         TranscriptionHistoryManager.shared.delete(id: entry.id)
         selectedEntry = nil
         loadEntries()
     }
 
     private func handleRetranscribe(_ entry: HistoryEntry) {
+        guard !isRetranscribing, retranscribeTask == nil, !entry.isProcessing else { return }
         selectedRetranscribeEngine = viewModel.currentEngine
         retranscribeEntry = entry
     }
 
     private func performRetranscription(for entry: HistoryEntry) {
+        guard !isRetranscribing, retranscribeTask == nil, !entry.isProcessing else { return }
         isRetranscribing = true
+        activeRetranscribeID = entry.id
+        let engine = selectedRetranscribeEngine
 
         retranscribeTask = Task {
-            let result = await viewModel.retranscribeHistoryEntry(entry, using: selectedRetranscribeEngine)
+            let result = await viewModel.retranscribeHistoryEntry(entry, using: engine)
 
             await MainActor.run {
                 isRetranscribing = false
+                activeRetranscribeID = nil
                 retranscribeEntry = nil
                 retranscribeTask = nil
 
-                if engineFilter != .all && !engineFilter.matches(selectedRetranscribeEngine.displayName) {
+                if engineFilter != .all && !engineFilter.matches(engine.displayName) {
                     engineFilter = .all
                 }
 
@@ -346,23 +379,22 @@ struct HistoryView: View {
     }
 
     private func handlePolishWithAI(_ entry: HistoryEntry, option: PolishModelOption?) {
-        guard !aiPolishingEntryIDs.contains(entry.id) else { return }
-        aiPolishingEntryIDs.insert(entry.id)
-
-        Task {
+        guard aiPolishTasks[entry.id] == nil else { return }
+        aiPolishTasks[entry.id] = Task { @MainActor in
+            defer { aiPolishTasks.removeValue(forKey: entry.id) }
             let result = await viewModel.polishHistoryEntry(entry, with: option)
-
-            await MainActor.run {
-                aiPolishingEntryIDs.remove(entry.id)
-                loadEntries()
-
-                if let errorMessage = result.errorMessage {
-                    presentActionError(errorMessage)
-                } else if let noticeMessage = result.noticeMessage {
-                    presentActionNotice(noticeMessage)
-                }
+            guard !Task.isCancelled else { return }
+            loadEntries()
+            if let errorMessage = result.errorMessage {
+                presentActionError(errorMessage)
+            } else if let noticeMessage = result.noticeMessage {
+                presentActionNotice(noticeMessage)
             }
         }
+    }
+
+    private func cancelAllPolishTasks() {
+        for task in aiPolishTasks.values { task.cancel() }
     }
 
     private func handleDownloadAudio(_ entry: HistoryEntry) {

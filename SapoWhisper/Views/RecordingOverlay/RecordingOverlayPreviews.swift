@@ -17,13 +17,9 @@ private struct PillPreview<Content: View>: View {
         ZStack {
             Color.black.opacity(0.3)
             content
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-                )
+                .padding(.horizontal, OverlayPillChrome.horizontalPadding)
+                .padding(.vertical, OverlayPillChrome.verticalPadding)
+                .overlayPillChrome()
                 .fixedSize()
         }
         .frame(width: 460, height: 100)

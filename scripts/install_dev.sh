@@ -10,10 +10,11 @@ APP_SRC="$ROOT/build/audit-release/Build/Products/Release/SapoWhisper.app"
 APP_DST="/Applications/SapoWhisper.app"
 INSTALL_TMP="$(mktemp -d "${TMPDIR%/}/sapowhisper-install.XXXXXX")"
 APP_BACKUP="$INSTALL_TMP/SapoWhisper.previous.app"
+INSTALL_STARTED=0
 
 cleanup() {
   local status=$?
-  if [[ $status -ne 0 ]]; then
+  if [[ $status -ne 0 && $INSTALL_STARTED -eq 1 ]]; then
     if [[ -e "$APP_DST" ]]; then
       mv "$APP_DST" "$INSTALL_TMP/SapoWhisper.failed.app"
     fi
@@ -55,8 +56,10 @@ fi
 if [[ -d "$APP_DST" ]]; then
   mv "$APP_DST" "$APP_BACKUP"
 fi
+INSTALL_STARTED=1
 ditto "$APP_SRC" "$APP_DST"
 codesign --verify --deep --strict "$APP_DST"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_DST"
 open "$APP_DST"
 
 CDHASH="$(codesign -dvvv "$APP_DST" 2>&1 | sed -n 's/^CDHash=//p' | head -1)"

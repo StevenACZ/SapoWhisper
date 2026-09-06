@@ -13,8 +13,8 @@ struct OverlayTranslationChip: View {
     /// Fired after the output-language default is updated.
     var onTranslationToggled: ((Bool) -> Void)?
 
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var outputLanguageValue =
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage, store: AppPreferences.defaults) private var outputLanguageValue =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
     private var outputLanguage: TranscriptPolishOutputLanguage {
@@ -63,7 +63,7 @@ struct OverlayTranslationChip: View {
     private func toggleTranslation() {
         if outputLanguage.requiresTranslation {
             // Remember the target so the chip can restore it on the next tap.
-            UserDefaults.standard.set(
+            AppPreferences.defaults.set(
                 outputLanguageValue,
                 forKey: Constants.StorageKeys.aiPolishQuickTranslationTarget
             )
@@ -76,7 +76,7 @@ struct OverlayTranslationChip: View {
     }
 
     private func activateQuickTranslationTarget() {
-        let stored = UserDefaults.standard.string(forKey: Constants.StorageKeys.aiPolishQuickTranslationTarget)
+        let stored = AppPreferences.defaults.string(forKey: Constants.StorageKeys.aiPolishQuickTranslationTarget)
         let target = stored.flatMap { TranscriptPolishOutputLanguage(rawValue: $0) } ?? .english
         let resolved = target.requiresTranslation ? target : .english
         outputLanguageValue = resolved.rawValue

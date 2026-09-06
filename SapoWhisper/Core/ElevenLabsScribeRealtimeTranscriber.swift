@@ -421,6 +421,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private var stopContinuation: CheckedContinuation<String, Error>?
     private var transcriptAccumulator = ElevenLabsRealtimeTranscriptAccumulator()
     private var lastStreamingError: Error?
+    private var prefersConfiguredBackup = false
     private var cancellables = Set<AnyCancellable>()
     private var stopStartedAt: CFAbsoluteTime = 0
     private var requestedLanguage = "auto"
@@ -431,13 +432,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     private static let maxRealtimeKeyterms = ElevenLabsKeytermLimits.realtimeMaxCount
     private static let maxRealtimeKeytermLength = ElevenLabsKeytermLimits.realtimeMaxLength
     nonisolated private static let sampleRate = 16000
-
-    private enum StartRecovery {
-        static let maxAttempts = 3
-        static let firstInputTimeout: TimeInterval = 1.2
-        static let retryBudget: TimeInterval = 3.0
-        static let retryBackoffs: [TimeInterval] = [0.25, 0.60]
-    }
 
     var isConfigured: Bool {
         KeychainStore.hasValue(for: .elevenLabsAPIKey)
@@ -493,36 +487,36 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         }
     }
 
-    func stop(
-        onCaptureStopped: @escaping @MainActor @Sendable () -> Void
-    ) async throws -> StreamingDictationResult {
-        guard isStreaming || isStopping else {
-            throw TranscriptionFailure(
-                kind: .unknown, engine: Self.engineName,
-                technicalDetail: "ElevenLabs realtime stream is not active"
-            )
-        }
-
+    func sealCapture() -> AudioCaptureResult? {
+        guard isStreaming || isStopping else { return nil }
         isStopping = true
         stopStartedAt = CFAbsoluteTimeGetCurrent()
-        SapoLog.recording.info("ElevenLabs realtime stop requested")
-        let captureResult = StopCaptureHandoff.perform(
-            seal: { capture.stopRecording() },
-            onStopped: onCaptureStopped
-        )
+        let result = capture.stopRecording()
         isStreaming = false
+        lastCaptureResult = result
+        return result
+    }
 
-        guard let captureResult else {
+    func finalizeTranscription() async throws -> StreamingDictationResult {
+        prefersConfiguredBackup = TranscriptionAttemptContext.prefersConfiguredBackup
+        defer {
             cleanupWebSocket()
+            prefersConfiguredBackup = false
+        }
+        try Task.checkCancellation()
+        guard let captureResult = lastCaptureResult else {
             throw RecordingError.fileCreationFailed
         }
-        lastCaptureResult = captureResult
 
         guard captureResult.diagnostics.receivedInput else {
             cleanupWebSocket()
             capture.deleteRecording(at: captureResult.audioURL)
             lastCaptureResult = nil
             throw RecordingError.noInputAfterDeviceSwitch
+        }
+
+        if prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
         }
 
         let captureStopMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
@@ -533,20 +527,29 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let committedCountBeforeFinalCommit = transcriptAccumulator.committedCount
         let hadUncommittedPartialBeforeFinalCommit = transcriptAccumulator.hasUncommittedPartial
         let senderStats = await audioSender.finishAndCommit(timeout: 2.0)
-        defer { cleanupWebSocket() }
+        if prefersConfiguredBackup {
+            try Task.checkCancellation()
+        }
 
-        // Degraded stream: chunks never reached the server, so the realtime
-        // transcript is missing audio the local WAV still has. Re-transcribe
-        // the full take through the batch endpoint (same pattern as the Flux
-        // fallback); a failed fallback falls through so waitForFinalTranscript
-        // still salvages whatever the server already committed.
+        if prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
         if Self.shouldFallBackToBatch(senderStats: senderStats) {
+            if prefersConfiguredBackup {
+                throw TranscriptionFailure(
+                    kind: senderStats.drainTimedOut || senderStats.timedOutSends > 0 ? .timedOut : .network,
+                    engine: Self.engineName,
+                    technicalDetail: "ElevenLabs realtime sender incomplete"
+                )
+            }
             SapoLog.recording.warning(
                 "ElevenLabs realtime sender incomplete failedMessages=\(senderStats.failedMessages, privacy: .public) timedOut=\(senderStats.timedOutSends, privacy: .public) drainTimedOut=\(senderStats.drainTimedOut, privacy: .public); falling back to batch transcription"
             )
             do {
                 return try await transcribeFullCaptureFallback(captureResult, reason: "sender_incomplete")
             } catch {
+                try Task.checkCancellation()
                 let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-batch-fallback")
                 guard !transcriptAccumulator.transcript.isEmpty else {
                     throw TranscriptionFailure(
@@ -581,14 +584,31 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
                 committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
             )
         } catch {
-            // The stream died without committing anything usable; the local
-            // WAV still has the take, so batch it instead of losing the words.
+            try Task.checkCancellation()
+            if prefersConfiguredBackup {
+                throw TranscriptionFailure.from(error, engine: Self.engineName)
+            }
             let detail = LogSanitizer.errorDiagnostic(error, state: "realtime-final")
             SapoLog.recording.warning(
                 "ElevenLabs realtime final transcript failed \(detail, privacy: .public); falling back to batch transcription"
             )
             return try await transcribeFullCaptureFallback(captureResult, reason: "final_transcript_failed")
         }
+        if prefersConfiguredBackup, let lastStreamingError {
+            throw TranscriptionFailure.from(lastStreamingError, engine: Self.engineName)
+        }
+
+        if Self.shouldRescueUnconfirmedTail(
+            prefersBackup: prefersConfiguredBackup,
+            hasPendingPartial: transcriptAccumulator.hasUncommittedPartial,
+            receivedFinalCommit: transcriptAccumulator.committedCount > committedCountBeforeFinalCommit
+        ) {
+            throw TranscriptionFailure(
+                kind: .timedOut, engine: Self.engineName,
+                technicalDetail: "ElevenLabs final commit unconfirmed"
+            )
+        }
+
         let salvagedTranscript = salvagingPendingPartial(
             transcript,
             committedCountBeforeFinalCommit: committedCountBeforeFinalCommit
@@ -596,9 +616,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let finalWaitMs = Int((CFAbsoluteTimeGetCurrent() - finalWaitStartedAt) * 1000)
         let stopElapsedMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
 
-        let cleanedTranscript = VocabularyManager.shared
-            .applyingRecognitionCorrections(to: salvagedTranscript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedTranscript = salvagedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         SapoLog.recording.info(
             "ElevenLabs realtime final transcript sessionID=\(self.transcriptAccumulator.sessionID ?? "n/a", privacy: .public) elapsed=\(stopElapsedMs, privacy: .public)ms finalWait=\(finalWaitMs, privacy: .public)ms committed=\(self.transcriptAccumulator.committedCount, privacy: .public) enqueuedChunks=\(senderStats.enqueuedChunks, privacy: .public) sentMessages=\(senderStats.sentMessages, privacy: .public) chars=\(cleanedTranscript.count, privacy: .public)"
@@ -627,6 +645,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         )
     }
 
+    nonisolated static func shouldRescueUnconfirmedTail(
+        prefersBackup: Bool, hasPendingPartial: Bool, receivedFinalCommit: Bool
+    ) -> Bool {
+        prefersBackup && hasPendingPartial && !receivedFinalCommit
+    }
+
     /// `pendingChunks` is deliberately not a signal here: `enqueuedChunks`
     /// counts capture callbacks while `sentMessages` counts 6400-byte
     /// messages, so their difference is noise.
@@ -638,12 +662,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     /// `DeepgramFluxLiveTranscriber.transcribeFullCaptureFallback`): the local
     /// WAV holds the complete take, so re-transcribing it through the Scribe
     /// batch endpoint recovers words the stream lost. The batch transcriber
-    /// reads the same Keychain API key and already applies vocabulary
-    /// corrections and the empty-transcript guard.
+    /// reads the same Keychain API key and enforces the empty-transcript guard.
     private func transcribeFullCaptureFallback(
         _ captureResult: AudioCaptureResult,
         reason: String
     ) async throws -> StreamingDictationResult {
+        try Task.checkCancellation()
         let startedAt = CFAbsoluteTimeGetCurrent()
         let transcript = try await ElevenLabsScribeTranscriber().transcribe(
             audioURL: captureResult.audioURL,
@@ -778,87 +802,11 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     private func startCaptureWithRecovery(microphone: String) async throws {
-        let deadline = CFAbsoluteTimeGetCurrent() + StartRecovery.retryBudget
-        var lastFailure: Error = RecordingError.noInputAfterDeviceSwitch
-
-        for attempt in 1...StartRecovery.maxAttempts {
-            guard !Task.isCancelled else { throw CancellationError() }
-
-            do {
-                let didStart = try await attemptCaptureStart(
-                    microphone: microphone,
-                    attempt: attempt,
-                    minimumDelay: attempt == 1 ? 0 : StartRecovery.retryBackoffs[attempt - 2]
-                )
-                if didStart {
-                    if attempt > 1 {
-                        SapoLog.recording.info("ElevenLabs realtime recovered input on attempt=\(attempt, privacy: .public)")
-                    }
-                    return
-                }
-                lastFailure = RecordingError.noInputAfterDeviceSwitch
-            } catch {
-                if error is CancellationError {
-                    throw error
-                }
-                lastFailure = error
-            }
-
-            capture.discardRecording()
-            guard attempt < StartRecovery.maxAttempts else { break }
-
-            let routeTransitionActive = AudioDeviceManager.shared.captureRouteSettleDelay() > 0
-            let classification = classifyRecordingStartFailure(lastFailure, routeTransitionActive: routeTransitionActive)
-            guard classification.isTransient else {
-                throw lastFailure
-            }
-
-            let remainingBudget = deadline - CFAbsoluteTimeGetCurrent()
-            guard remainingBudget > 0 else { break }
-
-            let retryDelay = min(
-                remainingBudget,
-                max(StartRecovery.retryBackoffs[attempt - 1], AudioDeviceManager.shared.captureRouteSettleDelay())
-            )
-            SapoLog.recording.info(
-                "ElevenLabs realtime input not ready attempt=\(attempt, privacy: .public) reason=\(classification.reason, privacy: .public) retryDelay=\(Int(retryDelay * 1000), privacy: .public)ms"
-            )
-            try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
-        }
-
-        throw lastFailure
-    }
-
-    private func attemptCaptureStart(
-        microphone: String,
-        attempt: Int,
-        minimumDelay: TimeInterval
-    ) async throws -> Bool {
-        capture.selectedDeviceUID = microphone
-        let settleDelay = max(minimumDelay, capture.prepareInputDeviceForRecording())
-        if settleDelay > 0 {
-            SapoLog.recording.info(
-                "Delaying ElevenLabs realtime capture start for route settle \(Int(settleDelay * 1000), privacy: .public)ms"
-            )
-            try? await Task.sleep(nanoseconds: UInt64(settleDelay * 1_000_000_000))
-        }
-
-        guard !Task.isCancelled else { throw CancellationError() }
         let audioSender = self.audioSender
-        try await capture.startRecording { data in
+        let supervisor = CaptureStartSupervisor(recorder: capture, mode: .streaming)
+        try await supervisor.start(microphone: microphone) { data in
             audioSender.enqueue(data)
         }
-
-        let receivedInput = await capture.waitForFirstInputBuffer(timeout: StartRecovery.firstInputTimeout)
-        if receivedInput {
-            return true
-        }
-
-        let diagnostics = capture.currentCaptureDiagnostics()
-        SapoLog.recording.warning(
-            "ElevenLabs realtime attempt=\(attempt, privacy: .public) received no input buffer timeoutMs=\(Int(StartRecovery.firstInputTimeout * 1000), privacy: .public) bytes=\(diagnostics.fileSizeBytes, privacy: .public)"
-        )
-        return false
     }
 
     private func receiveMessages() async {
@@ -925,7 +873,12 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
 
     private func handleReceiveCompletion(_ error: Error) {
         if isStopping {
-            finishStopIfNeeded(error: nil)
+            if prefersConfiguredBackup, webSocketTask?.closeCode != .normalClosure, !isCancellation(error) {
+                lastStreamingError = error
+                finishStopIfNeeded(error: error)
+            } else {
+                finishStopIfNeeded(error: nil)
+            }
             return
         }
 
@@ -941,7 +894,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         timeout: TimeInterval,
         committedCountBeforeFinalCommit: Int
     ) async throws -> String {
-        if let lastStreamingError, transcriptAccumulator.transcript.isEmpty {
+        if let lastStreamingError, prefersConfiguredBackup || transcriptAccumulator.transcript.isEmpty {
             throw lastStreamingError
         }
 
@@ -952,7 +905,9 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         return try await withCheckedThrowingContinuation { continuation in
             stopContinuation = continuation
             stopTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                } catch { return }
                 self?.finishStopIfNeeded(error: nil)
             }
         }
@@ -965,7 +920,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         stopTimeoutTask = nil
 
         let transcript = transcriptAccumulator.transcript
-        if let error, transcript.isEmpty {
+        if let error, prefersConfiguredBackup || transcript.isEmpty {
             continuation.resume(throwing: error)
         } else {
             continuation.resume(returning: transcript)

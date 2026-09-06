@@ -16,11 +16,11 @@ nonisolated enum LocalAIServerConfiguration {
     ]
 
     static var storedBaseURL: String {
-        UserDefaults.standard.string(forKey: Constants.StorageKeys.localAIServerBaseURL) ?? ""
+        AppPreferences.defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL) ?? ""
     }
 
     static var storedModel: String {
-        let model = UserDefaults.standard.object(forKey: Constants.StorageKeys.localAIServerModel) as? String ?? defaultModel
+        let model = AppPreferences.defaults.object(forKey: Constants.StorageKeys.localAIServerModel) as? String ?? defaultModel
         return model.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -38,11 +38,11 @@ nonisolated enum LocalAIServerConfiguration {
         ProviderURLSecurity.sanitizedForStorage(value)
     }
 
-    static func setStoredBaseURL(_ value: String, defaults: UserDefaults = .standard) {
+    static func setStoredBaseURL(_ value: String, defaults: UserDefaults = AppPreferences.defaults) {
         defaults.set(sanitizedBaseURLForStorage(value), forKey: Constants.StorageKeys.localAIServerBaseURL)
     }
 
-    static func sanitizeStoredBaseURL(defaults: UserDefaults = .standard) {
+    static func sanitizeStoredBaseURL(defaults: UserDefaults = AppPreferences.defaults) {
         guard let stored = defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL) else { return }
         let sanitized = sanitizedBaseURLForStorage(stored)
         if sanitized != stored {

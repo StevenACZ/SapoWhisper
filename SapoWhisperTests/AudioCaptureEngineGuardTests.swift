@@ -16,9 +16,24 @@ import XCTest
 
 nonisolated final class AudioCaptureEngineGuardTests: XCTestCase {
 
-    func testOnlyStreamingCaptureKeepsRecoveryMarkerAfterSeal() {
-        XCTAssertFalse(AudioCaptureEngine.Mode.batch.keepsRecoveryMarkerAfterCapture)
-        XCTAssertTrue(AudioCaptureEngine.Mode.streaming.keepsRecoveryMarkerAfterCapture)
+    @MainActor
+    func testEveryCaptureKeepsRecoveryMarkerAfterSealUntilAudioIsDeleted() async throws {
+        for mode in [AudioCaptureEngine.Mode.batch, .streaming] {
+            let capture = AudioCaptureEngine(mode: mode)
+            let url = TemporaryAudioStorage.makeWAVURL(prefix: mode.wavPrefix)
+            try Data([0]).write(to: url)
+            ActiveRecordingMarker.mark(url)
+            defer { capture.deleteRecording(at: url) }
+            capture.recordingURL = url
+            capture.isRecording = true
+
+            let result = await capture.stopRecordingAsync()
+
+            XCTAssertEqual(result?.audioURL, url)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: ActiveRecordingMarker.markerURL(for: url).path))
+            capture.deleteRecording(at: url)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: ActiveRecordingMarker.markerURL(for: url).path))
+        }
     }
 
     private nonisolated final class ResultStore: @unchecked Sendable {

@@ -11,6 +11,7 @@ import XCTest
 /// Pins the dictation state machine's legality table: every edge the real
 /// flows take must be legal, and the clobber patterns the ViewModel's guards
 /// were written against must not be.
+@MainActor
 final class AppStateTransitionTests: XCTestCase {
 
     private let error = AppState.error(ErrorState(message: "boom"))
@@ -63,7 +64,7 @@ final class AppStateTransitionTests: XCTestCase {
 @MainActor
 final class DictationSessionGuardTests: XCTestCase {
 
-    private let defaults = UserDefaults.standard
+    private let defaults = AppPreferences.defaults
     private var restore: [String: String?] = [:]
 
     private static var largeV3SnapshotDirectory: URL {
@@ -80,8 +81,8 @@ final class DictationSessionGuardTests: XCTestCase {
         defaults.set(value, forKey: key)
     }
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         // A cloud primary with no backup keeps ViewModel init off the local
         // model loader; the mode/engine keys are captured for restore here.
         set(TranscriptionEngine.deepgram.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
@@ -94,7 +95,7 @@ final class DictationSessionGuardTests: XCTestCase {
         set(MLXWhisperModel.largeV3.rawValue, forKey: Constants.StorageKeys.mlxWhisperModel)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for (key, previous) in restore {
             if let previous {
                 defaults.set(previous, forKey: key)
@@ -106,7 +107,7 @@ final class DictationSessionGuardTests: XCTestCase {
         // A test that parks the ViewModel in .recording emitted a `.began` to
         // the companion contract; close the pair so no listener stays ducked.
         DictationStateBroadcaster.broadcastRecordingEnded()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     /// Drives `appState` to `.recording` the way a real capture does — through

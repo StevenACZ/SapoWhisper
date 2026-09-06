@@ -24,8 +24,8 @@ nonisolated enum ActiveRecordingMarker {
         recordingURL.appendingPathExtension(markerExtension)
     }
 
-    /// Writes the marker for a capture that just opened its WAV. Streaming
-    /// captures retain it through provider finalization and AI polish; History
+    /// Writes the marker for a capture that just opened its WAV. All
+    /// captures retain it through sealing and processing; History
     /// persistence clears it only after a row safely references the audio.
     static func mark(_ recordingURL: URL) {
         let pid = "\(ProcessInfo.processInfo.processIdentifier)"
@@ -56,8 +56,8 @@ nonisolated enum ActiveRecordingMarker {
     }
 
     /// WAV URLs in `directory` whose marker exists but whose owner died —
-    /// instantly recoverable. Dead markers (with or without their WAV) are
-    /// removed so they cannot accumulate.
+    /// instantly recoverable. Markers remain until History owns the audio;
+    /// only dead markers without a WAV are removed here.
     static func abandonedRecordings(in directory: URL) -> [URL] {
         let fileManager = FileManager.default
         guard let files = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
@@ -68,10 +68,11 @@ nonisolated enum ActiveRecordingMarker {
         for marker in files where marker.pathExtension == markerExtension {
             guard !ownerIsAlive(markerURL: marker) else { continue }
 
-            try? fileManager.removeItem(at: marker)
             let recordingURL = marker.deletingPathExtension()
             if fileManager.fileExists(atPath: recordingURL.path) {
                 abandoned.append(recordingURL)
+            } else {
+                try? fileManager.removeItem(at: marker)
             }
         }
         return abandoned

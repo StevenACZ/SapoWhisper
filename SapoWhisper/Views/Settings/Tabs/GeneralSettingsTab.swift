@@ -13,30 +13,32 @@ import os
 struct GeneralSettingsTab: View {
     let viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.mlxWhisper.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode = DeepgramTranscriptionMode.nova3
+    @AppStorage(Constants.StorageKeys.language, store: AppPreferences.defaults) private var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.transcriptionEngine, store: AppPreferences.defaults) private var selectedEngine = TranscriptionEngine
+        .mlxWhisper.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) private var selectedDeepgramMode =
+        DeepgramTranscriptionMode.nova3
         .rawValue
-    @AppStorage(Constants.StorageKeys.selectedMicrophone) private var selectedMicrophone = "default"
-    @AppStorage(Constants.StorageKeys.pinPrimaryMicrophone) private var pinPrimaryMicrophone = true
-    @AppStorage(Constants.StorageKeys.audioUploadQuality) private var audioUploadQuality =
+    @AppStorage(Constants.StorageKeys.selectedMicrophone, store: AppPreferences.defaults) private var selectedMicrophone = "default"
+    @AppStorage(Constants.StorageKeys.pinPrimaryMicrophone, store: AppPreferences.defaults) private var pinPrimaryMicrophone = true
+    @AppStorage(Constants.StorageKeys.audioUploadQuality, store: AppPreferences.defaults) private var audioUploadQuality =
         AudioUploadQuality.defaultValue.rawValue
-    @AppStorage(Constants.StorageKeys.autoPaste) private var autoPaste = true
-    @AppStorage(Constants.StorageKeys.playSound) private var playSound = true
-    @AppStorage(Constants.StorageKeys.soundVolume) private var soundVolume: Double = 1.0
-    @AppStorage(Constants.StorageKeys.autoDuckingEnabled) private var autoDuckingEnabled = false
-    @AppStorage(Constants.StorageKeys.autoDuckingAmount) private var autoDuckingAmount: Double = 0.8
+    @AppStorage(Constants.StorageKeys.autoPaste, store: AppPreferences.defaults) private var autoPaste = true
+    @AppStorage(Constants.StorageKeys.playSound, store: AppPreferences.defaults) private var playSound = true
+    @AppStorage(Constants.StorageKeys.soundVolume, store: AppPreferences.defaults) private var soundVolume: Double = 1.0
+    @AppStorage(Constants.StorageKeys.autoDuckingEnabled, store: AppPreferences.defaults) private var autoDuckingEnabled = false
+    @AppStorage(Constants.StorageKeys.autoDuckingAmount, store: AppPreferences.defaults) private var autoDuckingAmount: Double = 0.8
 
-    @AppStorage(Constants.StorageKeys.historyAudioMaxMB) private var historyAudioMaxMB =
+    @AppStorage(Constants.StorageKeys.historyAudioMaxMB, store: AppPreferences.defaults) private var historyAudioMaxMB =
         HistoryAudioStorage.defaultMaxStorageMB
-    @AppStorage(Constants.StorageKeys.historyAutoDeleteDays) private var historyAutoDeleteDays = 0
-    @AppStorage(Constants.StorageKeys.overlayPosition) private var overlayPosition =
+    @AppStorage(Constants.StorageKeys.historyAutoDeleteDays, store: AppPreferences.defaults) private var historyAutoDeleteDays = 0
+    @AppStorage(Constants.StorageKeys.overlayPosition, store: AppPreferences.defaults) private var overlayPosition =
         OverlayPosition.bottom.rawValue
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage, store: AppPreferences.defaults) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
 
-    @AppStorage(Constants.StorageKeys.autoUpdateCheckEnabled) private var autoUpdateCheckEnabled = true
+    @AppStorage(Constants.StorageKeys.autoUpdateCheckEnabled, store: AppPreferences.defaults) private var autoUpdateCheckEnabled = true
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
@@ -415,6 +417,12 @@ struct GeneralSettingsTab: View {
                 Text("settings.history_retention_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if historyAudioUsageBytes > Int64(historyAudioMaxMB) * 1024 * 1024 {
+                    Label("settings.history_protected_limit".localized, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Divider()
 

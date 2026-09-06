@@ -13,8 +13,10 @@ struct SettingsTransferCard: View {
 
     @State private var importDocument: SettingsTransferDocument?
     @State private var selectedImportSections: Set<SettingsTransferSection> = []
+    @State private var vocabularyMode: VocabularyImportMode = .combine
     @State private var transferMessage: String?
     @State private var transferMessageIsError = false
+    @State private var isChoosingFile = false
 
     private let transferManager = SettingsTransferManager.shared
 
@@ -37,6 +39,7 @@ struct SettingsTransferCard: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Constants.Colors.sapoGreenDark)
                 }
+                .disabled(isChoosingFile || importDocument != nil)
 
                 if let transferMessage {
                     Text(transferMessage)
@@ -49,6 +52,7 @@ struct SettingsTransferCard: View {
             SettingsImportOptionsSheet(
                 document: document,
                 selectedSections: $selectedImportSections,
+                vocabularyMode: $vocabularyMode,
                 onCancel: {
                     importDocument = nil
                 },
@@ -60,6 +64,9 @@ struct SettingsTransferCard: View {
     }
 
     private func exportSettings() {
+        guard !isChoosingFile, importDocument == nil else { return }
+        isChoosingFile = true
+        defer { isChoosingFile = false }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
@@ -79,6 +86,9 @@ struct SettingsTransferCard: View {
     }
 
     private func beginImport() {
+        guard !isChoosingFile, importDocument == nil else { return }
+        isChoosingFile = true
+        defer { isChoosingFile = false }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.canChooseFiles = true
@@ -92,6 +102,7 @@ struct SettingsTransferCard: View {
             let data = try Data(contentsOf: url)
             let document = try transferManager.decodedDocument(from: data)
             selectedImportSections = transferManager.defaultImportSections(for: document)
+            vocabularyMode = .combine
             importDocument = document
         } catch {
             setMessage(error.localizedDescription, isError: true)
@@ -100,32 +111,51 @@ struct SettingsTransferCard: View {
 
     private func finishImport(_ document: SettingsTransferDocument) {
         do {
-            try transferManager.importDocument(document, sections: selectedImportSections)
-            applyRuntimeChanges(for: selectedImportSections)
-            setMessage("settings.transfer.import_success".localized, isError: false)
+            let backupURL = try transferManager.importDocument(document, sections: selectedImportSections, vocabularyMode: vocabularyMode)
+            applyRuntimeChanges(for: selectedImportSections, unsetPreferenceKeys: document.unsetPreferenceKeys ?? [])
+            setMessage(
+                "settings.transfer.import_success".localized + "\n" + "settings.transfer.backup_created".localized(backupURL.path),
+                isError: false)
             let importedSections = selectedImportSections.map(\.rawValue).joined(separator: ",")
             SapoLog.settings.info("Settings imported sections=\(importedSections, privacy: .public)")
             importDocument = nil
         } catch {
+            if case SettingsTransferError.apiKeysNotStored = error {
+                applyRuntimeChanges(for: selectedImportSections, unsetPreferenceKeys: document.unsetPreferenceKeys ?? [])
+            }
             setMessage(error.localizedDescription, isError: true)
         }
     }
 
-    private func applyRuntimeChanges(for sections: Set<SettingsTransferSection>) {
-        let defaults = UserDefaults.standard
+    private func applyRuntimeChanges(for sections: Set<SettingsTransferSection>, unsetPreferenceKeys: [String]) {
+        let defaults = AppPreferences.defaults
 
         if sections.contains(.engine) {
-            if let model = MLXWhisperModel(rawValue: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel) ?? "") {
+            if let model = MLXWhisperModel(
+                rawValue: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel) ?? MLXWhisperModel.largeV3Turbo.rawValue)
+            {
                 viewModel.setMLXWhisperModel(model)
             }
             if let mode = DeepgramTranscriptionMode(
-                rawValue: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode) ?? ""
+                rawValue: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
+                    ?? DeepgramTranscriptionMode.nova3.rawValue
             ) {
                 viewModel.setDeepgramMode(mode)
             }
-            if let engine = TranscriptionEngine(rawValue: defaults.string(forKey: Constants.StorageKeys.transcriptionEngine) ?? "") {
+            if let mode = ElevenLabsTranscriptionMode(
+                rawValue: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
+                    ?? ElevenLabsTranscriptionMode.defaultMode.rawValue
+            ) {
+                viewModel.setElevenLabsMode(mode)
+            }
+            if let engine = TranscriptionEngine(
+                rawValue: defaults.string(forKey: Constants.StorageKeys.transcriptionEngine) ?? TranscriptionEngine.mlxWhisper.rawValue)
+            {
                 viewModel.setEngine(engine)
             }
+        }
+        for key in unsetPreferenceKeys where SettingsTransferManager.portablePreferenceSections[key].map(sections.contains) == true {
+            defaults.removeObject(forKey: key)
         }
     }
 
@@ -144,6 +174,7 @@ struct SettingsTransferCard: View {
 private struct SettingsImportOptionsSheet: View {
     let document: SettingsTransferDocument
     @Binding var selectedSections: Set<SettingsTransferSection>
+    @Binding var vocabularyMode: VocabularyImportMode
     let onCancel: () -> Void
     let onImport: () -> Void
 
@@ -161,18 +192,56 @@ private struct SettingsImportOptionsSheet: View {
                     .foregroundColor(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(availableSections) { section in
-                    Toggle(isOn: sectionBinding(section)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(section.titleKey.localized)
-                                .font(.subheadline.weight(.medium))
-                            Text(section.descriptionKey.localized)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let preferences = document.preferences {
+                        LabeledContent(
+                            "settings.transfer.summary_engine".localized,
+                            value: TranscriptionEngine(rawValue: preferences.transcriptionEngine)?.displayName
+                                ?? preferences.transcriptionEngine
+                        )
+                        .font(.caption)
+                        if let fallback = preferences.fallbackTranscriptionEngine {
+                            LabeledContent(
+                                "settings.transfer.summary_backup".localized,
+                                value: TranscriptionEngineVariant.stored(fallback)?.displayName
+                                    ?? "settings.transfer.summary_none".localized
+                            )
+                            .font(.caption)
+                        }
+                    }
+                    if let vocabulary = document.vocabulary {
+                        Text("settings.transfer.summary_vocabulary".localized(vocabulary.keyterms.count, vocabulary.replacements.count))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    ForEach(availableSections) { section in
+                        Toggle(isOn: sectionBinding(section)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(section.titleKey.localized)
+                                    .font(.subheadline.weight(.medium))
+                                Text(section.descriptionKey.localized)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                 }
+
+            }
+            .frame(maxHeight: 380)
+
+            if selectedSections.contains(.vocabulary) {
+                Picker("settings.transfer.vocabulary_mode".localized, selection: $vocabularyMode) {
+                    ForEach(VocabularyImportMode.allCases) { mode in
+                        Text("settings.transfer.vocabulary_\(mode.rawValue)".localized).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("settings.transfer.vocabulary_\(vocabularyMode.rawValue)_desc".localized)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {

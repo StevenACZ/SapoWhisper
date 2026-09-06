@@ -26,8 +26,11 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case serverError = "server_error"
         case network
         case timedOut = "timed_out"
+        case modelOutputLimit = "model_output_limit"
         case audioEmpty = "audio_empty"
         case audioCorrupt = "audio_corrupt"
+        case audioStorageFailed = "audio_storage_failed"
+        case audioPreparationFailed = "audio_preparation_failed"
         case recordingInterrupted = "recording_interrupted"
         case userCancelled = "user_cancelled"
         case emptyTranscription = "empty_transcription"
@@ -42,17 +45,20 @@ struct TranscriptionFailure: LocalizedError, Equatable {
     /// Pre-localized message that wins over `kind`'s default text. Used to preserve the
     /// specific wording of engine-domain errors (model not loaded, permission denied, ...).
     let messageOverride: String?
+    let retryableOverride: Bool?
 
     init(
         kind: Kind,
         engine: String? = nil,
         technicalDetail: String? = nil,
-        messageOverride: String? = nil
+        messageOverride: String? = nil,
+        retryableOverride: Bool? = nil
     ) {
         self.kind = kind
         self.engine = engine
         self.technicalDetail = technicalDetail
         self.messageOverride = messageOverride
+        self.retryableOverride = retryableOverride
     }
 
     // MARK: - User-facing text
@@ -78,13 +84,19 @@ struct TranscriptionFailure: LocalizedError, Equatable {
         case .serverError:
             return "failure.server_error".localized(engineName)
         case .network:
-            return "failure.network".localized
+            return "failure.network".localized(engineName)
         case .timedOut:
             return "failure.timed_out".localized
+        case .modelOutputLimit:
+            return "failure.model_output_limit".localized(engineName)
         case .audioEmpty:
             return "failure.audio_empty".localized
         case .audioCorrupt:
             return "failure.audio_corrupt".localized
+        case .audioStorageFailed:
+            return "failure.audio_storage_failed".localized
+        case .audioPreparationFailed:
+            return "failure.audio_preparation_failed".localized
         case .recordingInterrupted:
             return "failure.recording_interrupted".localized
         case .userCancelled:
@@ -98,8 +110,10 @@ struct TranscriptionFailure: LocalizedError, Equatable {
 
     /// Whether offering the user a "Retry" affordance makes sense for this failure.
     var isRetryable: Bool {
+        if let retryableOverride { return retryableOverride }
         switch kind {
-        case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .unknown:
+        case .rateLimited, .serverError, .network, .timedOut, .recordingInterrupted, .audioStorageFailed,
+            .audioPreparationFailed, .modelOutputLimit, .unknown:
             return true
         case .notConfigured, .auth, .outOfCredits, .planRestricted, .clientError,
             .audioEmpty, .audioCorrupt, .userCancelled, .emptyTranscription:
@@ -118,6 +132,20 @@ struct TranscriptionFailure: LocalizedError, Equatable {
             return "\(diagnosticCode) detail=\(technicalDetail)"
         }
         return diagnosticCode
+    }
+
+    static func backupFailed(primary: TranscriptionFailure, backup: TranscriptionFailure) -> TranscriptionFailure {
+        TranscriptionFailure(
+            kind: primary.kind,
+            engine: primary.engine,
+            technicalDetail: "primary=\(primary.diagnosticCode) backup=\(backup.diagnosticCode)",
+            messageOverride: "failure.backup_failed".localized(
+                primary.engine ?? "failure.generic_engine".localized,
+                backup.engine ?? "failure.generic_engine".localized,
+                backup.localizedDescription
+            ),
+            retryableOverride: primary.isRetryable || backup.isRetryable
+        )
     }
 
     nonisolated static func diagnosticDetail(for error: Error) -> String {
@@ -191,6 +219,9 @@ extension TranscriptionFailure {
     /// Recognizes failures already of this type, `URLError`, and the
     /// engine-domain error enums; everything else becomes `.unknown`.
     static func from(_ error: Error, engine: String? = nil) -> TranscriptionFailure {
+        if error is CancellationError {
+            return TranscriptionFailure(kind: .userCancelled, engine: engine, technicalDetail: "CancellationError")
+        }
         if let failure = error as? TranscriptionFailure {
             return failure
         }

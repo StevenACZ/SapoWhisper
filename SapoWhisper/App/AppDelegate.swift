@@ -20,6 +20,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Configurar la app para que no aparezca en el Dock
         NSApp.setActivationPolicy(.accessory)
+        guard !UIPreviewMode.isRunningTests else { return }
+        if UIPreviewMode.isActive {
+            menuBarStatusController.start()
+            scheduleInitialOnboardingCheck()
+            return
+        }
         APIKeyKeychainMigration.run()
         LocalAIServerConfiguration.sanitizeStoredBaseURL()
         PolishProviderConfiguration.sanitizeStoredBaseURLs()
@@ -34,35 +40,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .utility) {
             // Rows stuck in "transcribing" (the app died mid-transcription)
             // resolve to failed first; their audio already lives in History.
-            let interrupted = TranscriptionHistoryManager.shared.recoverInterruptedTranscriptions()
+            TranscriptionHistoryManager.shared.recoverInterruptedTranscriptions()
             // Recovery first: orphaned dictation WAVs become retranscribable
             // History rows before the stale sweep can consider deleting them.
-            let recovery = OrphanAudioRecovery.recoverAbandonedRecordings()
+            OrphanAudioRecovery.recoverAbandonedRecordings()
             TemporaryAudioStorage.sweepStaleFiles(
                 referencedNames: TemporaryAudioStorage.historyReferencedNames()
             )
-            // The freshest preserved take (crashed WAV or interrupted
-            // transcription) becomes the "continue previous dictation" offer.
-            var offer: ResumableDictation?
-            if let latest = recovery.latest {
-                offer = ResumableDictation(
-                    historyId: latest.historyId,
-                    audioURL: latest.audioURL,
-                    duration: latest.duration,
-                    capturedAt: latest.modifiedAt
-                )
-            }
-            if let interrupted, let audioPath = interrupted.audioPath,
-                interrupted.timestamp > (offer?.capturedAt ?? .distantPast)
-            {
-                offer = ResumableDictation(
-                    historyId: interrupted.id,
-                    audioURL: URL(fileURLWithPath: audioPath),
-                    duration: interrupted.duration,
-                    capturedAt: interrupted.timestamp
-                )
-            }
-            if let offer, Date().timeIntervalSince(offer.capturedAt) < 30 * 60 {
+            if let offer = TranscriptionHistoryManager.shared.latestResumableDictation() {
                 await MainActor.run {
                     SapoWhisperAppEnvironment.shared.viewModel.offerResumableDictation(offer)
                 }
@@ -77,6 +62,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard !AppRuntimePaths.isIsolated else { return }
         SapoLog.performance.info("Application became active")
         PerformanceDiagnostics.logRuntimeSnapshot(reason: "app-active")
         PreferredMicrophoneCoordinator.shared.requestReconciliation(reason: "app-active")
@@ -84,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !AppRuntimePaths.isIsolated else { return }
         // Safety net: restaurar volumen del sistema si la app se cierra durante grabación
         SapoWhisperAppEnvironment.shared.viewModel.handleApplicationWillTerminate()
         if let screenChangeObserver {
@@ -102,11 +89,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startRemoteDictationControl() {
+        guard !AppRuntimePaths.isIsolated else { return }
         let server = RemoteDictationCommandServer()
         do {
             try server.start(
                 onToggle: {
-                    SapoLog.recording.info("Authenticated remote dictation toggle received")
+                    SapoLog.recording.notice("Authenticated remote dictation toggle received")
                     SapoWhisperAppEnvironment.shared.viewModel.toggleRecording(
                         inputDeviceUID: DictationStateBroadcaster.remoteInputDeviceUID
                     )
@@ -163,7 +151,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// H6: optional age-based retention. 0 (default) means never delete.
     private func runHistoryAutoDeleteIfConfigured() {
-        let days = UserDefaults.standard.integer(forKey: Constants.StorageKeys.historyAutoDeleteDays)
+        let days = AppPreferences.defaults.integer(forKey: Constants.StorageKeys.historyAutoDeleteDays)
         guard days > 0 else { return }
         Task.detached(priority: .utility) {
             let deleted = TranscriptionHistoryManager.shared.deleteEntries(olderThanDays: days)
@@ -191,6 +179,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// UI preview launches open the requested window directly, with no
     /// permission or onboarding windows competing for focus.
+    #if DEBUG
+        private func previewOverlayTransitions() {
+            Task { @MainActor in
+                let overlay = OverlayWindowManager.shared
+                overlay.updateState(.docked)
+                for iteration in 0..<2 {
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.setBackupNotice(
+                        iteration == 0
+                            ? BackupTranscriptionNotice(primary: .localAIServer, backup: .deepgramNova3) : nil)
+                    overlay.updateState(.recording(duration: 12))
+                    overlay.updateAudioLevel(0.5)
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.updateState(.paused(duration: 12))
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.updateState(.transcribing)
+                    try? await Task.sleep(for: .seconds(2))
+                    overlay.showCopied(text: "", autoDismissAfter: 5)
+                    try? await Task.sleep(for: .seconds(5))
+                    overlay.hide()
+                }
+            }
+        }
+    #endif
+
     private func presentPreviewScreen() {
         switch UIPreviewMode.screen {
         case "history":
@@ -199,6 +212,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             WelcomeWindowController.shared.show()
         case "settings":
             menuBarStatusController.openSettingsWindow()
+        #if DEBUG
+            case "overlay":
+                previewOverlayTransitions()
+        #endif
         default:
             break
         }

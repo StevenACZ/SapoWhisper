@@ -72,24 +72,33 @@ final class LocalAIServerTranscriber: ObservableObject {
         // timeout (2-10 min) before reporting anything.
         try await preflightServerReachability(baseURL: baseURL, apiKey: apiKey)
 
-        // Reading the WAV and copying it into the multipart body is heavy for
-        // long takes, so the request is assembled off the main actor.
-        let payload = try await Self.makeTranscriptionRequest(
-            baseURL: baseURL,
-            model: model,
-            audioURL: audioURL,
-            languageCode: TranscriptionLanguageCatalog.whisperLanguageCode(for: language),
-            vocabularyPrompt: VocabularyManager.shared.initialPromptText(),
-            apiKey: apiKey
-        )
+        let payload: (request: URLRequest, body: FileMultipartBody)
+        do {
+            payload = try await Self.makeTranscriptionRequest(
+                baseURL: baseURL,
+                model: model,
+                audioURL: audioURL,
+                languageCode: TranscriptionLanguageCatalog.whisperLanguageCode(for: language),
+                vocabularyPrompt: VocabularyManager.shared.initialPromptText(),
+                apiKey: apiKey
+            )
+        } catch {
+            if Task.isCancelled || error is CancellationError { throw CancellationError() }
+            throw TranscriptionFailure(
+                kind: .audioPreparationFailed, engine: Self.engineName,
+                technicalDetail: LogSanitizer.errorDiagnostic(error, state: "prepare-upload")
+            )
+        }
+        defer { payload.body.remove() }
         var request = payload.request
-        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: payload.audioByteCount)
+        request.timeoutInterval = TranscriptionFailure.requestTimeout(forAudioBytes: payload.body.audioByteCount)
 
         let data: Data
         let httpResponse: HTTPURLResponse
         do {
-            (data, httpResponse) = try await TransientRequestRetry.data(
+            (data, httpResponse) = try await TransientRequestRetry.upload(
                 for: request,
+                fromFile: payload.body.fileURL,
                 session: session,
                 engine: Self.engineName
             )
@@ -161,18 +170,15 @@ final class LocalAIServerTranscriber: ObservableObject {
         return fields
     }
 
-    /// Reads the recorded WAV and assembles the multipart request off the main
-    /// actor; only Sendable values (URL, strings, Data) cross the boundary.
     @concurrent
-    private static func makeTranscriptionRequest(
+    static func makeTranscriptionRequest(
         baseURL: URL,
         model: String,
         audioURL: URL,
         languageCode: String?,
         vocabularyPrompt: String,
         apiKey: String
-    ) async throws -> (request: URLRequest, audioByteCount: Int) {
-        let audioData = try Data(contentsOf: audioURL)
+    ) async throws -> (request: URLRequest, body: FileMultipartBody) {
         let boundary = "Boundary-\(UUID().uuidString)"
         let url = LocalAIServerConfiguration.transcriptionsURL(from: baseURL)
         var request = URLRequest(url: url)
@@ -183,23 +189,12 @@ final class LocalAIServerTranscriber: ObservableObject {
             request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
         }
 
-        var body = Data()
-        for field in transcriptionFormFields(
-            model: model, languageCode: languageCode, vocabularyPrompt: vocabularyPrompt)
-        {
-            appendFormField(name: field.name, value: field.value, boundary: boundary, to: &body)
-        }
-        appendFileField(
-            name: "file",
-            filename: "recording.wav",
-            contentType: "audio/wav",
-            data: audioData,
-            boundary: boundary,
-            to: &body
+        let body = try FileMultipartBody.create(
+            audioURL: audioURL,
+            fields: transcriptionFormFields(model: model, languageCode: languageCode, vocabularyPrompt: vocabularyPrompt),
+            boundary: boundary
         )
-        body.appendUTF8("--\(boundary)--\r\n")
-        request.httpBody = body
-        return (request, audioData.count)
+        return (request, body)
     }
 
     /// Standalone reachability probe, run while the user is still dictating so
@@ -240,8 +235,28 @@ final class LocalAIServerTranscriber: ObservableObject {
             request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
         }
 
+        let deadline = ProcessInfo.processInfo.systemUptime + Self.preflightTimeout
+        var retried = false
         do {
-            _ = try await session.data(for: request)
+            while true {
+                try Task.checkCancellation()
+                let remaining = deadline - ProcessInfo.processInfo.systemUptime
+                guard remaining > 0 else { throw URLError(.timedOut) }
+                request.timeoutInterval = remaining
+                do {
+                    _ = try await session.data(for: request)
+                    return
+                } catch let error as URLError {
+                    try Task.checkCancellation()
+                    guard !retried, TransientRequestRetry.retryableURLErrorCodes.contains(error.code),
+                        deadline - ProcessInfo.processInfo.systemUptime > 0.151
+                    else { throw error }
+                    retried = true
+                    SapoLog.recording.notice(
+                        "Local AI Server preflight confirming transient failure code=\(error.code.rawValue, privacy: .public)")
+                    try await Task.sleep(for: .milliseconds(150))
+                }
+            }
         } catch {
             try Task.checkCancellation()
             let detail = LogSanitizer.errorDiagnostic(error, state: "local-preflight")
@@ -333,31 +348,6 @@ final class LocalAIServerTranscriber: ObservableObject {
         let body = String(data: data, encoding: .utf8) ?? "empty response"
         return TranscriptionFailure.redactedLogSnippet(from: body)
     }
-
-    nonisolated private static func appendFormField(name: String, value: String, boundary: String, to body: inout Data) {
-        let safeValue =
-            value
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-        body.appendUTF8("--\(boundary)\r\n")
-        body.appendUTF8("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
-        body.appendUTF8("\(safeValue)\r\n")
-    }
-
-    nonisolated private static func appendFileField(
-        name: String,
-        filename: String,
-        contentType: String,
-        data: Data,
-        boundary: String,
-        to body: inout Data
-    ) {
-        body.appendUTF8("--\(boundary)\r\n")
-        body.appendUTF8("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n")
-        body.appendUTF8("Content-Type: \(contentType)\r\n\r\n")
-        body.append(data)
-        body.appendUTF8("\r\n")
-    }
 }
 
 // MARK: - TranscriptionEngineSession
@@ -377,10 +367,4 @@ private struct LocalAIModelsResponse: Decodable {
 
 private struct LocalAIModel: Decodable {
     let id: String
-}
-
-nonisolated extension Data {
-    fileprivate mutating func appendUTF8(_ string: String) {
-        append(Data(string.utf8))
-    }
 }

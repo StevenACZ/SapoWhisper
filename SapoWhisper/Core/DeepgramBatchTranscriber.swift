@@ -48,7 +48,6 @@ class DeepgramBatchTranscriber: ObservableObject {
 
         // Add vocabulary
         queryItems.append(contentsOf: VocabularyManager.shared.keytermQueryItems())
-        queryItems.append(contentsOf: VocabularyManager.shared.replaceQueryItems())
 
         components.queryItems = queryItems
 

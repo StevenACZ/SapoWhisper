@@ -7,6 +7,7 @@ import XCTest
 
 @testable import SapoWhisper
 
+@MainActor
 final class TranscriptPolishOutputLanguageTests: XCTestCase {
 
     private final class StubURLProtocol: URLProtocol {
@@ -75,7 +76,7 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         endpoint: PolishEndpoint = .localServer,
         outputLanguage: TranscriptPolishOutputLanguage = .english
     ) async -> TranslationRun {
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let enabledKey = Constants.StorageKeys.aiPolishEnabled
         let languageKey = Constants.StorageKeys.aiPolishOutputLanguage
         let modeKey = Constants.StorageKeys.aiPolishMode
@@ -452,6 +453,7 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
 
 }
 
+@MainActor
 final class TranscriptPolishTimeoutTests: XCTestCase {
 
     /// Short dictations keep the snappy 5s budget; long transcripts scale up
@@ -522,11 +524,12 @@ final class TranscriptPolishTimeoutTests: XCTestCase {
     }
 }
 
+@MainActor
 final class TranscriptPrePolishCorrectionTests: XCTestCase {
 
     func testProcessAppliesVocabularyCorrectionsWhenAIPolishIsDisabled() async {
         let key = Constants.StorageKeys.aiPolishEnabled
-        let defaults = UserDefaults.standard
+        let defaults = AppPreferences.defaults
         let previous = defaults.object(forKey: key)
         defaults.set(false, forKey: key)
         defer {

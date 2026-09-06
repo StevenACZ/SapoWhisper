@@ -1,21 +1,24 @@
+import AppKit
 import SwiftUI
 
 /// Transcription engine settings coordinator.
 struct EngineSettingsTab: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
 
-    @AppStorage(Constants.StorageKeys.transcriptionEngine) private var selectedEngine = TranscriptionEngine.mlxWhisper.rawValue
-    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine) private var fallbackEngineRawValue = ""
-    @AppStorage(Constants.StorageKeys.language) private var selectedLanguage = "auto"
-    @AppStorage(Constants.StorageKeys.mlxWhisperModel) private var selectedMLXModel = MLXWhisperModel.largeV3Turbo.rawValue
-    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode) private var selectedDeepgramMode =
+    @AppStorage(Constants.StorageKeys.transcriptionEngine, store: AppPreferences.defaults) private var selectedEngine = TranscriptionEngine
+        .mlxWhisper.rawValue
+    @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine, store: AppPreferences.defaults) private var fallbackEngineRawValue = ""
+    @AppStorage(Constants.StorageKeys.language, store: AppPreferences.defaults) private var selectedLanguage = "auto"
+    @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) private var selectedMLXModel = MLXWhisperModel
+        .largeV3Turbo.rawValue
+    @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) private var selectedDeepgramMode =
         DeepgramTranscriptionMode.nova3.rawValue
-    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode) private var selectedElevenLabsMode =
+    @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode, store: AppPreferences.defaults) private var selectedElevenLabsMode =
         ElevenLabsTranscriptionMode.defaultMode.rawValue
-    @AppStorage(Constants.StorageKeys.localAIServerModel) private var selectedLocalAIServerModel =
+    @AppStorage(Constants.StorageKeys.localAIServerModel, store: AppPreferences.defaults) private var selectedLocalAIServerModel =
         LocalAIServerConfiguration.defaultModel
-    @AppStorage(Constants.StorageKeys.aiPolishEnabled) private var aiPolishEnabled = false
-    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage) private var aiPolishOutputLanguage =
+    @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
+    @AppStorage(Constants.StorageKeys.aiPolishOutputLanguage, store: AppPreferences.defaults) private var aiPolishOutputLanguage =
         TranscriptPolishOutputLanguage.sameAsInput.rawValue
     @State private var isSelectedEngineSettingsExpanded = false
 
@@ -84,7 +87,7 @@ struct EngineSettingsTab: View {
     /// The stored value falls back to "none" at runtime if the user later
     /// selects its engine as the primary.
     private var fallbackCandidates: [TranscriptionEngineVariant] {
-        TranscriptionEngineVariant.allCases.filter { $0.engine != currentVariant.engine }
+        TranscriptionEngineVariant.backupCandidates.filter { $0.engine != currentVariant.engine }
     }
 
     private var selectedFallbackEngine: TranscriptionEngineVariant? {
@@ -103,6 +106,26 @@ struct EngineSettingsTab: View {
         )
     }
 
+    // Native menu labels consume image bounds, so spacing and tint are rendered into the cached icons.
+    private static let fallbackIcons: [String: NSImage] = {
+        var icons: [String: NSImage] = [:]
+        for symbol in Set(TranscriptionEngineVariant.backupCandidates.map(\.icon)) {
+            let renderer = ImageRenderer(
+                content: Image(systemName: symbol)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.sapoGreen)
+                    .frame(width: 20, height: 16)
+                    .padding(.trailing, 8)
+            )
+            renderer.scale = 2
+            if let image = renderer.nsImage {
+                image.isTemplate = false
+                icons[symbol] = image
+            }
+        }
+        return icons
+    }()
+
     private var fallbackEngineCard: some View {
         SettingsCard(icon: "arrow.triangle.2.circlepath", title: "config.fallback_engine".localized) {
             VStack(alignment: .leading, spacing: 8) {
@@ -111,10 +134,16 @@ struct EngineSettingsTab: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Picker("", selection: fallbackSelection) {
+                Picker("config.fallback_engine".localized, selection: fallbackSelection) {
                     Text("config.fallback_engine_none".localized).tag("")
                     ForEach(fallbackCandidates) { variant in
-                        Label(variant.displayName, systemImage: variant.icon).tag(variant.rawValue)
+                        Label {
+                            Text(variant.displayName)
+                        } icon: {
+                            Image(nsImage: Self.fallbackIcons[variant.icon] ?? NSImage())
+                                .renderingMode(.original)
+                        }
+                        .tag(variant.rawValue)
                     }
                 }
                 .pickerStyle(.menu)
@@ -124,16 +153,13 @@ struct EngineSettingsTab: View {
                 if let backup = selectedFallbackEngine {
                     if !viewModel.isBackupEngineUsable(backup) {
                         Label(
-                            "config.fallback_engine_not_configured".localized(backup.displayName),
+                            (viewModel.isBackupEngineConfigured(backup)
+                                ? "config.fallback_engine_unavailable" : "config.fallback_engine_not_configured")
+                                .localized(backup.displayName),
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.caption)
                         .foregroundColor(.orange)
-                    } else if backup.isStreaming {
-                        Text("config.fallback_engine_live_note".localized)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }

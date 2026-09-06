@@ -11,6 +11,7 @@ import XCTest
 /// user's clipboard/paste (guards are retry-only and the last output ships
 /// after the budget): control bytes, bidi overrides, and invisible
 /// characters must never survive — and legitimate text must be untouched.
+@MainActor
 final class PolishOutputSanitizerTests: XCTestCase {
 
     private func clean(_ output: String, raw: String = "texto dictado") -> String {

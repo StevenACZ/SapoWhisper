@@ -19,6 +19,7 @@ struct SettingsTransferDocument: Codable, Identifiable {
     var vocabulary: VocabularySnapshot?
     var promptContext: PromptContextSnapshot?
     var apiKeys: SettingsTransferAPIKeys?
+    var unsetPreferenceKeys: [String]? = nil
 
     var id: String {
         "\(schemaVersion)-\(exportedAt.timeIntervalSince1970)"
@@ -51,6 +52,18 @@ struct SettingsTransferPreferences: Codable, Equatable {
     var aiPolishEndpoint: String?
     var aiPolishModel: String?
     var aiPolishCustomBaseURL: String?
+    var fallbackTranscriptionEngine: String? = nil
+    var historyAudioMaxMB: Int? = nil
+    var historyAutoDeleteDays: Int? = nil
+    var overlayPosition: String? = nil
+    var autoUpdateCheckEnabled: Bool? = nil
+    var mlxWhisperUnloadAfterMinutes: Int? = nil
+    var aiPolishMode: String? = nil
+    var aiPolishMinDuration: Int? = nil
+    var aiPolishReasoningEffort: String? = nil
+    var aiPolishQuickTranslationTarget: String? = nil
+    var polishProviderModels: [String: String]? = nil
+    var polishProviderBaseURLs: [String: String]? = nil
 }
 
 /// Legacy section: old export files may still carry plaintext engine keys.
@@ -66,6 +79,7 @@ struct SettingsTransferAPIKeys: Codable, Equatable {
 
 enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
     case behavior
+    case history
     case audio
     case engine
     case hotkey
@@ -78,6 +92,8 @@ enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
 
     var titleKey: String {
         switch self {
+        case .history:
+            return "settings.transfer.section_history"
         case .behavior:
             return "settings.transfer.section_behavior"
         case .audio:
@@ -99,6 +115,8 @@ enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
 
     var descriptionKey: String {
         switch self {
+        case .history:
+            return "settings.transfer.section_history_desc"
         case .behavior:
             return "settings.transfer.section_behavior_desc"
         case .audio:
@@ -122,6 +140,9 @@ enum SettingsTransferSection: String, CaseIterable, Hashable, Identifiable {
 enum SettingsTransferError: LocalizedError {
     case emptyImportSelection
     case missingVocabulary
+    case invalidDocument
+    case importFileWriteFailed(URL)
+    case importRollbackFailed(URL)
     case unsupportedSchema(Int)
     case apiKeysNotStored(Int)
 
@@ -129,6 +150,12 @@ enum SettingsTransferError: LocalizedError {
         switch self {
         case .emptyImportSelection:
             return "No import sections selected"
+        case .importFileWriteFailed(let backupURL):
+            return "settings.transfer.file_write_failed".localized(backupURL.path)
+        case .importRollbackFailed(let backupURL):
+            return "settings.transfer.rollback_failed".localized(backupURL.path)
+        case .invalidDocument:
+            return "settings.transfer.invalid_document".localized
         case .missingVocabulary:
             return "The selected file does not contain vocabulary data"
         case .unsupportedSchema(let version):
@@ -142,14 +169,20 @@ enum SettingsTransferError: LocalizedError {
 struct SettingsTransferManager {
     static let shared = SettingsTransferManager()
 
-    private let defaults: UserDefaults
-    private let readEngineKey: (KeychainStore.Key) -> String?
+    let defaults: UserDefaults
+    let readEngineKey: (KeychainStore.Key) -> String?
+    private let vocabularyManager: VocabularyManager
+    private let promptContextManager: PromptContextManager
+    private let backupDirectory: URL
     private let writeEngineKey: (String, KeychainStore.Key) -> Bool
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = AppPreferences.defaults,
+        vocabularyManager: VocabularyManager = .shared,
+        promptContextManager: PromptContextManager = .shared,
+        backupDirectory: URL = AppRuntimePaths.applicationSupport.appendingPathComponent("SettingsBackups", isDirectory: true),
         readEngineKey: @escaping (KeychainStore.Key) -> String? = {
             // Presence check only (call sites test isEmpty), so gate on hasValue and
             // never trigger the macOS Keychain consent prompt on import — mirrors
@@ -161,6 +194,9 @@ struct SettingsTransferManager {
         }
     ) {
         self.defaults = defaults
+        self.vocabularyManager = vocabularyManager
+        self.promptContextManager = promptContextManager
+        self.backupDirectory = backupDirectory
         self.readEngineKey = readEngineKey
         self.writeEngineKey = writeEngineKey
 
@@ -184,7 +220,7 @@ struct SettingsTransferManager {
             appVersion: Constants.appVersion,
             exportedAt: Date(),
             preferences: nil,
-            vocabulary: VocabularyManager.shared.snapshot(),
+            vocabulary: vocabularyManager.snapshot(),
             promptContext: nil,
             apiKeys: nil
         )
@@ -196,6 +232,7 @@ struct SettingsTransferManager {
         guard document.schemaVersion == 1 else {
             throw SettingsTransferError.unsupportedSchema(document.schemaVersion)
         }
+        try validate(document, sections: [])
         return document
     }
 
@@ -203,6 +240,9 @@ struct SettingsTransferManager {
         var sections: [SettingsTransferSection] = []
         if document.preferences != nil {
             sections.append(contentsOf: [.behavior, .audio, .engine, .hotkey, .aiPolish])
+        }
+        if document.preferences?.historyAudioMaxMB != nil || document.preferences?.historyAutoDeleteDays != nil {
+            sections.append(.history)
         }
         if document.vocabulary != nil {
             sections.append(.vocabulary)
@@ -217,27 +257,29 @@ struct SettingsTransferManager {
     }
 
     func defaultImportSections(for document: SettingsTransferDocument) -> Set<SettingsTransferSection> {
-        Set(availableSections(in: document).filter { $0 != .apiKeys })
+        Set(availableSections(in: document).filter { $0 != .apiKeys && $0 != .history })
     }
 
-    func importDocument(_ document: SettingsTransferDocument, sections: Set<SettingsTransferSection>) throws {
+    @discardableResult
+    func importDocument(
+        _ document: SettingsTransferDocument,
+        sections: Set<SettingsTransferSection>,
+        vocabularyMode: VocabularyImportMode = .combine
+    ) throws -> URL {
+        try validate(document, sections: sections)
         guard !sections.isEmpty else {
             throw SettingsTransferError.emptyImportSelection
         }
 
+        let previous = makeSettingsDocument()
+        let backupURL = try SettingsTransferBackup.write(encoder.encode(previous), directory: backupDirectory)
+        try importFileSections(document, previous: previous, sections: sections, vocabularyMode: vocabularyMode, backupURL: backupURL)
+
         if let preferences = document.preferences {
             importPreferences(preferences, sections: sections)
-        }
-
-        if sections.contains(.vocabulary) {
-            guard let vocabulary = document.vocabulary else {
-                throw SettingsTransferError.missingVocabulary
+            for key in document.unsetPreferenceKeys ?? [] where Self.portablePreferenceSections[key].map(sections.contains) == true {
+                defaults.removeObject(forKey: key)
             }
-            VocabularyManager.shared.merge(snapshot: vocabulary)
-        }
-
-        if sections.contains(.promptContext), let promptContext = document.promptContext {
-            PromptContextManager.shared.replace(with: promptContext)
         }
 
         if sections.contains(.apiKeys), let apiKeys = document.apiKeys {
@@ -246,13 +288,39 @@ struct SettingsTransferManager {
                 throw SettingsTransferError.apiKeysNotStored(notStored)
             }
         }
+        return backupURL
     }
 
-    func importVocabulary(from document: SettingsTransferDocument) throws {
-        guard let vocabulary = document.vocabulary else {
-            throw SettingsTransferError.missingVocabulary
+    func importVocabulary(from document: SettingsTransferDocument, mode: VocabularyImportMode = .combine) throws {
+        _ = try importDocument(document, sections: [.vocabulary], vocabularyMode: mode)
+    }
+
+    private func importFileSections(
+        _ document: SettingsTransferDocument,
+        previous: SettingsTransferDocument,
+        sections: Set<SettingsTransferSection>,
+        vocabularyMode: VocabularyImportMode,
+        backupURL: URL
+    ) throws {
+        var vocabularyChanged = false
+        do {
+            if sections.contains(.vocabulary), let incoming = document.vocabulary, let existing = previous.vocabulary {
+                try vocabularyManager.replacePersisting(with: vocabularyMode.snapshot(importing: incoming, into: existing))
+                vocabularyChanged = true
+            }
+            if sections.contains(.promptContext), let context = document.promptContext {
+                try promptContextManager.replacePersisting(with: context)
+            }
+        } catch {
+            if vocabularyChanged, let vocabulary = previous.vocabulary {
+                do {
+                    try vocabularyManager.replacePersisting(with: vocabulary)
+                } catch {
+                    throw SettingsTransferError.importRollbackFailed(backupURL)
+                }
+            }
+            throw SettingsTransferError.importFileWriteFailed(backupURL)
         }
-        VocabularyManager.shared.merge(snapshot: vocabulary)
     }
 
     private func makeSettingsDocument() -> SettingsTransferDocument {
@@ -262,144 +330,11 @@ struct SettingsTransferManager {
             appVersion: Constants.appVersion,
             exportedAt: Date(),
             preferences: currentPreferences(),
-            vocabulary: VocabularyManager.shared.snapshot(),
-            promptContext: PromptContextManager.shared.snapshot(),
-            apiKeys: nil
+            vocabulary: vocabularyManager.snapshot(),
+            promptContext: promptContextManager.snapshot(),
+            apiKeys: nil,
+            unsetPreferenceKeys: Self.portablePreferenceSections.keys.filter { defaults.object(forKey: $0) == nil }.sorted()
         )
-    }
-
-    private func currentPreferences() -> SettingsTransferPreferences {
-        SettingsTransferPreferences(
-            appLanguage: defaults.string(forKey: Constants.StorageKeys.appLanguage)
-                ?? LocalizationManager.systemDefaultLanguage,
-            transcriptionLanguage: defaults.string(forKey: Constants.StorageKeys.language) ?? "auto",
-            autoPaste: boolValue(forKey: Constants.StorageKeys.autoPaste, defaultValue: true),
-            playSound: boolValue(forKey: Constants.StorageKeys.playSound, defaultValue: true),
-            soundVolume: doubleValue(forKey: Constants.StorageKeys.soundVolume, defaultValue: 1.0),
-            autoDuckingEnabled: boolValue(forKey: Constants.StorageKeys.autoDuckingEnabled, defaultValue: false),
-            autoDuckingAmount: doubleValue(forKey: Constants.StorageKeys.autoDuckingAmount, defaultValue: 0.8),
-            transcriptionEngine: defaults.string(forKey: Constants.StorageKeys.transcriptionEngine)
-                ?? TranscriptionEngine.mlxWhisper.rawValue,
-            mlxWhisperModel: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel)
-                ?? MLXWhisperModel.largeV3Turbo.rawValue,
-            deepgramTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
-                ?? DeepgramTranscriptionMode.nova3.rawValue,
-            elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
-                ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
-            localAIServerBaseURL: defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL)
-                .flatMap(ProviderURLSecurity.sanitizedValidURLString),
-            localAIServerModel: defaults.string(forKey: Constants.StorageKeys.localAIServerModel)
-                ?? LocalAIServerConfiguration.defaultModel,
-            hotkeyTriggerKind: defaults.string(forKey: Constants.StorageKeys.hotkeyTriggerKind)
-                ?? Constants.Hotkey.defaultTriggerKind,
-            hotkeyKeyCode: intValue(forKey: Constants.StorageKeys.hotkeyKeyCode, defaultValue: Int(Constants.Hotkey.defaultKeyCode)),
-            hotkeyModifiers: intValue(forKey: Constants.StorageKeys.hotkeyModifiers, defaultValue: Int(Constants.Hotkey.defaultModifiers)),
-            hotkeyDoubleTapModifier: intValue(
-                forKey: Constants.StorageKeys.hotkeyDoubleTapModifier,
-                defaultValue: Int(Constants.Hotkey.defaultDoubleTapModifier)
-            ),
-            audioGain: doubleValue(forKey: Constants.StorageKeys.audioGain, defaultValue: 1.0),
-            audioUploadQuality: AudioUploadQuality.stored(in: defaults).rawValue,
-            aiPolishEnabled: boolValue(forKey: Constants.StorageKeys.aiPolishEnabled, defaultValue: false),
-            aiPolishOutputLanguage: defaults.string(forKey: Constants.StorageKeys.aiPolishOutputLanguage)
-                ?? TranscriptPolishOutputLanguage.sameAsInput.rawValue,
-            aiPolishEndpoint: defaults.string(forKey: Constants.StorageKeys.aiPolishEndpoint)
-                ?? PolishEndpoint.default.rawValue,
-            aiPolishModel: defaults.string(forKey: Constants.StorageKeys.aiPolishModel),
-            aiPolishCustomBaseURL: defaults.string(forKey: Constants.StorageKeys.aiPolishCustomBaseURL)
-                .flatMap(ProviderURLSecurity.sanitizedValidURLString)
-        )
-    }
-
-    private func importPreferences(_ preferences: SettingsTransferPreferences, sections: Set<SettingsTransferSection>) {
-        if sections.contains(.behavior) {
-            defaults.set(preferences.appLanguage, forKey: Constants.StorageKeys.appLanguage)
-            defaults.set(preferences.transcriptionLanguage, forKey: Constants.StorageKeys.language)
-            defaults.set(preferences.autoPaste, forKey: Constants.StorageKeys.autoPaste)
-            LocalizationManager.shared.language = preferences.appLanguage
-        }
-
-        if sections.contains(.audio) {
-            defaults.set(preferences.playSound, forKey: Constants.StorageKeys.playSound)
-            defaults.set(preferences.soundVolume, forKey: Constants.StorageKeys.soundVolume)
-            defaults.set(preferences.autoDuckingEnabled, forKey: Constants.StorageKeys.autoDuckingEnabled)
-            defaults.set(preferences.autoDuckingAmount, forKey: Constants.StorageKeys.autoDuckingAmount)
-            defaults.set(preferences.audioGain, forKey: Constants.StorageKeys.audioGain)
-            let uploadQuality = AudioUploadQuality(rawValue: preferences.audioUploadQuality ?? "") ?? .defaultValue
-            defaults.set(uploadQuality.rawValue, forKey: Constants.StorageKeys.audioUploadQuality)
-        }
-
-        if sections.contains(.engine) {
-            // Old export files may carry removed engines; map them like the launch migration.
-            let importedEngine = EnginePortfolioMigration.migratedEngine(
-                from: preferences.transcriptionEngine,
-                hasDeepgramKey: !(readEngineKey(.deepgramAPIKey) ?? "").isEmpty,
-                hasElevenLabsKey: !(readEngineKey(.elevenLabsAPIKey) ?? "").isEmpty
-            )
-            defaults.set(importedEngine, forKey: Constants.StorageKeys.transcriptionEngine)
-            if let mlxModel = preferences.mlxWhisperModel, MLXWhisperModel(rawValue: mlxModel) != nil {
-                defaults.set(mlxModel, forKey: Constants.StorageKeys.mlxWhisperModel)
-            }
-            defaults.set(preferences.deepgramTranscriptionMode, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
-            defaults.set(
-                preferences.elevenLabsTranscriptionMode ?? ElevenLabsTranscriptionMode.defaultMode.rawValue,
-                forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
-            )
-            if let baseURL = preferences.localAIServerBaseURL,
-                let sanitized = ProviderURLSecurity.sanitizedValidURLString(baseURL)
-            {
-                LocalAIServerConfiguration.setStoredBaseURL(sanitized, defaults: defaults)
-            }
-            defaults.set(
-                preferences.localAIServerModel ?? LocalAIServerConfiguration.defaultModel,
-                forKey: Constants.StorageKeys.localAIServerModel
-            )
-        }
-
-        if sections.contains(.hotkey) {
-            let triggerKindRaw = preferences.hotkeyTriggerKind ?? Constants.Hotkey.defaultTriggerKind
-            let triggerKind = HotkeyTriggerKind(rawValue: triggerKindRaw) ?? .keyCombination
-            // Sanitize BEFORE persisting: an unvalidated out-of-range value in
-            // UserDefaults traps the UInt32 conversion on the next launch.
-            let keyCode = HotkeyManager.sanitizedKeyCode(
-                preferences.hotkeyKeyCode, fallback: Constants.Hotkey.defaultKeyCode)
-            let modifiers = HotkeyManager.sanitizedModifiers(
-                preferences.hotkeyModifiers, fallback: Constants.Hotkey.defaultModifiers)
-            let doubleTapModifier = HotkeyManager.sanitizedModifiers(
-                preferences.hotkeyDoubleTapModifier ?? Int(Constants.Hotkey.defaultDoubleTapModifier),
-                fallback: Constants.Hotkey.defaultDoubleTapModifier
-            )
-            defaults.set(triggerKind.rawValue, forKey: Constants.StorageKeys.hotkeyTriggerKind)
-            defaults.set(Int(keyCode), forKey: Constants.StorageKeys.hotkeyKeyCode)
-            defaults.set(Int(modifiers), forKey: Constants.StorageKeys.hotkeyModifiers)
-            defaults.set(Int(doubleTapModifier), forKey: Constants.StorageKeys.hotkeyDoubleTapModifier)
-            HotkeyManager.shared.updateConfiguration(
-                triggerKind: triggerKind,
-                keyCode: keyCode,
-                modifiers: modifiers,
-                doubleTapModifier: doubleTapModifier
-            )
-        }
-
-        if sections.contains(.aiPolish) {
-            defaults.set(preferences.aiPolishEnabled, forKey: Constants.StorageKeys.aiPolishEnabled)
-            defaults.set(preferences.aiPolishOutputLanguage, forKey: Constants.StorageKeys.aiPolishOutputLanguage)
-            if let endpoint = preferences.aiPolishEndpoint {
-                defaults.set(endpoint, forKey: Constants.StorageKeys.aiPolishEndpoint)
-            }
-            if let model = preferences.aiPolishModel {
-                defaults.set(model, forKey: Constants.StorageKeys.aiPolishModel)
-            }
-            if let customBaseURL = preferences.aiPolishCustomBaseURL,
-                let sanitized = ProviderURLSecurity.sanitizedValidURLString(customBaseURL)
-            {
-                PolishProviderConfiguration.setStoredBaseURLInput(
-                    sanitized,
-                    for: .custom,
-                    defaults: defaults
-                )
-            }
-        }
     }
 
     /// Keys from legacy export files land in the Keychain, never UserDefaults.
@@ -423,15 +358,76 @@ struct SettingsTransferManager {
         return value
     }
 
-    private func boolValue(forKey key: String, defaultValue: Bool) -> Bool {
-        defaults.object(forKey: key) == nil ? defaultValue : defaults.bool(forKey: key)
+}
+
+enum VocabularyImportMode: String, CaseIterable, Identifiable {
+    case combine
+    case replace
+
+    var id: String { rawValue }
+
+    func snapshot(importing incoming: VocabularySnapshot, into existing: VocabularySnapshot) -> VocabularySnapshot {
+        guard self == .combine else { return incoming }
+        var result = existing
+        for term in incoming.keyterms {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !result.keyterms.contains(trimmed) { result.keyterms.append(trimmed) }
+        }
+        for original in incoming.replacements.keys.sorted() {
+            let key = original.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let value = incoming.replacements[original]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !key.isEmpty, !value.isEmpty, result.replacements[key] == nil { result.replacements[key] = value }
+        }
+        return result
+    }
+}
+
+extension SettingsTransferManager {
+    func validate(_ document: SettingsTransferDocument, sections: Set<SettingsTransferSection>) throws {
+        guard document.schemaVersion == 1 else {
+            throw SettingsTransferError.unsupportedSchema(document.schemaVersion)
+        }
+        if sections.contains(.vocabulary), document.vocabulary == nil { throw SettingsTransferError.missingVocabulary }
+        guard sections.isSubset(of: Set(availableSections(in: document))) else {
+            throw SettingsTransferError.invalidDocument
+        }
+        if let unsetKeys = document.unsetPreferenceKeys {
+            guard document.preferences != nil,
+                unsetKeys.allSatisfy({ Self.portablePreferenceSections[$0] != nil })
+            else { throw SettingsTransferError.invalidDocument }
+        }
+        if let preferences = document.preferences { try validate(preferences) }
+        if let vocabulary = document.vocabulary {
+            let keys = vocabulary.replacements.keys.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            guard Set(keys).count == keys.count,
+                keys.allSatisfy({ !$0.isEmpty }),
+                vocabulary.replacements.values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            else { throw SettingsTransferError.invalidDocument }
+        }
+        if let context = document.promptContext, context.personalContext.details.count > 2_000 {
+            throw SettingsTransferError.invalidDocument
+        }
     }
 
-    private func doubleValue(forKey key: String, defaultValue: Double) -> Double {
-        defaults.object(forKey: key) == nil ? defaultValue : defaults.double(forKey: key)
-    }
-
-    private func intValue(forKey key: String, defaultValue: Int) -> Int {
-        defaults.object(forKey: key) == nil ? defaultValue : defaults.integer(forKey: key)
+    private func validate(_ preferences: SettingsTransferPreferences) throws {
+        guard preferences.soundVolume.isFinite, (0...1).contains(preferences.soundVolume),
+            preferences.autoDuckingAmount.isFinite, (0...1).contains(preferences.autoDuckingAmount),
+            preferences.audioGain.isFinite, (1...40).contains(preferences.audioGain),
+            preferences.historyAudioMaxMB.map({ $0 > 0 && $0 <= Int.max / 1_048_576 }) ?? true,
+            preferences.historyAutoDeleteDays.map({ $0 >= 0 && $0 <= 365_000 }) ?? true,
+            preferences.mlxWhisperUnloadAfterMinutes.map({ [0, 15, 30, 60].contains($0) }) ?? true,
+            preferences.aiPolishMinDuration.map({ PolishMinimumDuration(rawValue: $0) != nil }) ?? true,
+            preferences.fallbackTranscriptionEngine.map({ $0.isEmpty || TranscriptionEngineVariant.stored($0) != nil }) ?? true,
+            preferences.overlayPosition.map({ OverlayPosition(rawValue: $0) != nil }) ?? true,
+            preferences.aiPolishMode.map({ $0 == "automatic" || PolishMode(rawValue: $0) != nil }) ?? true,
+            preferences.aiPolishReasoningEffort.map({ PolishReasoningEffort(rawValue: $0) != nil }) ?? true,
+            preferences.aiPolishEndpoint.map({ PolishEndpoint(rawValue: $0) != nil }) ?? true,
+            DeepgramTranscriptionMode(rawValue: preferences.deepgramTranscriptionMode) != nil,
+            preferences.elevenLabsTranscriptionMode.map({ ElevenLabsTranscriptionMode(rawValue: $0) != nil }) ?? true,
+            preferences.mlxWhisperModel.map({ MLXWhisperModel(rawValue: $0) != nil }) ?? true,
+            preferences.audioUploadQuality.map({ AudioUploadQuality(rawValue: $0) != nil }) ?? true,
+            preferences.polishProviderModels.map({ $0.keys.allSatisfy { PolishEndpoint(rawValue: $0) != nil } }) ?? true,
+            preferences.polishProviderBaseURLs.map({ $0.keys.allSatisfy { PolishEndpoint(rawValue: $0) != nil } }) ?? true
+        else { throw SettingsTransferError.invalidDocument }
     }
 }

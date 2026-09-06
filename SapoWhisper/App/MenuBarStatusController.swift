@@ -90,6 +90,14 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         SapoLog.menuBar.info("Popover will close")
     }
 
+    func popoverDidClose(_ notification: Notification) {
+        guard let closedPopover = notification.object as? NSPopover,
+            closedPopover === popover,
+            !closedPopover.isShown
+        else { return }
+        closedPopover.contentViewController = nil
+    }
+
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -108,9 +116,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentViewController = makePopoverContentController()
         self.popover = popover
-        refreshPopoverSize(reason: "setup", force: true)
     }
 
     private func bindStatusImage() {
@@ -176,8 +182,6 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             SapoLog.menuBar.info("Popover toggle closed elapsed=\(elapsed, privacy: .public)ms")
         } else {
             popoverOpenCount += 1
-            // R3: reuse the hosting controller across opens; only the root
-            // view is refreshed (missing permissions may have changed).
             if let hostingController = popover.contentViewController as? NSHostingController<MenuBarPopoverHost> {
                 hostingController.rootView = makePopoverHost()
             } else {

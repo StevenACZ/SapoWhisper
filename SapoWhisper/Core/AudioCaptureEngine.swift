@@ -62,15 +62,11 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
             }
         }
 
-        var keepsRecoveryMarkerAfterCapture: Bool {
-            switch self {
-            case .batch: return false
-            case .streaming: return true
-            }
-        }
     }
 
     let mode: Mode
+    static let storageFailureReason = "audio-write-failed"
+    let writeBuffer: @Sendable (AVAudioPCMBuffer, AVAudioFile) throws -> Void
 
     // Subjects instead of @Published (property wrappers cannot live in a
     // nonisolated type yet); mutated on main only, flags are read from the
@@ -152,8 +148,14 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     /// preserving the WAV recorded so far.
     var onCaptureInterrupted: (@Sendable (String) -> Void)?
 
-    init(mode: Mode) {
+    init(
+        mode: Mode,
+        writeBuffer: @escaping @Sendable (AVAudioPCMBuffer, AVAudioFile) throws -> Void = { buffer, file in
+            try file.write(from: buffer)
+        }
+    ) {
         self.mode = mode
+        self.writeBuffer = writeBuffer
         deviceSentinel = CaptureDeviceSentinel(queue: audioSetupQueue)
     }
 
@@ -202,7 +204,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                 throw RecordingError.inputDeviceUnavailable
             }
         }
-        let savedGain = UserDefaults.standard.double(forKey: Constants.StorageKeys.audioGain)
+        let savedGain = AppPreferences.defaults.double(forKey: Constants.StorageKeys.audioGain)
         let uploadQuality = AudioUploadQuality.stored()
         let setupGeneration = beginSetupGeneration()
         let inputTransport = AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: deviceUID)
@@ -441,9 +443,6 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         audioWriteQueue.sync {}
 
         let currentURL = recordingURL
-        if let currentURL, !mode.keepsRecoveryMarkerAfterCapture {
-            ActiveRecordingMarker.clear(currentURL)
-        }
         audioFile = nil
         audioEngine = nil
         converter = nil
@@ -625,6 +624,10 @@ nonisolated struct RecordingCaptureDiagnostics {
     var isComplete: Bool {
         failedWriteCount == 0
     }
+
+    var integrityFailure: TranscriptionFailure? {
+        isComplete ? nil : TranscriptionFailure(kind: .audioStorageFailed, technicalDetail: firstWriteError)
+    }
 }
 
 // MARK: - Errors
@@ -699,8 +702,13 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
                 isTransient: isTransient,
                 reason: "deviceSelectionFailed(\(status))"
             )
+        case .inputDeviceUnavailable:
+            return RecordingStartFailureClassification(
+                isTransient: routeTransitionActive,
+                reason: "inputDeviceUnavailable"
+            )
         case .engineCreationFailed, .fileCreationFailed, .converterCreationFailed, .permissionDenied,
-            .inputDeviceUnavailable, .inputSetupTimedOut:
+            .inputSetupTimedOut:
             return RecordingStartFailureClassification(isTransient: false, reason: "\(recordingError)")
         }
     }

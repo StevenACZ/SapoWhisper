@@ -42,8 +42,7 @@ final class AIPolishMemoryManager {
     }
 
     private convenience init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("SapoWhisper")
+        let appDir = AppRuntimePaths.applicationSupport
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
         self.init(fileURL: appDir.appendingPathComponent("ai-polish-memory.json"))
     }
