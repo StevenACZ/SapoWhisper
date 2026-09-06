@@ -1,8 +1,7 @@
-# SapoWhisper
-
 <p align="center">
   <img src="SapoWhisper/Assets.xcassets/AppIcon.appiconset/icon_512x512.png" width="160" height="160" alt="SapoWhisper app icon">
 </p>
+<h1 align="center">SapoWhisper</h1>
 
 SapoWhisper is a fast speech-to-text app for Apple Silicon Macs. Press the global shortcut, speak, press it again, and the transcript is pasted into the app you were using.
 
@@ -12,11 +11,13 @@ SapoWhisper is a fast speech-to-text app for Apple Silicon Macs. Press the globa
   · <a href="https://github.com/StevenACZ/SapoWhisper/issues">Report an issue</a>
 </p>
 
+![Transcription engine settings in SapoWhisper](docs/images/settings.png)
+
 ## What it does
 
 - Records from a configurable global shortcut. The default is `Option + Space`, and a double-modifier shortcut is also available.
 - Transcribes locally, through a local NVIDIA server, or with supported cloud providers.
-- Offers realtime dictation with a saved-audio fallback and an optional backup engine.
+- Offers realtime dictation with saved audio and an optional backup that processes the complete recording.
 - Keeps searchable History with playback, status details, and re-transcription using another engine.
 - Lets you pause, resume, or cancel a recording, and recover interrupted takes after relaunch.
 - Keeps a personal vocabulary for names and technical terms.
@@ -30,7 +31,7 @@ SapoWhisper requires macOS 14 or later on an Apple Silicon Mac.
 1. Download the latest `SapoWhisper-*.dmg` from [Releases](https://github.com/StevenACZ/SapoWhisper/releases/latest).
 2. Drag SapoWhisper into Applications.
 3. Open it and grant Microphone permission. Grant Accessibility permission for automatic paste; double-modifier shortcuts also require Input Monitoring.
-4. Choose a transcription engine and add that provider's credential when required.
+4. Choose a transcription engine and add that provider's credential when required. For a local server, allow Local Network access when macOS asks.
 
 Existing users can update from inside the app.
 

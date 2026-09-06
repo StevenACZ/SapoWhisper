@@ -6,67 +6,34 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- Developer builds and tests remove their temporary app registrations after completion, keeping the installed app as the intended LaunchServices entry.
-
-- Local server URL/model edits save and invalidate stale availability immediately, without requiring a connection test. Health checks confirm transient network failures once within the existing timeout budget.
-
-- Backup selection only offers complete-recording engines. Saved and imported realtime backups migrate to the same provider’s file model; realtime main engines remain available.
-
-- Background reachability probes cannot override an explicit server connection check started in Settings.
-
-- History retries start with one click and show cancellable progress in the selected entry.
-- Backup settings distinguish missing configuration from temporary provider unavailability. Configuration file actions prevent overlapping dialogs.
-
-- Saved corrections now run once across batch, realtime and fallback results, preventing chained replacements from changing text differently between providers.
-- Automatic History cleanup preserves interrupted recordings, pinned entries and active retention extensions. The newest capture survives size cleanup even when an older recording is recovered later.
-- Settings transfer includes backup engines, retention and remaining portable preferences, preserves explicitly unset settings, and validates imports before changes. Private pre-import backups and file-write rollback make failed imports recoverable.
-
-
-- Local AI Server settings distinguish saved configuration, server reachability, connection checks and successful transcription. Changing configuration or passing a connection test clears stale fallback cooldowns for the next dictation; late checks cannot overwrite newer results.
-
-- The backup selector gives every engine icon a consistent column and more space before its name, preserving the green tint in the native control and menu.
-
-- Copied confirmations use one outline around the complete overlay, with a clearer success heading and a secondary summary of the backup that transcribed the audio.
-
-- The configured backup now rescues rejected models/requests and provider configuration, authentication, quota and rate-limit failures. Usable backups bypass primary request backoffs and same-provider live recovery after confirmed failures; cancelled or invalid captures do not trigger rescue. The overlay names the failed primary and active backup through completion, and combined failures retain Retry when either service can recover.
-
-- Local Whisper retries decoder output limits without glossary bias and, if needed, with bounded smaller windows instead of accepting incomplete text. Unresolved limits preserve the recording and allow the configured backup.
-- Old notification timers cannot dismiss a newer overlay. Longer errors allow more reading time and stay visible while hovered.
-- Processing exposes a cancel action when its audio or previous text can be preserved. Cancelling an overlay re-polish prevents late clipboard and History updates.
-- Connection failures identify the service and explain a failed backup without incorrectly declaring the internet offline. Explicit retries recheck providers instead of waiting for recent-failure cache entries to expire.
-- The recording meter preserves visible differences between normal and loud speech, responds faster when speech stops, and respects Reduce Motion without changing captured audio.
-- Recording overlay and dock chip use one opaque, appearance-aware surface with readable text over bright and dark windows. State changes no longer show an offset glass layer or background color bleed-through; no screen polling is needed.
-- Active and paused recordings cannot be adopted by another recovery pass. Sealed and merged takes stay recoverable until History owns them, and cancelled or recovered takes can be continued after another launch.
-- A failed audio write interrupts capture and preserves available audio with a storage error instead of silently delivering an incomplete recording. Recovery preserves original timestamps and retries failed database handoffs.
-- Streaming dictations now appear in History before finalization. Completed results open their own entry immediately, and cancellation or interruption preserves the captured audio and any text recognized before AI polish.
-- In-flight AI polish has its own History status and cannot be deleted by retention. Failure details use readable, localized explanations instead of internal codes.
-- Cancelled transcription tasks retain ownership until cleanup finishes, so a late callback cannot close a newer session. Microphone acquisition also times out safely behind a stalled preflight.
-- Tests and previews use isolated preferences and storage, skip production startup services, and suppress audio and companion side effects. Legacy dispatch callbacks now declare their actual concurrency boundary.
-- Transient microphone starts now receive a separate, bounded recovery window after the first attempt. Route settling and retry backoff share one wait, and a temporarily missing selected input can recover without switching microphones.
-- Batch and realtime engines share capture-start recovery, including Bluetooth's longer first-buffer wait. Recovery attempts are recorded at the persistent log level.
-- History processing no longer changes a concurrent live dictation's minimum-duration policy or polish state. Engine activity callbacks no longer take ownership of the live session UI.
-- Cancelling, closing or deleting a History polish stops its pending task. Late polish and retranscription results cannot recreate text versions for deleted entries.
-- A failed local build or signing check leaves the installed app intact; rollback only begins after replacement starts.
-
-### Changed
-
-- README now includes the app icon and concise installation, recovery, and personal-vocabulary guidance; contributor notes cover isolated tests and release preparation.
-- Recording bars animate in their own Core Animation layers, and the numeric timer has an isolated drawing surface.
-- Menu bar content is created when opened and released after closing, stopping hidden recording timers and animations. Its whole-second caption updates only when the displayed second changes.
-- Long Local AI Server uploads prepare a private multipart file in bounded chunks and stream it, reducing memory used to prepare large recordings. Temporary upload files are removed after success, failure or cancellation.
-- Swift 6 language mode for the app and tests, with explicit concurrency boundaries and a shared audio converter input adapter.
-- A public architecture map and smaller onboarding components with unchanged presentation.
-- Exact Release bundle measurements and a corrected default artifact path; an unused legacy provider icon was removed.
+## [2.18.0] - 2026-09-06
 
 ### Added
 
-- History shows retention status, offers permanent protection and 30-day extensions, and can continue a failed recording directly using the selected provider's file mode.
-- Configuration import can combine or replace vocabulary, preserving local conflicts when combining; retention settings require explicit selection.
+- Continue an interrupted recording directly from History, or retry it with the current engine in one click with progress and cancellation.
+- Protect History entries from automatic cleanup with pins and 30-day retention extensions. Failed and in-progress recordings remain protected.
+- Portable configuration transfer for backup engines, retention, provider preferences, vocabulary, prompts and context, with scoped imports, vocabulary merge/replace, validation and private rollback backups.
 
-- A cancel button for in-progress History AI polish.
-- An opt-in hardware regression test for repeated capture starts on the explicitly selected microphone, with no transcription, playback or saved History entries.
+### Changed
+
+- Recording and copied feedback use a consistent, readable surface in light and dark appearances. Audio bars respond more clearly to speech volume while preserving smooth entry and exit animations.
+- Large server uploads use file-backed multipart preparation to bound memory use. Closed popovers release their content, timers and animations.
+- Swift 6 strict concurrency and shared owners for capture startup, processing, recovery and provider state make the dictation pipeline easier to maintain.
+- Public documentation includes an architecture guide, settings preview and clearer privacy and recovery instructions. The local-model CLI supports pinned downloads into fresh directories.
+
+### Fixed
+
+- Transient microphone starts receive a bounded recovery window across batch and realtime engines, including route settling and Bluetooth startup.
+- Captured and merged audio remains recoverable until History owns it. Active or paused recordings cannot be adopted by another recovery pass; cancelled and recovered takes can be continued after relaunch.
+- Streaming audio enters History before finalization. Interrupted transcription or AI polish preserves the available recording and recognized text.
+- Cancellation retains session ownership until cleanup completes. Late callbacks cannot close a newer recording or recreate deleted History entries, and retry cannot compete with continuation of the same entry.
+- Backup engines rescue connection, service, credential, quota, rate-limit and rejected-model failures with clear provider feedback. Only complete-recording engines are offered as backups; older realtime selections migrate to their provider's file mode.
+- Local server URL/model edits save immediately and invalidate stale availability without requiring a connection test. Explicit tests take priority over background checks; transient health failures receive one short confirmation within the existing timeout budget.
+- Saved recognition corrections run once across batch, realtime and fallback paths, preventing inconsistent chained replacements.
+- Local Whisper retries capped decoder windows instead of accepting incomplete output. Unresolved limits preserve audio and allow the configured backup.
+- Automatic retention preserves interrupted audio, active extensions and the newest capture even when an older recording is recovered later.
+- Overlay dismissal timers cannot dismiss newer feedback. Longer errors stay readable, and copied confirmations include the full backup status without overlapping outlines.
+- Tests and previews isolate preferences, storage and startup effects. Developer commands remove generated app registrations after completion, keeping the installed copy as the intended application entry.
 
 ## [2.17.0] - 2026-08-30
 
