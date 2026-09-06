@@ -153,7 +153,9 @@ struct EngineSettingsTab: View {
                 if let backup = selectedFallbackEngine {
                     if !viewModel.isBackupEngineUsable(backup) {
                         Label(
-                            "config.fallback_engine_not_configured".localized(backup.displayName),
+                            (viewModel.isBackupEngineConfigured(backup)
+                                ? "config.fallback_engine_unavailable" : "config.fallback_engine_not_configured")
+                                .localized(backup.displayName),
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.caption)

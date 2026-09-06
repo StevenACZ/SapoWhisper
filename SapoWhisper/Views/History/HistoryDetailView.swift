@@ -10,12 +10,16 @@ import SwiftUI
 struct HistoryDetailView: View {
     let entry: HistoryEntry
     var isAIPolishing = false
+    var isRetryingTranscription = false
+    var onCancelTranscription: () -> Void = {}
     var onCancelPolish: () -> Void = {}
     let onCopy: () -> Void
     /// nil polishes with the globally configured provider; an option polishes
     /// with that explicit endpoint/model (menu selection).
     let onPolishWithAI: (PolishModelOption?) -> Void
     let onRetranscribe: () -> Void
+    var canRetryTranscription = true
+    var onRetryTranscription: () -> Void = {}
     let onDownloadAudio: () -> Void
     let onTogglePin: () -> Void
     var onExtendRetention: () -> Void = {}
@@ -56,6 +60,7 @@ struct HistoryDetailView: View {
                             .buttonStyle(.borderedProminent)
                             .tint(Color.sapoGreenDark)
                             .disabled(!canContinueRecording)
+                            .accessibilityIdentifier("history-continue-\(entry.id)")
                         Text("history.continue_recording_detail".localized)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -63,7 +68,9 @@ struct HistoryDetailView: View {
                     polishDetailLines
                 }
 
-                if isUserCancelled {
+                if isRetryingTranscription {
+                    transcribingCard
+                } else if isUserCancelled {
                     cancelledCard
                 } else if isTranscribing {
                     transcribingCard
@@ -91,6 +98,7 @@ struct HistoryDetailView: View {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("history-detail-\(entry.id)")
         // Keyed on the whole entry (not just the id): a re-polish rewrites the
         // row in place, and the trail must refresh with it.
         .task(id: entry) {
@@ -472,9 +480,11 @@ struct HistoryDetailView: View {
                 .multilineTextAlignment(.center)
 
             if entry.audioFileExists {
-                Button(action: onRetranscribe) {
-                    Label("history.retranscribe_with".localized, systemImage: "arrow.clockwise")
+                Button(action: onRetryTranscription) {
+                    Label("history.retry_current".localized, systemImage: "arrow.clockwise")
                 }
+                .disabled(!canRetryTranscription)
+                .accessibilityIdentifier("history-retry-\(entry.id)")
                 .buttonStyle(.borderedProminent)
                 .tint(Constants.Colors.warningProminent)
                 .padding(.top, 4)
@@ -497,14 +507,22 @@ struct HistoryDetailView: View {
             ProgressView()
                 .controlSize(.regular)
 
-            Text((entry.entryStatus?.titleKey ?? "history.transcribing").localized)
+            Text((isRetryingTranscription ? "history.transcribing" : entry.entryStatus?.titleKey ?? "history.transcribing").localized)
                 .font(.title3.weight(.semibold))
 
-            Text((entry.entryStatus == .polishing ? "history.polishing_detail" : "history.transcribing_detail").localized)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
+            Text(
+                (!isRetryingTranscription && entry.entryStatus == .polishing ? "history.polishing_detail" : "history.transcribing_detail")
+                    .localized
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 420)
+            if isRetryingTranscription {
+                Button("common.cancel".localized, action: onCancelTranscription)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("history-cancel-retry-\(entry.id)")
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 36)
@@ -534,9 +552,11 @@ struct HistoryDetailView: View {
                 .frame(maxWidth: 420)
 
             if entry.audioFileExists {
-                Button(action: onRetranscribe) {
-                    Label("history.retranscribe_with".localized, systemImage: "arrow.clockwise")
+                Button(action: onRetryTranscription) {
+                    Label("history.retry_current".localized, systemImage: "arrow.clockwise")
                 }
+                .disabled(!canRetryTranscription)
+                .accessibilityIdentifier("history-retry-\(entry.id)")
                 .buttonStyle(.borderedProminent)
                 .tint(Color.sapoGreenDark)
                 .padding(.top, 4)

@@ -232,6 +232,7 @@ class SapoWhisperViewModel: ObservableObject {
 
     func canContinueHistoryEntry(_ entry: HistoryEntry) -> Bool {
         entry.status == HistoryEntryStatus.failed.rawValue && entry.audioFileExists
+            && !inFlightRetranscriptionIds.contains(entry.id)
             && !isAnyRecorderActive && !isStartPending && startRecordingTask == nil
             && activeTranscriptionSessionID == nil && transcriptionOperations.active == nil
             && repolishTask == nil && !isSelectedEngineBusy && canRecord
@@ -1934,6 +1935,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     /// Whether the backup can plausibly transcribe right now. Internal so
     /// Settings can hint at a misconfigured backup.
+    func isBackupEngineConfigured(_ backup: TranscriptionEngineVariant) -> Bool {
+        isEngineConfigured(backup)
+    }
+
     func isBackupEngineUsable(_ backup: TranscriptionEngineVariant, ignoreRecentFailures: Bool = false) -> Bool {
         isEngineConfigured(backup) && !isKnownUnreachable(backup, ignoreRecentFailures: ignoreRecentFailures)
     }

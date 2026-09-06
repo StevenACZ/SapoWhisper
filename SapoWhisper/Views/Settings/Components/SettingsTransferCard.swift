@@ -16,6 +16,7 @@ struct SettingsTransferCard: View {
     @State private var vocabularyMode: VocabularyImportMode = .combine
     @State private var transferMessage: String?
     @State private var transferMessageIsError = false
+    @State private var isChoosingFile = false
 
     private let transferManager = SettingsTransferManager.shared
 
@@ -38,6 +39,7 @@ struct SettingsTransferCard: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Constants.Colors.sapoGreenDark)
                 }
+                .disabled(isChoosingFile || importDocument != nil)
 
                 if let transferMessage {
                     Text(transferMessage)
@@ -62,6 +64,9 @@ struct SettingsTransferCard: View {
     }
 
     private func exportSettings() {
+        guard !isChoosingFile, importDocument == nil else { return }
+        isChoosingFile = true
+        defer { isChoosingFile = false }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
@@ -81,6 +86,9 @@ struct SettingsTransferCard: View {
     }
 
     private func beginImport() {
+        guard !isChoosingFile, importDocument == nil else { return }
+        isChoosingFile = true
+        defer { isChoosingFile = false }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.canChooseFiles = true

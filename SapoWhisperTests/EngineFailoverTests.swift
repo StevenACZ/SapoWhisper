@@ -410,6 +410,7 @@ final class BackupEngineSelectionTests: XCTestCase {
         viewModel.failLocalAIServerConnectionTest(failedCheck, error: URLError(.cannotConnectToHost))
         guard case .failed = viewModel.localAIServerConnectionState else { return XCTFail("Expected failed status") }
         XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        XCTAssertTrue(viewModel.isBackupEngineConfigured(.localAIServer))
 
         let recoveredCheck = viewModel.beginLocalAIServerConnectionTest()
         XCTAssertEqual(viewModel.localAIServerConnectionState, .checking)

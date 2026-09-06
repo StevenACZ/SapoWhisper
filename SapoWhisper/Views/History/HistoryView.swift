@@ -37,6 +37,7 @@ struct HistoryView: View {
     @State private var retranscribeEntry: HistoryEntry?
     @State private var selectedRetranscribeEngine: TranscriptionEngine = .mlxWhisper
     @State private var isRetranscribing = false
+    @State private var activeRetranscribeID: Int64?
     @State private var retranscribeTask: Task<Void, Never>?
     @State private var aiPolishTasks: [Int64: Task<Void, Never>] = [:]
     @State private var showErrorAlert = false
@@ -184,16 +185,24 @@ struct HistoryView: View {
                     HistoryDetailView(
                         entry: entry,
                         isAIPolishing: aiPolishTasks[entry.id] != nil,
+                        isRetryingTranscription: activeRetranscribeID == entry.id,
+                        onCancelTranscription: { retranscribeTask?.cancel() },
                         onCancelPolish: { aiPolishTasks[entry.id]?.cancel() },
                         onCopy: { PasteManager.copyToClipboard(entry.text) },
                         onPolishWithAI: { option in handlePolishWithAI(entry, option: option) },
                         onRetranscribe: { handleRetranscribe(entry) },
+                        canRetryTranscription: !isRetranscribing && !entry.isProcessing,
+                        onRetryTranscription: {
+                            guard !isRetranscribing, retranscribeTask == nil else { return }
+                            selectedRetranscribeEngine = viewModel.currentEngine
+                            performRetranscription(for: entry)
+                        },
                         onDownloadAudio: { handleDownloadAudio(entry) },
                         onTogglePin: { handleTogglePin(entry) },
                         onExtendRetention: { handleExtendRetention(entry) },
-                        canContinueRecording: viewModel.canContinueHistoryEntry(entry),
+                        canContinueRecording: activeRetranscribeID != entry.id && viewModel.canContinueHistoryEntry(entry),
                         onContinueRecording: {
-                            guard viewModel.canContinueHistoryEntry(entry) else { return }
+                            guard activeRetranscribeID != entry.id, viewModel.canContinueHistoryEntry(entry) else { return }
                             if let audioPath = entry.audioPath { HistoryAudioPlayerController.shared.stopIfLoaded(path: audioPath) }
                             viewModel.continueHistoryEntry(entry)
                         },
@@ -335,22 +344,27 @@ struct HistoryView: View {
     }
 
     private func handleRetranscribe(_ entry: HistoryEntry) {
+        guard !isRetranscribing, retranscribeTask == nil, !entry.isProcessing else { return }
         selectedRetranscribeEngine = viewModel.currentEngine
         retranscribeEntry = entry
     }
 
     private func performRetranscription(for entry: HistoryEntry) {
+        guard !isRetranscribing, retranscribeTask == nil, !entry.isProcessing else { return }
         isRetranscribing = true
+        activeRetranscribeID = entry.id
+        let engine = selectedRetranscribeEngine
 
         retranscribeTask = Task {
-            let result = await viewModel.retranscribeHistoryEntry(entry, using: selectedRetranscribeEngine)
+            let result = await viewModel.retranscribeHistoryEntry(entry, using: engine)
 
             await MainActor.run {
                 isRetranscribing = false
+                activeRetranscribeID = nil
                 retranscribeEntry = nil
                 retranscribeTask = nil
 
-                if engineFilter != .all && !engineFilter.matches(selectedRetranscribeEngine.displayName) {
+                if engineFilter != .all && !engineFilter.matches(engine.displayName) {
                     engineFilter = .all
                 }
 

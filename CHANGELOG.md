@@ -8,6 +8,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- History retries start with one click and show cancellable progress in the selected entry.
+- Backup settings distinguish missing configuration from temporary provider unavailability. Configuration file actions prevent overlapping dialogs.
+
 - Saved corrections now run once across batch, realtime and fallback results, preventing chained replacements from changing text differently between providers.
 - Automatic History cleanup preserves interrupted recordings, pinned entries and active retention extensions. The newest capture survives size cleanup even when an older recording is recovered later.
 - Settings transfer includes backup engines, retention and remaining portable preferences, preserves explicitly unset settings, and validates imports before changes. Private pre-import backups and file-write rollback make failed imports recoverable.

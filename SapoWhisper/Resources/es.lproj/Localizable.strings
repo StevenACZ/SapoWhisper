@@ -546,7 +546,7 @@
 
 /* Settings Transfer */
 "settings.transfer.title" = "Migrar configuración";
-"settings.transfer.desc" = "Exporta un JSON portable para mover preferencias, vocabulario, prompts y contexto a otra Mac. El micrófono, permisos del sistema y credenciales Google importadas como archivo no se incluyen.";
+"settings.transfer.desc" = "Exporta un JSON portable para mover preferencias, vocabulario, prompts y contexto a otra Mac. El micrófono, los permisos del sistema, las claves API y los archivos de credenciales no se incluyen.";
 "settings.transfer.export" = "Exportar configuración";
 "settings.transfer.import" = "Importar configuración";
 "settings.transfer.export_panel_message" = "Guarda la configuración portable de SapoWhisper.";
@@ -756,3 +756,7 @@
 "settings.transfer.summary_none" = "Ninguno";
 
 "settings.transfer.summary_vocabulary" = "%d palabras de vocabulario · %d correcciones automáticas";
+
+"config.fallback_engine_unavailable" = "%@ está configurado, pero no está disponible temporalmente. Se volverá a intentar tras recuperarse.";
+
+"history.retry_current" = "Reintentar con el motor actual";
