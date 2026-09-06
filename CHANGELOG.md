@@ -8,6 +8,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Background reachability probes cannot override an explicit server connection check started in Settings.
+
 - History retries start with one click and show cancellable progress in the selected entry.
 - Backup settings distinguish missing configuration from temporary provider unavailability. Configuration file actions prevent overlapping dialogs.
 

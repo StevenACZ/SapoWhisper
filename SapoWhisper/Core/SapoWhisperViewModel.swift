@@ -2107,15 +2107,15 @@ class SapoWhisperViewModel: ObservableObject {
     /// already covered by network reachability, and a local model cannot be
     /// "down". The verdict lands in `reachabilityLog` before stop time, unless
     /// a real transcription settles it first.
-    private func startReachabilityProbe(for variant: TranscriptionEngineVariant) {
+    func startReachabilityProbe(for variant: TranscriptionEngineVariant) {
         reachabilityProbeTask?.cancel()
         reachabilityProbeTask = nil
-        guard variant.engine == .localAIServer else { return }
+        guard variant.engine == .localAIServer, localConnectionTestObservation == nil else { return }
 
         let observation = reachabilityLog.observation(for: .localAIServer)
         reachabilityProbeTask = Task { [weak self] in
             guard let isAlive = await self?.localAIServerTranscriber.probeReachability() else { return }
-            guard let self, !Task.isCancelled,
+            guard let self, !Task.isCancelled, self.localConnectionTestObservation == nil,
                 self.reachabilityLog.apply(observation, reachable: isAlive)
             else { return }
             self.localAIServerConnectionState =
