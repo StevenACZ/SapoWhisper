@@ -39,19 +39,6 @@ struct LocalAIServerSettingsCard: View {
             keychainReadDenied = KeychainStore.isReadDenied
         }
         .onDisappear { resetConnectionTest() }
-        .onChange(of: baseURL) { _, newValue in
-            resetConnectionTest()
-            let sanitized = LocalAIServerConfiguration.sanitizedBaseURLForStorage(newValue)
-            if sanitized != newValue {
-                baseURL = sanitized
-                return
-            }
-            viewModel.setEngine(.localAIServer)
-        }
-        .onChange(of: model) { _, _ in
-            resetConnectionTest()
-            viewModel.setEngine(.localAIServer)
-        }
         .onChange(of: apiKey) { _, newValue in
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed != (KeychainStore.string(for: .localAIServerAPIKey) ?? "") else { return }
@@ -70,6 +57,7 @@ struct LocalAIServerSettingsCard: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField("config.local_ai_base_url_placeholder".localized, text: baseURLBinding)
+                    .accessibilityIdentifier("local-server-url")
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
             }
@@ -85,7 +73,7 @@ struct LocalAIServerSettingsCard: View {
                     Menu("config.local_ai_model_suggestions".localized) {
                         ForEach(LocalAIServerConfiguration.suggestedModels, id: \.self) { suggestedModel in
                             Button(suggestedModel) {
-                                model = suggestedModel
+                                modelBinding.wrappedValue = suggestedModel
                             }
                         }
                     }
@@ -93,7 +81,8 @@ struct LocalAIServerSettingsCard: View {
                     .menuStyle(.borderlessButton)
                 }
 
-                TextField("config.local_ai_model_placeholder".localized, text: $model)
+                TextField("config.local_ai_model_placeholder".localized, text: modelBinding)
+                    .accessibilityIdentifier("local-server-model")
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
             }
@@ -126,6 +115,7 @@ struct LocalAIServerSettingsCard: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(!canTest || viewModel.localAIServerConnectionState == .checking)
+                .accessibilityIdentifier("local-server-test")
 
                 testStateView
                 Spacer()
@@ -200,7 +190,20 @@ struct LocalAIServerSettingsCard: View {
     private var baseURLBinding: Binding<String> {
         Binding(
             get: { baseURL },
-            set: { baseURL = LocalAIServerConfiguration.sanitizedBaseURLForStorage($0) }
+            set: {
+                resetConnectionTest()
+                viewModel.updateLocalAIServerSettings(baseURL: $0)
+            }
+        )
+    }
+
+    private var modelBinding: Binding<String> {
+        Binding(
+            get: { model },
+            set: {
+                resetConnectionTest()
+                viewModel.updateLocalAIServerSettings(model: $0)
+            }
         )
     }
 

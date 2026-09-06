@@ -518,6 +518,35 @@ final class BackupEngineSelectionTests: XCTestCase {
         }
     }
 
+    func testSavingServerURLImmediatelyClearsFailureWithoutConnectionTest() {
+        let viewModel = configuredLocalServerViewModel()
+        let failed = viewModel.beginLocalAIServerConnectionTest()
+        viewModel.failLocalAIServerConnectionTest(failed, error: URLError(.notConnectedToInternet))
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        let stale = viewModel.beginLocalAIServerConnectionTest()
+        let revision = viewModel.localAIServerConfigurationRevision
+
+        viewModel.updateLocalAIServerSettings(baseURL: "http://127.0.0.1:9877")
+
+        XCTAssertEqual(AppPreferences.defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL), "http://127.0.0.1:9877")
+        XCTAssertGreaterThan(viewModel.localAIServerConfigurationRevision, revision)
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+        viewModel.failLocalAIServerConnectionTest(stale, error: URLError(.timedOut))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testSavingServerModelImmediatelyInvalidatesPreviousAttempt() {
+        let viewModel = configuredLocalServerViewModel()
+        let revision = viewModel.localAIServerConfigurationRevision
+        viewModel.updateLocalAIServerSettings(model: "new-model")
+        XCTAssertEqual(AppPreferences.defaults.string(forKey: Constants.StorageKeys.localAIServerModel), "new-model")
+        viewModel.recordTranscriptionOutcome(.localAIServer, configurationRevision: revision, failure: .init(kind: .network))
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .unchecked)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
     func testConnectionRecoveryUpdatesStatusAndRoutingTogether() {
         let viewModel = configuredLocalServerViewModel()
         let failedCheck = viewModel.beginLocalAIServerConnectionTest()

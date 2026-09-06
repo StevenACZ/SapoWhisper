@@ -889,6 +889,16 @@ class SapoWhisperViewModel: ObservableObject {
         }
     }
 
+    func updateLocalAIServerSettings(baseURL: String? = nil, model: String? = nil) {
+        if let baseURL {
+            AppPreferences.defaults.set(
+                LocalAIServerConfiguration.sanitizedBaseURLForStorage(baseURL),
+                forKey: Constants.StorageKeys.localAIServerBaseURL)
+        }
+        if let model { selectedLocalAIServerModel = model }
+        setEngine(.localAIServer)
+    }
+
     /// Cambia el motor de transcripcion
     func setEngine(_ engine: TranscriptionEngine) {
         if engine == .localAIServer {

@@ -717,7 +717,7 @@
 "config.local_ai_reachable" = "Server responded · transcription not verified";
 "config.local_ai_transcribed" = "Last transcription successful";
 "config.local_ai_model_unverified" = "Server connected · model not listed";
-"config.local_ai_test_scope" = "This test checks the connection and model list. A dictation verifies transcription; if it fails, your configured backup can take over.";
+"config.local_ai_test_scope" = "Changes are saved automatically. This test checks the connection and model list. A dictation verifies transcription; if it fails, your configured backup can take over.";
 
 "settings.transfer.section_history" = "History retention";
 "settings.transfer.section_history_desc" = "Audio storage limit and automatic deletion. May remove unprotected history or audio.";

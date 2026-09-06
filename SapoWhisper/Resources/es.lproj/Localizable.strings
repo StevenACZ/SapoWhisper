@@ -717,7 +717,7 @@
 "config.local_ai_reachable" = "El servidor responde · transcripción sin verificar";
 "config.local_ai_transcribed" = "Última transcripción correcta";
 "config.local_ai_model_unverified" = "Servidor conectado · modelo no listado";
-"config.local_ai_test_scope" = "Esta prueba comprueba la conexión y la lista de modelos. Un dictado verifica la transcripción; si falla, puede tomar el relevo tu motor de respaldo.";
+"config.local_ai_test_scope" = "Los cambios se guardan automáticamente. Esta prueba comprueba la conexión y la lista de modelos. Un dictado verifica la transcripción; si falla, puede tomar el relevo tu motor de respaldo.";
 
 "settings.transfer.section_history" = "Retención del historial";
 "settings.transfer.section_history_desc" = "Límite de audio y eliminación automática. Puede borrar historial o audio sin protección.";

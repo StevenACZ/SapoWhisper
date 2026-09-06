@@ -8,6 +8,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Local server URL/model edits save and invalidate stale availability immediately, without requiring a connection test. Health checks confirm transient network failures once within the existing timeout budget.
+
 - Backup selection only offers complete-recording engines. Saved and imported realtime backups migrate to the same provider’s file model; realtime main engines remain available.
 
 - Background reachability probes cannot override an explicit server connection check started in Settings.

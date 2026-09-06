@@ -441,6 +441,100 @@ final class LocalAIServerTests: XCTestCase {
         withUnsafeBytes(of: &little) { data.append(contentsOf: $0) }
     }
 
+    func testPreflightRetriesOneTransientFailureWithinTheOriginalTimeoutBudget() async throws {
+        for code in [URLError.Code.notConnectedToInternet, .networkConnectionLost] {
+            await withLocalAIServerDefaults {
+                let attempts = OSAllocatedUnfairLock(initialState: [(timeout: TimeInterval, started: TimeInterval)]())
+                StubURLProtocol.handler = { request in
+                    XCTAssertTrue(request.url?.path.hasSuffix("/health") == true)
+                    let count = attempts.withLock { values in
+                        values.append((request.timeoutInterval, ProcessInfo.processInfo.systemUptime))
+                        return values.count
+                    }
+                    if count == 1 {
+                        Thread.sleep(forTimeInterval: 0.2)
+                        return .failure(URLError(code))
+                    }
+                    return .success((status: 200, body: Data()))
+                }
+                let started = ProcessInfo.processInfo.systemUptime
+                let reachable = await makeStubbedTranscriber().probeReachability()
+                let elapsed = ProcessInfo.processInfo.systemUptime - started
+                let requests = attempts.withLock { $0 }
+                XCTAssertEqual(reachable, true)
+                XCTAssertEqual(requests.count, 2)
+                guard requests.count == 2 else { return }
+                XCTAssertGreaterThanOrEqual(requests[1].started - requests[0].started, 0.34)
+                XCTAssertLessThanOrEqual(requests[0].timeout, LocalAIServerTranscriber.preflightTimeout)
+                XCTAssertGreaterThan(requests[1].timeout, 0)
+                XCTAssertLessThan(requests[1].timeout, requests[0].timeout - 0.3)
+                XCTAssertLessThanOrEqual(
+                    requests[1].timeout + requests[1].started - requests[0].started,
+                    LocalAIServerTranscriber.preflightTimeout + 0.1
+                )
+                XCTAssertLessThan(elapsed, LocalAIServerTranscriber.preflightTimeout)
+            }
+        }
+    }
+
+    func testPersistentTransientPreflightFailureStopsAfterExactlyTwoRequests() async {
+        for code in [URLError.Code.notConnectedToInternet, .networkConnectionLost] {
+            await withLocalAIServerDefaults {
+                let attempts = OSAllocatedUnfairLock(initialState: 0)
+                StubURLProtocol.handler = { request in
+                    XCTAssertTrue(request.url?.path.hasSuffix("/health") == true)
+                    attempts.withLock { $0 += 1 }
+                    return .failure(URLError(code))
+                }
+                let started = ProcessInfo.processInfo.systemUptime
+                let reachable = await makeStubbedTranscriber().probeReachability()
+                XCTAssertEqual(reachable, false)
+                XCTAssertEqual(attempts.withLock { $0 }, 2)
+                XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, LocalAIServerTranscriber.preflightTimeout)
+            }
+        }
+    }
+
+    func testCancellingPreflightDuringConfirmationBackoffPreventsSecondRequest() async throws {
+        try await withLocalAIServerDefaults {
+            let firstFailure = expectation(description: "Transient preflight failure returned")
+            let attempts = OSAllocatedUnfairLock(initialState: 0)
+            StubURLProtocol.handler = { _ in
+                let count = attempts.withLock { value in
+                    value += 1
+                    return value
+                }
+                if count == 1 { firstFailure.fulfill() }
+                return .failure(URLError(.networkConnectionLost))
+            }
+            let transcriber = makeStubbedTranscriber()
+            let probe = Task { await transcriber.probeReachability() }
+            defer { probe.cancel() }
+            await fulfillment(of: [firstFailure], timeout: 1)
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertEqual(attempts.withLock { $0 }, 1)
+            probe.cancel()
+            let reachable = await probe.value
+            XCTAssertNil(reachable)
+            XCTAssertEqual(attempts.withLock { $0 }, 1)
+        }
+    }
+
+    func testNontransientPreflightErrorsNeverRequestConfirmation() async {
+        for code in [URLError.Code.cannotConnectToHost, .timedOut, .badServerResponse] {
+            await withLocalAIServerDefaults {
+                let attempts = OSAllocatedUnfairLock(initialState: 0)
+                StubURLProtocol.handler = { _ in
+                    attempts.withLock { $0 += 1 }
+                    return .failure(URLError(code))
+                }
+                let reachable = await makeStubbedTranscriber().probeReachability()
+                XCTAssertEqual(reachable, false)
+                XCTAssertEqual(attempts.withLock { $0 }, 1)
+            }
+        }
+    }
+
     @MainActor
     func testTranscribeFailsFastWithNetworkErrorWhenServerUnreachable() async throws {
         let audioURL = try makeValidWAV()

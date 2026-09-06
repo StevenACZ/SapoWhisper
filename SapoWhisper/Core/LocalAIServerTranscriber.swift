@@ -235,8 +235,28 @@ final class LocalAIServerTranscriber: ObservableObject {
             request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
         }
 
+        let deadline = ProcessInfo.processInfo.systemUptime + Self.preflightTimeout
+        var retried = false
         do {
-            _ = try await session.data(for: request)
+            while true {
+                try Task.checkCancellation()
+                let remaining = deadline - ProcessInfo.processInfo.systemUptime
+                guard remaining > 0 else { throw URLError(.timedOut) }
+                request.timeoutInterval = remaining
+                do {
+                    _ = try await session.data(for: request)
+                    return
+                } catch let error as URLError {
+                    try Task.checkCancellation()
+                    guard !retried, TransientRequestRetry.retryableURLErrorCodes.contains(error.code),
+                        deadline - ProcessInfo.processInfo.systemUptime > 0.151
+                    else { throw error }
+                    retried = true
+                    SapoLog.recording.notice(
+                        "Local AI Server preflight confirming transient failure code=\(error.code.rawValue, privacy: .public)")
+                    try await Task.sleep(for: .milliseconds(150))
+                }
+            }
         } catch {
             try Task.checkCancellation()
             let detail = LogSanitizer.errorDiagnostic(error, state: "local-preflight")
