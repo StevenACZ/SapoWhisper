@@ -28,10 +28,14 @@ final class PromptContextManager {
 
     private let fileURL: URL
 
-    private init() {
+    private convenience init() {
         let appDir = AppRuntimePaths.applicationSupport
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
-        fileURL = appDir.appendingPathComponent("prompt_context.json")
+        self.init(fileURL: appDir.appendingPathComponent("prompt_context.json"))
+    }
+
+    init(fileURL: URL) {
+        self.fileURL = fileURL
         load()
     }
 
@@ -47,10 +51,16 @@ final class PromptContextManager {
     }
 
     func replace(with snapshot: PromptContextSnapshot) {
-        personalContext = PersonalPromptContext(
-            details: Self.sanitizedMultiline(snapshot.personalContext.details, limit: 2_000)
-        )
-        save()
+        try? replacePersisting(with: snapshot)
+    }
+
+    func replacePersisting(with snapshot: PromptContextSnapshot) throws {
+        let normalized = PromptContextSnapshot(
+            personalContext: PersonalPromptContext(
+                details: Self.sanitizedMultiline(snapshot.personalContext.details, limit: 2_000)))
+        let data = try JSONEncoder().encode(normalized)
+        try data.write(to: fileURL, options: .atomic)
+        personalContext = normalized.personalContext
     }
 
     private func load() {

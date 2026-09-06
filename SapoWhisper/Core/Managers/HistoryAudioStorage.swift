@@ -16,7 +16,7 @@ nonisolated final class HistoryAudioStorage: Sendable {
         return Int64(megabytes) * 1024 * 1024
     }
     static var targetAudioStorageBytes: Int64 {
-        maxAudioStorageBytes * 8 / 10
+        maxAudioStorageBytes / 10 * 8
     }
 
     /// Sidelined audio sits outside `audioDir`, so neither the orphan sweep nor

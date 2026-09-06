@@ -32,7 +32,7 @@ final class HistoryScaleTests: XCTestCase {
     // MARK: - H8: schema versioning
 
     func testFreshDatabaseMigratesToCurrentSchemaVersion() {
-        XCTAssertEqual(manager.schemaVersion(), 4)
+        XCTAssertEqual(manager.schemaVersion(), 5)
     }
 
     // MARK: - Polish version trail

@@ -299,6 +299,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             writeEngineKey: { _, _ in true }
         )
         var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.unsetPreferenceKeys = nil
         document.preferences?.localAIServerBaseURL =
             "https://user:secret@transcription.example/v1?token=private#fragment"
         document.preferences?.aiPolishCustomBaseURL =
@@ -337,6 +338,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         )
 
         var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.unsetPreferenceKeys = nil
         XCTAssertNil(document.preferences?.localAIServerBaseURL)
         XCTAssertNil(document.preferences?.aiPolishCustomBaseURL)
 
@@ -492,6 +494,284 @@ final class EngineMigrationAndTransferTests: XCTestCase {
         XCTAssertEqual(defaults.integer(forKey: Constants.StorageKeys.hotkeyModifiers), 256)
         XCTAssertEqual(hotkeyManager.currentKeyCode, 0)
         XCTAssertEqual(hotkeyManager.currentModifiers, 256)
+    }
+
+    func testPortablePreferencesRoundTripAndHistoryOptIn() throws {
+        let sourceSuite = "test.transfer.source.\(UUID().uuidString)"
+        let targetSuite = "test.transfer.target.\(UUID().uuidString)"
+        let source = try XCTUnwrap(UserDefaults(suiteName: sourceSuite))
+        let target = try XCTUnwrap(UserDefaults(suiteName: targetSuite))
+        defer {
+            source.removePersistentDomain(forName: sourceSuite)
+            target.removePersistentDomain(forName: targetSuite)
+        }
+        source.set("deepgram_flux_live", forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+        source.set(2048, forKey: Constants.StorageKeys.historyAudioMaxMB)
+        source.set(90, forKey: Constants.StorageKeys.historyAutoDeleteDays)
+        source.set("compact", forKey: Constants.StorageKeys.aiPolishMode)
+        source.set(30, forKey: Constants.StorageKeys.aiPolishMinDuration)
+        source.set(15, forKey: Constants.StorageKeys.mlxWhisperUnloadAfterMinutes)
+        PolishProviderConfiguration.setStoredModel("portable-model", for: .custom, defaults: source)
+        PolishProviderConfiguration.setStoredBaseURLInput("https://portable.example/v1", for: .custom, defaults: source)
+        let exporter = SettingsTransferManager(defaults: source, readEngineKey: { _ in nil }, writeEngineKey: { _, _ in true })
+        let importer = SettingsTransferManager(defaults: target, readEngineKey: { _ in nil }, writeEngineKey: { _, _ in true })
+        let document = try exporter.decodedDocument(from: exporter.encodedSettings())
+        XCTAssertFalse(importer.defaultImportSections(for: document).contains(.history))
+        XCTAssertNil(document.apiKeys)
+        try importer.importDocument(document, sections: [.engine, .aiPolish])
+        XCTAssertNil(target.object(forKey: Constants.StorageKeys.historyAutoDeleteDays))
+        try importer.importDocument(document, sections: [.history])
+        for key in [Constants.StorageKeys.fallbackTranscriptionEngine, Constants.StorageKeys.aiPolishMode] {
+            XCTAssertEqual(source.string(forKey: key), target.string(forKey: key))
+        }
+        for key in [
+            Constants.StorageKeys.historyAudioMaxMB, Constants.StorageKeys.historyAutoDeleteDays,
+            Constants.StorageKeys.aiPolishMinDuration, Constants.StorageKeys.mlxWhisperUnloadAfterMinutes,
+        ] {
+            XCTAssertEqual(source.integer(forKey: key), target.integer(forKey: key))
+        }
+        XCTAssertEqual(PolishProviderConfiguration.storedModel(for: .custom, defaults: target), "portable-model")
+        XCTAssertEqual(PolishProviderConfiguration.storedBaseURLInput(for: .custom, defaults: target), "https://portable.example/v1")
+        XCTAssertNil(target.object(forKey: Constants.StorageKeys.selectedMicrophone))
+    }
+
+    func testInvalidDocumentDoesNotPartiallyMutatePreferencesOrKeys() throws {
+        let suite = "test.transfer.validation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var keyWrites = 0
+        let manager = SettingsTransferManager(
+            defaults: defaults, readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in
+                keyWrites += 1
+                return true
+            })
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.unsetPreferenceKeys = nil
+        document.preferences?.autoPaste = false
+        document.preferences?.historyAudioMaxMB = -1
+        document.apiKeys = SettingsTransferAPIKeys(deepgramAPIKey: "fixture", elevenLabsAPIKey: nil)
+        let before = defaults.dictionaryRepresentation() as NSDictionary
+        XCTAssertThrowsError(try manager.importDocument(document, sections: [.behavior, .apiKeys]))
+        XCTAssertEqual(defaults.dictionaryRepresentation() as NSDictionary, before)
+        XCTAssertEqual(keyWrites, 0)
+        document.preferences?.historyAudioMaxMB = 1024
+        document.vocabulary = nil
+        XCTAssertThrowsError(try manager.importDocument(document, sections: [.behavior, .vocabulary]))
+        XCTAssertEqual(defaults.dictionaryRepresentation() as NSDictionary, before)
+        document.schemaVersion = 99
+        XCTAssertThrowsError(try manager.importDocument(document, sections: [.behavior]))
+    }
+
+    func testVocabularyCombinePreservesLocalConflictsAndIsIdempotent() {
+        let existing = VocabularySnapshot(
+            keyterms: ["Local"], replacements: ["term": "Local"], includeReplacementTargetsInRecognitionHints: false)
+        let incoming = VocabularySnapshot(
+            keyterms: [" Imported ", "Local"], replacements: [" TERM ": "Incoming", "new": "New"],
+            includeReplacementTargetsInRecognitionHints: true)
+        let combined = VocabularyImportMode.combine.snapshot(importing: incoming, into: existing)
+        XCTAssertEqual(combined.keyterms, ["Local", "Imported"])
+        XCTAssertEqual(combined.replacements, ["term": "Local", "new": "New"])
+        XCTAssertEqual(combined.includeReplacementTargetsInRecognitionHints, false)
+        XCTAssertEqual(VocabularyImportMode.combine.snapshot(importing: incoming, into: combined), combined)
+        XCTAssertEqual(VocabularyImportMode.replace.snapshot(importing: incoming, into: existing), incoming)
+    }
+
+    func testAbsentPortableFieldsPreserveDestinationValues() throws {
+        let suite = "test.transfer.optional.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = SettingsTransferManager(defaults: defaults, readEngineKey: { _ in nil }, writeEngineKey: { _, _ in true })
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.unsetPreferenceKeys = nil
+        document.preferences?.fallbackTranscriptionEngine = nil
+        document.preferences?.mlxWhisperUnloadAfterMinutes = nil
+        defaults.set("deepgram_flux_live", forKey: Constants.StorageKeys.fallbackTranscriptionEngine)
+        defaults.set(60, forKey: Constants.StorageKeys.mlxWhisperUnloadAfterMinutes)
+        try manager.importDocument(document, sections: [.engine])
+        XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.fallbackTranscriptionEngine), "deepgram_flux_live")
+        XCTAssertEqual(defaults.integer(forKey: Constants.StorageKeys.mlxWhisperUnloadAfterMinutes), 60)
+    }
+
+    func testFailedContextWriteRollsBackVocabularyBeforePreferencesChange() throws {
+        let suite = "test.transfer.rollback.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let vocabularyURL = directory.appendingPathComponent("vocabulary.json")
+        let contextURL = directory.appendingPathComponent("context.json")
+        let backups = directory.appendingPathComponent("backups")
+        let vocabulary = VocabularyManager(fileURL: vocabularyURL)
+        let context = PromptContextManager(fileURL: contextURL)
+        let originalVocabulary = VocabularySnapshot(keyterms: ["Original"], replacements: ["term": "Original"])
+        let originalContext = PromptContextSnapshot(personalContext: PersonalPromptContext(details: "Original context"))
+        try vocabulary.replacePersisting(with: originalVocabulary)
+        try context.replacePersisting(with: originalContext)
+        let originalVocabularyBytes = try Data(contentsOf: vocabularyURL)
+        defaults.set(true, forKey: Constants.StorageKeys.autoPaste)
+        var keyWrites = 0
+        let manager = SettingsTransferManager(
+            defaults: defaults, vocabularyManager: vocabulary, promptContextManager: context, backupDirectory: backups,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in
+                keyWrites += 1
+                return true
+            }
+        )
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.unsetPreferenceKeys = nil
+        document.preferences?.autoPaste = false
+        document.vocabulary = VocabularySnapshot(keyterms: ["Incoming"], replacements: [:])
+        document.promptContext = PromptContextSnapshot(personalContext: PersonalPromptContext(details: "Incoming context"))
+        document.apiKeys = SettingsTransferAPIKeys(deepgramAPIKey: "fixture-secret", elevenLabsAPIKey: nil)
+        try FileManager.default.removeItem(at: contextURL)
+        try FileManager.default.createDirectory(at: contextURL, withIntermediateDirectories: false)
+
+        XCTAssertThrowsError(
+            try manager.importDocument(document, sections: [.behavior, .vocabulary, .promptContext, .apiKeys], vocabularyMode: .replace)
+        ) { error in
+            guard case SettingsTransferError.importFileWriteFailed = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        XCTAssertTrue(defaults.bool(forKey: Constants.StorageKeys.autoPaste))
+        XCTAssertEqual(vocabulary.snapshot().keyterms, ["Original"])
+        XCTAssertEqual(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: vocabularyURL)) as? NSDictionary,
+            try JSONSerialization.jsonObject(with: originalVocabularyBytes) as? NSDictionary)
+        XCTAssertEqual(context.snapshot().personalContext, originalContext.personalContext)
+        XCTAssertEqual(keyWrites, 0)
+        let backupFiles = try FileManager.default.contentsOfDirectory(at: backups, includingPropertiesForKeys: nil)
+        XCTAssertEqual(backupFiles.count, 1)
+        let backupAttributes = try FileManager.default.attributesOfItem(atPath: XCTUnwrap(backupFiles.first).path)
+        XCTAssertEqual((backupAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: backups.path)
+        XCTAssertEqual((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+        let backupData = try Data(contentsOf: XCTUnwrap(backupFiles.first))
+        let backup = try manager.decodedDocument(from: backupData)
+        XCTAssertEqual(backup.vocabulary?.keyterms, ["Original"])
+        XCTAssertEqual(backup.promptContext?.personalContext, originalContext.personalContext)
+        XCTAssertEqual(backup.preferences?.autoPaste, true)
+        XCTAssertNil(backup.apiKeys)
+        XCTAssertFalse(String(decoding: backupData, as: UTF8.self).contains("fixture-secret"))
+    }
+
+    func testBackupFailurePreventsAllImportMutations() throws {
+        let suite = "test.transfer.backup-failure.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let blockedDirectory = directory.appendingPathComponent("blocked")
+        try Data().write(to: blockedDirectory)
+        let vocabulary = VocabularyManager(fileURL: directory.appendingPathComponent("vocabulary.json"))
+        let context = PromptContextManager(fileURL: directory.appendingPathComponent("context.json"))
+        let manager = SettingsTransferManager(
+            defaults: defaults, vocabularyManager: vocabulary, promptContextManager: context, backupDirectory: blockedDirectory,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in
+                XCTFail("Unexpected key write")
+                return true
+            }
+        )
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.unsetPreferenceKeys = nil
+        document.preferences?.autoPaste = false
+        document.vocabulary = VocabularySnapshot(keyterms: ["Incoming"], replacements: [:])
+        let before = vocabulary.snapshot()
+        XCTAssertThrowsError(try manager.importDocument(document, sections: [.behavior, .vocabulary]))
+        XCTAssertNil(defaults.object(forKey: Constants.StorageKeys.autoPaste))
+        XCTAssertEqual(vocabulary.snapshot(), before)
+    }
+
+    func testBackupRestoresExplicitlyUnsetPortablePreferences() throws {
+        let suite = "test.transfer.unset-restore.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            vocabularyManager: VocabularyManager(fileURL: directory.appendingPathComponent("vocabulary.json")),
+            promptContextManager: PromptContextManager(fileURL: directory.appendingPathComponent("context.json")),
+            backupDirectory: directory.appendingPathComponent("backups"),
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in
+                XCTFail("Unexpected key write")
+                return false
+            }
+        )
+        var incoming = try manager.decodedDocument(from: manager.encodedSettings())
+        incoming.unsetPreferenceKeys = nil
+        incoming.preferences?.localAIServerBaseURL = "https://new.example/v1"
+        incoming.preferences?.localAIServerModel = "new-stt-model"
+        incoming.preferences?.polishProviderModels = [PolishEndpoint.custom.rawValue: "new-polish-model"]
+        incoming.preferences?.polishProviderBaseURLs = [PolishEndpoint.custom.rawValue: "https://polish.example/v1"]
+        let backupURL = try manager.importDocument(incoming, sections: [.engine, .aiPolish])
+        XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL), "https://new.example/v1")
+        let scopedModelKey = Constants.StorageKeys.aiPolishEndpointModelPrefix + PolishEndpoint.custom.rawValue
+        let scopedURLKey = Constants.StorageKeys.aiPolishEndpointBaseURLPrefix + PolishEndpoint.custom.rawValue
+        XCTAssertEqual(defaults.string(forKey: scopedModelKey), "new-polish-model")
+        let backup = try manager.decodedDocument(from: Data(contentsOf: backupURL))
+        XCTAssertTrue(try XCTUnwrap(backup.unsetPreferenceKeys).contains(scopedURLKey))
+        try manager.importDocument(backup, sections: [.engine])
+        XCTAssertNil(defaults.object(forKey: Constants.StorageKeys.localAIServerBaseURL))
+        XCTAssertNil(defaults.object(forKey: Constants.StorageKeys.localAIServerModel))
+        XCTAssertEqual(defaults.string(forKey: scopedModelKey), "new-polish-model")
+        XCTAssertEqual(defaults.string(forKey: scopedURLKey), "https://polish.example/v1")
+        try manager.importDocument(backup, sections: [.aiPolish])
+        for key in [scopedModelKey, scopedURLKey, Constants.StorageKeys.aiPolishCustomBaseURL, Constants.StorageKeys.aiPolishModel] {
+            XCTAssertNil(defaults.object(forKey: key))
+        }
+        var legacyBackup = backup
+        legacyBackup.unsetPreferenceKeys = nil
+        defaults.set("https://keep.example/v1", forKey: Constants.StorageKeys.localAIServerBaseURL)
+        try manager.importDocument(legacyBackup, sections: [.engine])
+        XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.localAIServerBaseURL), "https://keep.example/v1")
+    }
+
+    func testUnsetMetadataRejectsSensitiveDeviceAndUnknownKeysBeforeChanges() throws {
+        let suite = "test.transfer.unset-security.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let backups = directory.appendingPathComponent("backups")
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            vocabularyManager: VocabularyManager(fileURL: directory.appendingPathComponent("vocabulary.json")),
+            promptContextManager: PromptContextManager(fileURL: directory.appendingPathComponent("context.json")),
+            backupDirectory: backups,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in
+                XCTFail("Unexpected key write")
+                return false
+            }
+        )
+        var document = try manager.decodedDocument(from: manager.encodedSettings())
+        document.preferences?.autoPaste = false
+        defaults.set(true, forKey: Constants.StorageKeys.autoPaste)
+        for key in [
+            Constants.StorageKeys.deepgramAPIKey, Constants.StorageKeys.keychainStoredKeyHints,
+            Constants.StorageKeys.selectedMicrophone, Constants.StorageKeys.pinPrimaryMicrophone,
+            Constants.StorageKeys.onboardingComplete, "unknown", Constants.StorageKeys.aiPolishEndpointBaseURLPrefix + "unknown",
+        ] {
+            document.unsetPreferenceKeys = [key]
+            XCTAssertThrowsError(try manager.importDocument(document, sections: [.behavior]))
+            XCTAssertTrue(defaults.bool(forKey: Constants.StorageKeys.autoPaste))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: backups.path))
+        }
     }
 
     // MARK: - History filter buckets

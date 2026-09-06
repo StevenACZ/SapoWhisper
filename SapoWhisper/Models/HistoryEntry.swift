@@ -26,6 +26,7 @@ nonisolated struct HistoryEntry: Identifiable, Hashable {
     var aiFirstStatus: String? = nil
     var aiFirstModel: String? = nil
     var aiFirstMode: String? = nil
+    var retentionUntil: Date? = nil
 
     var wordCount: Int {
         text.split(separator: " ").count

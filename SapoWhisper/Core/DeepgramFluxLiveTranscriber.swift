@@ -190,9 +190,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             "Flux final transcript received elapsed=\(finalMs, privacy: .public)ms characters=\(transcript.count, privacy: .public)"
         )
 
-        let cleanedTranscript = VocabularyManager.shared
-            .applyingReplacements(to: transcript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if Self.shouldFallBackForEmptyRealtimeTranscript(cleanedTranscript) {
             SapoLog.flux.warning(
@@ -460,9 +458,7 @@ final class DeepgramFluxLiveTranscriber: ObservableObject {
             audioURL: captureResult.audioURL,
             language: currentLanguage
         )
-        let cleanedTranscript = VocabularyManager.shared
-            .applyingReplacements(to: transcript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !cleanedTranscript.isEmpty else {
             throw TranscriptionFailure(kind: .emptyTranscription, engine: Self.engineName)

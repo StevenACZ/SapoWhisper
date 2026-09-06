@@ -8,6 +8,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Saved corrections now run once across batch, realtime and fallback results, preventing chained replacements from changing text differently between providers.
+- Automatic History cleanup preserves interrupted recordings, pinned entries and active retention extensions. The newest capture survives size cleanup even when an older recording is recovered later.
+- Settings transfer includes backup engines, retention and remaining portable preferences, preserves explicitly unset settings, and validates imports before changes. Private pre-import backups and file-write rollback make failed imports recoverable.
+
+
 - Local AI Server settings distinguish saved configuration, server reachability, connection checks and successful transcription. Changing configuration or passing a connection test clears stale fallback cooldowns for the next dictation; late checks cannot overwrite newer results.
 
 - The backup selector gives every engine icon a consistent column and more space before its name, preserving the green tint in the native control and menu.
@@ -45,6 +50,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Exact Release bundle measurements and a corrected default artifact path; an unused legacy provider icon was removed.
 
 ### Added
+
+- History shows retention status, offers permanent protection and 30-day extensions, and can continue a failed recording directly using the selected provider's file mode.
+- Configuration import can combine or replace vocabulary, preserving local conflicts when combining; retention settings require explicit selection.
 
 - A cancel button for in-progress History AI polish.
 - An opt-in hardware regression test for repeated capture starts on the explicitly selected microphone, with no transcription, playback or saved History entries.

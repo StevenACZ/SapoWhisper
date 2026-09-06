@@ -18,6 +18,9 @@ struct HistoryDetailView: View {
     let onRetranscribe: () -> Void
     let onDownloadAudio: () -> Void
     let onTogglePin: () -> Void
+    var onExtendRetention: () -> Void = {}
+    var canContinueRecording = false
+    var onContinueRecording: () -> Void = {}
     let onDelete: () -> Void
 
     @State private var showCopied = false
@@ -25,6 +28,8 @@ struct HistoryDetailView: View {
     @State private var polishVersions: [PolishVersion] = []
     @Environment(\.locale) private var locale
     @AppStorage(Constants.StorageKeys.aiPolishEnabled, store: AppPreferences.defaults) private var aiPolishEnabled = false
+
+    @AppStorage(Constants.StorageKeys.historyAutoDeleteDays, store: AppPreferences.defaults) private var autoDeleteDays = 0
 
     private var isFailed: Bool { entry.status == "failed" }
     private var isUserCancelled: Bool { entry.isUserCancelled }
@@ -45,6 +50,16 @@ struct HistoryDetailView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     statsStrip
+                    retentionControls
+                    if isFailed, entry.audioFileExists {
+                        Button("history.continue_recording".localized, systemImage: "mic.badge.plus", action: onContinueRecording)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.sapoGreenDark)
+                            .disabled(!canContinueRecording)
+                        Text("history.continue_recording_detail".localized)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     polishDetailLines
                 }
 
@@ -81,6 +96,45 @@ struct HistoryDetailView: View {
         .task(id: entry) {
             polishVersions = TranscriptionHistoryManager.shared.polishVersions(for: entry.id)
         }
+    }
+
+    private var retentionControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TimelineView(.periodic(from: .now, by: 3600)) { context in
+                Text(retentionDescription(at: context.date))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !entry.isProcessing {
+                HStack {
+                    Button(
+                        entry.isFavorite ? "history.retention_unprotect".localized : "history.retention_keep".localized,
+                        systemImage: entry.isFavorite ? "pin.slash" : "pin",
+                        action: onTogglePin
+                    )
+                    if !entry.isFavorite {
+                        Button("history.retention_extend".localized, systemImage: "calendar.badge.plus", action: onExtendRetention)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func retentionDescription(at now: Date) -> String {
+        if entry.isFavorite { return "history.retention_protected".localized }
+        if entry.status != HistoryEntryStatus.completed.rawValue { return "history.retention_recovery".localized }
+        if let until = entry.retentionUntil, until > now {
+            return "history.retention_until".localized(until.formatted(.dateTime.day().month().year().locale(locale)))
+        }
+        guard let deadline = entry.retentionDeadline(autoDeleteDays: autoDeleteDays) else {
+            return "history.retention_no_age".localized
+        }
+        if deadline <= now { return "history.retention_due".localized }
+        let days = max(1, Calendar.current.dateComponents([.day], from: now, to: deadline).day ?? 1)
+        return "history.retention_days".localized(String(days))
     }
 
     // MARK: - Header

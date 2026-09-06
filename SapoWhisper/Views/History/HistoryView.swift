@@ -190,6 +190,13 @@ struct HistoryView: View {
                         onRetranscribe: { handleRetranscribe(entry) },
                         onDownloadAudio: { handleDownloadAudio(entry) },
                         onTogglePin: { handleTogglePin(entry) },
+                        onExtendRetention: { handleExtendRetention(entry) },
+                        canContinueRecording: viewModel.canContinueHistoryEntry(entry),
+                        onContinueRecording: {
+                            guard viewModel.canContinueHistoryEntry(entry) else { return }
+                            if let audioPath = entry.audioPath { HistoryAudioPlayerController.shared.stopIfLoaded(path: audioPath) }
+                            viewModel.continueHistoryEntry(entry)
+                        },
                         onDelete: { showDeleteConfirmation = true }
                     )
                 } else {
@@ -309,6 +316,12 @@ struct HistoryView: View {
 
     private func handleTogglePin(_ entry: HistoryEntry) {
         TranscriptionHistoryManager.shared.toggleFavorite(id: entry.id)
+        loadEntries()
+        selectedEntry = entries.first { $0.id == entry.id }
+    }
+
+    private func handleExtendRetention(_ entry: HistoryEntry) {
+        guard TranscriptionHistoryManager.shared.extendRetention(id: entry.id) else { return }
         loadEntries()
         selectedEntry = entries.first { $0.id == entry.id }
     }

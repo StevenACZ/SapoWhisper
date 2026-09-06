@@ -20,15 +20,16 @@ nonisolated extension TranscriptionHistoryManager {
     func deleteEntries(olderThanDays days: Int) -> Int {
         persistenceLock.lock()
         defer { persistenceLock.unlock() }
-        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
+        guard days > 0, let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else { return 0 }
         let iso = Self.isoFormatter.string(from: cutoff)
 
         let deleteSql =
-            "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0 AND status NOT IN \(Self.processingSQLValues);"
+            "DELETE FROM transcriptions WHERE timestamp < ? AND is_favorite = 0 AND status = 'completed' AND (retention_until IS NULL OR retention_until <= ?);"
         var deleteStmt: OpaquePointer?
         defer { sqlite3_finalize(deleteStmt) }
         guard sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK else { return 0 }
         bindText(deleteStmt, 1, iso)
+        bindText(deleteStmt, 2, Self.isoFormatter.string(from: Date()))
         guard stepStatement(deleteStmt, operation: "deleteOlderThan") else { return 0 }
         let deleted = Int(sqlite3_changes(db))
 
@@ -71,9 +72,9 @@ nonisolated extension TranscriptionHistoryManager {
         guard sweepOrphanedAudio() else { return }
         guard audioStorage.directorySize() > HistoryAudioStorage.maxAudioStorageBytes else { return }
 
-        deleteOldestEntriesWithAudio(includeFavorites: false)
+        deleteOldestEntriesWithAudio()
         if audioStorage.directorySize() > HistoryAudioStorage.maxAudioStorageBytes {
-            deleteOldestEntriesWithAudio(includeFavorites: true)
+            SapoLog.recording.warning("History audio limit exceeded; protected recordings retained")
         }
     }
 
@@ -90,9 +91,31 @@ nonisolated extension TranscriptionHistoryManager {
         return true
     }
 
+    @discardableResult
+    func extendRetention(id: Int64, days: Int = 30, now: Date = Date()) -> Bool {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
+        guard (1...3650).contains(days), let entry = entry(id: id) else { return false }
+        let autoDeleteDays = AppPreferences.defaults.integer(forKey: Constants.StorageKeys.historyAutoDeleteDays)
+        let base = max(max(now, entry.retentionUntil ?? now), entry.retentionDeadline(autoDeleteDays: autoDeleteDays) ?? now)
+        guard let deadline = Calendar.current.date(byAdding: .day, value: days, to: base) else { return false }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "UPDATE transcriptions SET retention_until = ? WHERE id = ?;", -1, &stmt, nil) == SQLITE_OK else {
+            return false
+        }
+        bindText(stmt, 1, Self.isoFormatter.string(from: deadline))
+        sqlite3_bind_int64(stmt, 2, id)
+        guard stepStatement(stmt, operation: "extendRetention"), sqlite3_changes(db) == 1 else { return false }
+        notifyDidChange()
+        return true
+    }
+
     /// Toggle the favorite status of an entry. Returns new state.
     @discardableResult
     func toggleFavorite(id: Int64) -> Bool {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let updateSql = "UPDATE transcriptions SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END WHERE id = ?;"
         var updateStmt: OpaquePointer?
         defer { sqlite3_finalize(updateStmt) }
@@ -133,24 +156,27 @@ nonisolated extension TranscriptionHistoryManager {
         notifyDidChange()
     }
 
-    private func deleteOldestEntriesWithAudio(includeFavorites: Bool) {
-        for row in oldestAudioRows(includeFavorites: includeFavorites) {
+    private func deleteOldestEntriesWithAudio() {
+        for row in oldestAudioRows() {
             guard audioStorage.directorySize() > HistoryAudioStorage.targetAudioStorageBytes else { break }
             delete(id: row.id)
         }
     }
 
-    private func oldestAudioRows(includeFavorites: Bool) -> [(id: Int64, path: String)] {
-        var sql = "SELECT id, audio_path FROM transcriptions WHERE audio_path IS NOT NULL"
-        if !includeFavorites {
-            sql += " AND is_favorite = 0"
-        }
-        sql += " ORDER BY timestamp ASC;"
+    private func oldestAudioRows() -> [(id: Int64, path: String)] {
+        let sql = """
+            SELECT id, audio_path FROM transcriptions
+            WHERE audio_path IS NOT NULL AND is_favorite = 0 AND status = 'completed'
+              AND (retention_until IS NULL OR retention_until <= ?)
+              AND id != (SELECT id FROM transcriptions ORDER BY timestamp DESC, id DESC LIMIT 1)
+            ORDER BY timestamp ASC;
+            """
 
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
 
+        bindText(stmt, 1, Self.isoFormatter.string(from: Date()))
         var rows: [(Int64, String)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             guard let cString = sqlite3_column_text(stmt, 1) else { continue }

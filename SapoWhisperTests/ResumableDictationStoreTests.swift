@@ -107,4 +107,37 @@ final class ResumableDictationStoreTests: XCTestCase {
         XCTAssertEqual(ResumableDictationStore.formatResumeDuration(75), "1:15")
         XCTAssertEqual(ResumableDictationStore.formatResumeDuration(-3), "0:00")
     }
+    func testExplicitHistoryOfferKeepsOriginalTimestampAndGetsFreshWindow() {
+        let now = capturedAt.addingTimeInterval(86400)
+        let store = ResumableDictationStore(now: { now }, fileExists: { _ in true })
+        var offer = makeOffer()
+        offer.offeredAt = now
+        store.offer(offer)
+        store.mergeRequested = true
+        XCTAssertEqual(store.consumeRequestedMerge()?.capturedAt, capturedAt)
+        XCTAssertNotNil(store.validOffer)
+    }
+
+    func testAcceptedMergeSurvivesLongRecordingOrPause() {
+        var now = capturedAt
+        let store = ResumableDictationStore(now: { now }, fileExists: { _ in true })
+        store.offer(makeOffer())
+        store.mergeRequested = true
+        now = now.addingTimeInterval(60 * 60)
+        XCTAssertNil(store.validOffer)
+        XCTAssertEqual(store.consumeRequestedMerge()?.historyId, 7)
+        XCTAssertNil(store.consumeRequestedMerge())
+    }
+
+    func testClearingAcceptedExpiredOfferPreventsMerge() {
+        var now = capturedAt
+        let store = ResumableDictationStore(now: { now }, fileExists: { _ in true })
+        store.offer(makeOffer())
+        store.mergeRequested = true
+        now = now.addingTimeInterval(60 * 60)
+        XCTAssertNil(store.validOffer)
+        XCTAssertTrue(store.clearOffer(forHistoryId: 7))
+        XCTAssertNil(store.consumeRequestedMerge())
+    }
+
 }

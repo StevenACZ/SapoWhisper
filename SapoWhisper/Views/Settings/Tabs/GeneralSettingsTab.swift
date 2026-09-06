@@ -417,6 +417,12 @@ struct GeneralSettingsTab: View {
                 Text("settings.history_retention_desc".localized)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if historyAudioUsageBytes > Int64(historyAudioMaxMB) * 1024 * 1024 {
+                    Label("settings.history_protected_limit".localized, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Divider()
 

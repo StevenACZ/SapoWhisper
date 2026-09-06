@@ -616,9 +616,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let finalWaitMs = Int((CFAbsoluteTimeGetCurrent() - finalWaitStartedAt) * 1000)
         let stopElapsedMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
 
-        let cleanedTranscript = VocabularyManager.shared
-            .applyingRecognitionCorrections(to: salvagedTranscript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedTranscript = salvagedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         SapoLog.recording.info(
             "ElevenLabs realtime final transcript sessionID=\(self.transcriptAccumulator.sessionID ?? "n/a", privacy: .public) elapsed=\(stopElapsedMs, privacy: .public)ms finalWait=\(finalWaitMs, privacy: .public)ms committed=\(self.transcriptAccumulator.committedCount, privacy: .public) enqueuedChunks=\(senderStats.enqueuedChunks, privacy: .public) sentMessages=\(senderStats.sentMessages, privacy: .public) chars=\(cleanedTranscript.count, privacy: .public)"
@@ -664,8 +662,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     /// `DeepgramFluxLiveTranscriber.transcribeFullCaptureFallback`): the local
     /// WAV holds the complete take, so re-transcribing it through the Scribe
     /// batch endpoint recovers words the stream lost. The batch transcriber
-    /// reads the same Keychain API key and already applies vocabulary
-    /// corrections and the empty-transcript guard.
+    /// reads the same Keychain API key and enforces the empty-transcript guard.
     private func transcribeFullCaptureFallback(
         _ captureResult: AudioCaptureResult,
         reason: String

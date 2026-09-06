@@ -13,6 +13,7 @@ nonisolated struct ResumableDictation: Sendable {
     let audioURL: URL
     let duration: TimeInterval
     let capturedAt: Date
+    var offeredAt: Date? = nil
 }
 
 /// Holds the continue-previous offer plus the user's opt-in, with the
@@ -22,7 +23,10 @@ final class ResumableDictationStore {
 
     private var resumable: ResumableDictation?
     /// The user opted into the merge via the recording pill chip.
-    var mergeRequested = false
+    private var requestedOffer: ResumableDictation?
+    var mergeRequested = false {
+        didSet { requestedOffer = mergeRequested ? validOffer : nil }
+    }
 
     private let now: () -> Date
     private let fileExists: (String) -> Bool
@@ -44,7 +48,7 @@ final class ResumableDictationStore {
     /// The current offer, or nil when expired / audio gone.
     var validOffer: ResumableDictation? {
         guard let resumable else { return nil }
-        guard now().timeIntervalSince(resumable.capturedAt) < ResumableDictation.lifetime,
+        guard now().timeIntervalSince(resumable.offeredAt ?? resumable.capturedAt) < ResumableDictation.lifetime,
             fileExists(resumable.audioURL.path)
         else {
             self.resumable = nil
@@ -56,8 +60,9 @@ final class ResumableDictationStore {
     /// Stop-path takeout: the offer when the user opted in, always dropping
     /// the opt-in flag (each recording opts in anew).
     func consumeRequestedMerge() -> ResumableDictation? {
-        let requested = mergeRequested ? validOffer : nil
+        let requested = requestedOffer
         mergeRequested = false
+        guard let requested, fileExists(requested.audioURL.path) else { return nil }
         return requested
     }
 
@@ -65,6 +70,7 @@ final class ResumableDictationStore {
     /// same audio in History.
     func clearOffer() {
         resumable = nil
+        mergeRequested = false
     }
 
     /// A retranscribed take is resolved: continuing it would duplicate a
@@ -73,8 +79,8 @@ final class ResumableDictationStore {
     /// so the caller can also drop a live resume chip.
     @discardableResult
     func clearOffer(forHistoryId id: Int64) -> Bool {
-        guard resumable?.historyId == id else { return false }
-        resumable = nil
+        guard resumable?.historyId == id || requestedOffer?.historyId == id else { return false }
+        clearOffer()
         return true
     }
 

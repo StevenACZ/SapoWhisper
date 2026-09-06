@@ -64,13 +64,60 @@ final class HistoryRetentionSweepGuardTests: XCTestCase {
 
     /// The guard is scoped to the in-flight status: once the pipeline resolves
     /// the row, retention removes it normally.
-    func testRetentionDeleteRemovesTheRowOnceItResolves() throws {
+    func testRetentionPreservesFailureUntilItResolvesSuccessfully() throws {
         let row = persistRow(named: "resolving", status: "transcribing")
         backdate(ids: [row.rowID], days: 60)
         manager.markTranscriptionFailed(id: row.rowID, failureCode: "test/failed")
 
+        XCTAssertEqual(manager.deleteEntries(olderThanDays: 30), 0)
+        XCTAssertEqual(sqlite3_exec(manager.db, "UPDATE transcriptions SET status = 'completed';", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(manager.deleteEntries(olderThanDays: 30), 1)
         XCTAssertTrue(manager.fetchAll().isEmpty)
+    }
+
+    func testExtendedRetentionSurvivesAgeSweepAndPersists() throws {
+        let row = persistRow(named: "extended", status: "completed")
+        backdate(ids: [row.rowID], days: 60)
+        let originalTimestamp = try XCTUnwrap(manager.entry(id: row.rowID)).timestamp
+        XCTAssertTrue(manager.extendRetention(id: row.rowID))
+        let firstDeadline = try XCTUnwrap(manager.entry(id: row.rowID)?.retentionUntil)
+        XCTAssertEqual(manager.deleteEntries(olderThanDays: 30), 0)
+        XCTAssertTrue(manager.extendRetention(id: row.rowID))
+        let entry = try XCTUnwrap(manager.entry(id: row.rowID))
+        XCTAssertGreaterThan(try XCTUnwrap(entry.retentionUntil), firstDeadline)
+        XCTAssertEqual(entry.timestamp, originalTimestamp)
+        XCTAssertFalse(manager.extendRetention(id: -1))
+    }
+
+    func testSizeCleanupKeepsFailuresPinsExtensionsAndNewestTake() throws {
+        let defaults = AppPreferences.defaults
+        let previous = defaults.object(forKey: Constants.StorageKeys.historyAudioMaxMB)
+        defaults.set(1, forKey: Constants.StorageKeys.historyAudioMaxMB)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: Constants.StorageKeys.historyAudioMaxMB)
+            } else {
+                defaults.removeObject(forKey: Constants.StorageKeys.historyAudioMaxMB)
+            }
+        }
+        let failed = persistRow(named: "failed", status: "failed")
+        let pinned = persistRow(named: "pinned", status: "completed")
+        XCTAssertTrue(manager.toggleFavorite(id: pinned.rowID))
+        let extended = persistRow(named: "extended", status: "completed")
+        XCTAssertTrue(manager.extendRetention(id: extended.rowID))
+        let removable = persistRow(named: "removable", status: "completed")
+        let latest = persistRow(named: "latest", status: "completed")
+        let recoveredOld = persistRow(named: "recovered-old", status: "failed")
+        backdate(ids: [recoveredOld.rowID], days: 60)
+        for row in [failed, pinned, extended, removable, latest, recoveredOld] {
+            try Data(repeating: 1, count: 400_000).write(to: URL(fileURLWithPath: try XCTUnwrap(row.audioPath)))
+        }
+        manager.enforceAudioStorageLimit()
+        XCTAssertNil(manager.entry(id: removable.rowID))
+        for row in [failed, pinned, extended, latest, recoveredOld] {
+            XCTAssertNotNil(manager.entry(id: row.rowID))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(row.audioPath)))
+        }
     }
 
     // MARK: - Orphan sweep

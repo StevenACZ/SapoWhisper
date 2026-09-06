@@ -599,7 +599,7 @@
 "settings.history_auto_delete" = "Borrar entradas antiguas";
 "settings.history_auto_delete_never" = "Nunca";
 "settings.history_auto_delete_days" = "Tras %@ días";
-"settings.history_retention_desc" = "Al superar el límite de audio se eliminan primero las grabaciones más antiguas (las fijadas al final). El borrado automático se ejecuta al iniciar y conserva las entradas fijadas.";
+"settings.history_retention_desc" = "La limpieza automática elimina entradas completadas sin protección. Conserva las fijadas, aplazadas, interrumpidas y en proceso; el límite de audio también respeta el dictado más reciente. El borrado por antigüedad se ejecuta al iniciar.";
 
 /* Welcome flow */
 "welcome.window_title" = "Bienvenido a SapoWhisper";
@@ -719,3 +719,40 @@
 "config.local_ai_transcribed" = "Última transcripción correcta";
 "config.local_ai_model_unverified" = "Servidor conectado · modelo no listado";
 "config.local_ai_test_scope" = "Esta prueba comprueba la conexión y la lista de modelos. Un dictado verifica la transcripción; si falla, puede tomar el relevo tu motor de respaldo.";
+
+"settings.transfer.section_history" = "Retención del historial";
+"settings.transfer.section_history_desc" = "Límite de audio y eliminación automática. Puede borrar historial o audio sin protección.";
+"settings.transfer.invalid_document" = "El archivo contiene valores inválidos o faltantes. No se importó nada.";
+"settings.transfer.vocabulary_mode" = "Importar vocabulario";
+"settings.transfer.vocabulary_combine" = "Combinar";
+"settings.transfer.vocabulary_replace" = "Reemplazar";
+"settings.transfer.vocabulary_combine_desc" = "Conserva los términos y reemplazos existentes. Añade entradas nuevas y mantiene las preferencias locales si hay conflictos.";
+"settings.transfer.vocabulary_replace_desc" = "Reemplaza todos los términos, reemplazos y pistas de reconocimiento guardados con los de este archivo.";
+"history.retention_unprotect" = "Permitir limpieza automática";
+"history.retention_keep" = "Conservar grabación";
+"history.retention_extend" = "Conservar 30 días más";
+"history.retention_protected" = "Protegida frente a la eliminación automática. Puedes borrar esta entrada manualmente.";
+"history.retention_recovery" = "Las grabaciones pendientes o interrumpidas se conservan para recuperarlas y quedan fuera de la limpieza automática.";
+"history.retention_until" = "Protegida frente a la limpieza automática hasta el %@.";
+"history.retention_no_age" = "Sin borrado por antigüedad. El límite de espacio puede eliminar grabaciones sin protección.";
+"history.retention_due" = "Puede eliminarse en la próxima limpieza automática. Elige Conservar grabación para protegerla.";
+"history.retention_days" = "Borrado por antigüedad en aproximadamente %@ días. El límite de espacio puede adelantarlo.";
+"settings.history_protected_limit" = "Las grabaciones protegidas superan el límite de audio y se han conservado. Exporta o elimina grabaciones para liberar espacio.";
+
+"settings.transfer.backup_created" = "Copia previa a la importación: %@";
+
+"settings.transfer.file_write_failed" = "La importación falló al guardar archivos. Se restauraron los ajustes anteriores. Copia: %@";
+
+"settings.transfer.rollback_failed" = "La importación falló y no pudo restaurar todos los archivos anteriores. Restaura la copia: %@";
+
+"history.continue_recording" = "Continuar grabando";
+
+"history.continue_recording_detail" = "Añade más audio a esta grabación. El audio unido se transcribirá con el modo por archivo del proveedor seleccionado.";
+
+"settings.transfer.summary_engine" = "Motor del archivo";
+
+"settings.transfer.summary_backup" = "Respaldo del archivo";
+
+"settings.transfer.summary_none" = "Ninguno";
+
+"settings.transfer.summary_vocabulary" = "%d palabras de vocabulario · %d correcciones automáticas";

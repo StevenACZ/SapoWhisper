@@ -122,6 +122,32 @@ class VocabularyManager {
         )
     }
 
+    func replace(with snapshot: VocabularySnapshot) {
+        try? replacePersisting(with: snapshot)
+    }
+
+    func replacePersisting(with snapshot: VocabularySnapshot) throws {
+        var terms: [String] = []
+        for term in snapshot.keyterms {
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !terms.contains(trimmed) { terms.append(trimmed) }
+        }
+        var corrected: [String: String] = [:]
+        for original in snapshot.replacements.keys.sorted() {
+            let key = original.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let value = snapshot.replacements[original]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !key.isEmpty, !value.isEmpty { corrected[key] = value }
+        }
+        let normalized = VocabularySnapshot(
+            keyterms: terms, replacements: corrected,
+            includeReplacementTargetsInRecognitionHints: snapshot.includeReplacementTargetsInRecognitionHints ?? true)
+        let data = try JSONEncoder().encode(normalized)
+        try data.write(to: fileURL, options: .atomic)
+        keyterms = normalized.keyterms
+        replacements = normalized.replacements
+        includeReplacementTargetsInRecognitionHints = normalized.includeReplacementTargetsInRecognitionHints ?? true
+    }
+
     func merge(snapshot: VocabularySnapshot) {
         for term in snapshot.keyterms {
             let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,7 +233,7 @@ class VocabularyManager {
     /// Applies saved replacements locally for engines that do not expose replace in their API surface.
     func applyingReplacements(to transcript: String) -> String {
         mechanicalReplacements
-            .sorted { $0.key.count > $1.key.count }
+            .sorted { $0.key.count == $1.key.count ? $0.key < $1.key : $0.key.count > $1.key.count }
             .reduce(transcript) { current, replacement in
                 let pattern = Self.replacementPattern(for: replacement.key)
                 guard
@@ -308,7 +334,7 @@ class VocabularyManager {
         let replacedTranscript = applyingReplacements(to: transcript)
         let candidates = recognitionCandidates(includeReplacementValues: true)
         let canonicalKeys = Set(candidates.map(Self.normalizedRecognitionKey))
-        let correctionPairs =
+        let correctionPairs: [(variant: String, canonical: String)] =
             candidates
             .flatMap { keyterm in
                 Self.correctionVariants(for: keyterm).map { variant in
@@ -320,7 +346,10 @@ class VocabularyManager {
                 let canonicalKey = Self.normalizedRecognitionKey(pair.canonical)
                 return variantKey == canonicalKey || !canonicalKeys.contains(variantKey)
             }
-            .sorted { $0.variant.count > $1.variant.count }
+            .sorted { (lhs: (variant: String, canonical: String), rhs: (variant: String, canonical: String)) in
+                if lhs.variant.count != rhs.variant.count { return lhs.variant.count > rhs.variant.count }
+                return lhs.variant < rhs.variant
+            }
 
         let phraseCorrectedTranscript = applyingMultiTermCorrections(to: replacedTranscript)
         return correctionPairs.reduce(phraseCorrectedTranscript) { current, pair in

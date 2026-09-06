@@ -45,6 +45,8 @@ addresses, and machine-specific workflow details.
 
 - Apply the capture, persistence, polish, and window invariants in [ARCHITECTURE.md](ARCHITECTURE.md#guardrails).
 - Every captured or merged WAV keeps its recovery marker until durable History ownership or deliberate deletion. Preserve merge sources until the combined pending row exists; recovery must skip live owners regardless of file age.
+- Apply recognition corrections exactly once in `TranscriptPostProcessor`; provider adapters must not apply saved replacements before the shared pass.
+- Automatic retention must preserve failed/in-flight recordings, pins and active extensions. Determine the newest capture by timestamp, not insertion ID; an accepted continuation cannot expire while recording.
 - Credentials belong in Keychain; configuration checks use `KeychainStore.hasValue`, not credential reads.
 - Never show an action that cannot execute in the current state; derive visibility and execution from the same predicate.
 - Attach copied-confirmation glow to the complete padded overlay surface, including any supporting status text; inner rows must not draw a second pill outline.

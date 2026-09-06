@@ -230,6 +230,23 @@ class SapoWhisperViewModel: ObservableObject {
         resumableStore.offer(resumable)
     }
 
+    func canContinueHistoryEntry(_ entry: HistoryEntry) -> Bool {
+        entry.status == HistoryEntryStatus.failed.rawValue && entry.audioFileExists
+            && !isAnyRecorderActive && !isStartPending && startRecordingTask == nil
+            && activeTranscriptionSessionID == nil && transcriptionOperations.active == nil
+            && repolishTask == nil && !isSelectedEngineBusy && canRecord
+    }
+
+    func continueHistoryEntry(_ entry: HistoryEntry) {
+        guard let current = historyManager.entry(id: entry.id), canContinueHistoryEntry(current),
+            let audioPath = current.audioPath
+        else { return }
+        startRecording(
+            continuing: ResumableDictation(
+                historyId: current.id, audioURL: URL(fileURLWithPath: audioPath), duration: current.duration,
+                capturedAt: current.timestamp, offeredAt: Date()))
+    }
+
     // MARK: - Esc double-press cancel
 
     /// First Esc only warns (heartbeat + hint on the pill); the second within
@@ -1054,7 +1071,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Inicia la grabacion.
-    func startRecording(inputDeviceUID: String? = nil) {
+    func startRecording(inputDeviceUID: String? = nil, continuing: ResumableDictation? = nil) {
         if let inputDeviceUID {
             PreferredMicrophoneCoordinator.shared.beginExternalDefaultInputSession()
             activeInputDeviceOverrideUID = inputDeviceUID
@@ -1066,7 +1083,7 @@ class SapoWhisperViewModel: ObservableObject {
             }
         }
         let triggerTime = CFAbsoluteTimeGetCurrent()
-        let selectedVariant = currentVariant
+        let selectedVariant = continuing == nil ? currentVariant : currentVariant.fileTranscriptionVariant
         let sessionID = nextRecordingSessionID()
         lastStartHotkeyTime = triggerTime
         activeRecordingSessionID = sessionID
@@ -1091,12 +1108,13 @@ class SapoWhisperViewModel: ObservableObject {
         // primary that is not configured, is offline, or that a probe already
         // proved down hands the take over now, so the user never dictates into
         // an engine that cannot answer.
-        guard let (variant, startedOnBackup) = resolveStartVariant(selected: selectedVariant) else {
+        guard let (resolvedVariant, startedOnBackup) = resolveStartVariant(selected: selectedVariant) else {
             activeRecordingSessionID = nil
             transition(to: .noModel, reason: "start-engine-not-ready")
             SapoLog.recording.warning("Recording blocked because engine is not ready")
             return
         }
+        let variant = continuing == nil ? resolvedVariant : resolvedVariant.fileTranscriptionVariant
         overlayManager.setBackupNotice(nil)
         if let startedOnBackup {
             overlayManager.setBackupNotice(BackupTranscriptionNotice(primary: selectedVariant, backup: variant))
@@ -1178,12 +1196,12 @@ class SapoWhisperViewModel: ObservableObject {
             deviceName: effectiveInputDisplayName(inputDeviceUID: inputDeviceUID)
         )
 
-        // Continue-previous offer: only the batch recorder can prepend audio
-        // at stop time (streaming engines transcribe live). Starts opted-out.
+        if let continuing { resumableStore.offer(continuing) }
         resumableStore.mergeRequested = false
         if !variant.isStreaming, let resumable = resumableStore.validOffer {
             overlayManager.setResumeOffer(
                 durationLabel: ResumableDictationStore.formatResumeDuration(resumable.duration))
+            if continuing != nil { overlayManager.toggleResumeOffer() }
         } else {
             overlayManager.setResumeOffer(durationLabel: nil)
         }

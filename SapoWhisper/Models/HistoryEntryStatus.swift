@@ -47,3 +47,12 @@ nonisolated extension HistoryEntry {
         TranscriptionFailure(kind: failureKind ?? .unknown, engine: displayEngineName).localizedDescription
     }
 }
+
+nonisolated extension HistoryEntry {
+    func retentionDeadline(autoDeleteDays: Int, calendar: Calendar = .current) -> Date? {
+        guard !isFavorite, status == HistoryEntryStatus.completed.rawValue, autoDeleteDays > 0,
+            let ageDeadline = calendar.date(byAdding: .day, value: autoDeleteDays, to: timestamp)
+        else { return nil }
+        return max(ageDeadline, retentionUntil ?? ageDeadline)
+    }
+}

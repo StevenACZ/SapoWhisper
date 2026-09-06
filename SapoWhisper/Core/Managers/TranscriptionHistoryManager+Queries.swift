@@ -112,7 +112,7 @@ nonisolated extension TranscriptionHistoryManager {
     private static let entrySelect = """
         SELECT id, timestamp, engine, language, duration_seconds, transcription, raw_transcription,
                audio_path, status, is_favorite, ai_status, ai_model, ai_mode, ai_error,
-               failure_code, ai_first_status, ai_first_model, ai_first_mode
+               failure_code, ai_first_status, ai_first_model, ai_first_mode, retention_until
         FROM transcriptions
         """
 
@@ -289,7 +289,8 @@ nonisolated extension TranscriptionHistoryManager {
             failureCode: failureCode,
             aiFirstStatus: aiFirstStatus,
             aiFirstModel: aiFirstModel,
-            aiFirstMode: aiFirstMode
+            aiFirstMode: aiFirstMode,
+            retentionUntil: sqlite3_column_text(stmt, 18).flatMap { Self.isoFormatter.date(from: String(cString: $0)) }
         )
     }
 

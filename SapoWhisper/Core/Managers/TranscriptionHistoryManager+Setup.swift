@@ -76,6 +76,12 @@ nonisolated extension TranscriptionHistoryManager {
                 version = setSchemaVersion(4) ? 4 : version
             }
         }
+        if version == 4 {
+            addColumnIfNeeded(named: "retention_until", definition: "TEXT")
+            if columnExists(named: "retention_until", in: "transcriptions") {
+                _ = setSchemaVersion(5)
+            }
+        }
     }
 
     func schemaVersion() -> Int32 {

@@ -123,9 +123,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
                 technicalDetail: "could not parse 200 response bytes=\(data.count)")
         }
 
-        // Scribe v2 has no server-side replace; apply saved vocabulary corrections locally.
-        let finalText = VocabularyManager.shared.applyingRecognitionCorrections(to: transcript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !finalText.isEmpty else {
             throw TranscriptionFailure(

@@ -599,7 +599,7 @@
 "settings.history_auto_delete" = "Auto-delete old entries";
 "settings.history_auto_delete_never" = "Never";
 "settings.history_auto_delete_days" = "After %@ days";
-"settings.history_retention_desc" = "When the audio limit is exceeded, the oldest recordings are removed first (pinned entries last). Auto-delete runs at launch and keeps pinned entries.";
+"settings.history_retention_desc" = "Automatic cleanup removes unprotected completed entries. Kept, extended, interrupted and processing recordings are preserved; the most recent take also survives the audio limit. Age-based cleanup runs at launch.";
 
 /* Welcome flow */
 "welcome.window_title" = "Welcome to SapoWhisper";
@@ -719,3 +719,40 @@
 "config.local_ai_transcribed" = "Last transcription successful";
 "config.local_ai_model_unverified" = "Server connected · model not listed";
 "config.local_ai_test_scope" = "This test checks the connection and model list. A dictation verifies transcription; if it fails, your configured backup can take over.";
+
+"settings.transfer.section_history" = "History retention";
+"settings.transfer.section_history_desc" = "Audio storage limit and automatic deletion. May remove unprotected history or audio.";
+"settings.transfer.invalid_document" = "The settings file contains invalid or missing values. Nothing was imported.";
+"settings.transfer.vocabulary_mode" = "Vocabulary import";
+"settings.transfer.vocabulary_combine" = "Combine";
+"settings.transfer.vocabulary_replace" = "Replace";
+"settings.transfer.vocabulary_combine_desc" = "Keep existing terms and replacements. Add new entries and preserve local conflicts and recognition hints.";
+"settings.transfer.vocabulary_replace_desc" = "Replace all saved terms, replacements, and recognition hints with this file.";
+"history.retention_unprotect" = "Allow automatic cleanup";
+"history.retention_keep" = "Keep recording";
+"history.retention_extend" = "Keep 30 more days";
+"history.retention_protected" = "Protected from automatic deletion. You can still delete this entry yourself.";
+"history.retention_recovery" = "Pending or interrupted recordings are kept for recovery and excluded from automatic cleanup.";
+"history.retention_until" = "Protected from automatic cleanup until %@.";
+"history.retention_no_age" = "No age-based deletion. The audio storage limit can still remove unprotected recordings.";
+"history.retention_due" = "Eligible for automatic cleanup. Choose Keep recording to protect it.";
+"history.retention_days" = "Age-based deletion in approximately %@ days. The storage limit may remove it sooner.";
+"settings.history_protected_limit" = "Protected recordings exceed the audio limit and have been kept. Export or delete recordings to free space.";
+
+"settings.transfer.backup_created" = "Pre-import backup: %@";
+
+"settings.transfer.file_write_failed" = "Import failed while saving files. Previous settings were restored. Backup: %@";
+
+"settings.transfer.rollback_failed" = "Import failed and could not fully restore the previous files. Restore from the backup: %@";
+
+"history.continue_recording" = "Continue recording";
+
+"history.continue_recording_detail" = "Add more audio to this recording. The combined audio will be transcribed using the selected provider’s file mode.";
+
+"settings.transfer.summary_engine" = "Engine in this file";
+
+"settings.transfer.summary_backup" = "Backup in this file";
+
+"settings.transfer.summary_none" = "None";
+
+"settings.transfer.summary_vocabulary" = "%d vocabulary terms · %d automatic corrections";
