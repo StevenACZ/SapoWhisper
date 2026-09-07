@@ -759,3 +759,9 @@
 "config.fallback_engine_unavailable" = "%@ is configured but temporarily unavailable. It will be tried again after recovery.";
 
 "history.retry_current" = "Retry with current engine";
+
+"welcome.configure_later" = "Configure later";
+
+"welcome.engine_deferred_title" = "Finish setting up your engine";
+
+"welcome.engine_deferred_hint" = "Choose an engine in Settings → Engine before your first dictation.";

@@ -93,7 +93,7 @@ final class MLXModelFolderIsolationTests: XCTestCase {
                     ($0, WhisperModelDownloader.sizeOnDisk(repo: $0.rawValue, root: tierRoot))
                 })
 
-            WhisperModelDownloader.delete(repo: deleted.rawValue, root: tierRoot)
+            try WhisperModelDownloader.delete(repo: deleted.rawValue, root: tierRoot)
 
             XCTAssertFalse(
                 WhisperModelDownloader.isDownloaded(repo: deleted.rawValue, root: tierRoot),
@@ -140,7 +140,7 @@ final class MLXModelFolderIsolationTests: XCTestCase {
         try makeFakeSnapshot(repo: turbo, root: both)
         try makeFakeSnapshot(repo: turbo4Bit, root: both)
 
-        WhisperModelDownloader.delete(repo: turbo, root: both)
+        try WhisperModelDownloader.delete(repo: turbo, root: both)
         XCTAssertFalse(WhisperModelDownloader.isDownloaded(repo: turbo, root: both))
         XCTAssertTrue(
             WhisperModelDownloader.isDownloaded(repo: turbo4Bit, root: both),
@@ -148,7 +148,7 @@ final class MLXModelFolderIsolationTests: XCTestCase {
         )
 
         try makeFakeSnapshot(repo: turbo, root: both)
-        WhisperModelDownloader.delete(repo: turbo4Bit, root: both)
+        try WhisperModelDownloader.delete(repo: turbo4Bit, root: both)
         XCTAssertFalse(WhisperModelDownloader.isDownloaded(repo: turbo4Bit, root: both))
         XCTAssertTrue(
             WhisperModelDownloader.isDownloaded(repo: turbo, root: both),

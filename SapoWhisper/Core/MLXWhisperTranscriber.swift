@@ -72,13 +72,14 @@ nonisolated enum MLXModelDownloadPhase: Equatable {
     case idle
     case downloading(Double)
     case paused(Double)
+    case deleting
     case failed(String)
 
     var fraction: Double? {
         switch self {
         case .downloading(let fraction), .paused(let fraction):
             return fraction
-        case .idle, .failed:
+        case .idle, .deleting, .failed:
             return nil
         }
     }
@@ -156,11 +157,30 @@ class MLXWhisperTranscriber {
     /// unload targets this generation so it can never clobber a newer load.
     private var currentLoadGeneration = 0
     @ObservationIgnored private var downloadTasks: [MLXWhisperModel: Task<URL, Error>] = [:]
+    typealias DownloadOperation = @MainActor (MLXWhisperModel, URL, @escaping @MainActor @Sendable (Double) -> Void) async throws -> URL
+    typealias DeleteOperation = @MainActor (MLXWhisperModel, URL) throws -> Void
+
+    @ObservationIgnored private var downloadGenerations: [MLXWhisperModel: UUID] = [:]
+    @ObservationIgnored private var downloadTails: [MLXWhisperModel: Task<Void, Never>] = [:]
+    @ObservationIgnored private let downloadOperation: DownloadOperation
+    @ObservationIgnored private let deleteOperation: DeleteOperation
+    private let rootDirectory: URL
     private var idleUnloadTimer: Timer?
 
     // MARK: - Initialization
 
-    init() {
+    init(rootDirectory: URL? = nil, download: DownloadOperation? = nil, delete: DeleteOperation? = nil) {
+        self.rootDirectory = rootDirectory ?? Self.modelsRootDirectory
+        downloadOperation =
+            download ?? { model, root, progress in
+                try await WhisperModelDownloader.download(
+                    repo: model.rawValue, revision: model.revision, root: root, progress: progress
+                )
+            }
+        deleteOperation =
+            delete ?? { model, root in
+                try WhisperModelDownloader.delete(repo: model.rawValue, root: root)
+            }
         refreshDownloadedModels()
         SapoLog.recording.info(
             "MLXWhisperTranscriber initialized downloaded=\(self.downloadedModels.count, privacy: .public)"
@@ -179,6 +199,7 @@ class MLXWhisperTranscriber {
     /// model already in flight await it instead of restarting (R4 mirror).
     func loadModel(_ model: MLXWhisperModel) async throws {
         try Task.checkCancellation()
+        guard downloadPhase(model) != .deleting else { throw CancellationError() }
 
         if currentModel == model, isModelLoaded, !isLoading {
             return
@@ -195,8 +216,9 @@ class MLXWhisperTranscriber {
             loadTask = nil
         }
 
+        let existingDownload = downloadTasks[model]
         let task = Task {
-            try await performLoadModel(model)
+            try await performLoadModel(model, existingDownload: existingDownload)
         }
         loadTask = task
         loadingModel = model
@@ -205,7 +227,7 @@ class MLXWhisperTranscriber {
         loadTask = nil
     }
 
-    private func performLoadModel(_ model: MLXWhisperModel) async throws {
+    private func performLoadModel(_ model: MLXWhisperModel, existingDownload: Task<URL, Error>?) async throws {
         isLoading = true
         isModelLoaded = false
         loadingProgress = 0
@@ -213,8 +235,11 @@ class MLXWhisperTranscriber {
         defer { isLoading = false }
 
         do {
-            let root = Self.modelsRootDirectory
-            let alreadyDownloaded = WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: root)
+            try Task.checkCancellation()
+            guard downloadPhase(model) != .deleting else { throw CancellationError() }
+            let root = rootDirectory
+            let activeDownload = existingDownload ?? downloadTasks[model]
+            let alreadyDownloaded = activeDownload == nil && WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: root)
 
             let directory: URL
             if alreadyDownloaded {
@@ -224,7 +249,7 @@ class MLXWhisperTranscriber {
                 loadingMessage = "mlx.state.downloading".localized(model.displayName)
                 // Shared with the standalone Settings download path, so a tap
                 // on the row and a selection load never race two snapshots.
-                directory = try await sharedDownloadTask(for: model).value
+                directory = try await (activeDownload ?? sharedDownloadTask(for: model)).value
             }
 
             try Task.checkCancellation()
@@ -292,6 +317,7 @@ class MLXWhisperTranscriber {
         guard let task = downloadTasks[model] else { return }
         let fraction = downloadPhase(model).fraction ?? 0
         downloadTasks[model] = nil
+        downloadGenerations[model] = nil
         downloadPhases[model] = .paused(fraction)
         task.cancel()
         SapoLog.settings.info(
@@ -302,69 +328,50 @@ class MLXWhisperTranscriber {
     /// Aborts the download and deletes the partial snapshot — cancel means
     /// "I changed my mind", so the disk space comes back.
     func cancelDownload(_ model: MLXWhisperModel) {
-        let task = downloadTasks[model]
-        downloadTasks[model] = nil
-        downloadPhases[model] = .idle
-        task?.cancel()
-        WhisperModelDownloader.delete(repo: model.rawValue, root: Self.modelsRootDirectory)
-        downloadedModels.remove(model)
-        SapoLog.settings.info("MLX download cancelled model=\(model.rawValue, privacy: .public)")
+        deleteDownloadedModel(model)
     }
 
-    /// One download task per tier, shared by the Settings row and the
-    /// selection-load path. Progress feeds the per-row phase always, and the
-    /// card-level loading bar only while this model is the one being loaded.
     private func sharedDownloadTask(for model: MLXWhisperModel) -> Task<URL, Error> {
         if let existing = downloadTasks[model] { return existing }
 
+        let generation = UUID()
+        let predecessor = downloadTails[model]
+        downloadGenerations[model] = generation
         downloadPhases[model] = .downloading(downloadPhase(model).fraction ?? 0)
-        SapoLog.recording.info(
-            "MLX model download started model=\(model.rawValue, privacy: .public)"
-        )
 
-        let task = Task { [weak self] () throws -> URL in
+        let task = Task { [self] () throws -> URL in
+            await predecessor?.value
             do {
-                let directory = try await WhisperModelDownloader.download(
-                    repo: model.rawValue,
-                    revision: model.revision,
-                    root: Self.modelsRootDirectory,
-                    progress: { fraction in
-                        guard let self else { return }
-                        // Pause/cancel detached this task — stop publishing.
-                        guard self.downloadTasks[model] != nil else { return }
-                        self.downloadPhases[model] = .downloading(fraction)
-                        if self.loadingModel == model, self.isLoading {
-                            self.loadingProgress = fraction * 0.9
-                            self.loadingMessage = "mlx.state.downloading_percent".localized(
-                                model.displayName, String(Int(fraction * 100))
-                            )
-                        }
+                try Task.checkCancellation()
+                let directory = try await downloadOperation(model, rootDirectory) { [weak self] fraction in
+                    guard let self, self.downloadGenerations[model] == generation else { return }
+                    self.downloadPhases[model] = .downloading(fraction)
+                    if self.loadingModel == model, self.isLoading {
+                        self.loadingProgress = fraction * 0.9
+                        self.loadingMessage = "mlx.state.downloading_percent".localized(
+                            model.displayName, String(Int(fraction * 100))
+                        )
                     }
-                )
-                guard let self else { return directory }
-                self.downloadTasks[model] = nil
-                self.downloadPhases[model] = .idle
-                self.markAsDownloaded(model)
-                SapoLog.recording.info(
-                    "MLX model download complete model=\(model.rawValue, privacy: .public)"
-                )
-                self.onDownloadCompleted?(model)
+                }
+                try Task.checkCancellation()
+                guard downloadGenerations[model] == generation else { throw CancellationError() }
+                downloadTasks[model] = nil
+                downloadGenerations[model] = nil
+                downloadPhases[model] = .idle
+                markAsDownloaded(model)
+                onDownloadCompleted?(model)
                 return directory
             } catch {
-                // Pause/cancel already set the phase they want; only a real
-                // failure of a still-attached task lands in `.failed`.
-                if let self, !Task.isCancelled, self.downloadTasks[model] != nil {
-                    self.downloadTasks[model] = nil
-                    self.downloadPhases[model] = .failed(error.localizedDescription)
-                    let detail = LogSanitizer.errorDiagnostic(error, state: "mlx-model-download")
-                    SapoLog.recording.error(
-                        "MLX failed \(detail, privacy: .public)"
-                    )
+                if downloadGenerations[model] == generation {
+                    downloadTasks[model] = nil
+                    downloadGenerations[model] = nil
+                    downloadPhases[model] = .failed(error.localizedDescription)
                 }
                 throw error
             }
         }
         downloadTasks[model] = task
+        downloadTails[model] = Task { _ = await task.result }
         return task
     }
 
@@ -559,7 +566,7 @@ class MLXWhisperTranscriber {
 
     func isModelDownloaded(_ model: MLXWhisperModel) -> Bool {
         if downloadedModels.contains(model) { return true }
-        if WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: Self.modelsRootDirectory) {
+        if WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: rootDirectory) {
             downloadedModels.insert(model)
             return true
         }
@@ -573,33 +580,45 @@ class MLXWhisperTranscriber {
     func refreshDownloadedModels() {
         var found: Set<MLXWhisperModel> = []
         for model in MLXWhisperModel.allCases
-        where WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: Self.modelsRootDirectory) {
+        where WhisperModelDownloader.isDownloaded(repo: model.rawValue, root: rootDirectory) {
             found.insert(model)
         }
         downloadedModels = found
     }
 
     func downloadedModelSize(_ model: MLXWhisperModel) -> Int64? {
-        let size = WhisperModelDownloader.sizeOnDisk(repo: model.rawValue, root: Self.modelsRootDirectory)
+        let size = WhisperModelDownloader.sizeOnDisk(repo: model.rawValue, root: rootDirectory)
         return size > 0 ? size : nil
     }
 
     func deleteDownloadedModel(_ model: MLXWhisperModel) {
-        if let task = downloadTasks[model] {
-            downloadTasks[model] = nil
-            task.cancel()
-        }
-        downloadPhases[model] = .idle
-        if currentModel == model {
+        let predecessor = downloadTails[model]
+        let generation = UUID()
+        let pendingLoad = loadingModel == model ? loadTask : nil
+        downloadGenerations[model] = generation
+        downloadPhases[model] = .deleting
+        downloadTasks.removeValue(forKey: model)?.cancel()
+        if loadingModel == model || currentModel == model {
             unloadModel()
         }
-        WhisperModelDownloader.delete(repo: model.rawValue, root: Self.modelsRootDirectory)
-        var newSet = downloadedModels
-        newSet.remove(model)
-        downloadedModels = newSet
-        SapoLog.recording.info(
-            "MLX model deleted model=\(model.rawValue, privacy: .public)"
-        )
+        downloadTails[model] = Task { [self] in
+            await predecessor?.value
+            _ = await pendingLoad?.result
+            do {
+                try deleteOperation(model, rootDirectory)
+                downloadedModels.remove(model)
+                if downloadGenerations[model] == generation {
+                    downloadGenerations[model] = nil
+                    downloadPhases[model] = .idle
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                if downloadGenerations[model] == generation {
+                    downloadGenerations[model] = nil
+                    downloadPhases[model] = .failed(error.localizedDescription)
+                }
+            }
+        }
     }
 
     func getDownloadedModelsInfo() -> [(model: MLXWhisperModel, size: Int64)] {

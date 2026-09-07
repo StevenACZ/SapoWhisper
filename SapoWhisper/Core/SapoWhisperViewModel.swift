@@ -161,7 +161,7 @@ class SapoWhisperViewModel: ObservableObject {
     // MARK: - Managers
 
     let audioRecorder = AudioCaptureEngine(mode: .batch)
-    let mlxWhisperTranscriber = MLXWhisperTranscriber()
+    let mlxWhisperTranscriber: MLXWhisperTranscriber
     let hotkeyManager = HotkeyManager.shared
     let overlayManager = OverlayWindowManager.shared
     let deepgramTranscriber = DeepgramBatchTranscriber()
@@ -382,7 +382,11 @@ class SapoWhisperViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(transcriptPostProcessor: any TranscriptPostProcessing = TranscriptPostProcessor()) {
+    init(
+        transcriptPostProcessor: any TranscriptPostProcessing = TranscriptPostProcessor(),
+        mlxWhisperTranscriber: MLXWhisperTranscriber = MLXWhisperTranscriber()
+    ) {
+        self.mlxWhisperTranscriber = mlxWhisperTranscriber
         self.transcriptPostProcessor = transcriptPostProcessor
         if let backup = TranscriptionEngineVariant.stored(fallbackEngineRawValue), backup.rawValue != fallbackEngineRawValue {
             fallbackEngineRawValue = backup.rawValue
@@ -827,6 +831,14 @@ class SapoWhisperViewModel: ObservableObject {
     private func cancelSelectedMLXModelLoad() {
         selectedMLXModelLoadTask?.cancel()
         selectedMLXModelLoadTask = nil
+    }
+
+    func deferMLXWhisperModelSetup() {
+        guard currentEngine == .mlxWhisper, !isEngineReady(.mlxWhisper) else { return }
+        cancelSelectedMLXModelLoad()
+        if let model = currentMLXWhisperModel { mlxWhisperTranscriber.pauseDownload(model) }
+        mlxWhisperTranscriber.unloadModel()
+        checkInitialState()
     }
 
     private func unloadMLXModelIfNotSelected() {

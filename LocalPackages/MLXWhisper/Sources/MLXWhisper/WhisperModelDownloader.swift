@@ -77,8 +77,11 @@ public enum WhisperModelDownloader {
         }
     }
 
-    public static func delete(repo: String, root: URL) {
-        try? FileManager.default.removeItem(at: modelDirectory(repo: repo, root: root))
+    public static func delete(repo: String, root: URL) throws {
+        let directory = modelDirectory(repo: repo, root: root)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
     }
 
     /// Download (or resume/complete) a model snapshot. `revision` should be
@@ -101,17 +104,11 @@ public enum WhisperModelDownloader {
         }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let client = HubClient(cache: .default)
-        _ = try await client.downloadSnapshot(
-            of: repoID,
-            kind: .model,
-            to: dir,
-            revision: revision,
-            matching: ["*.safetensors", "*.json", "*.txt", "merges.txt", "vocab.json"],
-            progressHandler: { snapshotProgress in
-                // Reserve the last 2% for the tokenizer-asset prefetch below.
-                progress?(snapshotProgress.fractionCompleted * 0.98)
-            }
+        let client = HubClient(host: URL(string: "https://huggingface.co")!, cache: nil)
+        try await downloadFiles(
+            repo: repoID, revision: revision, into: dir, client: client,
+            matching: { ["safetensors", "json", "txt"].contains(URL(fileURLWithPath: $0).pathExtension) },
+            progress: { fraction in progress?(fraction * 0.98) }
         )
 
         guard hasNonEmptySafetensors(in: dir) else {
@@ -119,7 +116,8 @@ public enum WhisperModelDownloader {
             throw WhisperModelDownloadError.incompleteDownload(repo)
         }
 
-        try await prefetchTokenizerAssetsIfNeeded(into: dir, client: client)
+        try await prefetchTokenizerAssetsIfNeeded(into: dir, client: client, progress: progress)
+        try Task.checkCancellation()
         await MainActor.run { progress?(1.0) }
         return dir
     }
@@ -153,7 +151,8 @@ public enum WhisperModelDownloader {
     /// directory (same repo selection as `WhisperModel.fromDirectory`).
     private static func prefetchTokenizerAssetsIfNeeded(
         into dir: URL,
-        client: HubClient
+        client: HubClient,
+        progress: (@MainActor @Sendable (Double) -> Void)?
     ) async throws {
         guard !hasTokenizerAssets(in: dir) else { return }
 
@@ -169,17 +168,66 @@ public enum WhisperModelDownloader {
             throw WhisperModelDownloadError.invalidRepo(tokenizerRepo)
         }
 
-        _ = try await client.downloadSnapshot(
-            of: repoID,
-            kind: .model,
-            to: dir,
-            revision: tokenizerRevision,
-            matching: tokenizerAssetFiles,
-            progressHandler: { _ in }
+        try await downloadFiles(
+            repo: repoID, revision: tokenizerRevision, into: dir, client: client,
+            matching: { tokenizerAssetFiles.contains($0) },
+            progress: { fraction in progress?(0.98 + fraction * 0.02) }
         )
 
         guard hasTokenizerAssets(in: dir) else {
             throw WhisperModelDownloadError.incompleteDownload(tokenizerRepo)
         }
     }
+
+    private static func downloadFiles(
+        repo: Repo.ID, revision: String, into directory: URL, client: HubClient,
+        matching: (String) -> Bool,
+        progress: @escaping @MainActor @Sendable (Double) -> Void
+    ) async throws {
+        let entries = try await client.modelTree(repo, revision: revision)
+            .filter { $0.type == .file && matching($0.path) }
+            .sorted { $0.path < $1.path }
+        guard !entries.isEmpty,
+            entries.allSatisfy({
+                !$0.path.contains("/") && !$0.path.contains("\\") && $0.path != "." && $0.path != ".."
+                    && ($0.size ?? 0) > 0 && ($0.size ?? 0) < 1_000_000_000_000
+            })
+        else { throw WhisperModelDownloadError.incompleteDownload(repo.rawValue) }
+        let total = entries.reduce(Int64(0)) { $0 + Int64($1.size!) }
+        var retained = entries.map { entry -> Int64 in
+            let destination = directory.appendingPathComponent(entry.path)
+            let expected = Int64(entry.size!)
+            let completeSize = Int64((try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            if completeSize == expected { return expected }
+            let partialSize = Int64(
+                (try? destination.appendingPathExtension("partial")
+                    .resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            return partialSize <= expected ? partialSize : 0
+        }
+        await progress(Double(retained.reduce(0, +)) / Double(total))
+        for (index, entry) in entries.enumerated() {
+            try Task.checkCancellation()
+            let size = Int64(entry.size!)
+            let destination = directory.appendingPathComponent(entry.path)
+            if Int64((try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) != size {
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
+                let baseline = retained.reduce(0, +) - retained[index]
+                let transfer = WhisperFileDownload(destination: destination, expectedSize: size) { received in
+                    let fraction = Double(baseline + received) / Double(total)
+                    Task { @MainActor in progress(fraction) }
+                }
+                let url = URL(string: "https://huggingface.co")!
+                    .appendingPathComponent(repo.rawValue)
+                    .appendingPathComponent("resolve")
+                    .appendingPathComponent(revision)
+                    .appendingPathComponent(entry.path)
+                try await transfer.download(from: url)
+            }
+            retained[index] = size
+            await progress(Double(retained.reduce(0, +)) / Double(total))
+        }
+    }
+
 }

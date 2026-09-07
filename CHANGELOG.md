@@ -6,6 +6,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Configure the transcription engine later from the welcome flow, with clear setup guidance before the first dictation.
+
+### Fixed
+
+- Local-model downloads show byte-based progress in Settings and the welcome flow. Paused downloads retain their bytes and resume without duplicating content.
+- Cancelling, deleting and downloading a model again wait for the previous operation to finish; late callbacks cannot restore a deleted model or overwrite a newer download.
+
 ## [2.18.0] - 2026-09-06
 
 ### Added
