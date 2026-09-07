@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.18.1] - 2026-09-07
+
 ### Added
 
 - Configure the transcription engine later from the welcome flow, with clear setup guidance before the first dictation.
