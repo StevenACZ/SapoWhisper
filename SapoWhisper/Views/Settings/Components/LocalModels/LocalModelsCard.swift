@@ -92,9 +92,13 @@ struct LocalModelsCard: View {
 
     private var loadingProgressView: some View {
         VStack(spacing: 8) {
-            ProgressView(value: transcriber.loadingProgress)
-                .progressViewStyle(.linear)
-                .tint(transcriber.loadingState == .downloading ? .blue : .sapoGreenText)
+            ProgressView(
+                value: transcriber.loadingState == .downloading
+                    ? viewModel.currentMLXWhisperModel.flatMap { transcriber.downloadPhase($0).fraction } ?? 0
+                    : transcriber.loadingProgress
+            )
+            .progressViewStyle(.linear)
+            .tint(transcriber.loadingState == .downloading ? .blue : .sapoGreenText)
 
             HStack(spacing: 6) {
                 loadingStateIcon

@@ -41,7 +41,7 @@ struct LocalModelRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(isActiveLoading || isBusy)
+                .disabled(isActiveLoading || isBusy || phase == .deleting)
 
                 trailingControls
             }
@@ -170,7 +170,11 @@ struct LocalModelRow: View {
             controlIcon("play.circle.fill", tint: .sapoGreen, help: "model.resume_tooltip", action: onResume)
             controlIcon("xmark.circle.fill", tint: .secondary, help: "model.cancel_tooltip", action: onCancel)
 
+        case .deleting:
+            ProgressView().controlSize(.small)
+
         case .failed:
+            controlIcon("xmark.circle.fill", tint: .secondary, help: "model.cancel_tooltip", action: onCancel)
             controlIcon("arrow.clockwise.circle.fill", tint: .sapoGreen, help: "model.retry_tooltip", action: onDownload)
 
         case .idle:

@@ -759,3 +759,9 @@
 "config.fallback_engine_unavailable" = "%@ está configurado, pero no está disponible temporalmente. Se volverá a intentar tras recuperarse.";
 
 "history.retry_current" = "Reintentar con el motor actual";
+
+"welcome.configure_later" = "Configurar después";
+
+"welcome.engine_deferred_title" = "Configura tu motor cuando quieras";
+
+"welcome.engine_deferred_hint" = "Elige un motor en Ajustes → Motor antes de tu primer dictado.";

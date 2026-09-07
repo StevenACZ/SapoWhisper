@@ -3,8 +3,7 @@
 //  SapoWhisper
 //
 //  Multi-step welcome flow: greet → permissions → choose engine →
-//  optional AI polish → ready. Every step is skippable except that
-//  "Continue" on the engine step requires one usable engine.
+//  optional AI polish → ready.
 //
 
 import Combine
@@ -146,11 +145,16 @@ struct WelcomeView: View {
 
             Spacer()
 
-            if step == .engine && !canContinue {
-                Text("welcome.engine_required".localized)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.trailing, 8)
+            if step == .engine {
+                Button("welcome.configure_later".localized) {
+                    if viewModel.currentEngine == .mlxWhisper && !canContinue {
+                        viewModel.deferMLXWhisperModelSetup()
+                    }
+                    advance()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(.trailing, 8)
             }
 
             Button(continueTitle) {
@@ -450,9 +454,7 @@ private struct WelcomeEngineStep: View {
         .padding(.horizontal, 32)
         .padding(.top, 18)
         .onAppear {
-            if viewModel.isEngineReady(viewModel.currentEngine) {
-                selectedCard = viewModel.currentEngine
-            }
+            selectedCard = viewModel.currentEngine
         }
     }
 
@@ -540,6 +542,16 @@ private struct WelcomeWhisperCard: View {
         viewModel.mlxWhisperTranscriber.isLoading
     }
 
+    private var progress: Double {
+        let transcriber = viewModel.mlxWhisperTranscriber
+        if transcriber.loadingState == .downloading,
+            let model = viewModel.currentMLXWhisperModel
+        {
+            return transcriber.downloadPhase(model).fraction ?? 0
+        }
+        return transcriber.loadingProgress
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: onSelect) {
@@ -555,7 +567,7 @@ private struct WelcomeWhisperCard: View {
             if isSelected && !isReady {
                 if isLoading {
                     HStack(spacing: 12) {
-                        ProgressRing(progress: viewModel.mlxWhisperTranscriber.loadingProgress)
+                        ProgressRing(progress: progress)
                             .frame(width: 30, height: 30)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("welcome.whisper_downloading".localized)
@@ -876,7 +888,12 @@ private struct WelcomeReadyStep: View {
         }
     }
 
+    private var isEngineReady: Bool {
+        viewModel.isEngineReady(viewModel.currentEngine)
+    }
+
     private var subtitle: String {
+        guard isEngineReady else { return "welcome.engine_deferred_hint".localized }
         let manager = viewModel.hotkeyManager
         if manager.currentTriggerKind == .doubleModifier {
             let modifier = HotkeyDoubleTapModifier.option(for: manager.currentDoubleTapModifier)
@@ -889,13 +906,13 @@ private struct WelcomeReadyStep: View {
         VStack(spacing: 18) {
             Spacer(minLength: 0)
 
-            Image(systemName: "checkmark.seal.fill")
+            Image(systemName: isEngineReady ? "checkmark.seal.fill" : "slider.horizontal.3")
                 .font(.system(size: 56))
                 .foregroundStyle(Color.sapoGreen)
                 .symbolEffect(.bounce, value: appeared)
                 .onAppear { appeared = true }
 
-            Text("welcome.ready_title".localized)
+            Text(isEngineReady ? "welcome.ready_title".localized : "welcome.engine_deferred_title".localized)
                 .font(.system(size: 26, weight: .bold))
 
             Text(subtitle)
@@ -904,11 +921,13 @@ private struct WelcomeReadyStep: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
 
-            HotkeyKeycapsDemo(trigger: .current(from: viewModel.hotkeyManager))
-                .padding(.top, 4)
+            if isEngineReady {
+                HotkeyKeycapsDemo(trigger: .current(from: viewModel.hotkeyManager))
+                    .padding(.top, 4)
 
-            tryItCard
-                .padding(.top, 10)
+                tryItCard
+                    .padding(.top, 10)
+            }
 
             Spacer(minLength: 0)
         }
