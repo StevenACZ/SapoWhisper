@@ -39,9 +39,27 @@ final class LocalAIServerTranscriber: ObservableObject {
 
     nonisolated private static let engineName = "Local AI Server"
     private let session: URLSession
+    private let reachabilitySession: URLSession
+    private let ownsReachabilitySession: Bool
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(session: URLSession? = nil) {
+        self.session = session ?? .shared
+        reachabilitySession = session ?? URLSession(configuration: Self.reachabilityConfiguration())
+        ownsReachabilitySession = session == nil
+    }
+
+    deinit {
+        if ownsReachabilitySession { reachabilitySession.invalidateAndCancel() }
+    }
+
+    nonisolated static func reachabilityConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = preflightTimeout
+        configuration.timeoutIntervalForResource = preflightTimeout
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        return configuration
     }
 
     var isConfigured: Bool {
@@ -197,11 +215,6 @@ final class LocalAIServerTranscriber: ObservableObject {
         return (request, body)
     }
 
-    /// Standalone reachability probe, run while the user is still dictating so
-    /// a dead server is known BEFORE the upload would start: the backup engine
-    /// then takes the dictation without it paying the preflight wait. Same
-    /// contract as the pre-upload preflight; never throws, and an
-    /// unconfigured server reports nothing rather than a false "down".
     func probeReachability() async -> Bool? {
         let apiKey = KeychainStore.string(for: .localAIServerAPIKey) ?? ""
         guard
@@ -217,7 +230,10 @@ final class LocalAIServerTranscriber: ObservableObject {
             )
             return true
         } catch {
-            return Task.isCancelled ? nil : false
+            if !Task.isCancelled {
+                SapoLog.recording.notice("Local AI Server background probe inconclusive; transcription will confirm availability")
+            }
+            return nil
         }
     }
 
@@ -227,63 +243,71 @@ final class LocalAIServerTranscriber: ObservableObject {
     /// transport-level failures (refused, unreachable, timed out) throw.
     nonisolated static let preflightTimeout: TimeInterval = 3
     private func preflightServerReachability(baseURL: URL, apiKey: String) async throws {
-        var request = URLRequest(url: LocalAIServerConfiguration.healthURL(from: baseURL))
-        request.httpMethod = "GET"
-        request.timeoutInterval = Self.preflightTimeout
-        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedKey.isEmpty {
-            request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
-        }
-
-        let deadline = ProcessInfo.processInfo.systemUptime + Self.preflightTimeout
-        var retried = false
         do {
-            while true {
-                try Task.checkCancellation()
-                let remaining = deadline - ProcessInfo.processInfo.systemUptime
-                guard remaining > 0 else { throw URLError(.timedOut) }
-                request.timeoutInterval = remaining
-                do {
-                    _ = try await session.data(for: request)
-                    return
-                } catch let error as URLError {
-                    try Task.checkCancellation()
-                    guard !retried, TransientRequestRetry.retryableURLErrorCodes.contains(error.code),
-                        deadline - ProcessInfo.processInfo.systemUptime > 0.151
-                    else { throw error }
-                    retried = true
-                    SapoLog.recording.notice(
-                        "Local AI Server preflight confirming transient failure code=\(error.code.rawValue, privacy: .public)")
-                    try await Task.sleep(for: .milliseconds(150))
-                }
-            }
+            _ = try await checkReachability(url: LocalAIServerConfiguration.healthURL(from: baseURL), apiKey: apiKey)
         } catch {
             try Task.checkCancellation()
             let detail = LogSanitizer.errorDiagnostic(error, state: "local-preflight")
-            let failure = TranscriptionFailure(
-                kind: .network,
-                engine: Self.engineName,
-                technicalDetail: detail
-            )
-            SapoLog.recording.error(
-                "Local AI Server preflight failed \(failure.logSummary, privacy: .public)")
+            let failure = TranscriptionFailure(kind: .network, engine: Self.engineName, technicalDetail: detail)
+            SapoLog.recording.error("Local AI Server preflight failed \(failure.logSummary, privacy: .public)")
             throw failure
         }
     }
 
-    private func probe(url: URL, apiKey: String) async throws {
-        var request = URLRequest(url: url)
+    private func checkReachability(url: URL, apiKey: String) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
-        request.timeoutInterval = 8
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedKey.isEmpty {
-            request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
+        if !trimmedKey.isEmpty { request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization") }
+        let preparedRequest = request
+        let deadline = ProcessInfo.processInfo.systemUptime + Self.preflightTimeout
+        return try await withThrowingTaskGroup(of: (Data, HTTPURLResponse).self) { group in
+            group.addTask {
+                try await self.performReachabilityChecks(request: preparedRequest, deadline: deadline)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(Self.preflightTimeout))
+                throw URLError(.timedOut)
+            }
+            defer { group.cancelAll() }
+            guard let response = try await group.next() else { throw CancellationError() }
+            return response
         }
+    }
 
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw LocalAIServerConnectionError.invalidResponse("missing HTTP response")
+    private func performReachabilityChecks(
+        request initialRequest: URLRequest, deadline: TimeInterval
+    ) async throws -> (Data, HTTPURLResponse) {
+        let backoffs: [TimeInterval] = [0.35, 0.8]
+        var request = initialRequest
+        var attempt = 0
+        while true {
+            try Task.checkCancellation()
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { throw URLError(.timedOut) }
+            request.timeoutInterval = remaining
+            do {
+                let (data, response) = try await reachabilitySession.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                return (data, http)
+            } catch let error as URLError {
+                try Task.checkCancellation()
+                guard attempt < backoffs.count,
+                    TransientRequestRetry.retryableURLErrorCodes.contains(error.code),
+                    deadline - ProcessInfo.processInfo.systemUptime > backoffs[attempt]
+                else { throw error }
+                let delay = backoffs[attempt]
+                attempt += 1
+                SapoLog.recording.notice(
+                    "Local AI Server preflight confirming transient failure code=\(error.code.rawValue, privacy: .public) attempt=\(attempt + 1, privacy: .public)/3"
+                )
+                try await Task.sleep(for: .seconds(delay))
+            }
         }
+    }
+
+    private func probe(url: URL, apiKey: String) async throws {
+        let (data, http) = try await checkReachability(url: url, apiKey: apiKey)
         guard (200...299).contains(http.statusCode) else {
             throw LocalAIServerConnectionError.server(
                 statusCode: http.statusCode,

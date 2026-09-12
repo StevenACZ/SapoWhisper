@@ -8,28 +8,19 @@ import Foundation
 import os
 
 nonisolated extension AudioCaptureEngine {
-    func cleanupSetupArtifacts(engine: AVAudioEngine?, recordingURL: URL?, deleteTemporaryFile: Bool) {
+    func cleanupSetupArtifacts(engine: InputOnlyAudioSession?, recordingURL: URL?, deleteTemporaryFile: Bool) {
         deviceSentinel.end()
-        if let engine {
-            AudioEngineGuard.teardownAndRetire(
-                engine,
-                removeInputTap: true,
-                operation: "cleanup-setup"
-            )
-        }
-        if let ownedEngine = audioEngine,
+        inputFailures.stopNotifying()
+        engine?.close()
+        if let ownedEngine = inputSession,
             engine.map({ ownedEngine !== $0 }) ?? true
         {
-            AudioEngineGuard.teardownAndRetire(
-                ownedEngine,
-                removeInputTap: true,
-                operation: "cleanup-owned"
-            )
+            ownedEngine.close()
         }
 
         audioWriteQueue.sync {}
         audioFile = nil
-        audioEngine = nil
+        inputSession = nil
         converter = nil
         converterOutputFormat = nil
         chunkHandler = nil
@@ -172,7 +163,8 @@ nonisolated extension AudioCaptureEngine {
             maxInputGapMs: maxGap,
             fileSizeBytes: fileSizeBytes,
             failedWriteCount: failedWrites,
-            firstWriteError: writeError
+            firstWriteError: writeError,
+            inputFailureCode: inputFailures.firstFailure
         )
     }
 

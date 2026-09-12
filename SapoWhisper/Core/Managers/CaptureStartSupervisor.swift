@@ -105,11 +105,12 @@ final class CaptureStartSupervisor {
         switch recordingError {
         case .noInputAfterDeviceSwitch, .invalidFormat:
             return true
+        case .deviceSelectionFailed:
+            return classifyRecordingStartFailure(error, routeTransitionActive: false).isTransient
         case .engineCreationFailed,
             .fileCreationFailed,
             .converterCreationFailed,
             .inputDeviceUnavailable,
-            .deviceSelectionFailed,
             .permissionDenied,
             .inputSetupTimedOut:
             return false

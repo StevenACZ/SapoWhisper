@@ -20,12 +20,12 @@ nonisolated final class CaptureDeviceSentinel {
     enum Event: String {
         case deviceDied = "device-died"
         case configurationChanged = "configuration-changed"
+        case defaultInputChanged = "default-input-changed"
     }
 
     private let queue: DispatchQueue
-    private var observedDeviceID: AudioDeviceID?
-    private var aliveListener: AudioObjectPropertyListenerBlock?
-    private var configObserver: NSObjectProtocol?
+    private var listeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
+    private var generation: UInt64 = 0
 
     init(queue: DispatchQueue) {
         self.queue = queue
@@ -35,29 +35,44 @@ nonisolated final class CaptureDeviceSentinel {
         end()
     }
 
-    func begin(engine: AVAudioEngine, deviceID: AudioDeviceID?, onEvent: @escaping @Sendable (Event) -> Void) {
+    func begin(deviceID: AudioDeviceID, followsDefaultInput: Bool, onEvent: @escaping @Sendable (Event) -> Void) {
         end()
-
-        configObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange,
-            object: engine,
-            queue: nil
-        ) { [queue] _ in
-            queue.async { onEvent(.configurationChanged) }
+        observe(deviceID, address: Self.aliveAddress) {
+            if !Self.isDeviceAlive(deviceID) { onEvent(.deviceDied) }
         }
-
-        guard let deviceID else { return }
-
-        var address = Self.aliveAddress
-        let listener: AudioObjectPropertyListenerBlock = { _, _ in
-            guard !Self.isDeviceAlive(deviceID) else { return }
-            onEvent(.deviceDied)
+        for selector in [kAudioDevicePropertyNominalSampleRate, kAudioDevicePropertyStreamConfiguration] {
+            observe(
+                deviceID,
+                address: AudioObjectPropertyAddress(
+                    mSelector: selector,
+                    mScope: selector == kAudioDevicePropertyNominalSampleRate
+                        ? kAudioObjectPropertyScopeGlobal : kAudioDevicePropertyScopeInput,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+            ) { onEvent(.configurationChanged) }
         }
+        if followsDefaultInput {
+            observe(
+                AudioObjectID(kAudioObjectSystemObject),
+                address: AudioObjectPropertyAddress(
+                    mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+            ) { onEvent(.defaultInputChanged) }
+        }
+    }
 
-        let status = AudioObjectAddPropertyListenerBlock(deviceID, &address, queue, listener)
+    private func observe(_ object: AudioObjectID, address: AudioObjectPropertyAddress, action: @escaping @Sendable () -> Void) {
+        var address = address
+        let observedGeneration = generation
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard self?.generation == observedGeneration else { return }
+            action()
+        }
+        let status = AudioObjectAddPropertyListenerBlock(object, &address, queue, listener)
         if status == noErr {
-            observedDeviceID = deviceID
-            aliveListener = listener
+            listeners.append((object, address, listener))
         } else {
             SapoLog.audioRoute.warning(
                 "Capture sentinel could not watch device-alive status=\(status, privacy: .public)"
@@ -66,17 +81,12 @@ nonisolated final class CaptureDeviceSentinel {
     }
 
     func end() {
-        if let configObserver {
-            NotificationCenter.default.removeObserver(configObserver)
-            self.configObserver = nil
+        generation &+= 1
+        for (object, storedAddress, listener) in listeners {
+            var address = storedAddress
+            AudioObjectRemovePropertyListenerBlock(object, &address, queue, listener)
         }
-
-        if let observedDeviceID, let aliveListener {
-            var address = Self.aliveAddress
-            AudioObjectRemovePropertyListenerBlock(observedDeviceID, &address, queue, aliveListener)
-        }
-        observedDeviceID = nil
-        aliveListener = nil
+        listeners.removeAll()
     }
 
     private static var aliveAddress: AudioObjectPropertyAddress {

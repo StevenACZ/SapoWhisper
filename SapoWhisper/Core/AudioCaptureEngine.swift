@@ -96,7 +96,8 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     /// UID del dispositivo de audio seleccionado
     var selectedDeviceUID: String = AudioDevice.systemDefault.uid
 
-    var audioEngine: AVAudioEngine?
+    var inputSession: InputOnlyAudioSession?
+    var inputFailures = CaptureInputFailureState()
     var audioFile: AVAudioFile?
     var recordingURL: URL?
     var converter: AVAudioConverter?
@@ -186,8 +187,6 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         SapoLog.recording.info("Waiting \(delayMs, privacy: .public)ms for input route to settle")
     }
 
-    /// Input materialization uses a disposable deadline queue; the remaining
-    /// engine lifecycle stays serialized on `audioSetupQueue`.
     /// `targetEngine` (solo batch) permite capturar directo a 16 kHz para los
     /// engines whisper-family en vez de resamplear dos veces.
     func startRecording(targetEngine: TranscriptionEngine? = nil, onPCMChunk: PCMChunkHandler? = nil) async throws {
@@ -207,6 +206,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         let savedGain = AppPreferences.defaults.double(forKey: Constants.StorageKeys.audioGain)
         let uploadQuality = AudioUploadQuality.stored()
         let setupGeneration = beginSetupGeneration()
+        inputFailures = CaptureInputFailureState()
         let inputTransport = AudioDeviceManager.shared.effectiveInputTransport(forSelectedUID: deviceUID)
         let outputTransport =
             AudioDeviceManager.shared.getSystemDefaultOutputDevice().map {
@@ -228,50 +228,31 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         lastAudioLevelPublishTime = 0
         activeGain = Float(savedGain > 0 ? savedGain : 1)
 
-        let materializedInput = try await AudioEngineGuard.materializeInputNode(
-            deadline: inputDeadline,
-            inputTransport: inputTransport,
-            outputTransport: outputTransport,
-            operation: "\(mode.opPrefix)-input-node"
-        ) { [weak self] inputNode in
-            guard let self else { throw RecordingError.engineCreationFailed }
-            let hwFormat = try self.bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
-            let cachedFormat = inputNode.outputFormat(forBus: 0)
-            let tapFormat = hwFormat ?? cachedFormat
-            guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
-                throw RecordingError.invalidFormat
-            }
-            return tapFormat
-        }
+        let preparedInput = try await prepareInputSession(
+            deviceUID: deviceUID,
+            generation: setupGeneration,
+            deadline: inputDeadline
+        )
 
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 audioSetupQueue.async { [weak self] in
                     guard let self else {
-                        AudioEngineGuard.teardownAndRetire(
-                            materializedInput.engine,
-                            removeInputTap: false,
-                            operation: "capture-owner-released"
-                        )
+                        preparedInput.close()
                         continuation.resume(throwing: RecordingError.engineCreationFailed)
                         return
                     }
 
-                    let localEngine = materializedInput.engine
-                    let inputNode = materializedInput.node
-                    let tapFormat = materializedInput.tapFormat
-                    let engine: AVAudioEngine? = localEngine
+                    let localEngine = preparedInput
+                    let tapFormat = preparedInput.format
+                    let engine: InputOnlyAudioSession? = localEngine
                     var pendingRecordingURL: URL?
 
                     do {
                         let t0 = CFAbsoluteTimeGetCurrent()
 
                         guard self.isSetupGenerationCurrent(setupGeneration) else {
-                            AudioEngineGuard.teardownAndRetire(
-                                localEngine,
-                                removeInputTap: false,
-                                operation: "stale-materialized-input"
-                            )
+                            localEngine.close()
                             continuation.resume(throwing: CancellationError())
                             return
                         }
@@ -314,14 +295,6 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
                         // orphan age gate.
                         ActiveRecordingMarker.mark(recordingURL)
 
-                        // Install tap with actual hardware format (queried via Core Audio, not the stale inputNode cache)
-                        try AudioEngineGuard.installTap(
-                            on: inputNode, bufferSize: self.tapBufferSize, format: tapFormat,
-                            operation: "\(self.mode.opPrefix)-install-tap"
-                        ) { [weak self] buffer, _ in
-                            self?.processAudioBuffer(buffer)
-                        }
-
                         guard self.isSetupGenerationCurrent(setupGeneration) else {
                             self.cleanupSetupArtifacts(engine: localEngine, recordingURL: recordingURL, deleteTemporaryFile: true)
                             continuation.resume(throwing: CancellationError())
@@ -330,7 +303,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
                         // Record start time just before engine.start() so the audio tap sees the correct value
                         self.startRecordingTime = CFAbsoluteTimeGetCurrent()
-                        try AudioEngineGuard.prepareAndStart(localEngine, operation: "\(self.mode.opPrefix)-engine-start")
+                        try localEngine.start()
                         MicrophonePermission.noteAudioInputGranted()
 
                         guard self.isSetupGenerationCurrent(setupGeneration) else {
@@ -341,12 +314,9 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
                         // A2: keep the engine reachable from the setup queue and watch
                         // the bound device + engine configuration for the whole capture.
-                        self.audioEngine = localEngine
+                        self.inputSession = localEngine
                         self.captureRecoveryAttempts = 0
-                        let boundDeviceID =
-                            deviceUID == AudioDevice.systemDefault.uid
-                            ? nil : AudioDeviceManager.shared.getDeviceID(for: deviceUID)
-                        self.beginDeviceSentinel(engine: localEngine, deviceID: boundDeviceID, generation: setupGeneration)
+                        self.beginDeviceSentinel(session: localEngine, generation: setupGeneration)
 
                         let setupMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                         SapoLog.recording.info(
@@ -429,13 +399,8 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     /// Must run on `audioSetupQueue`.
     private func finalizeCaptureOnQueue() -> URL? {
         deviceSentinel.end()
-        if let engine = audioEngine {
-            AudioEngineGuard.teardownAndRetire(
-                engine,
-                removeInputTap: true,
-                operation: "finalize-capture"
-            )
-        }
+        inputFailures.stopNotifying()
+        inputSession?.close()
 
         _ = flushRemainingConvertedAudio()
         // A1: drain pending async writes before releasing the file so the WAV
@@ -444,7 +409,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
 
         let currentURL = recordingURL
         audioFile = nil
-        audioEngine = nil
+        inputSession = nil
         converter = nil
         converterOutputFormat = nil
         recordingURL = nil
@@ -471,7 +436,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
             }
             if !diagnostics.isComplete {
                 SapoLog.recording.error(
-                    "\(self.mode.logLabel, privacy: .public) recording incomplete failedWrites=\(diagnostics.failedWriteCount, privacy: .public) firstError=\(diagnostics.firstWriteError ?? "unknown", privacy: .public)"
+                    "\(self.mode.logLabel, privacy: .public) recording incomplete failedWrites=\(diagnostics.failedWriteCount, privacy: .public) firstError=\(diagnostics.firstWriteError ?? "unknown", privacy: .public) inputError=\(diagnostics.inputFailureCode ?? 0, privacy: .public)"
                 )
             }
         }
@@ -504,7 +469,7 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
         // on that queue. `isPaused` is published BEFORE that hop: a rebuild in
         // flight reads it to decide whether to start the new engine.
         isPaused = true
-        audioSetupQueue.sync { audioEngine?.pause() }
+        audioSetupQueue.sync { inputSession?.pause() }
 
         // Guardar tiempo acumulado
         timer?.invalidate()
@@ -522,20 +487,13 @@ nonisolated final class AudioCaptureEngine: @unchecked Sendable {
     func resumeRecording() throws {
         guard isRecording, isPaused else { return }
 
-        // A4: engine lifecycle stays on audioSetupQueue (see pauseRecording),
-        // and the start goes through AudioEngineGuard — AVFAudio can assert
-        // with an uncatchable NSException if the route changed while paused.
         try audioSetupQueue.sync {
-            guard let engine = audioEngine else { return }
+            guard let engine = inputSession else { throw RecordingError.inputDeviceUnavailable }
             do {
-                try AudioEngineGuard.run("\(mode.opPrefix)-resume-engine-start") { try engine.start() }
+                try engine.start()
             } catch {
-                AudioEngineGuard.teardownAndRetire(
-                    engine,
-                    removeInputTap: true,
-                    operation: "\(mode.opPrefix)-resume-failure"
-                )
-                audioEngine = nil
+                engine.close()
+                inputSession = nil
                 throw error
             }
         }
@@ -616,17 +574,24 @@ nonisolated struct RecordingCaptureDiagnostics {
     let fileSizeBytes: Int
     var failedWriteCount: Int = 0
     var firstWriteError: String?
+    var inputFailureCode: OSStatus?
 
     var receivedInput: Bool {
         inputBufferCount > 0 && writtenFrameCount > 0
     }
 
     var isComplete: Bool {
-        failedWriteCount == 0
+        failedWriteCount == 0 && inputFailureCode == nil
     }
 
     var integrityFailure: TranscriptionFailure? {
-        isComplete ? nil : TranscriptionFailure(kind: .audioStorageFailed, technicalDetail: firstWriteError)
+        if failedWriteCount > 0 {
+            return TranscriptionFailure(kind: .audioStorageFailed, technicalDetail: firstWriteError)
+        }
+        if let inputFailureCode {
+            return TranscriptionFailure(kind: .recordingInterrupted, technicalDetail: "input(\(inputFailureCode))")
+        }
+        return nil
     }
 }
 
@@ -696,8 +661,11 @@ func classifyRecordingStartFailure(_ error: Error, routeTransitionActive: Bool) 
                 kAudioUnitErr_FailedInitialization,
                 kAudioUnitErr_InvalidElement,
                 kAudioUnitErr_CannotDoInCurrentContext,
+                kAudioHardwareIllegalOperationError,
+                kAudioHardwareBadDeviceError,
+                kAudioHardwareNotRunningError,
             ]
-            let isTransient = routeTransitionActive && transientStatuses.contains(status)
+            let isTransient = transientStatuses.contains(status)
             return RecordingStartFailureClassification(
                 isTransient: isTransient,
                 reason: "deviceSelectionFailed(\(status))"

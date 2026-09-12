@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import QuartzCore
 import os
 
 @MainActor
@@ -13,7 +14,9 @@ final class PermissionAssistant: NSObject {
     static let shared = PermissionAssistant()
 
     private var overlayController: PermissionOverlayWindowController?
-    private var trackingTimer: Timer?
+    private let locator = PermissionSettingsWindowLocator()
+    private var discoveryTimer: Timer?
+    private var displayLink: CADisplayLink?
     private var activePermission: AppPermission?
     private var pendingSourceFrameInScreen: CGRect?
     private var didPresentCurrentOverlay = false
@@ -40,8 +43,10 @@ final class PermissionAssistant: NSObject {
     }
 
     func dismiss() {
-        trackingTimer?.invalidate()
-        trackingTimer = nil
+        discoveryTimer?.invalidate()
+        discoveryTimer = nil
+        stopTracking()
+        locator.reset()
         NSWorkspace.shared.notificationCenter.removeObserver(
             self,
             name: NSWorkspace.didActivateApplicationNotification,
@@ -56,64 +61,81 @@ final class PermissionAssistant: NSObject {
     }
 
     private func startTracking() {
-        trackingTimer?.invalidate()
-        trackingTimer = Timer.scheduledTimer(
-            timeInterval: 0.15,
-            target: self,
-            selector: #selector(handleTrackingTimer),
-            userInfo: nil,
-            repeats: true
-        )
-
-        NSWorkspace.shared.notificationCenter.removeObserver(
-            self,
-            name: NSWorkspace.didActivateApplicationNotification,
-            object: nil
+        discoveryTimer = Timer.scheduledTimer(
+            timeInterval: 0.5, target: self, selector: #selector(discover),
+            userInfo: nil, repeats: true
         )
         NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(handleApplicationActivation),
-            name: NSWorkspace.didActivateApplicationNotification,
-            object: nil
+            self, selector: #selector(discover),
+            name: NSWorkspace.didActivateApplicationNotification, object: nil
         )
-
-        refreshPosition()
+        discover()
     }
 
     @objc
-    private func handleTrackingTimer() {
-        refreshPosition()
-    }
-
-    @objc
-    private func handleApplicationActivation(_ notification: Notification) {
-        refreshPosition()
-    }
-
-    private func refreshPosition() {
+    private func discover() {
         guard let permission = activePermission else { return }
-
         if permission.isGranted() {
             dismiss()
             return
         }
-
-        guard let snapshot = PermissionSettingsWindowLocator.frontmostWindow() else {
-            overlayController?.hide()
+        guard let snapshot = locator.discover() else {
+            hide()
             return
         }
+        position(snapshot)
+        guard let window = overlayController?.window, window.isVisible else {
+            stopTracking()
+            return
+        }
+        guard displayLink == nil else { return }
+        let link = window.displayLink(target: self, selector: #selector(track))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+        updateRefreshRate()
+    }
 
+    @objc
+    private func track() {
+        guard overlayController?.window?.isVisible == true, let snapshot = locator.trackedWindow() else {
+            hide()
+            return
+        }
+        position(snapshot)
+        if overlayController?.window?.isVisible != true { stopTracking() }
+        updateRefreshRate()
+    }
+
+    private func position(_ snapshot: PermissionSettingsWindowSnapshot) {
         if didPresentCurrentOverlay {
             overlayController?.updatePosition(with: snapshot.frame, visibleFrame: snapshot.visibleFrame)
-            return
+        } else {
+            overlayController?.present(
+                from: pendingSourceFrameInScreen,
+                settingsFrame: snapshot.frame, visibleFrame: snapshot.visibleFrame
+            )
+            didPresentCurrentOverlay = overlayController?.window?.isVisible == true
         }
+    }
 
-        overlayController?.present(
-            from: pendingSourceFrameInScreen,
-            settingsFrame: snapshot.frame,
-            visibleFrame: snapshot.visibleFrame
-        )
-        didPresentCurrentOverlay = true
+    private func hide() {
+        stopTracking()
+        overlayController?.hide()
+    }
+
+    private func stopTracking() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    private func updateRefreshRate() {
+        guard let displayLink else { return }
+        let rate = Float(min(120, max(30, overlayController?.window?.screen?.maximumFramesPerSecond ?? 60)))
+        if displayLink.preferredFrameRateRange.maximum != rate {
+            displayLink.preferredFrameRateRange = CAFrameRateRange(
+                minimum: min(60, rate), maximum: rate, preferred: rate
+            )
+        }
     }
 
     private func openSystemSettings(for permission: AppPermission) {

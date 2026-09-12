@@ -7,6 +7,7 @@
 //  passthrough — all through a fake recorder, no AVAudioEngine.
 //
 
+import CoreAudio
 import XCTest
 
 @testable import SapoWhisper
@@ -162,6 +163,73 @@ final class CaptureStartSupervisorTests: XCTestCase {
         XCTAssertEqual(recorder.discardCount, 2, "each failed attempt discards its partial recording")
         XCTAssertEqual(recorder.waitTimeouts, [0.8], "only the successful attempt reaches the input wait")
         XCTAssertEqual(slept, [0.15, 0.30], "each retry sleeps only once")
+    }
+
+    func testHALBindFailureRecoversWithoutAnObservedRouteEvent() async throws {
+        for mode in [AudioCaptureEngine.Mode.batch, .streaming] {
+            let recorder = RecorderFake()
+            recorder.startErrors = [RecordingError.deviceSelectionFailed(kAudioHardwareIllegalOperationError)]
+            recorder.waitResults = [true]
+            recorder.emitChunk = mode == .streaming
+            var chunks: [Data] = []
+            let supervisor = CaptureStartSupervisor(
+                recorder: recorder, mode: mode, transport: { _ in .usb },
+                routeSettleDelay: { 0 }, sleep: { _ in }
+            )
+
+            try await supervisor.start(microphone: "preferred-mic") { chunks.append($0) }
+
+            XCTAssertEqual(recorder.selectedUIDs, ["preferred-mic", "preferred-mic"])
+            XCTAssertEqual(recorder.discardCount, 1)
+            XCTAssertEqual(chunks.count, mode == .streaming ? 1 : 0)
+        }
+    }
+
+    func testPersistentHALBindFailureStopsAfterThreeAttempts() async {
+        let recorder = RecorderFake()
+        recorder.startErrors = Array(
+            repeating: RecordingError.deviceSelectionFailed(kAudioHardwareIllegalOperationError), count: 4
+        )
+        let supervisor = makeSupervisor(recorder: recorder)
+        do {
+            try await supervisor.start(microphone: "preferred-mic")
+            XCTFail("expected bind failure")
+        } catch {
+            XCTAssertEqual(recorder.startCallCount, 3)
+            XCTAssertEqual(recorder.discardCount, 3)
+            XCTAssertEqual(Set(recorder.selectedUIDs), ["preferred-mic"])
+        }
+    }
+
+    func testUnknownBindFailureDoesNotRetry() async {
+        let recorder = RecorderFake()
+        recorder.startErrors = [RecordingError.deviceSelectionFailed(-1)]
+        let supervisor = makeSupervisor(recorder: recorder)
+        do {
+            try await supervisor.start(microphone: "preferred-mic")
+            XCTFail("expected bind failure")
+        } catch {
+            XCTAssertEqual(recorder.startCallCount, 1)
+        }
+    }
+
+    func testCancellationDuringBindRecoveryDoesNotOpenAnotherInput() async {
+        let recorder = RecorderFake()
+        recorder.startErrors = [RecordingError.deviceSelectionFailed(kAudioHardwareIllegalOperationError)]
+        let supervisor = CaptureStartSupervisor(
+            recorder: recorder, transport: { _ in .usb }, routeSettleDelay: { 0 },
+            sleep: { _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        )
+        let task = Task { try await supervisor.start(microphone: "preferred-mic") }
+        do {
+            try await task.value
+            XCTFail("expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+            XCTAssertEqual(recorder.selectedUIDs, ["preferred-mic"])
+        }
     }
 
     func testUnavailablePreferredInputFailsWithoutRetrying() async {

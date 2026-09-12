@@ -3,7 +3,6 @@
 //  SapoWhisper
 //
 
-import AVFoundation
 import Combine
 import CoreAudio
 import Foundation
@@ -188,14 +187,15 @@ nonisolated private enum AudioInputPreflightWorker {
                 == .warmSystemDefault,
             AudioInputSetupQuarantine.shared.currentEpoch == snapshot.routeEpoch
         else { return .skipped }
-        let hardwareFormat = deviceID.flatMap { queryInputFormat(deviceID: $0) }
         let latestSelectedUID =
             AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
             ?? AudioDevice.systemDefault.uid
         guard !isCancelled(), latestSelectedUID == snapshot.selectedUID,
-            AudioInputSetupQuarantine.shared.currentEpoch == snapshot.routeEpoch
+            AudioInputSetupQuarantine.shared.currentEpoch == snapshot.routeEpoch,
+            let deviceID = deviceManager.resolveSelectedInputDeviceID(for: latestSelectedUID),
+            deviceID != kAudioObjectUnknown
         else { return .skipped }
-        return try warmAVAudioInputNode(hardwareFormat: hardwareFormat) {
+        return try warmInputOnlySession(deviceID: deviceID) {
             isCancelled()
                 || AppPreferences.defaults.string(forKey: Constants.StorageKeys.selectedMicrophone)
                     .map { $0 != snapshot.selectedUID } == true
@@ -203,43 +203,25 @@ nonisolated private enum AudioInputPreflightWorker {
         }
     }
 
-    private static func warmAVAudioInputNode(
-        hardwareFormat: AVAudioFormat?,
+    private static func warmInputOnlySession(
+        deviceID: AudioDeviceID,
         isCancelled: @Sendable () -> Bool
     ) throws -> Outcome {
-        let engine = AVAudioEngine()
-        var tapInstalled = false
-        defer {
-            AudioEngineGuard.teardownAndRetire(
-                engine,
-                removeInputTap: tapInstalled,
-                operation: "preflight-teardown"
-            )
-        }
-        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "preflight-input-node")
-        let tapFormat = try AudioEngineGuard.run("preflight-input-format") {
-            hardwareFormat ?? inputNode.outputFormat(forBus: 0)
-        }
-        guard !isCancelled(), tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else { return .skipped }
-        try AudioEngineGuard.installTap(
-            on: inputNode, bufferSize: 1024, format: tapFormat, operation: "preflight-install-tap"
-        ) { _, _ in }
-        tapInstalled = true
-        try AudioEngineGuard.run("preflight-mute") { inputNode.volume = 0 }
-        try AudioEngineGuard.prepareAndStart(engine, operation: "preflight-engine-start")
-        return .warmed
-    }
-
-    private static func queryInputFormat(deviceID: AudioDeviceID) -> AVAudioFormat? {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamFormat,
-            mScope: kAudioDevicePropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
+        guard !isCancelled() else { return .skipped }
+        let renderError = OSAllocatedUnfairLock(initialState: OSStatus(0))
+        let session = try InputOnlyAudioSession.prepare(
+            deviceID: deviceID,
+            onBuffer: { _ in },
+            onError: { status in
+                renderError.withLock { $0 = status }
+            }
         )
-        var asbd = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        let result = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &size, &asbd)
-        guard result == noErr else { return nil }
-        return AVAudioFormat(streamDescription: &asbd)
+        defer { session.close() }
+        guard !isCancelled() else { return .skipped }
+        try session.start()
+        guard !isCancelled() else { return .skipped }
+        let status = renderError.withLock { $0 }
+        guard status == noErr else { throw InputOnlyAudioSession.statusError(status) }
+        return .warmed
     }
 }

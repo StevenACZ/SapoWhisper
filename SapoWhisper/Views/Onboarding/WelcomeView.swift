@@ -372,17 +372,18 @@ private struct WelcomePermissionRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .tint(Color(nsColor: permission.accentColor))
             }
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(Color(nsColor: permission.accentColor).opacity(0.04))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isGranted ? Color.sapoGreen.opacity(0.4) : Color.primary.opacity(0.08),
+                    isGranted ? Color.sapoGreen.opacity(0.4) : Color(nsColor: permission.accentColor).opacity(0.25),
                     lineWidth: 1
                 )
         )

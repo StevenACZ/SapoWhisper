@@ -38,9 +38,9 @@ struct PermissionStatusRow: View {
                             .padding(.vertical, 3)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(Color.orange.opacity(0.14))
+                                    .fill(Color(nsColor: permission.accentColor).opacity(0.14))
                             )
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color(nsColor: permission.accentColor))
                     }
                 }
 

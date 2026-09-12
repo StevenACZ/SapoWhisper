@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Apple Silicon checks
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      SAPO_CAPTURE_STRESS: '0'
+      SAPO_LOCAL_STT_SMOKE: '0'
+      SAPO_BENCH: '0'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare tools
+        run: |
+          test "$(uname -m)" = arm64
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
+          brew install gitleaks
+
+      - name: Select lint base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          base_ref="$BASE_SHA"
+          if [[ -z "$base_ref" || "$base_ref" =~ ^0+$ ]]; then
+            base_ref="origin/$DEFAULT_BRANCH"
+          fi
+          git rev-parse --verify "$base_ref^{commit}" >/dev/null
+          echo "LINT_BASE_REF=$base_ref" >> "$GITHUB_ENV"
+
+      - name: Run repository checks
+        run: >-
+          make ci-check release-input-check
+          XCODE_FLAGS='-skipPackagePluginValidation -skipMacroValidation CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM='

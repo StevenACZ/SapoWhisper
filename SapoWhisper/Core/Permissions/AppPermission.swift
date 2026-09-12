@@ -70,9 +70,9 @@ enum AppPermission: CaseIterable, Hashable, Identifiable {
     var accentColor: NSColor {
         switch self {
         case .microphone:
-            return .systemBlue
-        case .accessibility:
             return .systemOrange
+        case .accessibility:
+            return .systemBlue
         case .inputMonitoring:
             return .systemPurple
         }

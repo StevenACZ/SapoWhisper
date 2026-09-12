@@ -334,6 +334,11 @@ final class BackupEngineSelectionTests: XCTestCase {
     private let defaults = AppPreferences.defaults
     private var restore: [String: String?] = [:]
 
+    override func setUp() async throws {
+        try await super.setUp()
+        ProbeProvider.reset()
+    }
+
     private func set(_ value: String, forKey key: String) {
         if restore[key] == nil {
             restore[key] = .some(defaults.string(forKey: key))
@@ -342,6 +347,7 @@ final class BackupEngineSelectionTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        ProbeProvider.reset()
         for (key, previous) in restore {
             if let previous {
                 defaults.set(previous, forKey: key)
@@ -422,19 +428,36 @@ final class BackupEngineSelectionTests: XCTestCase {
         set(TranscriptionEngine.localAIServer.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
         set(baseURL, forKey: Constants.StorageKeys.localAIServerBaseURL)
         set("test-model", forKey: Constants.StorageKeys.localAIServerModel)
-        return SapoWhisperViewModel()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ProbeProvider.self]
+        return SapoWhisperViewModel(
+            localAIServerTranscriber: LocalAIServerTranscriber(session: URLSession(configuration: configuration)))
     }
 
     private final class ProbeProvider: URLProtocol {
         nonisolated static let host = "connection-probe-race-fixture.invalid"
         nonisolated static let onRequest = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
+        nonisolated static let requestError = OSAllocatedUnfairLock<(@Sendable (URLRequest) -> URLError.Code?)?>(initialState: nil)
+        nonisolated static let onCompletion = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
+
+        nonisolated static func reset() {
+            onRequest.withLock { $0 = nil }
+            requestError.withLock { $0 = nil }
+            onCompletion.withLock { $0 = nil }
+        }
 
         override class func canInit(with request: URLRequest) -> Bool { request.url?.host == host }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func stopLoading() {}
 
         override func startLoading() {
+            let completion = Self.onCompletion.withLock { $0 }
+            defer { completion?() }
             Self.onRequest.withLock { $0 }?()
+            if let error = Self.requestError.withLock({ $0 })?(request) {
+                client?.urlProtocol(self, didFailWithError: URLError(error))
+                return
+            }
             guard let url = request.url,
                 let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)
             else {
@@ -449,15 +472,101 @@ final class BackupEngineSelectionTests: XCTestCase {
 
     private func proveBackgroundProbeCanComplete(in viewModel: SapoWhisperViewModel) async {
         let requested = expectation(description: "Fixture received background health request")
+        let completed = expectation(description: "Fixture completed background health request")
         let published = expectation(description: "Background health result was applied")
+        ProbeProvider.reset()
         ProbeProvider.onRequest.withLock { $0 = { requested.fulfill() } }
+        ProbeProvider.onCompletion.withLock { $0 = { completed.fulfill() } }
         let subscription = viewModel.$localAIServerConnectionState
             .first { $0 == .reachable }
             .sink { _ in published.fulfill() }
         viewModel.startReachabilityProbe(for: .localAIServer)
-        await fulfillment(of: [requested, published], timeout: 3)
+        await fulfillment(of: [requested, completed, published], timeout: 3)
         subscription.cancel()
+        ProbeProvider.reset()
         XCTAssertEqual(viewModel.localAIServerConnectionState, .reachable)
+    }
+
+    func testTransientBackgroundProbePreservesVerifiedPrimaryAndNextProbeSucceeds() async throws {
+        try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
+        defer {
+            ProbeProvider.reset()
+        }
+        for code: URLError.Code in [.notConnectedToInternet, .networkConnectionLost] {
+            let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")
+            let check = viewModel.beginLocalAIServerConnectionTest()
+            XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(check, modelAvailable: true))
+            let completed = expectation(description: "All transient health attempts completed: \(code)")
+            completed.expectedFulfillmentCount = 3
+            ProbeProvider.requestError.withLock { $0 = { _ in code } }
+            ProbeProvider.onCompletion.withLock { $0 = { completed.fulfill() } }
+            let changed = expectation(description: "Inconclusive probe must preserve verified status: \(code)")
+            changed.isInverted = true
+            let subscription = viewModel.$localAIServerConnectionState
+                .dropFirst()
+                .sink { _ in changed.fulfill() }
+
+            viewModel.startReachabilityProbe(for: .localAIServer)
+            await fulfillment(of: [completed], timeout: 3)
+            await fulfillment(of: [changed], timeout: 0.25)
+            subscription.cancel()
+            XCTAssertEqual(viewModel.localAIServerConnectionState, .verified(modelAvailable: true))
+            XCTAssertEqual(viewModel.currentVariant, .localAIServer)
+            XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+
+            await proveBackgroundProbeCanComplete(in: viewModel)
+            XCTAssertEqual(viewModel.currentVariant, .localAIServer)
+            XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+        }
+    }
+
+    func testCannotConnectBackgroundProbePreservesVerifiedPrimaryWithoutRetry() async throws {
+        try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
+        defer {
+            ProbeProvider.reset()
+        }
+        let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")
+        let check = viewModel.beginLocalAIServerConnectionTest()
+        XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(check, modelAvailable: true))
+        let completed = expectation(description: "Cannot-connect health request completed")
+        completed.assertForOverFulfill = true
+        ProbeProvider.requestError.withLock { $0 = { _ in .cannotConnectToHost } }
+        ProbeProvider.onCompletion.withLock { $0 = { completed.fulfill() } }
+        let changed = expectation(description: "Background connection failure must preserve verified status")
+        changed.isInverted = true
+        let subscription = viewModel.$localAIServerConnectionState
+            .dropFirst()
+            .sink { _ in changed.fulfill() }
+
+        viewModel.startReachabilityProbe(for: .localAIServer)
+        await fulfillment(of: [completed], timeout: 3)
+        await fulfillment(of: [changed], timeout: 1.5)
+        subscription.cancel()
+        XCTAssertEqual(viewModel.localAIServerConnectionState, .verified(modelAvailable: true))
+        XCTAssertEqual(viewModel.currentVariant, .localAIServer)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
+    }
+
+    func testActualTranscriptionFailureStillSetsCooldownUntilHealthyBackgroundProbe() async throws {
+        try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
+        defer {
+            ProbeProvider.reset()
+        }
+        let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")
+        let check = viewModel.beginLocalAIServerConnectionTest()
+        XCTAssertTrue(viewModel.completeLocalAIServerConnectionTest(check, modelAvailable: true))
+
+        viewModel.recordTranscriptionOutcome(
+            .localAIServer,
+            configurationRevision: viewModel.localAIServerConfigurationRevision,
+            failure: .init(kind: .network))
+
+        guard case .failed = viewModel.localAIServerConnectionState else {
+            return XCTFail("An actual transcription failure must publish failed status")
+        }
+        XCTAssertFalse(viewModel.isBackupEngineUsable(.localAIServer))
+        await proveBackgroundProbeCanComplete(in: viewModel)
+        XCTAssertTrue(viewModel.isBackupEngineUsable(.localAIServer))
     }
 
     private func attemptBackgroundProbeDuringManualCheck(in viewModel: SapoWhisperViewModel) async {
@@ -472,10 +581,8 @@ final class BackupEngineSelectionTests: XCTestCase {
 
     func testPendingManualConnectionSuccessKeepsAuthorityOverBackgroundProbeAndClearsCooldown() async throws {
         try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
-        XCTAssertTrue(URLProtocol.registerClass(ProbeProvider.self))
         defer {
             ProbeProvider.onRequest.withLock { $0 = nil }
-            URLProtocol.unregisterClass(ProbeProvider.self)
         }
         let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")
         await proveBackgroundProbeCanComplete(in: viewModel)
@@ -493,10 +600,8 @@ final class BackupEngineSelectionTests: XCTestCase {
 
     func testPendingManualConnectionFailureKeepsAuthorityAndItsCooldownPolicy() async throws {
         try XCTSkipUnless(AppRuntimePaths.isIsolated, "Requires isolated test preferences")
-        XCTAssertTrue(URLProtocol.registerClass(ProbeProvider.self))
         defer {
             ProbeProvider.onRequest.withLock { $0 = nil }
-            URLProtocol.unregisterClass(ProbeProvider.self)
         }
         for statusCode in [503, 401] {
             let viewModel = configuredLocalServerViewModel(baseURL: "https://\(ProbeProvider.host)")

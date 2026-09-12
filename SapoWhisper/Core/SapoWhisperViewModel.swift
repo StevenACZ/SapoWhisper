@@ -168,7 +168,7 @@ class SapoWhisperViewModel: ObservableObject {
     let deepgramFluxTranscriber = DeepgramFluxLiveTranscriber()
     let elevenLabsTranscriber = ElevenLabsScribeTranscriber()
     let elevenLabsRealtimeTranscriber = ElevenLabsScribeRealtimeTranscriber()
-    let localAIServerTranscriber = LocalAIServerTranscriber()
+    let localAIServerTranscriber: LocalAIServerTranscriber
     private let historyManager = TranscriptionHistoryManager.shared
     private let transcriptPostProcessor: any TranscriptPostProcessing
     /// Dictation→History persistence + retry/re-polish row bookkeeping.
@@ -384,8 +384,10 @@ class SapoWhisperViewModel: ObservableObject {
 
     init(
         transcriptPostProcessor: any TranscriptPostProcessing = TranscriptPostProcessor(),
-        mlxWhisperTranscriber: MLXWhisperTranscriber = MLXWhisperTranscriber()
+        mlxWhisperTranscriber: MLXWhisperTranscriber = MLXWhisperTranscriber(),
+        localAIServerTranscriber: LocalAIServerTranscriber = LocalAIServerTranscriber()
     ) {
+        self.localAIServerTranscriber = localAIServerTranscriber
         self.mlxWhisperTranscriber = mlxWhisperTranscriber
         self.transcriptPostProcessor = transcriptPostProcessor
         if let backup = TranscriptionEngineVariant.stored(fallbackEngineRawValue), backup.rawValue != fallbackEngineRawValue {
@@ -1131,7 +1133,7 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         // The backup may take the dictation before the mic even opens: a
-        // primary that is not configured, is offline, or that a probe already
+        // primary that is not configured, is offline, or that an actual request already
         // proved down hands the take over now, so the user never dictates into
         // an engine that cannot answer.
         guard let (resolvedVariant, startedOnBackup) = resolveStartVariant(selected: selectedVariant) else {
@@ -1850,8 +1852,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// once on the configured backup. Combined failures preserve the primary
     /// category and explain the backup failure to the user.
     ///
-    /// A primary already proved down — by the probe that ran while the user
-    /// was still dictating, or by a failure minutes ago — is skipped outright:
+    /// A primary already proved down by an actual transcription failure is skipped outright:
     /// attempting it again would pay the full connect timeout before landing
     /// on the same rescue, which is exactly the wait the backup exists to
     /// remove.
@@ -1991,7 +1992,7 @@ class SapoWhisperViewModel: ObservableObject {
     }
 
     /// Which variant takes this dictation. A primary that is not configured,
-    /// is offline, or that a probe already proved down hands the take to the
+    /// is offline, or that an actual request proved down hands the take to the
     /// backup BEFORE the mic opens. nil means nothing can record.
     private func resolveStartVariant(
         selected: TranscriptionEngineVariant
@@ -2127,8 +2128,8 @@ class SapoWhisperViewModel: ObservableObject {
     /// Probes the primary in the background while the dictation runs. Only the
     /// Local AI Server has a cheap liveness endpoint; cloud providers are
     /// already covered by network reachability, and a local model cannot be
-    /// "down". The verdict lands in `reachabilityLog` before stop time, unless
-    /// a real transcription settles it first.
+    /// "down". Only a positive probe updates availability; the foreground
+    /// request owns failure confirmation.
     func startReachabilityProbe(for variant: TranscriptionEngineVariant) {
         reachabilityProbeTask?.cancel()
         reachabilityProbeTask = nil
@@ -2136,20 +2137,11 @@ class SapoWhisperViewModel: ObservableObject {
 
         let observation = reachabilityLog.observation(for: .localAIServer)
         reachabilityProbeTask = Task { [weak self] in
-            guard let isAlive = await self?.localAIServerTranscriber.probeReachability() else { return }
+            guard await self?.localAIServerTranscriber.probeReachability() == true else { return }
             guard let self, !Task.isCancelled, self.localConnectionTestObservation == nil,
-                self.reachabilityLog.apply(observation, reachable: isAlive)
+                self.reachabilityLog.apply(observation, reachable: true)
             else { return }
-            self.localAIServerConnectionState =
-                isAlive
-                ? .reachable
-                : .failed(
-                    message: TranscriptionFailure(kind: .network, engine: TranscriptionEngine.localAIServer.displayName)
-                        .localizedDescription)
-            if !isAlive {
-                SapoLog.recording.warning(
-                    "Local AI Server probe failed mid-dictation; the backup takes this take")
-            }
+            self.localAIServerConnectionState = .reachable
         }
     }
 
