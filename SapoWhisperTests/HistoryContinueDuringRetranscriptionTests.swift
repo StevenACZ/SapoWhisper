@@ -76,8 +76,10 @@ final class HistoryContinueDuringRetranscriptionTests: XCTestCase {
                 if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
             }
         }
-        XCTAssertTrue(URLProtocol.registerClass(FixtureProvider.self))
-        defer { URLProtocol.unregisterClass(FixtureProvider.self) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FixtureProvider.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
 
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("history-continue-polish-\(UUID().uuidString)", isDirectory: true)
@@ -104,7 +106,9 @@ final class HistoryContinueDuringRetranscriptionTests: XCTestCase {
         let second = try XCTUnwrap(manager.entry(id: secondID))
         let entered = expectation(description: "History retranscription reached suspended polish")
         let processor = SuspendedProcessor(entered: entered)
-        let viewModel = SapoWhisperViewModel(transcriptPostProcessor: processor)
+        let viewModel = SapoWhisperViewModel(
+            transcriptPostProcessor: processor,
+            localAIServerTranscriber: LocalAIServerTranscriber(session: session))
         XCTAssertTrue(viewModel.canContinueHistoryEntry(first))
         XCTAssertTrue(viewModel.canContinueHistoryEntry(second))
 

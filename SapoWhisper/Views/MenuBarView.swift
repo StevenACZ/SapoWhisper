@@ -134,14 +134,15 @@ struct MenuBarView: View {
 
             HotkeyBadge(text: viewModel.hotkeyManager.hotkeyDescription)
         }
-        .padding()
+        .padding([.top, .horizontal], 16)
+        .padding(.bottom, 8)
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 
     // MARK: - Recording Section
 
     private var recordingSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             if case .recording = viewModel.appState {
                 RecordingTimerRow(durationPublisher: viewModel.recordingDurationSubject.eraseToAnyPublisher())
                     .transition(.scale.combined(with: .opacity))
@@ -195,7 +196,9 @@ struct MenuBarView: View {
                 .buttonStyle(.link)
             }
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
         .animation(Constants.Animation.morph, value: viewModel.appState)
     }
 

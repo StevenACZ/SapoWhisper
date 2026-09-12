@@ -8,6 +8,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Tighten the menu spacing between the header, recording timer and record button.
+- The first local-server dictation waits for local network connectivity and confirms transient failures before using a backup. Failed background checks no longer discard a working local server or force later dictations onto the backup.
 - Microphone capture uses an input-only audio unit so output-device changes cannot strand an AVAudioEngine input graph. Temporary device-selection failures recover automatically with the selected microphone.
 
 ## [2.18.1] - 2026-09-07
