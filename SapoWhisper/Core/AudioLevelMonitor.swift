@@ -7,7 +7,6 @@
 // AVFAudio's converter/tap callbacks predate Sendable annotations.
 @preconcurrency import AVFAudio
 import AVFoundation
-import AudioToolbox
 import Combine
 import CoreAudio
 import Foundation
@@ -74,7 +73,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     static let shared = AudioLevelMonitor()
 
     // nonisolated(unsafe): confined to monitorQueue.
-    private nonisolated(unsafe) var audioEngine: AVAudioEngine?
+    private nonisolated(unsafe) var inputSession: InputOnlyAudioSession?
     private nonisolated(unsafe) var isMonitoring = false
 
     /// Nivel de audio actual (0.0 - 1.0)
@@ -154,15 +153,14 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         scheduleMonitoringStart(deviceUID: deviceUID, minimumDelay: 0)
     }
 
-    /// Inicia el AVAudioEngine y bindea el dispositivo directamente al AudioUnit
-    private nonisolated func startAudioEngineOnQueue(deviceUID: String) {
+    private nonisolated func startInputSessionOnQueue(deviceUID: String) {
         selectedDeviceUID = deviceUID
-        if deviceUID != AudioDevice.systemDefault.uid {
-            AudioDeviceManager.shared.refreshDevices()
-            guard AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) != nil else {
-                setError(RecordingError.inputDeviceUnavailable.localizedDescription)
-                return
-            }
+        AudioDeviceManager.shared.refreshDevices()
+        guard let deviceID = AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID),
+            deviceID != kAudioObjectUnknown
+        else {
+            setError(RecordingError.inputDeviceUnavailable.localizedDescription)
+            return
         }
 
         guard AudioInputActivityGate.shared.beginMonitorIfIdle() else {
@@ -173,52 +171,45 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
                     !self.resumeAfterRecorder,
                     self.restartGeneration == generation
                 else { return }
-                self.startAudioEngineOnQueue(deviceUID: deviceUID)
+                self.startInputSessionOnQueue(deviceUID: deviceUID)
             }
             return
         }
         monitorLeaseHeld = true
-        let audioEngine = AVAudioEngine()
         setLastMonitorBufferTime(0)
-        boundDeviceID =
-            deviceUID == AudioDevice.systemDefault.uid
-            ? AudioDeviceManager.shared.getSystemDefaultInputDevice() : nil
-        var adoptedEngine = false
+        let generation = restartGeneration
+        var preparedSession: InputOnlyAudioSession?
+        var adoptedSession = false
         defer {
-            if !adoptedEngine {
-                AudioEngineGuard.teardownAndRetire(
-                    audioEngine,
-                    removeInputTap: true,
-                    operation: "monitor-start-failure"
-                )
+            if !adoptedSession {
+                preparedSession?.close()
+                sampleTapFormat = nil
+                boundDeviceID = nil
                 releaseMonitorLeaseIfNeeded()
             }
         }
         do {
-            // AudioEngineGuard: device switches mid-setup raise uncatchable
-            // NSExceptions inside AVFAudio; route them into this catch.
-            let inputNode = try AudioEngineGuard.inputNode(of: audioEngine, operation: "monitor-input-node")
-            let hwFormat = try bindMonitorDevice(to: inputNode)
-
-            // Use hardware format to avoid stale cache after device switch
-            let tapFormat = hwFormat ?? inputNode.outputFormat(forBus: 0)
-
-            guard tapFormat.sampleRate > 0 && tapFormat.channelCount > 0 else {
-                setError("Formato de audio inválido")
-                return
-            }
-
-            sampleTapFormat = tapFormat
-
-            try AudioEngineGuard.installTap(
-                on: inputNode, bufferSize: 1024, format: tapFormat, operation: "monitor-install-tap"
-            ) { [weak self] buffer, _ in
-                self?.processBuffer(buffer)
-            }
-            try AudioEngineGuard.prepareAndStart(audioEngine, operation: "monitor-engine-start")
+            let session = try InputOnlyAudioSession.prepare(
+                deviceID: deviceID,
+                onBuffer: { [weak self] buffer in
+                    self?.processBuffer(buffer)
+                },
+                onError: { [weak self] status in
+                    self?.monitorQueue.async { [weak self] in
+                        guard let self, self.restartGeneration == generation, self.isMonitoring else { return }
+                        self.stopSampleForRouteRestart()
+                        self.stopMonitoringOnQueue(clearIntent: false, logStop: false)
+                        self.setError(RecordingError.deviceSelectionFailed(status).localizedDescription)
+                    }
+                }
+            )
+            preparedSession = session
+            sampleTapFormat = session.format
+            boundDeviceID = session.deviceID
+            try session.start()
             MicrophonePermission.noteAudioInputGranted()
-            self.audioEngine = audioEngine
-            adoptedEngine = true
+            inputSession = session
+            adoptedSession = true
             isMonitoring = true
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
@@ -235,51 +226,6 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Binds the selected device directly on the AudioUnit (does NOT change system default)
-    private nonisolated func bindMonitorDevice(to inputNode: AVAudioInputNode) throws -> AVAudioFormat? {
-        guard selectedDeviceUID != "default" else { return nil }
-
-        let deviceManager = AudioDeviceManager.shared
-        guard let deviceID = deviceManager.getDeviceID(for: selectedDeviceUID) else {
-            throw RecordingError.inputDeviceUnavailable
-        }
-        guard let audioUnit = inputNode.audioUnit else {
-            throw RecordingError.deviceSelectionFailed(-1)
-        }
-
-        var targetDeviceID = deviceID
-        let status = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &targetDeviceID,
-            UInt32(MemoryLayout<AudioObjectID>.size)
-        )
-
-        if status != noErr {
-            SapoLog.audioRoute.warning(
-                "Monitor bind failed status=\(status, privacy: .public)"
-            )
-            throw RecordingError.deviceSelectionFailed(status)
-        }
-        boundDeviceID = deviceID
-
-        // Query actual hardware format via Core Audio
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamFormat,
-            mScope: kAudioDevicePropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var asbd = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-
-        let fmtStatus = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &size, &asbd)
-        guard fmtStatus == noErr else { return nil }
-
-        return AVAudioFormat(streamDescription: &asbd)
-    }
-
     /// Detiene el monitoreo
     func stopMonitoring() {
         if isRecordingSample { stopSampleRecording() }
@@ -290,15 +236,9 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
     }
 
     /// Limpia recursos sin cambiar el estado de monitoreo
-    private nonisolated func cleanupEngineOnQueue() {
-        if let engine = audioEngine {
-            AudioEngineGuard.teardownAndRetire(
-                engine,
-                removeInputTap: true,
-                operation: "monitor-cleanup"
-            )
-        }
-        audioEngine = nil
+    private nonisolated func cleanupInputSessionOnQueue() {
+        inputSession?.close()
+        inputSession = nil
         releaseMonitorLeaseIfNeeded()
         boundDeviceID = nil
         setLastMonitorBufferTime(0)
@@ -368,7 +308,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
                 resumeAfterRecorder: self.resumeAfterRecorder,
                 selectedDeviceUID: self.selectedDeviceUID,
                 selectedDeviceMatchesBoundRoute: selectedDeviceMatchesBoundRoute,
-                engineIsRunning: self.audioEngine?.isRunning == true
+                engineIsRunning: self.inputSession?.isRunning == true
             ) {
             case .ignore:
                 return
@@ -387,7 +327,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
                     let bufferAge = lastBuffer > 0 ? CFAbsoluteTimeGetCurrent() - lastBuffer : .infinity
                     guard
                         audioLevelMonitorRouteIsHealthy(
-                            engineIsRunning: self.audioEngine?.isRunning == true,
+                            engineIsRunning: self.inputSession?.isRunning == true,
                             selectedDeviceMatchesBoundRoute: stillBound,
                             lastBufferAge: bufferAge
                         )
@@ -434,7 +374,7 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
         monitorQueue.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
             guard let self else { return }
             guard self.monitoringRequested, self.restartGeneration == generation else { return }
-            self.startAudioEngineOnQueue(deviceUID: deviceUID)
+            self.startInputSessionOnQueue(deviceUID: deviceUID)
         }
     }
 
@@ -446,8 +386,8 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
             bumpRestartGeneration()
         }
 
-        let wasMonitoring = isMonitoring || audioEngine != nil
-        cleanupEngineOnQueue()
+        let wasMonitoring = isMonitoring || inputSession != nil
+        cleanupInputSessionOnQueue()
 
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
@@ -510,21 +450,13 @@ class AudioLevelMonitor: ObservableObject, @unchecked Sendable {
 
     /// Starts recording a sample using the already-running engine tap
     func startSampleRecording() {
-        guard isMonitoring, !isRecordingSample else { return }
+        guard !isRecordingSample else { return }
 
-        clearSampleRecording()
-
-        let monitorSnapshot = monitorQueue.sync { () -> (engine: AVAudioEngine?, tapFormat: AVAudioFormat?, isRunning: Bool) in
-            (audioEngine, sampleTapFormat, isMonitoring)
+        let monitorSnapshot = monitorQueue.sync { () -> (tapFormat: AVAudioFormat?, isRunning: Bool) in
+            (sampleTapFormat, isMonitoring && inputSession?.isRunning == true)
         }
-        guard let audioEngine = monitorSnapshot.engine, monitorSnapshot.isRunning else { return }
-
-        guard
-            let tapFormat = monitorSnapshot.tapFormat
-                ?? (try? AudioEngineGuard.run("sample-tap-format") {
-                    audioEngine.inputNode.outputFormat(forBus: 0)
-                })
-        else { return }
+        guard monitorSnapshot.isRunning, let tapFormat = monitorSnapshot.tapFormat else { return }
+        clearSampleRecording()
         let rawURL = TemporaryAudioStorage.makeWAVURL(prefix: "mic_test_raw")
 
         do {

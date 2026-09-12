@@ -44,6 +44,7 @@ addresses, and machine-specific workflow details.
 ## Guardrails
 
 - Apply the capture, persistence, polish, and window invariants in [ARCHITECTURE.md](ARCHITECTURE.md#guardrails).
+- Capture, input monitoring and preflight use input-only AUHAL through `InputOnlyAudioSession`; never materialize `AVAudioEngine.inputNode` for those paths. Verify exact device binding, bounded PCM delivery, pause/drain and repeated hardware capture after output changes.
 - Every captured or merged WAV keeps its recovery marker until durable History ownership or deliberate deletion. Preserve merge sources until the combined pending row exists; recovery must skip live owners regardless of file age.
 - Apply recognition corrections exactly once in `TranscriptPostProcessor`; provider adapters must not apply saved replacements before the shared pass.
 - Background health probes must not invalidate an explicit connection test; actual transcription outcomes remain authoritative.

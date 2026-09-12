@@ -10,81 +10,61 @@ import Foundation
 import os
 
 nonisolated extension AudioCaptureEngine {
-    /// Binds the preferred input device. Returns the device's actual hardware format if bound.
-    /// Accepts `deviceUID` as a parameter so it can be called safely from a background queue
-    /// without reading `self.selectedDeviceUID` across thread boundaries.
-    func bindPreferredInputDevice(to inputNode: AVAudioInputNode, deviceUID: String) throws -> AVAudioFormat? {
-        guard deviceUID != AudioDevice.systemDefault.uid else { return nil }
-
-        let deviceManager = AudioDeviceManager.shared
-        guard let deviceID = deviceManager.getDeviceID(for: deviceUID) else {
-            throw RecordingError.inputDeviceUnavailable
+    func prepareInputSession(
+        deviceUID: String,
+        generation: UInt64,
+        deadline: TimeInterval
+    ) async throws -> InputOnlyAudioSession {
+        let quarantine = AudioInputSetupQuarantine.shared
+        let failures = inputFailures
+        guard let preparation = quarantine.preparationContext() else {
+            throw RecordingError.inputSetupTimedOut
         }
-        guard let audioUnit = inputNode.audioUnit else {
-            throw RecordingError.deviceSelectionFailed(-1)
+        let request = AudioDeadlineRequest<InputOnlyAudioSession>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let attempt = AudioDeadlineAttempt(
+                    timeout: deadline,
+                    operation: "capture-input-only",
+                    worker: preparation.worker,
+                    work: { [self] in try makeInputSession(deviceUID: deviceUID, generation: generation, failures: failures) },
+                    cleanup: { $0.close() },
+                    onQuarantine: { _ in quarantine.quarantine(epoch: preparation.epoch) },
+                    completion: { continuation.resume(with: $0) }
+                )
+                request.install(attempt)
+                attempt.start()
+            }
+        } onCancel: {
+            self.invalidateSetupGeneration()
+            request.cancel()
         }
-
-        var currentDeviceID = AudioObjectID(0)
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        let getStatus = AudioUnitGetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &currentDeviceID,
-            &size
-        )
-
-        let deviceName = deviceManager.getDeviceName(for: deviceID) ?? deviceUID
-        if getStatus == noErr, currentDeviceID == deviceID {
-            SapoLog.recording.info(
-                "\(self.mode.logLabel, privacy: .public) input already bound device=\(deviceName, privacy: .private(mask: .hash))"
-            )
-            return queryDeviceInputFormat(deviceID: deviceID)
-        }
-
-        var targetDeviceID = deviceID
-        let setStatus = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &targetDeviceID,
-            UInt32(MemoryLayout<AudioObjectID>.size)
-        )
-
-        guard setStatus == noErr else {
-            SapoLog.recording.error(
-                "\(self.mode.logLabel, privacy: .public) bind failed device=\(deviceName, privacy: .private(mask: .hash)) status=\(setStatus, privacy: .public)"
-            )
-            throw RecordingError.deviceSelectionFailed(setStatus)
-        }
-
-        SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) bound input device=\(deviceName, privacy: .private(mask: .hash))")
-        return queryDeviceInputFormat(deviceID: deviceID)
     }
 
-    /// Queries the actual hardware input format of a device via Core Audio (bypasses AVAudioEngine cache)
-    func queryDeviceInputFormat(deviceID: AudioDeviceID) -> AVAudioFormat? {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamFormat,
-            mScope: kAudioDevicePropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        var asbd = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-
-        let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &size, &asbd)
-        guard status == noErr else {
-            SapoLog.recording.warning(
-                "\(self.mode.logLabel, privacy: .public) could not query device hw format status=\(status, privacy: .public)"
-            )
-            return nil
+    private func makeInputSession(
+        deviceUID: String, generation: UInt64, failures: CaptureInputFailureState
+    ) throws -> InputOnlyAudioSession {
+        let manager = AudioDeviceManager.shared
+        manager.refreshDevices()
+        guard let deviceID = manager.resolveSelectedInputDeviceID(for: deviceUID) else {
+            throw RecordingError.inputDeviceUnavailable
         }
-
-        return AVAudioFormat(streamDescription: &asbd)
+        guard isSetupGenerationCurrent(generation) else { throw CancellationError() }
+        let token = failures.beginInput()
+        return try InputOnlyAudioSession.prepare(
+            deviceID: deviceID,
+            onBuffer: { [weak self] buffer in
+                self?.processAudioBuffer(buffer)
+            },
+            onError: { [weak self] status in
+                failures.record(status, for: token)
+                guard let self else { return }
+                self.audioSetupQueue.async {
+                    guard self.isSetupGenerationCurrent(generation), failures.shouldNotify(for: token) else { return }
+                    self.reportCaptureInterruption(reason: "input-render(\(status))")
+                }
+            }
+        )
     }
 
     // MARK: - A2: capture interruption recovery
@@ -92,22 +72,20 @@ nonisolated extension AudioCaptureEngine {
     static let captureHealthProbeDelay: TimeInterval = 0.3
     static let captureHealthyBufferMaxAge: TimeInterval = 0.5
 
-    func beginDeviceSentinel(engine: AVAudioEngine, deviceID: AudioDeviceID?, generation: UInt64) {
-        deviceSentinel.begin(engine: engine, deviceID: deviceID) { [weak self] event in
+    func beginDeviceSentinel(session: InputOnlyAudioSession, generation: UInt64) {
+        deviceSentinel.begin(
+            deviceID: session.deviceID,
+            followsDefaultInput: currentCaptureDeviceUID() == AudioDevice.systemDefault.uid
+        ) { [weak self] event in
             self?.handleCaptureInterruption(event: event, generation: generation)
         }
     }
 
-    /// Runs on `audioSetupQueue`. A dead device rebuilds right away; a
-    /// configuration change is probed first because AVAudioEngine posts it for
-    /// benign renegotiations (binding a USB mic fires one right after start)
-    /// while audio keeps flowing — tearing down a healthy engine re-triggers
-    /// the notification until recovery is exhausted.
     func handleCaptureInterruption(event: CaptureDeviceSentinel.Event, generation: UInt64) {
-        guard isSetupGenerationCurrent(generation), audioEngine != nil else { return }
+        guard isSetupGenerationCurrent(generation), inputSession != nil else { return }
 
         switch event {
-        case .deviceDied:
+        case .deviceDied, .defaultInputChanged:
             recoverCapture(afterEvent: event, generation: generation)
         case .configurationChanged:
             scheduleCaptureHealthProbe(afterEvent: event, generation: generation)
@@ -117,12 +95,16 @@ nonisolated extension AudioCaptureEngine {
     /// Coalesces configuration-change bursts into one deferred health check;
     /// the sentinel stays armed and the engine keeps running while it waits.
     private func scheduleCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
-        guard !captureHealthProbePending else { return }
+        guard !captureHealthProbePending, let session = inputSession else { return }
         captureHealthProbePending = true
         SapoLog.recording.info(
             "\(self.mode.logLabel, privacy: .public) configuration changed, probing health")
-        audioSetupQueue.asyncAfter(deadline: .now() + Self.captureHealthProbeDelay) { [weak self] in
-            self?.runCaptureHealthProbe(afterEvent: event, generation: generation)
+        let delay =
+            AudioDeviceManager.shared.transportType(for: session.deviceID) == .bluetooth
+            ? 3.0 : Self.captureHealthProbeDelay
+        audioSetupQueue.asyncAfter(deadline: .now() + delay) { [weak self, weak session] in
+            guard let self, let session, self.inputSession === session else { return }
+            self.runCaptureHealthProbe(afterEvent: event, generation: generation)
         }
     }
 
@@ -139,11 +121,20 @@ nonisolated extension AudioCaptureEngine {
     /// buffers still arriving) untouched and rebuilds only a dead stream.
     private func runCaptureHealthProbe(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
         captureHealthProbePending = false
-        guard isSetupGenerationCurrent(generation), let engine = audioEngine else { return }
+        guard isSetupGenerationCurrent(generation), let engine = inputSession else { return }
 
         let lastBuffer = currentLastInputBufferTime()
         let lastBufferAge: TimeInterval? = lastBuffer > 0 ? CFAbsoluteTimeGetCurrent() - lastBuffer : nil
-        guard shouldRecoverAfterConfigurationChange(isEngineRunning: engine.isRunning, lastBufferAge: lastBufferAge) else {
+        var sampleRate = Float64(0)
+        var size = UInt32(MemoryLayout<Float64>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let formatStatus = AudioObjectGetPropertyData(engine.deviceID, &address, 0, nil, &size, &sampleRate)
+        let formatChanged = formatStatus != noErr || sampleRate != engine.format.sampleRate
+        guard formatChanged || shouldRecoverAfterConfigurationChange(isEngineRunning: engine.isRunning, lastBufferAge: lastBufferAge) else {
             captureRecoveryAttempts = 0
             let bufferAgeMs = lastBufferAge.map { Int($0 * 1000) } ?? -1
             SapoLog.recording.info(
@@ -159,7 +150,7 @@ nonisolated extension AudioCaptureEngine {
     /// flowing to the same handler; a failed rebuild reports a terminal
     /// interruption so the owner can abort preserving the WAV.
     private func recoverCapture(afterEvent event: CaptureDeviceSentinel.Event, generation: UInt64) {
-        guard isSetupGenerationCurrent(generation), let oldEngine = audioEngine else { return }
+        guard isSetupGenerationCurrent(generation), let oldEngine = inputSession else { return }
 
         deviceSentinel.end()
         captureRecoveryAttempts += 1
@@ -168,12 +159,10 @@ nonisolated extension AudioCaptureEngine {
             "\(self.mode.logLabel, privacy: .public) capture interrupted event=\(event.rawValue, privacy: .public) attempt=\(attempt, privacy: .public)"
         )
 
-        AudioEngineGuard.teardownAndRetire(
-            oldEngine,
-            removeInputTap: true,
-            operation: "recovery"
-        )
-        audioEngine = nil
+        inputFailures.stopNotifying()
+        oldEngine.close()
+        inputSession = nil
+        captureHealthProbePending = false
 
         guard attempt <= 2 else {
             reportCaptureInterruption(reason: "\(event.rawValue) recovery-exhausted")
@@ -193,60 +182,16 @@ nonisolated extension AudioCaptureEngine {
 
     private func rebuildCaptureEngine(generation: UInt64) throws {
         let deviceUID = currentCaptureDeviceUID()
-        var boundDeviceID: AudioDeviceID?
-
-        if deviceUID != AudioDevice.systemDefault.uid {
-            AudioDeviceManager.shared.refreshDevices()
-            guard let deviceID = AudioDeviceManager.shared.resolveSelectedInputDeviceID(for: deviceUID) else {
-                throw RecordingError.inputDeviceUnavailable
-            }
-            boundDeviceID = deviceID
-        }
-
-        let engine = AVAudioEngine()
-        var adoptedEngine = false
-        defer {
-            if !adoptedEngine {
-                AudioEngineGuard.teardownAndRetire(
-                    engine,
-                    removeInputTap: true,
-                    operation: "rebuild-failure"
-                )
-            }
-        }
-        let inputNode = try AudioEngineGuard.inputNode(of: engine, operation: "\(mode.opPrefix)-rebuild-input-node")
-        let hwFormat = try bindPreferredInputDevice(to: inputNode, deviceUID: deviceUID)
-
-        let tapFormat = hwFormat ?? inputNode.outputFormat(forBus: 0)
-        guard tapFormat.sampleRate > 0, tapFormat.channelCount > 0 else {
-            throw RecordingError.invalidFormat
-        }
-
-        // A health probe after this rebuild must see buffers from the new
-        // engine, not a fresh-looking timestamp left by the dead one.
+        let session = try makeInputSession(deviceUID: deviceUID, generation: generation, failures: inputFailures)
+        var adopted = false
+        defer { if !adopted { session.close() } }
         resetLastInputBufferTime()
-        try AudioEngineGuard.installTap(
-            on: inputNode, bufferSize: tapBufferSize, format: tapFormat,
-            operation: "\(mode.opPrefix)-rebuild-install-tap"
-        ) { [weak self] buffer, _ in
-            self?.processAudioBuffer(buffer)
-        }
-        // Starting the rebuilt engine behind a pause would capture audio the
-        // user asked to stop.
-        let paused = isPaused
-        if paused {
-            try AudioEngineGuard.run("\(mode.opPrefix)-rebuild-engine-prepare") { engine.prepare() }
-        } else {
-            try AudioEngineGuard.prepareAndStart(engine, operation: "\(mode.opPrefix)-rebuild-engine-start")
-        }
-
-        audioEngine = engine
-        adoptedEngine = true
-        beginDeviceSentinel(engine: engine, deviceID: boundDeviceID, generation: generation)
-        let inputDescription = deviceUID == AudioDevice.systemDefault.uid ? "system-default" : deviceUID
-        SapoLog.recording.info(
-            "\(self.mode.logLabel, privacy: .public) capture recovered input=\(inputDescription, privacy: .private(mask: .hash)) hz=\(Int(tapFormat.sampleRate), privacy: .public) paused=\(paused, privacy: .public)"
-        )
+        if !isPaused { try session.start() }
+        inputSession = session
+        adopted = true
+        beginDeviceSentinel(session: session, generation: generation)
+        scheduleCaptureHealthProbe(afterEvent: .configurationChanged, generation: generation)
+        SapoLog.recording.info("Capture input restored hz=\(Int(session.format.sampleRate), privacy: .public)")
     }
 
     private func reportCaptureInterruption(reason: String) {

@@ -21,7 +21,7 @@ struct AudioCaptureStrictInputTests {
         }
 
         #expect(unavailable)
-        #expect(engine.audioEngine == nil)
+        #expect(engine.inputSession == nil)
         #expect(!engine.isRecording)
     }
 
@@ -155,12 +155,12 @@ struct AudioCaptureStrictInputTests {
             contentsOf: sourceRoot.appendingPathComponent("AudioLevelMonitor.swift"), encoding: .utf8)
         let monitorBody = try functionBody(
             in: monitor,
-            start: "private nonisolated func startAudioEngineOnQueue",
-            end: "private nonisolated func bindMonitorDevice"
+            start: "private nonisolated func startInputSessionOnQueue",
+            end: "func stopMonitoring()"
         )
         try expectOrder(
             "resolveSelectedInputDeviceID",
-            before: "let audioEngine = AVAudioEngine()",
+            before: "InputOnlyAudioSession.prepare(",
             in: monitorBody
         )
         let monitorRouteBody = try functionBody(
@@ -189,37 +189,35 @@ struct AudioCaptureStrictInputTests {
             contentsOf: sourceRoot.appendingPathComponent("AudioCaptureEngine+Device.swift"), encoding: .utf8)
         let recoveryBody = try functionBody(
             in: recovery,
-            start: "private func rebuildCaptureEngine",
-            end: "private func reportCaptureInterruption"
+            start: "private func makeInputSession",
+            end: "// MARK: - A2:"
         )
-        try expectOrder(
-            "resolveSelectedInputDeviceID",
-            before: "let engine = AVAudioEngine()",
-            in: recoveryBody
-        )
+        try expectOrder("resolveSelectedInputDeviceID", before: "InputOnlyAudioSession.prepare", in: recoveryBody)
+        #expect(!recovery.contains("AVAudioEngine()"))
+        #expect(!monitor.contains("AVAudioEngine()"))
 
         let preflight = try String(
             contentsOf: sourceRoot.appendingPathComponent("Managers/AudioInputPreflightManager.swift"), encoding: .utf8)
         let preflightBody = try functionBody(
             in: preflight,
             start: "private static func prepare(",
-            end: "private static func warmAVAudioInputNode("
+            end: "private static func warmInputOnlySession("
         )
         try expectOrder(
             "audioInputPreflightDecision(",
-            before: "warmAVAudioInputNode(hardwareFormat:",
+            before: "warmInputOnlySession(deviceID:",
             in: preflightBody
         )
         try expectOrder(
             "currentSelectedUID",
-            before: "warmAVAudioInputNode(hardwareFormat:",
+            before: "warmInputOnlySession(deviceID:",
             in: preflightBody
         )
 
         let warmupBody = try functionBody(
             in: preflight,
-            start: "private static func warmAVAudioInputNode(",
-            end: "private static func queryInputFormat"
+            start: "private static func warmInputOnlySession(",
+            end: "\n}"
         )
         #expect(!warmupBody.contains("AudioUnitSetProperty"))
 
@@ -259,10 +257,10 @@ struct AudioCaptureStrictInputTests {
             start: "func startRecording(targetEngine:",
             end: "func waitForFirstInputBuffer"
         )
-        try expectOrder("refreshDevices()", before: "AudioEngineGuard.materializeInputNode", in: captureBody)
+        try expectOrder("refreshDevices()", before: "prepareInputSession(", in: captureBody)
         try expectOrder(
             "resolveSelectedInputDeviceID",
-            before: "AudioEngineGuard.materializeInputNode",
+            before: "prepareInputSession(",
             in: captureBody
         )
 
@@ -271,7 +269,7 @@ struct AudioCaptureStrictInputTests {
             start: "func resumeRecording()",
             end: "func waitForFirstInputBuffer"
         )
-        try expectOrder("teardownAndRetire", before: "audioEngine = nil", in: resumeBody)
+        try expectOrder("engine.close()", before: "inputSession = nil", in: resumeBody)
 
         let deviceManager = try String(
             contentsOf: sourceRoot.appendingPathComponent("AudioDeviceManager.swift"), encoding: .utf8)

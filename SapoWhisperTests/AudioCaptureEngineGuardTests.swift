@@ -414,7 +414,7 @@ nonisolated final class AudioCaptureEngineGuardTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("SapoWhisper/Core/AudioCaptureEngine.swift")
         let text = try String(contentsOf: source, encoding: .utf8)
-        let phaseStart = try XCTUnwrap(text.range(of: "let tapFormat = materializedInput.tapFormat"))
+        let phaseStart = try XCTUnwrap(text.range(of: "let tapFormat = preparedInput.format"))
         let generationGuard = try XCTUnwrap(
             text.range(of: "guard self.isSetupGenerationCurrent(setupGeneration)", range: phaseStart.upperBound..<text.endIndex)
         )

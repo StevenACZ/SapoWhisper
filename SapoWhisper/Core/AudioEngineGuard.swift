@@ -319,10 +319,24 @@ nonisolated final class AudioInputSetupQuarantine: @unchecked Sendable {
     private let lock = NSLock()
     private var epoch: UInt64 = 0
     private var quarantinedEpoch: UInt64?
+    private var worker: DispatchQueue?
     private var routeSubscription: AnyCancellable?
 
     var currentEpoch: UInt64 {
         lock.withLock { epoch }
+    }
+
+    func preparationContext() -> (epoch: UInt64, worker: DispatchQueue)? {
+        lock.withLock {
+            guard quarantinedEpoch != epoch else { return nil }
+            let currentWorker =
+                worker
+                ?? DispatchQueue(
+                    label: "oli.SapoWhisper.input-preparation.\(epoch)", qos: .userInitiated
+                )
+            worker = currentWorker
+            return (epoch, currentWorker)
+        }
     }
 
     func canAttempt(epoch: UInt64) -> Bool {
@@ -346,6 +360,7 @@ nonisolated final class AudioInputSetupQuarantine: @unchecked Sendable {
         lock.withLock {
             epoch &+= 1
             quarantinedEpoch = nil
+            worker = nil
         }
     }
 

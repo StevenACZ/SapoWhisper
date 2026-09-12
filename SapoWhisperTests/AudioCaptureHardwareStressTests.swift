@@ -20,11 +20,22 @@ final class AudioCaptureHardwareStressTests: XCTestCase {
         for mode in [AudioCaptureEngine.Mode.batch, .streaming] {
             let capture = AudioCaptureEngine(mode: mode)
             let supervisor = CaptureStartSupervisor(recorder: capture, mode: mode)
-            for _ in 0..<15 {
+            for index in 0..<15 {
                 let started = ProcessInfo.processInfo.systemUptime
                 do {
                     try await supervisor.start(microphone: microphone, targetEngine: .localAIServer)
                     startTimes.append(ProcessInfo.processInfo.systemUptime - started)
+                    try await Task.sleep(for: .milliseconds(100))
+                    if index.isMultiple(of: 5) {
+                        capture.pauseRecording()
+                        let pausedBuffers = capture.currentCaptureDiagnostics().inputBufferCount
+                        try await Task.sleep(for: .milliseconds(150))
+                        XCTAssertEqual(capture.currentCaptureDiagnostics().inputBufferCount, pausedBuffers)
+                        try capture.resumeRecording()
+                        try await Task.sleep(for: .milliseconds(150))
+                        XCTAssertGreaterThan(capture.currentCaptureDiagnostics().inputBufferCount, pausedBuffers)
+                    }
+                    XCTAssertEqual(capture.inputSession?.deviceID, AudioDeviceManager.shared.getDeviceID(for: microphone))
                     let stopped = await capture.stopRecordingAsync()
                     let result = try XCTUnwrap(stopped)
                     defer { capture.deleteRecording(at: result.audioURL) }
