@@ -86,3 +86,6 @@ make release-check
   the app before creating the DMG, then notarize/staple the DMG and ZIP that app.
   Validate mounted/extracted apps with `stapler` + strict `codesign`; use `ditto`
   for ZIP extraction, and keep readonly DMG/plist/architecture checks.
+
+Permission colors: screen red, Accessibility blue, microphone orange, system audio teal,
+Input Monitoring purple, Speech Recognition indigo, Local Network cyan; green means granted/ready. Keep labels and icons.

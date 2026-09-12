@@ -85,21 +85,21 @@ final class PermissionAppDragSourceView: NSView, NSPasteboardItemDataProvider, N
             rowView.trailingAnchor.constraint(equalTo: trailingAnchor),
             rowView.topAnchor.constraint(equalTo: topAnchor),
             rowView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            rowView.heightAnchor.constraint(equalToConstant: 56),
+            rowView.heightAnchor.constraint(equalToConstant: 64),
 
             iconChrome.leadingAnchor.constraint(equalTo: rowView.leadingAnchor, constant: 12),
             iconChrome.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
-            iconChrome.widthAnchor.constraint(equalToConstant: 36),
-            iconChrome.heightAnchor.constraint(equalToConstant: 36),
+            iconChrome.widthAnchor.constraint(equalToConstant: 44),
+            iconChrome.heightAnchor.constraint(equalToConstant: 44),
 
             iconView.centerXAnchor.constraint(equalTo: iconChrome.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: iconChrome.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 28),
-            iconView.heightAnchor.constraint(equalToConstant: 28),
+            iconView.widthAnchor.constraint(equalToConstant: 40),
+            iconView.heightAnchor.constraint(equalToConstant: 40),
 
             titleLabel.leadingAnchor.constraint(equalTo: iconChrome.trailingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: rowView.trailingAnchor, constant: -12),
-            titleLabel.topAnchor.constraint(equalTo: rowView.topAnchor, constant: 11),
+            titleLabel.topAnchor.constraint(equalTo: rowView.topAnchor, constant: 15),
 
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),

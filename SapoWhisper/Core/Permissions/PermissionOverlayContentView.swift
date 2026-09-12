@@ -10,9 +10,16 @@ import AppKit
 final class PermissionOverlayContentView: NSView {
     static let preferredSize = NSSize(width: 548, height: 184)
 
+    private var messageLabel: NSTextField?
+    private var footnoteLabel: NSTextField?
+
+    private let minimumHelperHeight: CGFloat
+    private var helperView: NSView?
+    private var helperHeightConstraint: NSLayoutConstraint?
     private let onClose: () -> Void
 
     init(hostApp: PermissionHostApp, permission: AppPermission, onClose: @escaping () -> Void) {
+        minimumHelperHeight = permission.supportsAppDragInSettings ? 64 : 56
         self.onClose = onClose
         super.init(frame: NSRect(origin: .zero, size: Self.preferredSize))
         translatesAutoresizingMaskIntoConstraints = false
@@ -51,23 +58,27 @@ final class PermissionOverlayContentView: NSView {
         cardView.addSubview(closeButton)
 
         let messageLabel = NSTextField(wrappingLabelWithString: permission.overlayMessage)
+        self.messageLabel = messageLabel
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
         messageLabel.font = .systemFont(ofSize: 12.5, weight: .medium)
         messageLabel.textColor = .secondaryLabelColor
         cardView.addSubview(messageLabel)
 
         let helperView = makeHelperView(hostApp: hostApp, permission: permission)
+        self.helperView = helperView
+        let helperHeightConstraint = helperView.heightAnchor.constraint(equalToConstant: minimumHelperHeight)
+        self.helperHeightConstraint = helperHeightConstraint
         cardView.addSubview(helperView)
 
         let footnoteLabel = NSTextField(wrappingLabelWithString: permission.overlayFootnote)
+        self.footnoteLabel = footnoteLabel
         footnoteLabel.translatesAutoresizingMaskIntoConstraints = false
         footnoteLabel.font = .systemFont(ofSize: 11, weight: .medium)
         footnoteLabel.textColor = .tertiaryLabelColor
         cardView.addSubview(footnoteLabel)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: Self.preferredSize.width),
-            heightAnchor.constraint(equalToConstant: Self.preferredSize.height),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 400),
 
             cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
             cardView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -95,12 +106,25 @@ final class PermissionOverlayContentView: NSView {
             helperView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 24),
             helperView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
             helperView.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 14),
-            helperView.heightAnchor.constraint(equalToConstant: 56),
+            helperHeightConstraint,
 
             footnoteLabel.leadingAnchor.constraint(equalTo: helperView.leadingAnchor),
             footnoteLabel.trailingAnchor.constraint(equalTo: helperView.trailingAnchor),
             footnoteLabel.topAnchor.constraint(equalTo: helperView.bottomAnchor, constant: 10),
+            footnoteLabel.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -18),
         ])
+    }
+
+    func preferredHeight(for width: CGFloat) -> CGFloat {
+        let helperHeight =
+            (helperView as? PermissionOverlayInfoCardView)?.preferredHeight(for: width - 48)
+            ?? minimumHelperHeight
+        helperHeightConstraint?.constant = helperHeight
+        let textWidth = max(1, width - 48)
+        let bounds = NSRect(x: 0, y: 0, width: textWidth, height: .greatestFiniteMagnitude)
+        let messageHeight = messageLabel?.cell?.cellSize(forBounds: bounds).height ?? 30
+        let footnoteHeight = footnoteLabel?.cell?.cellSize(forBounds: bounds).height ?? 28
+        return max(Self.preferredSize.height, ceil(96 + helperHeight + messageHeight + footnoteHeight))
     }
 
     private func makeHelperView(hostApp: PermissionHostApp, permission: AppPermission) -> NSView {
@@ -184,8 +208,6 @@ private final class PermissionOverlayInfoCardView: NSView {
         addSubview(messageLabel)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 56),
-
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 20),
@@ -211,6 +233,13 @@ private final class PermissionOverlayInfoCardView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateAppearance()
+    }
+
+    func preferredHeight(for width: CGFloat) -> CGFloat {
+        let bounds = NSRect(x: 0, y: 0, width: max(1, width - 60), height: .greatestFiniteMagnitude)
+        let titleHeight = titleLabel.cell?.cellSize(forBounds: bounds).height ?? 16
+        let messageHeight = messageLabel.cell?.cellSize(forBounds: bounds).height ?? 14
+        return max(56, ceil(24 + titleHeight + messageHeight))
     }
 
     private func updateAppearance() {

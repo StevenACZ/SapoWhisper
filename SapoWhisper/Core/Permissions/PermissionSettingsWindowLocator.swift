@@ -13,61 +13,56 @@ struct PermissionSettingsWindowSnapshot: Equatable {
     let visibleFrame: CGRect
 }
 
-enum PermissionSettingsWindowLocator {
-    private static let bundleIdentifier = "com.apple.systempreferences"
+@MainActor
+final class PermissionSettingsWindowLocator {
+    private var windowID: CGWindowID?
+    private var ownerPID: pid_t?
 
-    static func frontmostWindow() -> PermissionSettingsWindowSnapshot? {
-        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleIdentifier else {
-            return nil
-        }
+    func reset() {
+        windowID = nil
+        ownerPID = nil
+    }
 
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first else {
-            return nil
-        }
+    func trackedWindow() -> PermissionSettingsWindowSnapshot? {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+            app.bundleIdentifier == "com.apple.systempreferences",
+            app.processIdentifier == ownerPID, let windowID,
+            let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID) as? [[String: Any]],
+            let info = windows.first
+        else { return nil }
+        return snapshot(info, ownerPID: app.processIdentifier)
+    }
 
-        guard
-            let windowInfo = CGWindowListCopyWindowInfo(
-                [.optionOnScreenOnly, .excludeDesktopElements],
-                .zero
+    func discover() -> PermissionSettingsWindowSnapshot? {
+        if let tracked = trackedWindow() { return tracked }
+        reset()
+        guard let app = NSWorkspace.shared.frontmostApplication,
+            app.bundleIdentifier == "com.apple.systempreferences",
+            let windows = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements], .zero
             ) as? [[String: Any]]
-        else {
-            return nil
+        else { return nil }
+        for info in windows {
+            guard let found = snapshot(info, ownerPID: app.processIdentifier),
+                let number = info[kCGWindowNumber as String] as? NSNumber
+            else { continue }
+            ownerPID = app.processIdentifier
+            windowID = number.uint32Value
+            return found
         }
+        return nil
+    }
 
-        let windows = windowInfo.compactMap { info -> PermissionSettingsWindowSnapshot? in
-            guard let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t, ownerPID == app.processIdentifier else {
-                return nil
-            }
-
-            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0 else {
-                return nil
-            }
-
-            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else {
-                return nil
-            }
-
-            let cgFrame = CGRect(
-                x: bounds["X"] ?? 0,
-                y: bounds["Y"] ?? 0,
-                width: bounds["Width"] ?? 0,
-                height: bounds["Height"] ?? 0
-            )
-
-            let converted = appKitGeometry(from: cgFrame)
-            guard converted.frame.width > 320, converted.frame.height > 240 else {
-                return nil
-            }
-
-            return PermissionSettingsWindowSnapshot(
-                frame: converted.frame,
-                visibleFrame: converted.visibleFrame
-            )
-        }
-
-        return windows.max { lhs, rhs in
-            lhs.frame.width * lhs.frame.height < rhs.frame.width * rhs.frame.height
-        }
+    private func snapshot(_ info: [String: Any], ownerPID: pid_t) -> PermissionSettingsWindowSnapshot? {
+        guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ownerPID,
+            (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+            (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue == true,
+            let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+            let cgFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+            cgFrame.width > 320, cgFrame.height > 240
+        else { return nil }
+        let converted = Self.appKitGeometry(from: cgFrame)
+        return PermissionSettingsWindowSnapshot(frame: converted.frame, visibleFrame: converted.visibleFrame)
     }
 
     private static func appKitGeometry(from cgFrame: CGRect) -> (frame: CGRect, visibleFrame: CGRect) {

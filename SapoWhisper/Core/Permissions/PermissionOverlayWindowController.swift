@@ -9,7 +9,8 @@ import AppKit
 import QuartzCore
 
 final class PermissionOverlayWindowController: NSWindowController {
-    private let windowSize = PermissionOverlayContentView.preferredSize
+    private var entrance: PermissionOverlayEntrance?
+    private var measuredSize: CGSize?
 
     init(hostApp: PermissionHostApp, permission: AppPermission, onClose: @escaping () -> Void) {
         let panel = PassiveOverlayPanel(
@@ -34,37 +35,62 @@ final class PermissionOverlayWindowController: NSWindowController {
     }
 
     func present(from sourceFrameInScreen: CGRect?, settingsFrame: CGRect, visibleFrame: CGRect) {
-        guard let window else { return }
-
-        let targetOrigin = anchoredOrigin(for: settingsFrame, visibleFrame: visibleFrame)
-        let targetFrame = NSRect(origin: targetOrigin, size: windowSize)
-
-        if let sourceFrameInScreen, !sourceFrameInScreen.isEmpty {
-            window.alphaValue = 0.45
-            window.setFrame(sourceFrameInScreen, display: false)
-            window.orderFrontRegardless()
-
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.28
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                window.animator().setFrame(targetFrame, display: true)
-                window.animator().alphaValue = 1
-            }
-        } else {
-            window.alphaValue = 1
-            window.setFrame(targetFrame, display: false)
-            window.orderFrontRegardless()
+        guard let target = targetFrame(settingsFrame: settingsFrame, visibleFrame: visibleFrame) else {
+            hide()
+            return
         }
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let source = sourceFrameInScreen.flatMap { $0.isEmpty ? nil : $0 }
+            entrance = PermissionOverlayEntrance(
+                origin: source.map { NSPoint(x: $0.midX - target.width / 2, y: $0.midY - target.height / 2) }
+                    ?? target.origin.applying(CGAffineTransform(translationX: 0, y: 12)),
+                startedAt: CACurrentMediaTime()
+            )
+        }
+        updatePosition(with: settingsFrame, visibleFrame: visibleFrame)
     }
 
     func updatePosition(with settingsFrame: CGRect, visibleFrame: CGRect) {
-        let origin = anchoredOrigin(for: settingsFrame, visibleFrame: visibleFrame)
-        window?.setFrameOrigin(origin)
-        window?.orderFrontRegardless()
+        guard let window, let target = targetFrame(settingsFrame: settingsFrame, visibleFrame: visibleFrame) else {
+            hide()
+            return
+        }
+        var frame = target
+        var alpha: CGFloat = 1
+        if let entrance, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let progress = entrance.progress(at: CACurrentMediaTime())
+            frame.origin = entrance.origin(toward: target.origin, progress: progress)
+            alpha = progress
+            if progress >= 1 { self.entrance = nil }
+        } else {
+            entrance = nil
+        }
+        if window.frame != frame { window.setFrame(frame, display: true) }
+        if window.alphaValue != alpha { window.alphaValue = alpha }
+        if !window.isVisible { window.orderFrontRegardless() }
     }
 
     func hide() {
+        entrance = nil
         window?.orderOut(nil)
+    }
+
+    override func close() {
+        entrance = nil
+        super.close()
+    }
+
+    private func targetFrame(settingsFrame: CGRect, visibleFrame: CGRect) -> CGRect? {
+        let visible = visibleFrame.insetBy(dx: 10, dy: 10)
+        guard let column = PermissionOverlayPlacement.frame(settings: settingsFrame, visible: visible, height: 184),
+            let content = window?.contentView as? PermissionOverlayContentView
+        else { return nil }
+        if measuredSize?.width != column.width {
+            measuredSize = CGSize(width: column.width, height: content.preferredHeight(for: column.width))
+        }
+        return PermissionOverlayPlacement.frame(
+            settings: settingsFrame, visible: visible, height: measuredSize?.height ?? column.height
+        )
     }
 
     private func configureWindow(_ window: NSWindow) {
@@ -75,23 +101,6 @@ final class PermissionOverlayWindowController: NSWindowController {
         window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         window.animationBehavior = .none
-    }
-
-    private func anchoredOrigin(for settingsFrame: CGRect, visibleFrame: CGRect) -> NSPoint {
-        let sidebarWidth: CGFloat = 168
-        let contentMinX = settingsFrame.minX + sidebarWidth
-        let contentWidth = max(settingsFrame.width - sidebarWidth, windowSize.width)
-        let preferredX = contentMinX + ((contentWidth - windowSize.width) / 2) - 10
-        let preferredY = settingsFrame.minY + 22
-        let minX = visibleFrame.minX + 10
-        let maxX = visibleFrame.maxX - windowSize.width - 10
-        let minY = visibleFrame.minY + 10
-        let maxY = visibleFrame.maxY - windowSize.height - 10
-
-        return NSPoint(
-            x: min(max(preferredX, minX), maxX),
-            y: min(max(preferredY, minY), maxY)
-        )
     }
 }
 

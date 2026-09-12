@@ -6,11 +6,21 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.18.2] - 2026-09-12
+
 ### Fixed
 
-- Tighten the menu spacing between the header, recording timer and record button.
-- The first local-server dictation waits for local network connectivity and confirms transient failures before using a backup. Failed background checks no longer discard a working local server or force later dictations onto the backup.
-- Microphone capture uses an input-only audio unit so output-device changes cannot strand an AVAudioEngine input graph. Temporary device-selection failures recover automatically with the selected microphone.
+- Microphone capture stays reliable when output devices change and automatically recovers temporary selection failures while preserving the chosen microphone.
+- The first local-server dictation waits for local network connectivity and confirms failures before using a backup. Failed background checks no longer discard a working local server or force later dictations onto the backup.
+
+### Changed
+
+- Bring the menu's recording button and timer closer to the header.
+- Permission guidance follows System Settings smoothly, adapts to its visible content area and stops tracking when dismissed. Larger draggable app icons and consistent permission colors make setup clearer.
+
+### Added
+
+- Automated Apple Silicon build, test and security checks for pull requests and pushes.
 
 ## [2.18.1] - 2026-09-07
 
