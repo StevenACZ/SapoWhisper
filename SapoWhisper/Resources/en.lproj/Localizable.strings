@@ -672,13 +672,6 @@
 "overlay.a11y.error" = "Dictation failed";
 
 /* In-app updates (Sparkle) + retranscribe cancel */
-"menu.update_available" = "Update available";
-"menu.update_install_hint" = "v%@ — click to install";
-"menu.update_downloading" = "Downloading update…";
-"menu.update_installing" = "Installing update…";
-"menu.update_relaunch" = "SapoWhisper will relaunch by itself";
-"menu.update_failed" = "Update failed";
-"menu.update_retry_hint" = "Click to try again";
 "about.update_install" = "Install v%@";
 "about.update_downloading" = "Downloading…";
 "about.update_installing" = "Installing…";
@@ -686,6 +679,25 @@
 "about.update_release_notes" = "View release notes";
 "about.update_check" = "Check for updates";
 "about.update_up_to_date" = "You're up to date";
+"update.card.available_title" = "Version %@ is available";
+"update.card.available_subtitle" = "One-click download and install";
+"update.card.update" = "Update";
+"update.card.downloading_title" = "Downloading v%@…";
+"update.card.downloading_title_generic" = "Downloading update…";
+"update.card.ready_title" = "v%@ ready to install";
+"update.card.ready_title_generic" = "Update ready to install";
+"update.card.ready_subtitle" = "The app will quit and reopen by itself";
+"update.card.install_now" = "Install now";
+"update.card.later" = "Later";
+"update.card.installing_title" = "Installing v%@…";
+"update.card.installing_title_generic" = "Installing update…";
+"update.card.installing_subtitle" = "Restarting in a moment";
+"update.card.failed_title" = "Update failed";
+"update.card.failed_subtitle" = "Check your connection and try again";
+"update.card.retry" = "Retry";
+"about.update_install_now" = "Install v%@ now";
+"about.update_install_now_generic" = "Install now";
+"about.update_later" = "Later";
 "settings.update_check_toggle" = "Check for updates automatically";
 "settings.update_check_footnote" = "Checks GitHub Releases once a day. Nothing is sent.";
 "history.retranscribe_cancelling" = "Cancelling…";

@@ -41,6 +41,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         setupStatusItem()
         setupPopover()
         bindStatusImage()
+        observeUpdatePhaseForAboutWindow()
         // A retained-after-close hosting controller keeps its SwiftUI graph
         // alive and animating (settings burned ~40% CPU forever once opened,
         // 2026-08-14); closing a window must release its controller.
@@ -390,6 +391,37 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         let controller = aboutWindowController ?? makeAboutWindowController()
         aboutWindowController = controller
         show(controller)
+        resizeAboutWindowToFit()
+    }
+
+    /// The update capsule grows and shrinks with `UpdateManager.phase`, and the
+    /// pinned content size would clip the footer for the rest of the session.
+    private func observeUpdatePhaseForAboutWindow() {
+        withObservationTracking {
+            _ = UpdateManager.shared.phase
+        } onChange: {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.resizeAboutWindowToFit()
+                self.observeUpdatePhaseForAboutWindow()
+            }
+        }
+    }
+
+    private func resizeAboutWindowToFit() {
+        guard
+            let window = aboutWindowController?.window,
+            let hostingController = window.contentViewController as? NSHostingController<AboutWindowHost>
+        else { return }
+
+        let view = hostingController.view
+        view.layoutSubtreeIfNeeded()
+        let fittingSize = view.fittingSize
+        guard fittingSize.height > 0 else { return }
+
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        window.setContentSize(fittingSize)
+        window.setFrameTopLeftPoint(topLeft)
     }
 
     /// The About window sizes itself to its content and hides the resize

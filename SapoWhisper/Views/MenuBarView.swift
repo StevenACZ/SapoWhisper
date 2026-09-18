@@ -43,6 +43,8 @@ struct MenuBarView: View {
         VStack(spacing: 0) {
             headerSection
 
+            UpdateCard(manager: UpdateManager.shared)
+
             MenuBarPermissionReminderView(missingPermissions: missingPermissions) {
                 openPermissionsWindow()
             }
@@ -269,13 +271,6 @@ struct MenuBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 0) {
-            if UpdateManager.shared.phase != .idle {
-                UpdateMenuRow(manager: UpdateManager.shared)
-
-                Divider()
-                    .padding(.horizontal)
-            }
-
             ActionRow(
                 icon: "clock.arrow.circlepath",
                 title: "menu.history".localized,
