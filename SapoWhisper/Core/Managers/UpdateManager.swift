@@ -82,7 +82,8 @@ final class UpdateManager {
     private var wakeObserver: NSObjectProtocol?
     private var lastBackgroundCheckAt: TimeInterval?
 
-    static let resumeCheckMaxAttempts = 40
+    static let resumeCheckMaxAttempts = 300
+    static let resumeCheckRetryDelay: TimeInterval = 0.25
     static let backgroundCheckInterval: TimeInterval = 30 * 60
     static let backgroundCheckThrottle: TimeInterval = 5 * 60
 
@@ -150,6 +151,23 @@ final class UpdateManager {
 
     var backgroundDiscoveryArmed: Bool { backgroundCheckTimer != nil }
 
+    var phaseAllowsQuietCheck: Bool {
+        guard !installRequested, !installNowRequested, !resumeCheckPending,
+            !manualCheckPending, pendingInstallReply == nil
+        else { return false }
+        switch phase {
+        case .idle, .available, .failed:
+            return true
+        case .downloading, .readyToInstall, .installing:
+            return false
+        }
+    }
+
+    private var sessionIsUserDriven: Bool {
+        installRequested || installNowRequested || resumeCheckPending
+            || (manualCheckPending && !manualCheckWaiting)
+    }
+
     func startBackgroundDiscovery() {
         guard backgroundCheckTimer == nil else { return }
         let interval = backgroundCheckIntervalProvider()
@@ -182,7 +200,7 @@ final class UpdateManager {
     }
 
     func requestBackgroundCheck() {
-        guard isAutoCheckEnabled, phase == .idle, let updaterSession else { return }
+        guard isAutoCheckEnabled, phaseAllowsQuietCheck, let updaterSession else { return }
         guard updaterSession.isInProgress() == false else { return }
         let now = monotonicClock()
         if let lastBackgroundCheckAt, now - lastBackgroundCheckAt < Self.backgroundCheckThrottle {
@@ -265,8 +283,9 @@ final class UpdateManager {
             handleResumeCheckExhausted()
             return
         }
+        let delay = UInt64(Self.resumeCheckRetryDelay * 1_000_000_000)
         resumeCheckTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
             self?.requestResumeCheck(attempt: attempt + 1)
         }
@@ -340,6 +359,11 @@ final class UpdateManager {
         releasePage: URL?,
         informationOnly: Bool
     ) -> SPUUserUpdateChoice {
+        if !sessionIsUserDriven, phase != .idle, let pendingVersion,
+            !Self.isNewerVersion(version, than: pendingVersion)
+        {
+            return .dismiss
+        }
         resumeCheckPending = false
         pendingVersion = version
         pendingIsInformationOnly = informationOnly
@@ -452,6 +476,11 @@ final class UpdateManager {
         installRequested = false
     }
 
+    private static func isNewerVersion(_ version: String, than current: String) -> Bool {
+        SUStandardVersionComparator.default.compareVersion(version, toVersion: current)
+            == .orderedDescending
+    }
+
     static func startFailureLogDetail(for error: Error) -> String {
         LogSanitizer.errorDiagnostic(error, state: "start")
     }
@@ -482,7 +511,7 @@ final class UpdateManager {
     }
 
     private func finishManualCheck(status: ManualCheckStatus) {
-        guard manualCheckPending else { return }
+        guard manualCheckPending, !manualCheckWaiting else { return }
         manualCheckPending = false
         manualCheckStatus = status
         guard status != .idle else { return }
