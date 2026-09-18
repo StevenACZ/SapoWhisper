@@ -6,6 +6,23 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-09-18
+
+### Added
+
+- A prominent update card at the top of the menu shows an available version, downloads it with visible progress and percentage, and then offers Install now or Later.
+- A downloaded update stays offered as ready to install after the menu is closed or the install is postponed, and Install now resumes it without downloading again.
+- The About window can install a ready update right away or postpone it, and retries a failed install from the same place.
+
+### Changed
+
+- Installing an update quits and reopens SapoWhisper by itself, with the card explaining what will happen.
+- Update messages fall back to version-less wording when the version is unknown, and download progress uses fixed-width digits so it stops jittering.
+
+### Fixed
+
+- An update that cannot be resumed no longer leaves the card stuck on "Installing"; it reports a retryable failure instead and never installs unattended later.
+
 ## [2.18.2] - 2026-09-12
 
 ### Fixed
