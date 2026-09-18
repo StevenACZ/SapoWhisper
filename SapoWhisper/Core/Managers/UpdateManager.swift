@@ -150,6 +150,23 @@ final class UpdateManager {
 
     var backgroundDiscoveryArmed: Bool { backgroundCheckTimer != nil }
 
+    var phaseAllowsQuietCheck: Bool {
+        guard !installRequested, !installNowRequested, !resumeCheckPending,
+            !manualCheckPending, pendingInstallReply == nil
+        else { return false }
+        switch phase {
+        case .idle, .available, .failed:
+            return true
+        case .downloading, .readyToInstall, .installing:
+            return false
+        }
+    }
+
+    private var sessionIsUserDriven: Bool {
+        installRequested || installNowRequested || resumeCheckPending
+            || (manualCheckPending && !manualCheckWaiting)
+    }
+
     func startBackgroundDiscovery() {
         guard backgroundCheckTimer == nil else { return }
         let interval = backgroundCheckIntervalProvider()
@@ -182,7 +199,7 @@ final class UpdateManager {
     }
 
     func requestBackgroundCheck() {
-        guard isAutoCheckEnabled, phase == .idle, let updaterSession else { return }
+        guard isAutoCheckEnabled, phaseAllowsQuietCheck, let updaterSession else { return }
         guard updaterSession.isInProgress() == false else { return }
         let now = monotonicClock()
         if let lastBackgroundCheckAt, now - lastBackgroundCheckAt < Self.backgroundCheckThrottle {
@@ -340,6 +357,11 @@ final class UpdateManager {
         releasePage: URL?,
         informationOnly: Bool
     ) -> SPUUserUpdateChoice {
+        if !sessionIsUserDriven, phase != .idle, let pendingVersion,
+            !Self.isNewerVersion(version, than: pendingVersion)
+        {
+            return .dismiss
+        }
         resumeCheckPending = false
         pendingVersion = version
         pendingIsInformationOnly = informationOnly
@@ -412,6 +434,7 @@ final class UpdateManager {
             canPostpone = false
             return
         }
+        guard sessionIsUserDriven || phase == .idle else { return }
         installRequested = false
         installNowRequested = false
         pendingInstallReply = nil
@@ -431,6 +454,7 @@ final class UpdateManager {
             canPostpone = false
             return
         }
+        guard sessionIsUserDriven || phase == .idle else { return }
         finishManualCheck(status: .idle)
         installNowRequested = false
         pendingInstallReply = nil
@@ -450,6 +474,11 @@ final class UpdateManager {
             }
         }
         installRequested = false
+    }
+
+    private static func isNewerVersion(_ version: String, than current: String) -> Bool {
+        SUStandardVersionComparator.default.compareVersion(version, toVersion: current)
+            == .orderedDescending
     }
 
     static func startFailureLogDetail(for error: Error) -> String {
@@ -482,7 +511,7 @@ final class UpdateManager {
     }
 
     private func finishManualCheck(status: ManualCheckStatus) {
-        guard manualCheckPending else { return }
+        guard manualCheckPending, !manualCheckWaiting else { return }
         manualCheckPending = false
         manualCheckStatus = status
         guard status != .idle else { return }
