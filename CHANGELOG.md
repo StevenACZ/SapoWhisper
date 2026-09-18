@@ -14,7 +14,6 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Retry and Update never install on their own: a prepared update always stops at "Ready to install" and waits for "Install now".
 - "Check for updates" always answers, even while a quiet check is running.
-- Pressing Update right after a quiet check no longer does nothing.
 
 ## [2.19.0] - 2026-09-18
 

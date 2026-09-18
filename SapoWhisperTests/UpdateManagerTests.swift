@@ -730,6 +730,21 @@ final class UpdateManagerTests: XCTestCase {
                 range: openBranch.upperBound..<popoverShown.lowerBound))
     }
 
+    func testTheAboutWindowOpenPathAsksForABackgroundCheck() throws {
+        let controller = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("SapoWhisper/App/MenuBarStatusController.swift")
+        let source = try String(contentsOf: controller, encoding: .utf8)
+        let openFunction = try XCTUnwrap(source.range(of: "func openAboutWindow() {"))
+        let windowShown = try XCTUnwrap(
+            source.range(of: "show(controller)", range: openFunction.upperBound..<source.endIndex))
+        XCTAssertNotNil(
+            source.range(
+                of: "UpdateManager.shared.requestBackgroundCheck()",
+                range: openFunction.upperBound..<windowShown.lowerBound))
+    }
+
     func testTheDiscoveryTimerRunsOnTheRunLoopAndAsksForACheck() {
         let spy = UpdaterSessionSpy()
         armDiscovery(spy)
@@ -928,6 +943,35 @@ final class UpdateManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.phase, .downloading(fraction: nil))
         XCTAssertTrue(manager.resumeCheckPending)
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testUpdateClickDuringAnArmedInstallNowResumeEndsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        armDiscovery(spy)
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.handleReadyToInstall { _ in }
+        manager.installLater()
+        manager.installNow()
+        XCTAssertTrue(manager.resumeCheckPending)
+        spy.isInProgress = false
+
+        manager.installPendingUpdate()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+        XCTAssertTrue(manager.resumeCheckPending)
+        XCTAssertEqual(manager.resumeRequestCount, 1)
+        XCTAssertEqual(spy.checkCount, 0)
 
         let choice = manager.handleUpdateFound(
             version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)

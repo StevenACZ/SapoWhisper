@@ -202,7 +202,8 @@ final class UpdateManager {
             openReleasePage()
             return
         }
-        guard updaterSession.isInProgress() == false else {
+        let resumeAlreadyPending = resumeCheckPending
+        guard resumeAlreadyPending || updaterSession.isInProgress() == false else {
             switch phase {
             case .downloading, .installing:
                 break
@@ -212,11 +213,13 @@ final class UpdateManager {
             return
         }
         beginRequestedInstall()
+        guard !resumeAlreadyPending else { return }
         updaterSession.checkForUpdates()
     }
 
     func beginRequestedInstall() {
         installRequested = true
+        installNowRequested = false
         phase = .downloading(fraction: nil)
     }
 

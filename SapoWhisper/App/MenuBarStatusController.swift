@@ -389,6 +389,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
 
     func openAboutWindow() {
         closePopover()
+        UpdateManager.shared.requestBackgroundCheck()
         let controller = aboutWindowController ?? makeAboutWindowController()
         aboutWindowController = controller
         show(controller)
