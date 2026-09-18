@@ -344,7 +344,7 @@ final class UpdateManagerTests: XCTestCase {
 
         manager.installPendingUpdate()
 
-        XCTAssertEqual(manager.phase, .installing)
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
         XCTAssertEqual(manager.resumeRequestCount, 1)
         XCTAssertTrue(manager.resumeCheckPending)
         XCTAssertEqual(spy.checkCount, 0)
@@ -518,6 +518,46 @@ final class UpdateManagerTests: XCTestCase {
             version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
         var choices: [SPUUserUpdateChoice] = []
         manager.handleReadyToInstall { choices.append($0) }
+        XCTAssertTrue(choices.isEmpty)
+
+        manager.installNow()
+
+        XCTAssertEqual(choices, [.install])
+        XCTAssertEqual(manager.phase, .installing)
+    }
+
+    func testUpdateButtonResumeOnAPreparedStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        manager.updaterSession = spy.session
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+
+        manager.installPendingUpdate()
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .installing, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testReadyDuringAnArmedRetryEndsThePollAndKeepsTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        XCTAssertTrue(manager.resumeCheckPending)
+
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertFalse(manager.resumeCheckPending)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+
+        manager.handleResumeCheckExhausted()
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
 
         manager.installNow()
 

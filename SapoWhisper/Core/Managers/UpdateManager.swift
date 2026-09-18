@@ -59,7 +59,6 @@ final class UpdateManager {
 
     private var installRequested = false
     private var installNowRequested = false
-    private var retryRequested = false
     private var pendingInstallReply: ((SPUUserUpdateChoice) -> Void)?
     private(set) var pendingVersion: String?
     private var pendingIsInformationOnly = false
@@ -127,8 +126,8 @@ final class UpdateManager {
 
     // MARK: - User actions
 
-    /// Update card / About capsule click: download + install + relaunch, or
-    /// retry after a failure. Information-only updates open the release page.
+    /// Update card / About capsule click: download the pending update and stop
+    /// at the ready card. Information-only updates open the release page.
     func installPendingUpdate() {
         guard let updaterSession else { return }
         if pendingIsInformationOnly {
@@ -154,25 +153,23 @@ final class UpdateManager {
             self.pendingInstallReply = nil
             canPostpone = false
             installRequested = true
-            retryRequested = false
             phase = .installing
             pendingInstallReply(.install)
             return
         }
         guard updaterSession != nil else { return }
         if case .failed = phase {
-            beginRequestedResume(autoInstall: false, retry: true)
+            beginRequestedResume(autoInstall: false)
             return
         }
         beginRequestedResume()
     }
 
-    func beginRequestedResume(autoInstall: Bool = true, retry: Bool = false) {
+    func beginRequestedResume(autoInstall: Bool = true) {
         installRequested = true
         installNowRequested = autoInstall
-        retryRequested = retry
         resumeCheckPending = true
-        phase = retry ? .downloading(fraction: nil) : .installing
+        phase = autoInstall ? .installing : .downloading(fraction: nil)
         resumeRequestCount += 1
         resumeCheckTask?.cancel()
         requestResumeCheck(attempt: 0)
@@ -205,7 +202,6 @@ final class UpdateManager {
         guard resumeCheckPending else { return }
         installRequested = false
         installNowRequested = false
-        retryRequested = false
         resumeCheckPending = false
         phase = .failed(version: pendingVersion ?? "")
     }
@@ -215,7 +211,6 @@ final class UpdateManager {
         self.pendingInstallReply = nil
         canPostpone = false
         installRequested = false
-        retryRequested = false
         pendingInstallReply(.dismiss)
     }
 
@@ -248,13 +243,12 @@ final class UpdateManager {
         finishManualCheck(status: .idle)
 
         guard stage == .notDownloaded else {
-            if (installRequested || installNowRequested) && !retryRequested && !informationOnly {
+            if installNowRequested && !informationOnly {
                 phase = .installing
                 return .install
             }
             installRequested = false
             installNowRequested = false
-            retryRequested = false
             phase = .readyToInstall(version: version)
             return .dismiss
         }
@@ -265,7 +259,6 @@ final class UpdateManager {
         }
         installRequested = false
         installNowRequested = false
-        retryRequested = false
         phase = .available(version: version)
         return .dismiss
     }
@@ -292,14 +285,14 @@ final class UpdateManager {
     }
 
     func handleReadyToInstall(reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        resumeCheckPending = false
+        resumeCheckTask?.cancel()
         if installNowRequested {
             installNowRequested = false
-            retryRequested = false
             phase = .installing
             reply(.install)
             return
         }
-        retryRequested = false
         pendingInstallReply = reply
         canPostpone = true
         phase = .readyToInstall(version: pendingVersion ?? "")
@@ -317,7 +310,6 @@ final class UpdateManager {
         }
         installRequested = false
         installNowRequested = false
-        retryRequested = false
         pendingInstallReply = nil
         canPostpone = false
         pendingVersion = nil
@@ -337,7 +329,6 @@ final class UpdateManager {
         }
         finishManualCheck(status: .idle)
         installNowRequested = false
-        retryRequested = false
         pendingInstallReply = nil
         canPostpone = false
         if installRequested, let pendingVersion {
@@ -383,7 +374,6 @@ final class UpdateManager {
         pendingInstallReply = nil
         canPostpone = false
         installNowRequested = false
-        retryRequested = false
         installRequested = false
     }
 
