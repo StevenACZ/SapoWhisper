@@ -183,6 +183,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             SapoLog.menuBar.info("Popover toggle closed elapsed=\(elapsed, privacy: .public)ms")
         } else {
             popoverOpenCount += 1
+            UpdateManager.shared.requestBackgroundCheck()
             if let hostingController = popover.contentViewController as? NSHostingController<MenuBarPopoverHost> {
                 hostingController.rootView = makePopoverHost()
             } else {

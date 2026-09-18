@@ -6,9 +6,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- New versions show up on their own within minutes: SapoWhisper checks quietly when you open the menu, after waking and every 30 minutes (only while automatic checks are on).
+
 ### Fixed
 
 - Retry and Update never install on their own: a prepared update always stops at "Ready to install" and waits for "Install now".
+- "Check for updates" always answers, even while a quiet check is running.
+- Pressing Update right after a quiet check no longer does nothing.
 
 ## [2.19.0] - 2026-09-18
 
