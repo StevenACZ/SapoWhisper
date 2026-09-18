@@ -6,6 +6,7 @@
 //  event handlers are exercised directly, no Sparkle session involved.
 //
 
+import AppKit
 import Sparkle
 import XCTest
 
@@ -17,11 +18,13 @@ import XCTest
 private final class UpdaterSessionSpy {
     var isInProgress = false
     var checkCount = 0
+    var backgroundCheckCount = 0
 
     var session: UpdateManager.UpdaterSession {
         UpdateManager.UpdaterSession(
             isInProgress: { self.isInProgress },
-            checkForUpdates: { self.checkCount += 1 }
+            checkForUpdates: { self.checkCount += 1 },
+            checkForUpdatesInBackground: { self.backgroundCheckCount += 1 }
         )
     }
 }
@@ -30,10 +33,29 @@ private final class UpdaterSessionSpy {
 final class UpdateManagerTests: XCTestCase {
 
     private var manager: UpdateManager!
+    private var savedAutoCheckPreference: Any?
+    private var discoveryNow: TimeInterval = 0
 
     override func setUp() async throws {
         try await super.setUp()
+        savedAutoCheckPreference = AppPreferences.defaults.object(
+            forKey: Constants.StorageKeys.autoUpdateCheckEnabled)
+        discoveryNow = 0
         manager = UpdateManager()
+    }
+
+    override func tearDown() async throws {
+        manager.stopBackgroundDiscovery()
+        manager = nil
+        if let savedAutoCheckPreference {
+            AppPreferences.defaults.set(
+                savedAutoCheckPreference, forKey: Constants.StorageKeys.autoUpdateCheckEnabled)
+        } else {
+            AppPreferences.defaults.removeObject(
+                forKey: Constants.StorageKeys.autoUpdateCheckEnabled)
+        }
+        savedAutoCheckPreference = nil
+        try await super.tearDown()
     }
 
     // MARK: - Scheduled check surfaces a pending row
@@ -344,7 +366,7 @@ final class UpdateManagerTests: XCTestCase {
 
         manager.installPendingUpdate()
 
-        XCTAssertEqual(manager.phase, .installing)
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
         XCTAssertEqual(manager.resumeRequestCount, 1)
         XCTAssertTrue(manager.resumeCheckPending)
         XCTAssertEqual(spy.checkCount, 0)
@@ -449,6 +471,120 @@ final class UpdateManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
         XCTAssertEqual(manager.resumeRequestCount, 0)
+    }
+
+    // MARK: - Retry after a failure
+
+    private func driveToFailedCard(_ spy: UpdaterSessionSpy) {
+        manager.updaterSession = spy.session
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.handleReadyToInstall { _ in }
+        manager.installNow()
+        manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 4001))
+    }
+
+    func testRetryOnANotDownloadedStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+        XCTAssertEqual(manager.phase, .failed(version: "9.9.9"))
+
+        manager.installNow()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+        XCTAssertEqual(spy.checkCount, 1)
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        XCTAssertEqual(choice, .install)
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+        XCTAssertTrue(manager.canPostpone)
+    }
+
+    func testRetryOnADownloadedStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testRetryOnAnInstallingStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .installing, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testRetryThenInstallNowStillInstalls() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+        XCTAssertTrue(choices.isEmpty)
+
+        manager.installNow()
+
+        XCTAssertEqual(choices, [.install])
+        XCTAssertEqual(manager.phase, .installing)
+    }
+
+    func testUpdateButtonResumeOnAPreparedStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        manager.updaterSession = spy.session
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+
+        manager.installPendingUpdate()
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .installing, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testReadyDuringAnArmedRetryEndsThePollAndKeepsTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        XCTAssertTrue(manager.resumeCheckPending)
+
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertFalse(manager.resumeCheckPending)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+
+        manager.handleResumeCheckExhausted()
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+
+        manager.installNow()
+
+        XCTAssertEqual(choices, [.install])
+        XCTAssertEqual(manager.phase, .installing)
     }
 
     // MARK: - Errors
@@ -557,5 +693,343 @@ final class UpdateManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.phase, .idle)
         XCTAssertNil(manager.releasePageURL)
+    }
+
+    // MARK: - Silent discovery
+
+    private func armDiscovery(_ spy: UpdaterSessionSpy) {
+        AppPreferences.defaults.set(true, forKey: Constants.StorageKeys.autoUpdateCheckEnabled)
+        manager.updaterSession = spy.session
+        manager.monotonicClock = { [unowned self] in self.discoveryNow }
+    }
+
+    func testPopoverOpenAsksForASilentCheck() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+
+        manager.requestBackgroundCheck()
+
+        XCTAssertEqual(spy.backgroundCheckCount, 1)
+        XCTAssertEqual(spy.checkCount, 0)
+        XCTAssertEqual(manager.phase, .idle)
+        XCTAssertEqual(manager.manualCheckStatus, .idle)
+    }
+
+    func testThePopoverOpenPathAsksForABackgroundCheck() throws {
+        let controller = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("SapoWhisper/App/MenuBarStatusController.swift")
+        let source = try String(contentsOf: controller, encoding: .utf8)
+        let openBranch = try XCTUnwrap(source.range(of: "popoverOpenCount += 1"))
+        let popoverShown = try XCTUnwrap(
+            source.range(of: "popover.show(relativeTo:", range: openBranch.upperBound..<source.endIndex))
+        XCTAssertNotNil(
+            source.range(
+                of: "UpdateManager.shared.requestBackgroundCheck()",
+                range: openBranch.upperBound..<popoverShown.lowerBound))
+    }
+
+    func testTheAboutWindowOpenPathAsksForABackgroundCheck() throws {
+        let controller = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("SapoWhisper/App/MenuBarStatusController.swift")
+        let source = try String(contentsOf: controller, encoding: .utf8)
+        let openFunction = try XCTUnwrap(source.range(of: "func openAboutWindow() {"))
+        let windowShown = try XCTUnwrap(
+            source.range(of: "show(controller)", range: openFunction.upperBound..<source.endIndex))
+        XCTAssertNotNil(
+            source.range(
+                of: "UpdateManager.shared.requestBackgroundCheck()",
+                range: openFunction.upperBound..<windowShown.lowerBound))
+    }
+
+    func testTheDiscoveryTimerRunsOnTheRunLoopAndAsksForACheck() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        let fired = expectation(description: "the discovery timer asked for a silent check")
+        fired.assertForOverFulfill = false
+        manager.backgroundCheckIntervalProvider = { 0.05 }
+        manager.updaterSession = UpdateManager.UpdaterSession(
+            isInProgress: { spy.isInProgress },
+            checkForUpdates: { spy.checkCount += 1 },
+            checkForUpdatesInBackground: {
+                spy.backgroundCheckCount += 1
+                fired.fulfill()
+            }
+        )
+
+        manager.startBackgroundDiscovery()
+
+        XCTAssertTrue(manager.backgroundDiscoveryArmed)
+        wait(for: [fired], timeout: 5)
+        manager.stopBackgroundDiscovery()
+        XCTAssertEqual(spy.backgroundCheckCount, 1)
+    }
+
+    func testWakeNotificationAsksForASilentCheck() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.startBackgroundDiscovery()
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+
+        XCTAssertEqual(spy.backgroundCheckCount, 1)
+    }
+
+    func testAllTriggersShareTheFiveMinuteThrottle() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+
+        manager.requestBackgroundCheck()
+        discoveryNow = UpdateManager.backgroundCheckThrottle - 1
+        manager.requestBackgroundCheck()
+
+        XCTAssertEqual(spy.backgroundCheckCount, 1)
+
+        discoveryNow = UpdateManager.backgroundCheckThrottle
+        manager.requestBackgroundCheck()
+
+        XCTAssertEqual(spy.backgroundCheckCount, 2)
+    }
+
+    func testSilentCheckIsSkippedWhileASessionIsInProgress() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        armDiscovery(spy)
+
+        manager.requestBackgroundCheck()
+
+        XCTAssertEqual(spy.backgroundCheckCount, 0)
+    }
+
+    func testSilentCheckIsSkippedWhileACardIsShowing() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+
+        manager.requestBackgroundCheck()
+
+        XCTAssertEqual(spy.backgroundCheckCount, 0)
+        XCTAssertEqual(manager.phase, .available(version: "9.9.9"))
+    }
+
+    func testDisabledAutoCheckFiresNoTriggerAndDisarmsTheTimer() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.startBackgroundDiscovery()
+        XCTAssertTrue(manager.backgroundDiscoveryArmed)
+
+        AppPreferences.defaults.set(false, forKey: Constants.StorageKeys.autoUpdateCheckEnabled)
+        manager.autoCheckDidChange(enabled: false)
+        manager.requestBackgroundCheck()
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+
+        XCTAssertEqual(spy.backgroundCheckCount, 0)
+        XCTAssertFalse(manager.backgroundDiscoveryArmed)
+
+        AppPreferences.defaults.set(true, forKey: Constants.StorageKeys.autoUpdateCheckEnabled)
+        manager.autoCheckDidChange(enabled: true)
+
+        XCTAssertTrue(manager.backgroundDiscoveryArmed)
+    }
+
+    func testSilentCheckThatFindsNothingChangesNoVisibleState() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.requestBackgroundCheck()
+
+        manager.handleNotFound()
+
+        XCTAssertEqual(manager.phase, .idle)
+        XCTAssertEqual(manager.manualCheckStatus, .idle)
+        XCTAssertNil(manager.pendingVersion)
+    }
+
+    func testSilentCheckThatFailsChangesNoVisibleState() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.requestBackgroundCheck()
+
+        manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 4001))
+
+        XCTAssertEqual(manager.phase, .idle)
+        XCTAssertEqual(manager.manualCheckStatus, .idle)
+    }
+
+    func testSilentCheckThatFindsAnUpdateShowsTheAvailableCard() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.requestBackgroundCheck()
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .available(version: "9.9.9"))
+    }
+
+    func testSilentCheckOnAPreparedStageStillWaitsForInstallNow() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.requestBackgroundCheck()
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testManualCheckIsNeverThrottled() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.requestBackgroundCheck()
+
+        manager.checkForUpdatesManually()
+        manager.checkForUpdatesManually()
+
+        XCTAssertEqual(spy.checkCount, 2)
+        XCTAssertEqual(manager.manualCheckStatus, .checking)
+    }
+
+    func testManualCheckDuringASilentSessionRunsWhenTheSessionEnds() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        armDiscovery(spy)
+
+        manager.checkForUpdatesManually()
+
+        XCTAssertEqual(manager.manualCheckStatus, .checking)
+        XCTAssertEqual(spy.checkCount, 0)
+
+        spy.isInProgress = false
+        manager.requestManualCheck(attempt: 1)
+
+        XCTAssertEqual(spy.checkCount, 1)
+        XCTAssertEqual(manager.manualCheckStatus, .checking)
+
+        manager.handleNotFound()
+
+        XCTAssertEqual(manager.manualCheckStatus, .upToDate)
+    }
+
+    func testManualCheckGivesUpQuietlyWhenTheSessionNeverEnds() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        armDiscovery(spy)
+
+        manager.checkForUpdatesManually()
+        XCTAssertEqual(manager.manualCheckStatus, .checking)
+
+        manager.requestManualCheck(attempt: UpdateManager.resumeCheckMaxAttempts)
+
+        XCTAssertEqual(spy.checkCount, 0)
+        XCTAssertEqual(manager.manualCheckStatus, .idle)
+        XCTAssertEqual(manager.phase, .idle)
+    }
+
+    func testUpdateClickDuringTheSilentSessionTeardownEndsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        manager.requestBackgroundCheck()
+        spy.isInProgress = true
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+
+        manager.installPendingUpdate()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+        XCTAssertTrue(manager.resumeCheckPending)
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testUpdateClickDuringAnArmedInstallNowResumeEndsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        armDiscovery(spy)
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.handleReadyToInstall { _ in }
+        manager.installLater()
+        manager.installNow()
+        XCTAssertTrue(manager.resumeCheckPending)
+        spy.isInProgress = false
+
+        manager.installPendingUpdate()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+        XCTAssertTrue(manager.resumeCheckPending)
+        XCTAssertEqual(manager.resumeRequestCount, 1)
+        XCTAssertEqual(spy.checkCount, 0)
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testUpdateClickDuringARunningDownloadIsIgnored() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.installPendingUpdate()
+        spy.isInProgress = true
+        manager.handleDownloadInitiated()
+        manager.handleDownloadExpectedLength(1_000)
+        manager.handleDownloadReceived(bytes: 400)
+        XCTAssertEqual(manager.phase, .downloading(fraction: 0.4))
+
+        manager.installPendingUpdate()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: 0.4))
+        XCTAssertFalse(manager.resumeCheckPending)
+        XCTAssertEqual(manager.resumeRequestCount, 0)
+        XCTAssertEqual(spy.checkCount, 1)
+    }
+
+    func testUpdateClickWhileInstallingIsIgnored() {
+        let spy = UpdaterSessionSpy()
+        armDiscovery(spy)
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.installPendingUpdate()
+        spy.isInProgress = true
+        manager.handleExtractionStarted()
+
+        manager.installPendingUpdate()
+
+        XCTAssertEqual(manager.phase, .installing)
+        XCTAssertFalse(manager.resumeCheckPending)
+        XCTAssertEqual(manager.resumeRequestCount, 0)
+        XCTAssertEqual(spy.checkCount, 1)
+    }
+
+    func testUpdateClickOnAFailedCardStillResumes() {
+        let spy = UpdaterSessionSpy()
+        spy.isInProgress = true
+        armDiscovery(spy)
+        driveToFailedCard(spy)
+        XCTAssertEqual(manager.phase, .failed(version: "9.9.9"))
+
+        manager.installPendingUpdate()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+        XCTAssertTrue(manager.resumeCheckPending)
     }
 }
