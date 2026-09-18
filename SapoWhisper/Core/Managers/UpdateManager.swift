@@ -59,6 +59,7 @@ final class UpdateManager {
 
     private var installRequested = false
     private var installNowRequested = false
+    private var retryRequested = false
     private var pendingInstallReply: ((SPUUserUpdateChoice) -> Void)?
     private(set) var pendingVersion: String?
     private var pendingIsInformationOnly = false
@@ -153,19 +154,25 @@ final class UpdateManager {
             self.pendingInstallReply = nil
             canPostpone = false
             installRequested = true
+            retryRequested = false
             phase = .installing
             pendingInstallReply(.install)
             return
         }
         guard updaterSession != nil else { return }
+        if case .failed = phase {
+            beginRequestedResume(autoInstall: false, retry: true)
+            return
+        }
         beginRequestedResume()
     }
 
-    func beginRequestedResume(autoInstall: Bool = true) {
+    func beginRequestedResume(autoInstall: Bool = true, retry: Bool = false) {
         installRequested = true
         installNowRequested = autoInstall
+        retryRequested = retry
         resumeCheckPending = true
-        phase = .installing
+        phase = retry ? .downloading(fraction: nil) : .installing
         resumeRequestCount += 1
         resumeCheckTask?.cancel()
         requestResumeCheck(attempt: 0)
@@ -198,6 +205,7 @@ final class UpdateManager {
         guard resumeCheckPending else { return }
         installRequested = false
         installNowRequested = false
+        retryRequested = false
         resumeCheckPending = false
         phase = .failed(version: pendingVersion ?? "")
     }
@@ -207,6 +215,7 @@ final class UpdateManager {
         self.pendingInstallReply = nil
         canPostpone = false
         installRequested = false
+        retryRequested = false
         pendingInstallReply(.dismiss)
     }
 
@@ -239,12 +248,13 @@ final class UpdateManager {
         finishManualCheck(status: .idle)
 
         guard stage == .notDownloaded else {
-            if (installRequested || installNowRequested) && !informationOnly {
+            if (installRequested || installNowRequested) && !retryRequested && !informationOnly {
                 phase = .installing
                 return .install
             }
             installRequested = false
             installNowRequested = false
+            retryRequested = false
             phase = .readyToInstall(version: version)
             return .dismiss
         }
@@ -255,6 +265,7 @@ final class UpdateManager {
         }
         installRequested = false
         installNowRequested = false
+        retryRequested = false
         phase = .available(version: version)
         return .dismiss
     }
@@ -283,10 +294,12 @@ final class UpdateManager {
     func handleReadyToInstall(reply: @escaping (SPUUserUpdateChoice) -> Void) {
         if installNowRequested {
             installNowRequested = false
+            retryRequested = false
             phase = .installing
             reply(.install)
             return
         }
+        retryRequested = false
         pendingInstallReply = reply
         canPostpone = true
         phase = .readyToInstall(version: pendingVersion ?? "")
@@ -304,6 +317,7 @@ final class UpdateManager {
         }
         installRequested = false
         installNowRequested = false
+        retryRequested = false
         pendingInstallReply = nil
         canPostpone = false
         pendingVersion = nil
@@ -323,6 +337,7 @@ final class UpdateManager {
         }
         finishManualCheck(status: .idle)
         installNowRequested = false
+        retryRequested = false
         pendingInstallReply = nil
         canPostpone = false
         if installRequested, let pendingVersion {
@@ -368,6 +383,7 @@ final class UpdateManager {
         pendingInstallReply = nil
         canPostpone = false
         installNowRequested = false
+        retryRequested = false
         installRequested = false
     }
 

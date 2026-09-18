@@ -451,6 +451,80 @@ final class UpdateManagerTests: XCTestCase {
         XCTAssertEqual(manager.resumeRequestCount, 0)
     }
 
+    // MARK: - Retry after a failure
+
+    private func driveToFailedCard(_ spy: UpdaterSessionSpy) {
+        manager.updaterSession = spy.session
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.handleReadyToInstall { _ in }
+        manager.installNow()
+        manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 4001))
+    }
+
+    func testRetryOnANotDownloadedStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+        XCTAssertEqual(manager.phase, .failed(version: "9.9.9"))
+
+        manager.installNow()
+
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+        XCTAssertEqual(spy.checkCount, 1)
+
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        XCTAssertEqual(choice, .install)
+        XCTAssertEqual(manager.phase, .downloading(fraction: nil))
+
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        XCTAssertTrue(choices.isEmpty)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+        XCTAssertTrue(manager.canPostpone)
+    }
+
+    func testRetryOnADownloadedStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .downloaded, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testRetryOnAnInstallingStageStopsAtTheReadyCard() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        let choice = manager.handleUpdateFound(
+            version: "9.9.9", stage: .installing, releasePage: nil, informationOnly: false)
+
+        XCTAssertEqual(choice, .dismiss)
+        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
+    }
+
+    func testRetryThenInstallNowStillInstalls() {
+        let spy = UpdaterSessionSpy()
+        driveToFailedCard(spy)
+
+        manager.installNow()
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        var choices: [SPUUserUpdateChoice] = []
+        manager.handleReadyToInstall { choices.append($0) }
+
+        manager.installNow()
+
+        XCTAssertEqual(choices, [.install])
+        XCTAssertEqual(manager.phase, .installing)
+    }
+
     // MARK: - Errors
 
     func testScheduledCheckErrorStaysSilent() {
