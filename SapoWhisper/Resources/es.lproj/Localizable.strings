@@ -672,13 +672,6 @@
 "overlay.a11y.error" = "El dictado falló";
 
 /* In-app updates (Sparkle) + retranscribe cancel */
-"menu.update_available" = "Actualización disponible";
-"menu.update_install_hint" = "v%@ — clic para instalar";
-"menu.update_downloading" = "Descargando actualización…";
-"menu.update_installing" = "Instalando actualización…";
-"menu.update_relaunch" = "SapoWhisper se relanzará solo";
-"menu.update_failed" = "La actualización falló";
-"menu.update_retry_hint" = "Clic para reintentar";
 "about.update_install" = "Instalar v%@";
 "about.update_downloading" = "Descargando…";
 "about.update_installing" = "Instalando…";
@@ -686,6 +679,25 @@
 "about.update_release_notes" = "Ver notas de la versión";
 "about.update_check" = "Buscar actualizaciones";
 "about.update_up_to_date" = "Estás al día";
+"update.card.available_title" = "Nueva versión v%@ disponible";
+"update.card.available_subtitle" = "Descarga e instalación en un clic";
+"update.card.update" = "Actualizar";
+"update.card.downloading_title" = "Descargando v%@…";
+"update.card.downloading_title_generic" = "Descargando la actualización…";
+"update.card.ready_title" = "v%@ lista para instalar";
+"update.card.ready_title_generic" = "Actualización lista para instalar";
+"update.card.ready_subtitle" = "La app se cerrará y volverá a abrir sola";
+"update.card.install_now" = "Instalar ahora";
+"update.card.later" = "Más tarde";
+"update.card.installing_title" = "Instalando v%@…";
+"update.card.installing_title_generic" = "Instalando la actualización…";
+"update.card.installing_subtitle" = "Se reiniciará en un momento";
+"update.card.failed_title" = "No se pudo actualizar";
+"update.card.failed_subtitle" = "Revisa tu conexión e inténtalo de nuevo";
+"update.card.retry" = "Reintentar";
+"about.update_install_now" = "Instalar v%@ ahora";
+"about.update_install_now_generic" = "Instalar ahora";
+"about.update_later" = "Más tarde";
 "settings.update_check_toggle" = "Buscar actualizaciones automáticamente";
 "settings.update_check_footnote" = "Consulta GitHub Releases una vez al día. No se envía nada.";
 "history.retranscribe_cancelling" = "Cancelando…";
