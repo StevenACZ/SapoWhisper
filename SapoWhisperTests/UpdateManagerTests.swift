@@ -322,6 +322,13 @@ final class UpdateManagerTests: XCTestCase {
         XCTAssertEqual(manager.phase, .failed(version: "9.9.9"))
     }
 
+    func testTheResumePollOutlastsASlowAppcastFetch() {
+        let window =
+            Double(UpdateManager.resumeCheckMaxAttempts) * UpdateManager.resumeCheckRetryDelay
+
+        XCTAssertGreaterThanOrEqual(window, 70)
+    }
+
     func testReachingTheNewSessionEndsTheResumeLoop() {
         _ = manager.handleUpdateFound(
             version: "9.9.9", stage: .installing, releasePage: nil, informationOnly: false)
@@ -686,11 +693,8 @@ final class UpdateManagerTests: XCTestCase {
     // MARK: - Up to date
 
     func testNotFoundClearsPendingState() {
-        let spy = UpdaterSessionSpy()
-        armDiscovery(spy)
         _ = manager.handleUpdateFound(
             version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
-        manager.checkForUpdatesManually()
 
         manager.handleNotFound()
 
@@ -1047,9 +1051,16 @@ final class UpdateManagerTests: XCTestCase {
         manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 4001))
     }
 
-    private func armLaterCard() {
+    private func armLaterCard(_ spy: UpdaterSessionSpy) {
+        manager.updaterSession = spy.session
         _ = manager.handleUpdateFound(
             version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.installPendingUpdate()
+        _ = manager.handleUpdateFound(
+            version: "9.9.9", stage: .notDownloaded, releasePage: nil, informationOnly: false)
+        manager.handleDownloadInitiated()
+        manager.handleDownloadExpectedLength(1_000)
+        manager.handleDownloadReceived(bytes: 1_000)
         manager.handleReadyToInstall { _ in }
         manager.installLater()
     }
@@ -1093,7 +1104,7 @@ final class UpdateManagerTests: XCTestCase {
     }
 
     func testThePostLaterReadyCardBlocksAQuietCheck() {
-        armLaterCard()
+        armLaterCard(UpdaterSessionSpy())
 
         XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
         XCTAssertFalse(manager.phaseAllowsQuietCheck)
@@ -1112,9 +1123,9 @@ final class UpdateManagerTests: XCTestCase {
 
     func testAResumeInFlightBlocksAQuietCheck() {
         let spy = UpdaterSessionSpy()
-        spy.isInProgress = true
         armDiscovery(spy)
-        armLaterCard()
+        armLaterCard(spy)
+        spy.isInProgress = true
 
         manager.installNow()
 
@@ -1172,7 +1183,7 @@ final class UpdateManagerTests: XCTestCase {
     }
 
     func testAnUnattendedSameVersionKeepsThePostLaterReadyCard() {
-        armLaterCard()
+        armLaterCard(UpdaterSessionSpy())
 
         let choice = manager.handleUpdateFound(
             version: "9.9.9", stage: .installing, releasePage: nil, informationOnly: false)
@@ -1217,27 +1228,6 @@ final class UpdateManagerTests: XCTestCase {
 
         XCTAssertEqual(choice, .dismiss)
         XCTAssertEqual(manager.phase, .available(version: "9.9.10"))
-    }
-
-    func testAnUnattendedNotFoundKeepsTheCard() {
-        let spy = UpdaterSessionSpy()
-        armDiscovery(spy)
-        armFailedCard()
-
-        manager.handleNotFound()
-
-        XCTAssertEqual(manager.phase, .failed(version: "9.9.9"))
-        XCTAssertEqual(manager.pendingVersion, "9.9.9")
-        XCTAssertEqual(manager.manualCheckStatus, .idle)
-    }
-
-    func testAnUnattendedErrorKeepsTheCard() {
-        armLaterCard()
-
-        manager.handleError(NSError(domain: "SUSparkleErrorDomain", code: 2000))
-
-        XCTAssertEqual(manager.phase, .readyToInstall(version: "9.9.9"))
-        XCTAssertEqual(manager.pendingVersion, "9.9.9")
     }
 
     func testAQuietCheckWithoutACallbackLeavesTheManualCheckWorking() {
@@ -1313,7 +1303,7 @@ final class UpdateManagerTests: XCTestCase {
     func testNoUnattendedStageEverInstalls() {
         for stage in [SPUUserUpdateStage.notDownloaded, .downloaded, .installing] {
             manager = UpdateManager()
-            armLaterCard()
+            armLaterCard(UpdaterSessionSpy())
 
             let choice = manager.handleUpdateFound(
                 version: "9.9.9", stage: stage, releasePage: nil, informationOnly: false)
@@ -1326,7 +1316,7 @@ final class UpdateManagerTests: XCTestCase {
     func testInstallNowStillWorksFromThePostLaterCard() {
         let spy = UpdaterSessionSpy()
         armDiscovery(spy)
-        armLaterCard()
+        armLaterCard(spy)
 
         manager.installNow()
         let choice = manager.handleUpdateFound(

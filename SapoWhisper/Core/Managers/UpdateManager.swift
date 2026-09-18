@@ -82,7 +82,8 @@ final class UpdateManager {
     private var wakeObserver: NSObjectProtocol?
     private var lastBackgroundCheckAt: TimeInterval?
 
-    static let resumeCheckMaxAttempts = 40
+    static let resumeCheckMaxAttempts = 300
+    static let resumeCheckRetryDelay: TimeInterval = 0.25
     static let backgroundCheckInterval: TimeInterval = 30 * 60
     static let backgroundCheckThrottle: TimeInterval = 5 * 60
 
@@ -282,8 +283,9 @@ final class UpdateManager {
             handleResumeCheckExhausted()
             return
         }
+        let delay = UInt64(Self.resumeCheckRetryDelay * 1_000_000_000)
         resumeCheckTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
             self?.requestResumeCheck(attempt: attempt + 1)
         }
@@ -434,7 +436,6 @@ final class UpdateManager {
             canPostpone = false
             return
         }
-        guard sessionIsUserDriven || phase == .idle else { return }
         installRequested = false
         installNowRequested = false
         pendingInstallReply = nil
@@ -454,7 +455,6 @@ final class UpdateManager {
             canPostpone = false
             return
         }
-        guard sessionIsUserDriven || phase == .idle else { return }
         finishManualCheck(status: .idle)
         installNowRequested = false
         pendingInstallReply = nil
