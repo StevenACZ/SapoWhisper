@@ -6,6 +6,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.19.3] - 2026-09-18
+
+### Fixed
+
+- The system default entry in the microphone list follows the app language instead of always showing in Spanish.
+- Esc closes the menu bar popover when no dictation is running.
+- Vocabulary stat cards line up their titles and values again, and the About chips stay on a single line in English and Spanish.
+- Settings stay readable in Light appearance while AI Polish is off: the provider, polish style and Add buttons no longer wash out, and the "Recommended" badge and the About footer are easier to read.
+
+### Changed
+
+- The selected polish style uses the app's green selection color.
+
 ## [2.19.2] - 2026-09-18
 
 ### Fixed
