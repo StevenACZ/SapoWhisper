@@ -70,6 +70,20 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
         // Content-driven resizes (the hosting view tracks the pill's ideal
         // size) must keep the pill anchored, not pinned to a stale origin.
         self.delegate = self
+
+        // The dock chip keeps this window on screen forever, so a resolution
+        // or display change must re-anchor it; AppKit preserves the old
+        // origin, which leaves the chip off-centre on the new geometry.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersDidChange(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    @objc private func screenParametersDidChange(_ notification: Notification) {
+        applyConfiguredPosition(verbose: true, preferring: screen)
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -80,8 +94,8 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
     /// (bottom by default, top or center as alternatives). Content morphs
     /// re-anchor on every animation frame, so only `verbose` callers (show)
     /// log the position.
-    func applyConfiguredPosition(verbose: Bool = false) {
-        guard let screen = targetScreen() else { return }
+    func applyConfiguredPosition(verbose: Bool = false, preferring preferredScreen: NSScreen? = nil) {
+        guard let screen = preferredScreen ?? targetScreen() else { return }
 
         let screenFrame = screen.visibleFrame
 
@@ -98,28 +112,36 @@ class RecordingOverlayWindow: NSPanel, NSWindowDelegate {
         // The dock chip is the permanent fixture hugging the screen edge, so
         // the window always anchors tight; active pills float above the chip
         // via the content layout, not via a window margin.
-        let margin: CGFloat = 6
-        let windowFrame = self.frame
+        let origin = Self.anchoredOrigin(
+            in: screenFrame,
+            windowSize: self.frame.size,
+            position: OverlayPosition.configured
+        )
+        self.setFrameOrigin(origin)
+        if verbose {
+            SapoLog.overlay.info(
+                "Overlay positioned origin=\(Int(origin.x), privacy: .public),\(Int(origin.y), privacy: .public)"
+            )
+        }
+    }
 
-        let x = screenFrame.midX - windowFrame.width / 2
+    static func anchoredOrigin(in screenFrame: NSRect, windowSize: NSSize, position: OverlayPosition) -> NSPoint {
+        let margin: CGFloat = 6
+        let x = screenFrame.midX - windowSize.width / 2
         var y: CGFloat
-        switch OverlayPosition.configured {
+        switch position {
         case .bottom:
             y = screenFrame.minY + margin
         case .top:
-            y = screenFrame.maxY - windowFrame.height - margin
+            y = screenFrame.maxY - windowSize.height - margin
         case .center:
-            y = screenFrame.midY - windowFrame.height / 2
+            y = screenFrame.midY - windowSize.height / 2
         }
 
-        let minY = screenFrame.minY + 6
-        let maxY = max(minY, screenFrame.maxY - windowFrame.height - 6)
+        let minY = screenFrame.minY + margin
+        let maxY = max(minY, screenFrame.maxY - windowSize.height - margin)
         y = min(max(y, minY), maxY)
-
-        self.setFrameOrigin(NSPoint(x: x, y: y))
-        if verbose {
-            SapoLog.overlay.info("Overlay positioned origin=\(Int(x), privacy: .public),\(Int(y), privacy: .public)")
-        }
+        return NSPoint(x: x, y: y)
     }
 
     private func targetScreen() -> NSScreen? {
