@@ -119,7 +119,7 @@ struct AIPolishSettingsCard: View {
                     onWillEditAPIKey: loadAPIKeyForEditing
                 )
                 .disabled(!aiPolishEnabled)
-                .opacity(aiPolishEnabled ? 1 : 0.62)
+                .opacity(aiPolishEnabled ? 1 : 0.85)
 
                 if aiPolishEnabled && !isProviderUsable {
                     Label("ai.provider.needs_configuration".localized, systemImage: "exclamationmark.triangle.fill")
@@ -130,22 +130,22 @@ struct AIPolishSettingsCard: View {
                 Divider()
 
                 modeRow
-                    .opacity(aiPolishEnabled ? 1 : 0.62)
+                    .opacity(aiPolishEnabled ? 1 : 0.85)
 
                 Divider()
 
                 minDurationRow
-                    .opacity(aiPolishEnabled ? 1 : 0.62)
+                    .opacity(aiPolishEnabled ? 1 : 0.85)
 
                 Divider()
 
                 outputLanguageRow
-                    .opacity(aiPolishEnabled ? 1 : 0.62)
+                    .opacity(aiPolishEnabled ? 1 : 0.85)
 
                 Divider()
 
                 reasoningEffortRow
-                    .opacity(aiPolishEnabled ? 1 : 0.62)
+                    .opacity(aiPolishEnabled ? 1 : 0.85)
 
                 Divider()
 
@@ -153,7 +153,7 @@ struct AIPolishSettingsCard: View {
                 // reasoning and verify the result without leaving the card.
                 PolishPreviewSection()
                     .disabled(!aiPolishEnabled)
-                    .opacity(aiPolishEnabled ? 1 : 0.62)
+                    .opacity(aiPolishEnabled ? 1 : 0.85)
             }
             .animation(Constants.Animation.reveal, value: aiPolishEnabled)
         }
@@ -265,6 +265,9 @@ struct AIPolishSettingsCard: View {
 
                 HStack(spacing: 4) {
                     ForEach(PolishMode.allCases) { mode in
+                        let accent = mode == .compact ? Color.compactMode : Color.sapoGreen
+                        let accentText = mode == .compact ? Color.compactMode : Color.sapoGreenText
+                        let isSelected = currentMode == mode
                         Button {
                             aiPolishModeValue = mode.rawValue
                         } label: {
@@ -278,11 +281,11 @@ struct AIPolishSettingsCard: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .foregroundColor(currentMode == mode ? .white : .primary)
+                            .foregroundColor(isSelected ? (aiPolishEnabled ? .white : accentText) : .primary)
                             .background(
                                 Capsule().fill(
-                                    currentMode == mode
-                                        ? (mode == .compact ? Color.compactMode : Color.aiPolish)
+                                    isSelected
+                                        ? (aiPolishEnabled ? accent : accent.opacity(0.16))
                                         : Color.primary.opacity(0.08)
                                 )
                             )

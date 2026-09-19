@@ -252,7 +252,7 @@ struct AboutView: View {
     }
 
     private var featureChips: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             chip(icon: "mic.fill", label: "about.chip_dictation".localized)
             chip(icon: "sparkles", label: "about.chip_ai".localized)
             chip(icon: "lock.fill", label: "about.chip_private".localized)
@@ -280,7 +280,7 @@ struct AboutView: View {
         VStack(spacing: 3) {
             Text("made_by".localized)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
 
             Text("© \(year) StevenACZ")
                 .font(.caption2)
@@ -309,8 +309,10 @@ struct AboutView: View {
 
             Text(label)
                 .font(.caption2.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(Capsule().fill(Color.sapoGreen.opacity(0.12)))
         .overlay(Capsule().strokeBorder(Color.sapoGreen.opacity(0.22), lineWidth: 1))

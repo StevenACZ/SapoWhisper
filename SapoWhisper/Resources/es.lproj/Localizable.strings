@@ -106,6 +106,7 @@
 "settings.hotkeys" = "Atajos";
 "settings.microphone" = "Micrófono";
 "settings.microphone_desc" = "Dispositivo de entrada de audio";
+"settings.microphone_system_default" = "Sistema (Por defecto)";
 "settings.pin_primary_mic" = "Usar siempre como micrófono principal";
 "settings.pin_primary_mic_desc_on" = "SapoWhisper mantiene únicamente este micrófono como entrada principal. Si no está disponible, espera su regreso y nunca cambia a otro micrófono.";
 "settings.pin_primary_mic_desc_off" = "El sistema puede cambiar la entrada al conectar dispositivos; los micrófonos Bluetooth pueden tardar unos segundos en arrancar.";

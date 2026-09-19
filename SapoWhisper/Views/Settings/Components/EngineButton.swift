@@ -82,10 +82,10 @@ struct EngineOptionRow<Details: View>: View {
             if engine.isRecommended {
                 Text("badge.recommended".localized)
                     .font(.caption2)
-                    .foregroundColor(.white)
+                    .foregroundColor(.sapoGreenText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.sapoGreen)
+                    .background(Color.sapoGreen.opacity(0.16))
                     .cornerRadius(4)
             }
 
