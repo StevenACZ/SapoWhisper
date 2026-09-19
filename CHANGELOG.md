@@ -6,6 +6,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.19.4] - 2026-09-19
+
+### Fixed
+
+- The overlay chip stays centered after the screen resolution or display arrangement changes (for example when a screen sharing session resizes the display); it used to keep its old position and sit off-center until the next dictation.
+
 ## [2.19.3] - 2026-09-18
 
 ### Fixed
