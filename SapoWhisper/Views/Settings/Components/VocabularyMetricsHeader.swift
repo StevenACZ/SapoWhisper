@@ -57,7 +57,7 @@ struct VocabularyMetricsHeader: View {
 
     var body: some View {
         // fixedSize gives the row its ideal (tallest-tile) height, so the
-        // maxHeight: .infinity tiles equalize and center their content.
+        // maxHeight: .infinity tiles equalize.
         HStack(alignment: .top, spacing: 8) {
             metricTile(
                 label: "vocab.metrics.terms".localized,
@@ -118,6 +118,7 @@ struct VocabularyMetricsHeader: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.4)
+                .lineLimit(1)
 
             value()
 
@@ -130,9 +131,7 @@ struct VocabularyMetricsHeader: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        // .leading (not .topLeading) keeps the content vertically centered,
-        // so tiles with two rows don't look top-heavy next to three-row ones.
-        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(0.06))

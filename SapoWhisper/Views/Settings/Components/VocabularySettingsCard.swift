@@ -39,6 +39,15 @@ struct VocabularySettingsCard: View {
         vocabularyManager.replacements.sorted { $0.key < $1.key }.map(\.value)
     }
 
+    private var canAddKeyterm: Bool {
+        !newKeyterm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canAddReplacement: Bool {
+        !newReplaceFrom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !newReplaceTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         SettingsCard(icon: "text.book.closed", title: "config.vocabulary".localized) {
             VStack(alignment: .leading, spacing: 12) {
@@ -252,7 +261,8 @@ struct VocabularySettingsCard: View {
             Button("config.add".localized) { addKeyterm() }
                 .buttonStyle(.bordered)
                 .font(.caption)
-                .disabled(newKeyterm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .tint(canAddKeyterm ? nil : Color.secondary)
+                .disabled(!canAddKeyterm)
         }
         .animation(Constants.Animation.hover, value: newKeyterm.isEmpty)
     }
@@ -365,10 +375,8 @@ struct VocabularySettingsCard: View {
                 Button("config.add".localized) { addReplacement() }
                     .buttonStyle(.bordered)
                     .font(.caption)
-                    .disabled(
-                        newReplaceFrom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || newReplaceTo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
+                    .tint(canAddReplacement ? nil : Color.secondary)
+                    .disabled(!canAddReplacement)
             }
 
             Toggle(isOn: replacementTargetsInRecognitionHintsBinding) {

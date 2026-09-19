@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Carbon
 import Combine
 import QuartzCore
 import SwiftUI
@@ -18,6 +19,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var popoverEscapeMonitor: Any?
     private var isPopoverTransitioning = false
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
@@ -88,6 +90,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
 
     func popoverWillClose(_ notification: Notification) {
         statusItem?.button?.state = .off
+        removePopoverEscapeMonitor()
         SapoLog.menuBar.info("Popover will close")
     }
 
@@ -97,6 +100,33 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             !closedPopover.isShown
         else { return }
         closedPopover.contentViewController = nil
+    }
+
+    /// Must only consume Esc delivered to the popover's own window: hotkey
+    /// recording and the overlay rely on receiving theirs.
+    private func installPopoverEscapeMonitor() {
+        guard popoverEscapeMonitor == nil else { return }
+
+        popoverEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self,
+                    let popover = self.popover,
+                    popover.isShown,
+                    event.keyCode == UInt16(kVK_Escape),
+                    event.window === popover.contentViewController?.view.window
+                else { return false }
+
+                self.closePopover()
+                return true
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    private func removePopoverEscapeMonitor() {
+        guard let popoverEscapeMonitor else { return }
+        NSEvent.removeMonitor(popoverEscapeMonitor)
+        self.popoverEscapeMonitor = nil
     }
 
     private func setupStatusItem() {
@@ -193,6 +223,8 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
             button.state = .on
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate(ignoringOtherApps: true)
+            popover.contentViewController?.view.window?.makeKey()
+            installPopoverEscapeMonitor()
             PerformanceDiagnostics.logRuntimeSnapshot(
                 reason: "popover-open",
                 context: "openCount=\(popoverOpenCount)",

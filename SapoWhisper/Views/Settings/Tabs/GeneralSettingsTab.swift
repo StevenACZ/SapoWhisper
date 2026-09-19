@@ -95,7 +95,7 @@ struct GeneralSettingsTab: View {
 
                     Picker("", selection: $selectedMicrophone) {
                         ForEach(audioDeviceManager.availableDevices) { device in
-                            Text(device.name).tag(device.uid)
+                            Text(device.displayName).tag(device.uid)
                         }
                     }
                     .labelsHidden()

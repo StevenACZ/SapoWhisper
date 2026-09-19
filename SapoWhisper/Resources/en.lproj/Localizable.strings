@@ -106,6 +106,7 @@
 "settings.hotkeys" = "Hotkeys";
 "settings.microphone" = "Microphone";
 "settings.microphone_desc" = "Audio input device";
+"settings.microphone_system_default" = "System (Default)";
 "settings.pin_primary_mic" = "Always use as primary microphone";
 "settings.pin_primary_mic_desc_on" = "SapoWhisper keeps only this microphone as the primary input. If it is unavailable, dictation waits for it and never switches to another microphone.";
 "settings.pin_primary_mic_desc_off" = "The system may switch inputs when devices connect; Bluetooth mics can take a few seconds to start.";

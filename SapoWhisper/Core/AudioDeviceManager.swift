@@ -41,7 +41,11 @@ nonisolated struct AudioDevice: Identifiable, Hashable {
     let name: String
     let uid: String
 
-    static let systemDefault = AudioDevice(id: 0, name: "Sistema (Por defecto)", uid: "default")
+    static let systemDefault = AudioDevice(id: 0, name: "System (Default)", uid: "default")
+
+    var displayName: String {
+        uid == AudioDevice.systemDefault.uid ? "settings.microphone_system_default".localized : name
+    }
 
     /// Lista de patrones de nombres de dispositivos a filtrar (dispositivos virtuales del sistema)
     static let filteredPatterns = [
@@ -333,7 +337,8 @@ class AudioDeviceManager: ObservableObject, @unchecked Sendable {
     /// Gets the name of a device by its ID
     nonisolated func getDeviceName(for deviceID: AudioDeviceID) -> String? {
         if let cachedName = readState({ state in
-            state.availableDevices.first(where: { $0.id == deviceID })?.name
+            state.availableDevices
+                .first(where: { $0.id == deviceID && $0.uid != AudioDevice.systemDefault.uid })?.name
         }) {
             return cachedName
         }
