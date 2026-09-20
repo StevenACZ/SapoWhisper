@@ -53,6 +53,7 @@ addresses, and machine-specific workflow details.
 - Automatic retention must preserve failed/in-flight recordings, pins and active extensions. Determine the newest capture by timestamp, not insertion ID; an accepted continuation cannot expire while recording.
 - Credentials belong in Keychain; configuration checks use `KeychainStore.hasValue`, not credential reads.
 - Never show an action that cannot execute in the current state; derive visibility and execution from the same predicate.
+- The overlay window is permanently visible as the dock chip, so nothing may depend on `show()` or a new dictation to correct it: placement must follow every screen parameter change and every fresh presentation. Verify overlay changes by reading the window frame after a resolution switch, not only at launch.
 - Attach copied-confirmation glow to the complete padded overlay surface, including any supporting status text; inner rows must not draw a second pill outline.
 - Create popover content on opening and release it after closing. Isolate continuously animated bars and numeric text from shared drawing layers; verify hidden subscriptions and glyph work disappear from runtime profiles.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.
