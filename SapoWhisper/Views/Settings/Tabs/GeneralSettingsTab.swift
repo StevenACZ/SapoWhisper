@@ -41,7 +41,7 @@ struct GeneralSettingsTab: View {
     @AppStorage(Constants.StorageKeys.autoUpdateCheckEnabled, store: AppPreferences.defaults) private var autoUpdateCheckEnabled = true
 
     @StateObject private var audioDeviceManager = AudioDeviceManager.shared
-    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = false
     @State private var historyAudioUsageBytes: Int64 = 0
     @State private var showClearHistoryConfirmation = false
     private let preferredMicrophoneCoordinator = PreferredMicrophoneCoordinator.shared
@@ -450,6 +450,7 @@ struct GeneralSettingsTab: View {
         }
         .task {
             refreshHistoryAudioUsage()
+            launchAtLogin = await Self.readLaunchAtLogin()
         }
     }
 
@@ -489,12 +490,9 @@ struct GeneralSettingsTab: View {
                 HStack(spacing: 12) {
                     Text("settings.launch_at_login".localized)
                     Spacer()
-                    Toggle("", isOn: $launchAtLogin)
+                    Toggle("", isOn: launchAtLoginBinding)
                         .labelsHidden()
                         .toggleStyle(.switch)
-                        .onChange(of: launchAtLogin) { _, newValue in
-                            setLaunchAtLogin(enabled: newValue)
-                        }
                 }
 
                 HStack(spacing: 12) {
@@ -559,6 +557,21 @@ struct GeneralSettingsTab: View {
 
     // MARK: - Launch at Login
 
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLogin },
+            set: { setLaunchAtLogin(enabled: $0) }
+        )
+    }
+
+    /// `SMAppService.status` is a synchronous XPC round trip (~100 ms), so it
+    /// never runs inside a stored-property initializer or `body`.
+    private nonisolated static func readLaunchAtLogin() async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            SMAppService.mainApp.status == .enabled
+        }.value
+    }
+
     private func setLaunchAtLogin(enabled: Bool) {
         do {
             if enabled {
@@ -566,6 +579,7 @@ struct GeneralSettingsTab: View {
             } else {
                 try SMAppService.mainApp.unregister()
             }
+            launchAtLogin = enabled
         } catch {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }

@@ -6,6 +6,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.19.5] - 2026-09-21
+
+### Fixed
+
+- Switching between the Settings tabs no longer freezes the window for a moment: the General tab asked macOS for the launch-at-login status on every switch, and the hidden tabs were scaled during the cross-fade.
+
 ## [2.19.4] - 2026-09-19
 
 ### Fixed

@@ -119,7 +119,6 @@ struct SettingsView: View {
     private func tabContent<Content: View>(for tab: SettingsTab, @ViewBuilder content: () -> Content) -> some View {
         content()
             .opacity(selectedTab == tab ? 1 : 0)
-            .scaleEffect(selectedTab == tab ? 1 : 0.98)
             .allowsHitTesting(selectedTab == tab)
             .accessibilityHidden(selectedTab != tab)
             .environment(\.settingsTabIsSelected, selectedTab == tab)
