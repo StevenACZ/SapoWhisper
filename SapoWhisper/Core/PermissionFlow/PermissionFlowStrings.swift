@@ -30,15 +30,27 @@ struct PermissionFlowStrings {
     pick("Let's set up \(app)", "Vamos a configurar \(app)")
   }
 
-  func subtitle(_ app: String, count: Int) -> String {
-    if count == 1 {
-      return pick(
-        "\(app) needs one permission to work. You only do this once.",
-        "\(app) necesita un permiso para funcionar. Solo se hace una vez.")
+  func subtitle(_ app: String, required: Int, optional: Int) -> String {
+    let need: String
+    switch required {
+    case 0:
+      need = pick(
+        "\(app) works better with these permissions", "\(app) funciona mejor con estos permisos")
+    case 1:
+      need = pick(
+        "\(app) needs one permission to work", "\(app) necesita un permiso para funcionar")
+    default:
+      need = pick(
+        "\(app) needs \(required) permissions to work",
+        "\(app) necesita \(required) permisos para funcionar")
     }
-    return pick(
-      "\(app) needs \(count) permissions to work. You only do this once.",
-      "\(app) necesita \(count) permisos para funcionar. Solo se hace una vez.")
+    let extra: String
+    switch (required, optional) {
+    case (0, _), (_, 0): extra = ""
+    case (_, 1): extra = pick(", plus one optional", " y uno opcional")
+    default: extra = pick(", plus \(optional) optional", " y \(optional) opcionales")
+    }
+    return need + extra + pick(". You only do this once.", ". Solo se hace una vez.")
   }
 
   func progress(_ done: Int, of total: Int) -> String {

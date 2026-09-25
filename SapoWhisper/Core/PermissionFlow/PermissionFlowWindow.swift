@@ -96,8 +96,7 @@ final class PermissionFlowWindowController: NSObject, NSWindowDelegate {
     self.window = window
     model.startMonitoring()
     window.alphaValue = 0
-    NSApp.activate()
-    window.makeKeyAndOrderFront(nil)
+    PermissionFlowActivation.bringForward(window)
     NSAnimationContext.runAnimationGroup { context in
       context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0.28
       window.animator().alphaValue = 1
@@ -105,8 +104,8 @@ final class PermissionFlowWindowController: NSObject, NSWindowDelegate {
   }
 
   func bringToFront() {
-    NSApp.activate()
-    window?.makeKeyAndOrderFront(nil)
+    guard let window else { return }
+    PermissionFlowActivation.bringForward(window)
   }
 
   func close() {
@@ -240,11 +239,15 @@ public struct PermissionFlowScreen: View {
         Text(text.headline(name))
           .font(.system(size: 22, weight: .bold, design: .rounded))
           .multilineTextAlignment(.center)
-        Text(text.subtitle(name, count: model.requiredItems.count))
-          .font(.system(size: 13))
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
+        Text(
+          text.subtitle(
+            name, required: model.requiredItems.count,
+            optional: model.items.count - model.requiredItems.count)
+        )
+        .font(.system(size: 13))
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
       }
       .padding(.top, 30)
       PermissionFlowChecklist(model: model, sourceFrame: sourceFrame)
