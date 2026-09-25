@@ -184,8 +184,7 @@ public struct PermissionFlowScreen: View {
       if welcome {
         PermissionFlowWelcomeView(model: model, onDone: finish)
           .padding(.horizontal, 32)
-          .padding(.top, 34)
-          .padding(.bottom, 26)
+          .padding(.bottom, 30)
           .transition(
             .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.96)), removal: .opacity))
       } else {
@@ -195,6 +194,7 @@ public struct PermissionFlowScreen: View {
     }
     .frame(width: PermissionFlowWindowController.width)
     .frame(height: height)
+    .ignoresSafeArea(.container, edges: .top)
     .onAppear {
       if height != nil && model.ready { welcome = true }
       appeared = true
@@ -249,7 +249,7 @@ public struct PermissionFlowScreen: View {
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
       }
-      .padding(.top, 30)
+      .padding(.top, 28)
       PermissionFlowChecklist(model: model, sourceFrame: sourceFrame)
         .padding(.top, 22)
       if let note = model.configuration.note {
@@ -269,7 +269,7 @@ public struct PermissionFlowScreen: View {
         .contentShape(Rectangle())
     }
     .padding(.horizontal, 28)
-    .padding(.bottom, 18)
+    .padding(.bottom, 24)
   }
 }
 
