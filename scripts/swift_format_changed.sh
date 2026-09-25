@@ -52,7 +52,9 @@ files=()
 
 if [[ $# -gt 0 ]]; then
   for file in "$@"; do
-    [[ "$file" == *.swift && -f "$file" ]] && files+=("$file")
+    [[ "$file" == *.swift && -f "$file" ]] || continue
+    [[ "$file" == SapoWhisper/Core/PermissionFlow/* ]] && continue
+    files+=("$file")
   done
 else
   while IFS= read -r file; do
@@ -64,7 +66,7 @@ else
       git ls-files --others --exclude-standard -- '*.swift'
       branch_swift_files
     } | sort -u \
-      | { grep -v '^LocalPackages/MLXWhisper/Sources/MLXWhisper/' || true; }
+      | { grep -v -e '^LocalPackages/MLXWhisper/Sources/MLXWhisper/' -e '^SapoWhisper/Core/PermissionFlow/' || true; }
   )
 fi
 

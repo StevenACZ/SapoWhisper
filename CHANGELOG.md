@@ -6,6 +6,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.20.0] - 2026-09-25
+
+### Changed
+
+- The Welcome permission step uses a new checklist for Microphone, Accessibility and Input Monitoring, with Input Monitoring last so its "Quit & Reopen" prompt never interrupts the rest. A guide inside System Settings follows its window and lets you drag SapoWhisper's icon into the list, and a short welcome closes by itself once everything is on.
+
 ## [2.19.5] - 2026-09-21
 
 ### Fixed

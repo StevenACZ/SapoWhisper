@@ -25,8 +25,7 @@ extension MenuBarView {
             return
         }
 
-        PermissionRequirementsWindowController.shared.showWindow(force: true)
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        PermissionService.shared.flow.present()
     }
 
     func openAboutWindow() {

@@ -262,7 +262,7 @@ struct HotkeySettingsTab: View {
     /// picks it, instead of leaving a silently dead hotkey.
     private func requestInputMonitoringIfNeeded(for triggerKind: HotkeyTriggerKind) {
         guard triggerKind == .doubleModifier, !AppPermission.inputMonitoring.isGranted() else { return }
-        PermissionService.shared.requestInteractively(.inputMonitoring)
+        PermissionService.shared.flow.present()
     }
 
     private func updateHotkey(keyCode: Int, modifiers: Int) {
@@ -403,7 +403,7 @@ private struct AccessibilityPermissionFooter: View {
                     Spacer(minLength: 0)
 
                     Button("permissions.review".localized) {
-                        PermissionRequirementsWindowController.shared.showWindow(force: true)
+                        PermissionService.shared.flow.present()
                     }
                     .buttonStyle(.plain)
                     .font(.caption)
@@ -426,7 +426,7 @@ private struct AccessibilityPermissionFooter: View {
                         PermissionStatusRow(permission: .accessibility)
 
                         Button("permissions.review".localized) {
-                            PermissionRequirementsWindowController.shared.showWindow(force: true)
+                            PermissionService.shared.flow.present()
                         }
                         .buttonStyle(.bordered)
                     }
