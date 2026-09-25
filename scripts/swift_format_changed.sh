@@ -64,7 +64,7 @@ else
       git ls-files --others --exclude-standard -- '*.swift'
       branch_swift_files
     } | sort -u \
-      | { grep -v '^LocalPackages/MLXWhisper/Sources/MLXWhisper/' || true; }
+      | { grep -v -e '^LocalPackages/MLXWhisper/Sources/MLXWhisper/' -e '^SapoWhisper/Core/PermissionFlow/' || true; }
   )
 fi
 

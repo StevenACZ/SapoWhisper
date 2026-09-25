@@ -14,7 +14,7 @@ Read this document before changing capture, transcription, history, polish, or w
 | `TranscriptPostProcessor` / `OpenAICompatiblePolisher` | Polish policy, chunking, provider requests, and output validation. |
 | `OverlayWindowManager` | Overlay presentation and window lifecycle. |
 | `WelcomeView` / `WelcomeAIPolishStep` | Onboarding navigation and isolated polish-provider setup state; `WelcomeComponents` contains the shared step title. |
-| `PermissionAssistant` | Visible display-linked Settings guidance, cached window geometry, and separate permission/discovery polling. Closing or hiding guidance invalidates its display link. |
+| `PermissionService` / `Core/PermissionFlow` | Recording gates and the shared first-run permission flow, vendored from the canonical PermissionFlow package (never edited in place). Every permission entry point calls `PermissionService.shared.flow.present()`. |
 
 These are source-file boundaries within the app target, not separate frameworks. Keep shared policy in its existing owner instead of duplicating it in views or provider adapters.
 

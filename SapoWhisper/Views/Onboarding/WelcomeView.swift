@@ -6,7 +6,6 @@
 //  optional AI polish → ready.
 //
 
-import Combine
 import SwiftUI
 
 enum WelcomeStep: Int, CaseIterable {
@@ -19,6 +18,8 @@ enum WelcomeStep: Int, CaseIterable {
 
 struct WelcomeView: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
+    @ObservedObject var permissionModel: PermissionFlowModel
+    let sourceFrame: () -> CGRect?
     let onFinish: () -> Void
     let onDismiss: () -> Void
 
@@ -42,8 +43,13 @@ struct WelcomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Constants.Animation.transition, value: step)
+            .onAppear {
+                if step == .welcome && permissionModel.isResuming { step = .permissions }
+            }
 
-            navigationBar
+            if step != .ready {
+                navigationBar
+            }
         }
         // Fixed width, flexible height: the titled + fullSizeContentView
         // window ends up taller than the content rect it was created with,
@@ -90,13 +96,18 @@ struct WelcomeView: View {
                 trigger: .current(from: viewModel.hotkeyManager)
             )
         case .permissions:
-            WelcomePermissionsStep()
+            WelcomePermissionsStep(model: permissionModel, sourceFrame: sourceFrame)
         case .engine:
             WelcomeEngineStep(viewModel: viewModel, selectionNamespace: engineSelection)
         case .aiPolish:
             WelcomeAIPolishStep()
         case .ready:
-            WelcomeReadyStep(viewModel: viewModel, onFinish: onFinish)
+            PermissionFlowWelcomeView(model: permissionModel) {
+                permissionModel.markCompleted()
+                onFinish()
+            }
+            .padding(.horizontal, 32)
+            .padding(.bottom, 26)
         }
     }
 
@@ -117,8 +128,6 @@ struct WelcomeView: View {
             return "welcome.start".localized
         case .aiPolish:
             return aiPolishConfigured ? "welcome.continue".localized : "welcome.skip_step".localized
-        case .ready:
-            return "welcome.finish".localized
         default:
             return "welcome.continue".localized
         }
@@ -133,7 +142,7 @@ struct WelcomeView: View {
 
     private var navigationBar: some View {
         HStack {
-            if step != .welcome && step != .ready {
+            if step != .welcome {
                 Button("welcome.back".localized) {
                     withAnimation(Constants.Animation.transition) {
                         step = WelcomeStep(rawValue: step.rawValue - 1) ?? .welcome
@@ -157,14 +166,23 @@ struct WelcomeView: View {
                 .padding(.trailing, 8)
             }
 
-            Button(continueTitle) {
-                advance()
+            if step == .permissions && !permissionModel.ready {
+                Button(continueTitle) {
+                    advance()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+            } else {
+                Button(continueTitle) {
+                    advance()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.sapoGreenDark)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canContinue)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.sapoGreenDark)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!canContinue)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -172,10 +190,6 @@ struct WelcomeView: View {
     }
 
     private func advance() {
-        if step == .ready {
-            onFinish()
-            return
-        }
         withAnimation(Constants.Animation.transition) {
             step = WelcomeStep(rawValue: step.rawValue + 1) ?? .ready
         }
@@ -292,8 +306,8 @@ private struct HotkeyKeycapsDemo: View {
 // MARK: - Step 2: Permissions
 
 private struct WelcomePermissionsStep: View {
-    @State private var granted: Set<AppPermission> = []
-    private let refreshTimer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+    @ObservedObject var model: PermissionFlowModel
+    let sourceFrame: () -> CGRect?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -302,11 +316,7 @@ private struct WelcomePermissionsStep: View {
                 subtitle: "welcome.permissions_subtitle".localized
             )
 
-            VStack(spacing: 12) {
-                ForEach(AppPermission.required) { permission in
-                    WelcomePermissionRow(permission: permission, isGranted: granted.contains(permission))
-                }
-            }
+            PermissionFlowChecklist(model: model, sourceFrame: sourceFrame)
 
             Label("welcome.permissions_footnote".localized, systemImage: "info.circle")
                 .font(.caption)
@@ -316,83 +326,6 @@ private struct WelcomePermissionsStep: View {
         }
         .padding(.horizontal, 32)
         .padding(.top, 18)
-        .onAppear { refreshGranted() }
-        .onReceive(refreshTimer) { _ in refreshGranted() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshGranted()
-        }
-    }
-
-    private func refreshGranted() {
-        let updated = Set(AppPermission.required.filter { $0.isGranted() })
-        guard updated != granted else { return }
-        withAnimation(Constants.Animation.transition) {
-            granted = updated
-        }
-    }
-}
-
-private struct WelcomePermissionRow: View {
-    let permission: AppPermission
-    let isGranted: Bool
-
-    @State private var grantFlash = 0
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: permission.accentColor).opacity(0.16))
-                    .frame(width: 42, height: 42)
-                Image(systemName: permission.iconName)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: permission.accentColor))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(permission.title)
-                    .font(.subheadline.weight(.semibold))
-                Text(permission.summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-
-            if isGranted {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Color.sapoGreen)
-                    .symbolEffect(.bounce, value: isGranted)
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                Button("welcome.grant".localized) {
-                    PermissionService.shared.requestInteractively(permission)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(Color(nsColor: permission.accentColor))
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: permission.accentColor).opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(
-                    isGranted ? Color.sapoGreen.opacity(0.4) : Color(nsColor: permission.accentColor).opacity(0.25),
-                    lineWidth: 1
-                )
-        )
-        .permissionGrantCelebration(trigger: grantFlash, cornerRadius: 12)
-        .onChange(of: isGranted) { wasGranted, nowGranted in
-            if !wasGranted && nowGranted {
-                grantFlash += 1
-            }
-        }
     }
 }
 
@@ -855,145 +788,6 @@ private struct WelcomeCloudEngineCard: View {
     }
 }
 
-// MARK: - Step 5: Ready
-
-/// Final step doubles as a live test bench: when the user fires their
-/// configured trigger and recording starts, it celebrates and closes the
-/// flow on its own, handing over to the recording overlay.
-private struct WelcomeReadyStep: View {
-    @ObservedObject var viewModel: SapoWhisperViewModel
-    let onFinish: () -> Void
-
-    @State private var appeared = false
-    @State private var celebrating = false
-
-    var body: some View {
-        ZStack {
-            if celebrating {
-                celebration
-                    .transition(.scale(scale: 0.85).combined(with: .opacity))
-            } else {
-                summary
-                    .transition(.opacity)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.spring(duration: 0.45), value: celebrating)
-        .onChange(of: viewModel.appState) { _, state in
-            guard state == .recording, !celebrating else { return }
-            celebrating = true
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_600_000_000)
-                onFinish()
-            }
-        }
-    }
-
-    private var isEngineReady: Bool {
-        viewModel.isEngineReady(viewModel.currentEngine)
-    }
-
-    private var subtitle: String {
-        guard isEngineReady else { return "welcome.engine_deferred_hint".localized }
-        let manager = viewModel.hotkeyManager
-        if manager.currentTriggerKind == .doubleModifier {
-            let modifier = HotkeyDoubleTapModifier.option(for: manager.currentDoubleTapModifier)
-            return "welcome.ready_subtitle_double".localized(modifier.symbol)
-        }
-        return "welcome.ready_subtitle".localized(manager.hotkeyDescription)
-    }
-
-    private var summary: some View {
-        VStack(spacing: 18) {
-            Spacer(minLength: 0)
-
-            Image(systemName: isEngineReady ? "checkmark.seal.fill" : "slider.horizontal.3")
-                .font(.system(size: 56))
-                .foregroundStyle(Color.sapoGreen)
-                .symbolEffect(.bounce, value: appeared)
-                .onAppear { appeared = true }
-
-            Text(isEngineReady ? "welcome.ready_title".localized : "welcome.engine_deferred_title".localized)
-                .font(.system(size: 26, weight: .bold))
-
-            Text(subtitle)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-
-            if isEngineReady {
-                HotkeyKeycapsDemo(trigger: .current(from: viewModel.hotkeyManager))
-                    .padding(.top, 4)
-
-                tryItCard
-                    .padding(.top, 10)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 32)
-    }
-
-    private var tryItCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.sapoGreen.opacity(0.14))
-                    .frame(width: 46, height: 46)
-                Image(systemName: "waveform")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(Color.sapoGreen)
-                    .symbolEffect(.variableColor.iterative.reversing)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("welcome.ready_try_title".localized)
-                    .font(.subheadline.weight(.semibold))
-                Text("welcome.ready_try_hint".localized)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(16)
-        .frame(maxWidth: 440)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.sapoGreen.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.sapoGreen.opacity(0.25), lineWidth: 1)
-        )
-    }
-
-    private var celebration: some View {
-        VStack(spacing: 14) {
-            Spacer(minLength: 0)
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(Color.sapoGreen)
-                .symbolEffect(.bounce, value: celebrating)
-
-            Text("welcome.ready_perfect".localized)
-                .font(.system(size: 30, weight: .bold))
-
-            Text("welcome.ready_perfect_caption".localized)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 32)
-    }
-}
-
 // MARK: - Shared pieces
 
 private struct ProgressRing: View {
@@ -1013,5 +807,11 @@ private struct ProgressRing: View {
 }
 
 #Preview("Welcome") {
-    WelcomeView(viewModel: SapoWhisperViewModel(), onFinish: {}, onDismiss: {})
+    WelcomeView(
+        viewModel: SapoWhisperViewModel(),
+        permissionModel: PermissionService.shared.flow.model,
+        sourceFrame: { nil },
+        onFinish: {},
+        onDismiss: {}
+    )
 }

@@ -61,55 +61,6 @@ nonisolated enum MicrophonePermission {
     }
 
     @MainActor
-    static func primeIfNeeded() async -> PermissionPrimingResult {
-        if isGranted {
-            return .granted
-        }
-
-        let captureStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        if captureStatus == .notDetermined {
-            let granted = await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-
-            if granted || isGranted {
-                noteAudioInputGranted()
-                // The launch preflight skipped itself while the permission was
-                // missing; warm the route now that capture is allowed.
-                AudioInputPreflightManager.shared.preflightSoon(reason: "mic-granted")
-                return .granted
-            }
-        }
-
-        if #available(macOS 14.0, *) {
-            switch AVAudioApplication.shared.recordPermission {
-            case .granted:
-                noteAudioInputGranted()
-                return .granted
-            case .denied:
-                break
-            case .undetermined:
-                let granted = await AVAudioApplication.requestRecordPermission()
-                if granted || isGranted {
-                    noteAudioInputGranted()
-                    AudioInputPreflightManager.shared.preflightSoon(reason: "mic-granted")
-                    return .granted
-                }
-            @unknown default:
-                break
-            }
-        }
-
-        if await refreshFromAudioInputProbeIfNeeded() {
-            return .granted
-        }
-
-        return isGranted ? .granted : .needsSystemSettings
-    }
-
-    @MainActor
     static func refreshFromAudioInputProbeIfNeeded() async -> Bool {
         if isGranted {
             return true

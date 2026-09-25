@@ -15,14 +15,22 @@ import os
 struct WelcomeWindowHost: View {
     @ObservedObject var viewModel: SapoWhisperViewModel
     @ObservedObject private var localizationManager = LocalizationManager.shared
+    let permissionModel: PermissionFlowModel
+    let sourceFrame: () -> CGRect?
     let onFinish: () -> Void
     let onDismiss: () -> Void
 
     var body: some View {
-        WelcomeView(viewModel: viewModel, onFinish: onFinish, onDismiss: onDismiss)
-            .environment(\.locale, localizationManager.locale)
-            .tint(Constants.Colors.sapoGreenDark)
-            .id(localizationManager.language)
+        WelcomeView(
+            viewModel: viewModel,
+            permissionModel: permissionModel,
+            sourceFrame: sourceFrame,
+            onFinish: onFinish,
+            onDismiss: onDismiss
+        )
+        .environment(\.locale, localizationManager.locale)
+        .tint(Constants.Colors.sapoGreenDark)
+        .id(localizationManager.language)
     }
 }
 
@@ -32,6 +40,7 @@ final class WelcomeWindowController: NSWindowController {
 
     private var hostingController: NSHostingController<AnyView>?
     private var dictationObserver: AnyCancellable?
+    private var permissionModel: PermissionFlowModel?
 
     private init() {
         super.init(window: nil)
@@ -77,9 +86,12 @@ final class WelcomeWindowController: NSWindowController {
         }
 
         let viewModel = SapoWhisperAppEnvironment.shared.viewModel
+        let permissionModel = PermissionService.shared.flow.model
         let window = createWindow()
         let content = WelcomeWindowHost(
             viewModel: viewModel,
+            permissionModel: permissionModel,
+            sourceFrame: { [weak self] in self?.window?.frame },
             onFinish: { [weak self] in self?.markCompletedAndClose() },
             onDismiss: { [weak self] in self?.dismissForGood() }
         )
@@ -93,6 +105,8 @@ final class WelcomeWindowController: NSWindowController {
         window.contentViewController = hostingController
         self.hostingController = hostingController
         self.window = window
+        self.permissionModel = permissionModel
+        permissionModel.startMonitoring()
 
         // The flow also completes itself on the first successful dictation.
         dictationObserver = viewModel.$lastTranscription
@@ -155,6 +169,8 @@ final class WelcomeWindowController: NSWindowController {
         window?.makeFirstResponder(nil)
         dictationObserver?.cancel()
         dictationObserver = nil
+        permissionModel?.stopMonitoring()
+        permissionModel = nil
 
         if let hostingController {
             hostingController.view.removeFromSuperview()

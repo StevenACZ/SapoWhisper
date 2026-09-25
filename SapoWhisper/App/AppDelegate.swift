@@ -172,7 +172,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else if WelcomeWindowController.isOnboardingNeeded {
                 WelcomeWindowController.shared.show()
             } else {
-                PermissionService.shared.showRequirementsWindow()
+                PermissionService.shared.flow.presentIfNeeded()
             }
         }
     }

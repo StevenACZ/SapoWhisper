@@ -72,7 +72,7 @@ struct SettingsPermissionsSection: View {
 
     private var reviewButton: some View {
         Button("permissions.review".localized) {
-            PermissionRequirementsWindowController.shared.showWindow(force: true)
+            PermissionService.shared.flow.present()
         }
         .buttonStyle(.bordered)
         .controlSize(.small)

@@ -62,8 +62,7 @@ struct PermissionStatusRow: View {
                     .foregroundStyle(.green)
             } else {
                 Button("permissions.activate".localized) {
-                    PermissionService.shared.requestInteractively(permission)
-                    refreshPermissionStatus()
+                    PermissionService.shared.flow.present()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

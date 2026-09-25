@@ -1128,7 +1128,7 @@ class SapoWhisperViewModel: ObservableObject {
         guard missingPermissions.isEmpty else {
             activeRecordingSessionID = nil
             SapoLog.recording.warning("Recording blocked by missing permissions")
-            PermissionService.shared.showRequirementsWindow(force: true)
+            PermissionService.shared.flow.present()
             return
         }
 

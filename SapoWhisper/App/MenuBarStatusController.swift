@@ -133,6 +133,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         guard let button = statusItem?.button else { return }
+        PermissionService.shared.menuBarButton = button
         button.image = currentStatusImage()
         button.imagePosition = .imageOnly
         button.target = self
@@ -410,8 +411,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
 
     private func openPermissionsWindow() {
         closePopover()
-        PermissionRequirementsWindowController.shared.showWindow(force: true)
-        NSApp.activate(ignoringOtherApps: true)
+        PermissionService.shared.flow.present()
     }
 
     private func openWelcomeWindow() {
