@@ -52,7 +52,9 @@ files=()
 
 if [[ $# -gt 0 ]]; then
   for file in "$@"; do
-    [[ "$file" == *.swift && -f "$file" ]] && files+=("$file")
+    [[ "$file" == *.swift && -f "$file" ]] || continue
+    [[ "$file" == SapoWhisper/Core/PermissionFlow/* ]] && continue
+    files+=("$file")
   done
 else
   while IFS= read -r file; do
