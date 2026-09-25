@@ -50,7 +50,7 @@ struct PermissionFlowStrings {
     case (_, 1): extra = pick(", plus one optional", " y uno opcional")
     default: extra = pick(", plus \(optional) optional", " y \(optional) opcionales")
     }
-    return need + extra + pick(". You only do this once.", ". Solo se hace una vez.")
+    return need + extra + ".\n" + pick("You only do this once.", "Solo se hace una vez.")
   }
 
   func progress(_ done: Int, of total: Int) -> String {
