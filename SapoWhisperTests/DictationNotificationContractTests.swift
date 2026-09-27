@@ -1,8 +1,7 @@
 import Darwin
 import Foundation
-import Testing
-
 @testable import SapoWhisper
+import Testing
 
 @Suite("Dictation companion contract")
 struct DictationNotificationContractTests {
@@ -104,6 +103,44 @@ struct DictationNotificationContractTests {
         #expect(!fileManager.fileExists(atPath: socketURL.path))
     }
 
+    @Test("A command sent after peer validation is still read")
+    func lateCommandIsRead() throws {
+        let path = "/tmp/sapowhisper-\(UUID().uuidString.prefix(8)).socket"
+        defer { Darwin.unlink(path) }
+        var address = socketAddress(path)
+        let listener = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        defer { Darwin.close(listener) }
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(listener, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        #expect(bound == 0)
+        #expect(Darwin.listen(listener, 4) == 0)
+        _ = fcntl(listener, F_SETFL, fcntl(listener, F_GETFL) | O_NONBLOCK)
+
+        let sender = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        defer { Darwin.close(sender) }
+        let connected = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(sender, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        #expect(connected == 0)
+        let client = Darwin.accept(listener, nil, nil)
+        try #require(client >= 0)
+        defer { Darwin.close(client) }
+
+        RemoteDictationCommandServer.prepareClient(client)
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(80)) {
+            "toggle\n".withCString { bytes in
+                _ = Darwin.write(sender, bytes, strlen(bytes))
+            }
+        }
+
+        #expect(RemoteDictationCommandServer.readCommand(from: client) == "toggle")
+    }
+
     @Test("The unauthenticated toggle observer cannot return")
     func noDistributedToggleObserver() throws {
         let repository = URL(fileURLWithPath: #filePath)
@@ -138,15 +175,7 @@ struct DictationNotificationContractTests {
             socklen_t(MemoryLayout<timeval>.size)
         )
 
-        let pathBytes = Array(socketURL.path.utf8CString)
-        var address = sockaddr_un()
-        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-        address.sun_family = sa_family_t(AF_UNIX)
-        _ = withUnsafeMutablePointer(to: &address.sun_path.0) { destination in
-            pathBytes.withUnsafeBytes { source in
-                memcpy(destination, source.baseAddress, pathBytes.count)
-            }
-        }
+        var address = socketAddress(socketURL.path)
         let connectionResult = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
                 Darwin.connect(
@@ -166,5 +195,18 @@ struct DictationNotificationContractTests {
         let count = Darwin.read(descriptor, &buffer, buffer.count)
         guard count > 0 else { return Data() }
         return Data(buffer.prefix(Int(count)))
+    }
+
+    private func socketAddress(_ path: String) -> sockaddr_un {
+        let pathBytes = Array(path.utf8CString)
+        var address = sockaddr_un()
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        address.sun_family = sa_family_t(AF_UNIX)
+        _ = withUnsafeMutablePointer(to: &address.sun_path.0) { destination in
+            pathBytes.withUnsafeBytes { source in
+                memcpy(destination, source.baseAddress, pathBytes.count)
+            }
+        }
+        return address
     }
 }

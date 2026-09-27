@@ -261,27 +261,11 @@ final class RemoteDictationCommandServer {
         onToggle: @escaping @MainActor @Sendable () -> Void,
         isRecording: @escaping @MainActor @Sendable () -> Bool
     ) {
-        var noSignal: Int32 = 1
-        _ = setsockopt(
-            client,
-            SOL_SOCKET,
-            SO_NOSIGPIPE,
-            &noSignal,
-            socklen_t(MemoryLayout<Int32>.size)
-        )
+        prepareClient(client)
         guard validator.accepts(socket: client) else {
             Darwin.close(client)
             return
         }
-
-        var timeout = timeval(tv_sec: 0, tv_usec: 500_000)
-        _ = setsockopt(
-            client,
-            SOL_SOCKET,
-            SO_RCVTIMEO,
-            &timeout,
-            socklen_t(MemoryLayout<timeval>.size)
-        )
         guard let command = readCommand(from: client) else {
             Darwin.close(client)
             return
@@ -302,7 +286,32 @@ final class RemoteDictationCommandServer {
         }
     }
 
-    private nonisolated static func readCommand(from client: Int32) -> String? {
+    // Darwin's accept() copies O_NONBLOCK from the listener; a non-blocking client
+    // drops any command that arrives after peer validation instead of waiting for it.
+    nonisolated static func prepareClient(_ client: Int32) {
+        let flags = fcntl(client, F_GETFL)
+        if flags >= 0 {
+            _ = fcntl(client, F_SETFL, flags & ~O_NONBLOCK)
+        }
+        var noSignal: Int32 = 1
+        _ = setsockopt(
+            client,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSignal,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
+        var timeout = timeval(tv_sec: 0, tv_usec: 500_000)
+        _ = setsockopt(
+            client,
+            SOL_SOCKET,
+            SO_RCVTIMEO,
+            &timeout,
+            socklen_t(MemoryLayout<timeval>.size)
+        )
+    }
+
+    nonisolated static func readCommand(from client: Int32) -> String? {
         var bytes: [UInt8] = []
         bytes.reserveCapacity(32)
         while bytes.count < 64 {
