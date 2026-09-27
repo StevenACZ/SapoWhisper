@@ -6,6 +6,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- The hosted CI workflow that returned in 2.18.2; checks run locally with `make ci-check` on the supported Apple Silicon toolchain.
+
 ### Fixed
 
 - Stopping a dictation from a companion app no longer fails now and then: a command that arrived a few milliseconds after the connection was checked was dropped, so the stop had to be pressed twice.
