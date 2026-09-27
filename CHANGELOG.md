@@ -6,6 +6,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Stopping a dictation from a companion app no longer fails now and then: a command that arrived a few milliseconds after the connection was checked was dropped, so the stop had to be pressed twice.
+
 ## [2.20.0] - 2026-09-25
 
 ### Changed
