@@ -72,6 +72,7 @@ make release-check
 - `make format` and `make lint` inspect changed Swift files by default.
 - `make test` runs the `SapoWhisperTests` unit bundle.
 - `make ci-check` runs lint, secret/audio scans, script tests, a Debug build, and unit tests.
+- Verification is local only: there is no hosted CI. Do not add GitHub Actions workflows.
 - Finish active dictations before app-hosted tests; keep physical microphone tests explicitly opt-in. Never use the normal personal profile as a test fixture.
 - Generated apps under `build/` must be unregistered from LaunchServices after builds/tests; register the installed app only. Multiple registered builds can confuse macOS local-network identity.
 - Keep README concise and user-facing, CHANGELOG entries under `Unreleased` until the release cut, and ownership contracts in ARCHITECTURE. Reuse the tracked app icon for README artwork.
