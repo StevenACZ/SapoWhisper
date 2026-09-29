@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-09-28
+
 ### Changed
 
 - A dictation keeps one pill from the first word to the transcript: recording, pause, transcribing and AI polish swap in place without blinking or jumping in width.
