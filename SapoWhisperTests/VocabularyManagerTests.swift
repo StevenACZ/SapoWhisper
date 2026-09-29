@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class VocabularyManagerTests: XCTestCase {
@@ -13,9 +12,14 @@ final class VocabularyManagerTests: XCTestCase {
     /// A manager backed by a throwaway temp file, so tests never read or write
     /// the user's real vocabulary.json.
     private func makeManager() -> VocabularyManager {
+        VocabularyManager(fileURL: makeFileURL())
+    }
+
+    private func makeFileURL() -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("vocab-test-\(UUID().uuidString).json")
-        return VocabularyManager(fileURL: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
     }
 
     // MARK: - STT initial prompt
@@ -71,8 +75,7 @@ final class VocabularyManagerTests: XCTestCase {
     }
 
     func testReplacementTargetsAreRecognitionHintsByDefaultAndPersist() {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("vocab-test-\(UUID().uuidString).json")
+        let url = makeFileURL()
         let manager = VocabularyManager(fileURL: url)
         manager.addReplacement(from: "cloud code", to: "Claude Code")
 

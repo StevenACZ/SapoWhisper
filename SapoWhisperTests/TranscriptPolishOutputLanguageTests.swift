@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class TranscriptPolishOutputLanguageTests: XCTestCase {
@@ -96,16 +95,18 @@ final class TranscriptPolishOutputLanguageTests: XCTestCase {
         StubURLProtocol.configure(responses, for: host)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [StubURLProtocol.self]
+        let vocabularyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("translation-vocab-\(UUID().uuidString).json")
+        let memoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("translation-memory-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: vocabularyURL)
+            try? FileManager.default.removeItem(at: memoryURL)
+        }
         let processor = TranscriptPostProcessor(
             polisher: OpenAICompatiblePolisher(session: URLSession(configuration: sessionConfiguration)),
-            vocabularyManager: VocabularyManager(
-                fileURL: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("translation-vocab-\(UUID().uuidString).json")
-            ),
-            memoryManager: AIPolishMemoryManager(
-                fileURL: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("translation-memory-\(UUID().uuidString).json")
-            ),
+            vocabularyManager: VocabularyManager(fileURL: vocabularyURL),
+            memoryManager: AIPolishMemoryManager(fileURL: memoryURL),
             recentDictationsProvider: { [] }
         )
         let provider = PolishProviderConfiguration(
@@ -548,6 +549,10 @@ final class TranscriptPrePolishCorrectionTests: XCTestCase {
 
         let memoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("pre-polish-memory-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: vocabularyURL)
+            try? FileManager.default.removeItem(at: memoryURL)
+        }
         let memoryManager = AIPolishMemoryManager(fileURL: memoryURL)
         let processor = TranscriptPostProcessor(vocabularyManager: vocabularyManager, memoryManager: memoryManager)
         let result = await processor.process(rawText: "  open sap o whisper and claude dot md \n")
