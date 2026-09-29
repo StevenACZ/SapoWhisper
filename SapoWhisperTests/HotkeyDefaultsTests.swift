@@ -4,9 +4,8 @@
 //
 
 import Carbon
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 /// Stored hotkey values are Carbon `UInt32`s persisted as `Int`. Two ways that
 /// bites: an out-of-range value traps the conversion at launch, and key code 0
@@ -15,7 +14,7 @@ import XCTest
 @MainActor
 final class HotkeyDefaultsTests: XCTestCase {
 
-    private let suiteName = "test.sapowhisper.hotkey.\(UUID().uuidString)"
+    private let suiteName = temporaryDefaultsSuite()
 
     func testAbsentKeyCodeFallsBackToTheDefault() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

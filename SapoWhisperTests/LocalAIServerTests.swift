@@ -3,10 +3,9 @@
 //  SapoWhisperTests
 //
 
+@testable import SapoWhisper
 import XCTest
 import os
-
-@testable import SapoWhisper
 
 @MainActor
 final class LocalAIServerTests: XCTestCase {
@@ -75,7 +74,7 @@ final class LocalAIServerTests: XCTestCase {
     }
 
     func testLocalAIServerStoredURLMigrationSanitizesSensitiveComponents() throws {
-        let suiteName = "test.sapowhisper.local-url-migration.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(

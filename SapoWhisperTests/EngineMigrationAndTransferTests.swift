@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class EngineMigrationAndTransferTests: XCTestCase {
@@ -84,7 +83,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -118,7 +117,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -156,7 +155,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -187,7 +186,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -228,7 +227,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -247,7 +246,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testSettingsExportIncludesAudioUploadQuality() throws {
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(AudioUploadQuality.high.rawValue, forKey: Constants.StorageKeys.audioUploadQuality)
@@ -263,7 +262,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testSettingsExportSanitizesProviderURLs() throws {
-        let suiteName = "test.sapowhisper.transfer-url-export.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(
@@ -290,7 +289,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testSettingsImportSanitizesProviderURLs() throws {
-        let suiteName = "test.sapowhisper.transfer-url-import.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let manager = SettingsTransferManager(
@@ -326,7 +325,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testSettingsTransferOmitsInvalidProviderURLValues() throws {
-        let suiteName = "test.sapowhisper.transfer-invalid-urls.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set("private-value-that-is-not-a-url", forKey: Constants.StorageKeys.localAIServerBaseURL)
@@ -391,7 +390,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -463,7 +462,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             }
             """
 
-        let suiteName = "test.sapowhisper.transfer.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -566,7 +565,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     private func withBackupTransferFixture(
         _ body: (UserDefaults, SettingsTransferManager) throws -> Void
     ) throws {
-        let suite = "test.transfer.batch-backup.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -589,8 +588,8 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testPortablePreferencesRoundTripAndHistoryOptIn() throws {
-        let sourceSuite = "test.transfer.source.\(UUID().uuidString)"
-        let targetSuite = "test.transfer.target.\(UUID().uuidString)"
+        let sourceSuite = temporaryDefaultsSuite()
+        let targetSuite = temporaryDefaultsSuite()
         let source = try XCTUnwrap(UserDefaults(suiteName: sourceSuite))
         let target = try XCTUnwrap(UserDefaults(suiteName: targetSuite))
         defer {
@@ -628,7 +627,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testInvalidDocumentDoesNotPartiallyMutatePreferencesOrKeys() throws {
-        let suite = "test.transfer.validation.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         var keyWrites = 0
@@ -670,7 +669,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testAbsentPortableFieldsPreserveDestinationValues() throws {
-        let suite = "test.transfer.optional.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let manager = SettingsTransferManager(defaults: defaults, readEngineKey: { _ in nil }, writeEngineKey: { _, _ in true })
@@ -686,7 +685,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testFailedContextWriteRollsBackVocabularyBeforePreferencesChange() throws {
-        let suite = "test.transfer.rollback.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -751,7 +750,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testBackupFailurePreventsAllImportMutations() throws {
-        let suite = "test.transfer.backup-failure.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -782,7 +781,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testBackupRestoresExplicitlyUnsetPortablePreferences() throws {
-        let suite = "test.transfer.unset-restore.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -831,7 +830,7 @@ final class EngineMigrationAndTransferTests: XCTestCase {
     }
 
     func testUnsetMetadataRejectsSensitiveDeviceAndUnknownKeysBeforeChanges() throws {
-        let suite = "test.transfer.unset-security.\(UUID().uuidString)"
+        let suite = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
