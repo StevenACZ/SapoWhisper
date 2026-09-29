@@ -24,6 +24,11 @@ struct MenuBarIcon: View {
 }
 
 enum MenuBarIconImageProvider {
+    static func iconKey(for appState: AppState, isLoadingLocalModel: Bool) -> String {
+        let imageName = menuBarImageName(for: appState, isLoadingLocalModel: isLoadingLocalModel)
+        return NSImage(named: imageName) != nil ? imageName : "symbol:" + fallbackIconName(for: appState)
+    }
+
     static func image(for appState: AppState, isLoadingLocalModel: Bool) -> NSImage {
         let imageName = menuBarImageName(for: appState, isLoadingLocalModel: isLoadingLocalModel)
 

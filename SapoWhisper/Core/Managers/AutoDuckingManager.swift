@@ -41,9 +41,14 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
 
     // MARK: - Fade tuning
 
-    /// La bajada empieza al instante y dura lo justo para sentirse suave sin
-    /// tapar el beep de inicio (~150 ms audibles al comienzo de la rampa).
-    private static let duckFadeDuration: TimeInterval = 0.40
+    /// Dura lo justo para sentirse suave.
+    static let duckFadeDuration: TimeInterval = 0.40
+    /// Ramps start once the overlay transition that triggered them has ended:
+    /// the overlay's window commits wait on every volume step while a ramp runs
+    /// (measured 58-64 ms frames overlapping a ramp, 7 ms clear of it).
+    static let overlayTransitionGrace: TimeInterval = 0.25
+    /// Time from the state change until the duck has fully landed.
+    static let duckSettledDelay = overlayTransitionGrace + duckFadeDuration
     private static let restoreFadeDuration: TimeInterval = 0.25
     private static let fadeStepInterval: TimeInterval = 0.02
 
@@ -90,7 +95,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     /// Reduce el volumen del sistema al nivel configurado con una rampa suave
     func duck() {
         guard !UIPreviewMode.skipsConsentPrompts else { return }
-        queue.async { [weak self] in
+        queue.asyncAfter(deadline: .now() + Self.overlayTransitionGrace) { [weak self] in
             self?._duck()
         }
     }
@@ -98,7 +103,7 @@ nonisolated final class AutoDuckingManager: @unchecked Sendable {
     /// Restaura el volumen del sistema al nivel original
     func restore() {
         guard !UIPreviewMode.skipsConsentPrompts else { return }
-        queue.async { [weak self] in
+        queue.asyncAfter(deadline: .now() + Self.overlayTransitionGrace) { [weak self] in
             self?._restore()
         }
     }

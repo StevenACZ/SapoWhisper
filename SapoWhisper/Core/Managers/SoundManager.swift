@@ -8,15 +8,23 @@ import AVFoundation
 import AppKit
 
 /// Maneja los sonidos de feedback de la aplicación
-class SoundManager {
+///
+/// Players live on a private serial queue: a cold `AVAudioPlayer.play()`
+/// blocks its caller 30-70 ms while the output device wakes, which froze the
+/// overlay whenever it ran on the main thread.
+nonisolated final class SoundManager: @unchecked Sendable {
 
     static let shared = SoundManager()
+
+    private let queue = DispatchQueue(label: "com.sapowhisper.sound", qos: .userInteractive)
 
     /// Pre-cached players avoid disk I/O + AVAudioPlayer creation (~20-70ms) on each play
     private var cachedPlayers: [SoundType: AVAudioPlayer] = [:]
 
     private init() {
-        preloadSounds()
+        queue.async { [self] in
+            preloadSounds()
+        }
     }
 
     // MARK: - Sound Types
@@ -55,18 +63,22 @@ class SoundManager {
             volume = 1.0
         }
 
-        if let player = cachedPlayers[type] {
-            player.volume = volume
-            player.currentTime = 0
-            player.play()
-            return
-        }
+        queue.async { [self] in
+            if let player = cachedPlayers[type] {
+                player.volume = volume
+                player.currentTime = 0
+                player.play()
+                return
+            }
 
-        playSystemFallback(type, volume: volume)
+            DispatchQueue.main.async {
+                Self.playSystemFallback(type, volume: volume)
+            }
+        }
     }
 
     /// Fallback a sonidos del sistema si no se encuentran los personalizados
-    private func playSystemFallback(_ type: SoundType, volume: Float) {
+    private static func playSystemFallback(_ type: SoundType, volume: Float) {
         let soundName: NSSound.Name
 
         switch type {

@@ -33,6 +33,7 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     private var historyOpenCount = 0
     private var historyFocusObserver: NSObjectProtocol?
     private var settingsOpenObserver: NSObjectProtocol?
+    private static let statusIconSettleDelay = AutoDuckingManager.duckSettledDelay + 0.2
 
     init(viewModel: SapoWhisperViewModel) {
         self.viewModel = viewModel
@@ -152,9 +153,15 @@ final class MenuBarStatusController: NSObject, NSPopoverDelegate {
     }
 
     private func bindStatusImage() {
+        // A status item update committed while the auto-ducking ramp moves the
+        // output volume makes every following CA commit of the app wait on the
+        // busy menu bar host (100+ ms freezes of the overlay), so the icon
+        // trails the state until the ramp is over and only real changes commit.
         Publishers.CombineLatest(viewModel.$appState, viewModel.isLoadingLocalModelSubject)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in
+            .map { MenuBarIconImageProvider.iconKey(for: $0, isLoadingLocalModel: $1) }
+            .debounce(for: .seconds(Self.statusIconSettleDelay), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] _ in
                 self?.statusItem?.button?.image = self?.currentStatusImage()
             }
             .store(in: &cancellables)
