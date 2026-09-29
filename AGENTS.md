@@ -20,7 +20,7 @@ addresses, and machine-specific workflow details.
 - Keep capture, streaming lifecycle, failover, history persistence, and polish policy in their existing shared owners.
 - Preserve the engine set, history, permission onboarding, auto-paste, auto-ducking, saved WAV history, and retry UI.
 - App and tests use Swift 6 with complete strict concurrency. App defaults to MainActor; XCTest declares isolation explicitly. Do not widen unsafe isolation to silence diagnostics.
-- Route preferences through `AppPreferences.defaults` and file storage through `AppRuntimePaths`. Tests/previews must never share production preferences, history, caches or background startup effects. Keep the hardware opt-in limited to its explicit read-only input selection.
+- Route preferences through `AppPreferences.defaults` and file storage through `AppRuntimePaths`. Tests/previews must never share production preferences, history, caches or background startup effects. Test and preview `UserDefaults` suites are temp-dir paths (`temporaryDefaultsSuite()`); a named suite leaves one plist per run in `~/Library/Preferences`. Keep the hardware opt-in limited to its explicit read-only input selection.
 - Preserve the authenticated companion socket, lifecycle notification names, and microphone UID contract.
 - History processing must not take ownership of the live dictation state or overlay.
 - Benchmark prompt changes against [BENCHMARKS.md](BENCHMARKS.md); preserve dated evidence and its limitations.

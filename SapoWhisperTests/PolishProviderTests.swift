@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class PolishProviderTests: XCTestCase {
@@ -376,7 +375,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testExistingInstallKeepsLegacyDefaultModelOnce() throws {
-        let suiteName = "test.sapowhisper.polish-model-migration.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
@@ -394,7 +393,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testNewInstallRequiresExplicitModelSelection() throws {
-        let suiteName = "test.sapowhisper.polish-new-install.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -405,7 +404,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testExistingExplicitModelWinsMigration() throws {
-        let suiteName = "test.sapowhisper.polish-existing-model.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(true, forKey: Constants.StorageKeys.onboardingComplete)
@@ -481,7 +480,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testStoredBaseURLDropsEmbeddedCredentialsQueryAndFragment() throws {
-        let suiteName = "test.sapowhisper.polish-base-url-sanitization.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -498,7 +497,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testStoredBaseURLMigrationSanitizesScopedAndLegacyValuesIdempotently() throws {
-        let suiteName = "test.sapowhisper.polish-base-url-migration.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let scopedKey = Constants.StorageKeys.aiPolishEndpointBaseURLPrefix + PolishEndpoint.localServer.rawValue
@@ -537,7 +536,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testStoresModelsSeparatelyPerEndpoint() throws {
-        let suiteName = "test.sapowhisper.polish-models.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -553,7 +552,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testLegacyPresetModelDoesNotLeakIntoCustomOrLocalServer() throws {
-        let suiteName = "test.sapowhisper.polish-legacy-model.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -570,7 +569,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testLocalServerBaseURLIsEditableAndSeparatesFromCustom() throws {
-        let suiteName = "test.sapowhisper.polish-base-url.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -617,7 +616,7 @@ final class PolishProviderTests: XCTestCase {
     }
 
     func testHostedPolishPausesOfflineButCustomDoesNot() throws {
-        let suiteName = "test.sapowhisper.polish-offline.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 

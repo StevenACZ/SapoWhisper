@@ -5,14 +5,13 @@
 
 import AVFoundation
 import Darwin
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 nonisolated final class AudioUploadQualityTests: XCTestCase {
 
     func testStoredQualityDefaultsToMedium() throws {
-        let suiteName = "test.sapowhisper.audio-quality.\(UUID().uuidString)"
+        let suiteName = temporaryDefaultsSuite()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 

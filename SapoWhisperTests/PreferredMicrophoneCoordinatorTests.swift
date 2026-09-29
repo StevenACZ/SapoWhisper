@@ -1,9 +1,8 @@
 import Combine
 import CoreAudio
 import Foundation
-import Testing
-
 @testable import SapoWhisper
+import Testing
 
 @Suite("Preferred microphone coordinator")
 @MainActor
@@ -194,7 +193,7 @@ struct PreferredMicrophoneCoordinatorTests {
     }
 
     private func makeDefaults() throws -> (defaults: UserDefaults, suiteName: String) {
-        let suiteName = "PreferredMicrophoneCoordinatorTests.\(UUID())"
+        let suiteName = temporaryDefaultsSuite()
         return (try #require(UserDefaults(suiteName: suiteName)), suiteName)
     }
 }

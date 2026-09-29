@@ -4,7 +4,9 @@ import Foundation
 nonisolated enum AppPreferences {
     private static let isolatedSuiteName: String? = {
         guard UIPreviewMode.skipsConsentPrompts else { return nil }
-        let name = "oli.SapoWhisper.ephemeral.\(UUID().uuidString)"
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SapoWhisperEphemeral", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let name = directory.appendingPathComponent(UUID().uuidString).path
         atexit {
             AppPreferences.removeIsolatedDomain()
         }
