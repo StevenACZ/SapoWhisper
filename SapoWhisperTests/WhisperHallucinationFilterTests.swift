@@ -37,11 +37,11 @@ final class WhisperHallucinationFilterTests: XCTestCase {
         XCTAssertEqual(result.text, "Sapo.md, Yellyfin, CLAUDE.md")
     }
 
-    func testCollapsesSixWordPhraseLoop() {
+    func testCollapsesSevenWordPhraseLoop() {
         let loop =
-            "No, pero dentro de las primeras, "
-            + Array(repeating: "ya a finales de las primeras,", count: 20).joined(separator: " ")
-            + " fue campeón."
+            "Abre el proyecto y revisa, "
+            + Array(repeating: "luego corre todos los tests otra vez,", count: 20).joined(separator: " ")
+            + " y listo."
         let result = WhisperHallucinationFilter.collapsingRepetitionLoops(loop)
         XCTAssertTrue(result.collapsed)
         XCTAssertEqual(result.text, "Abre el proyecto y revisa, luego corre todos los tests otra vez, y listo.")
