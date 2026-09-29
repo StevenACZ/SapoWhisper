@@ -30,7 +30,9 @@ enum SapoIconState {
     }
 }
 
-/// Icono del sapo con animacion de flotacion
+/// Icono del sapo. It has no looping motion: a SwiftUI loop re-renders the
+/// overlay on the main thread for as long as the state lasts; the meter and
+/// the processing dots carry the activity from their own layers.
 struct FloatingSapoIcon: View {
 
     let state: SapoIconState
@@ -45,18 +47,8 @@ struct FloatingSapoIcon: View {
         self.size = size
     }
 
-    /// Looping idle pulse per state: scale target, float offset, half-period.
-    private var pulse: (scale: CGFloat, offset: CGFloat, period: Double)? {
-        switch state {
-        case .paused: return (0.92, 0, 2.0)
-        case .transcribing: return (1.08, 0, 0.8)
-        case .polishing: return (1.06, -2, 1.0)
-        case .recording, .completed, .error: return nil
-        }
-    }
-
     var body: some View {
-        pulsingIcon
+        icon
             // One-shot completed pop, keyframe-driven so a state change
             // mid-pop can never strand the icon scaled up.
             .keyframeAnimator(initialValue: 1.0, trigger: completedPop) { content, popScale in
@@ -84,29 +76,16 @@ struct FloatingSapoIcon: View {
             .onChange(of: state) { _, _ in fireOneShotEffect() }
     }
 
-    /// The idle pulse loops via phases (no resettable state), and rests as a
-    /// static icon under Reduce Motion.
-    @ViewBuilder
-    private var pulsingIcon: some View {
-        if let pulse, !reduceMotion {
-            icon
-                .phaseAnimator([false, true]) { content, pulsing in
-                    content
-                        .scaleEffect(pulsing ? pulse.scale : 1.0)
-                        .offset(y: pulsing ? pulse.offset : 0)
-                } animation: { _ in
-                    .easeInOut(duration: pulse.period)
-                }
-        } else {
-            icon
-        }
-    }
-
     private var icon: some View {
-        Image(state.imageName)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: size, height: size)
+        ZStack {
+            Image(state.imageName)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .id(state.imageName)
+                .transition(.presence(OverlayPresence(scale: 0.4, blur: 2, opacity: 0)))
+        }
+        .frame(width: size, height: size)
+        .animation(reduceMotion ? nil : Constants.Animation.settle, value: state.imageName)
     }
 
     private func fireOneShotEffect() {

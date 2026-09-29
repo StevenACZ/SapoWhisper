@@ -79,6 +79,7 @@ class HotkeyManager: ObservableObject {
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotkeyCallback: (() -> Void)?
     private var cancelCallback: (() -> Void)?
+    private var cancelReleaseCallback: (() -> Void)?
     private var permissionRetryTimer: Timer?
     private static let hotkeySignature = OSType(0x5357_5049)  // "SWPI"
     private static let mainHotkeyID: UInt32 = 1
@@ -231,7 +232,10 @@ class HotkeyManager: ObservableObject {
     private func installCarbonHandlerIfNeeded() -> Bool {
         guard eventHandler == nil else { return true }
 
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
 
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
@@ -247,21 +251,26 @@ class HotkeyManager: ObservableObject {
                     nil,
                     &hotkeyID
                 )
+                let released = GetEventKind(event) == UInt32(kEventHotKeyReleased)
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                 // Carbon delivers on the main run loop (GetApplicationEventTarget);
                 // make the C→MainActor hop explicit so a Swift 6 language-mode
                 // flip gets a check instead of silent UB.
                 MainActor.assumeIsolated {
                     if hotkeyID.id == HotkeyManager.cancelHotkeyID {
-                        manager.handleCancelKeyPressed()
-                    } else {
+                        if released {
+                            manager.handleCancelKeyReleased()
+                        } else {
+                            manager.handleCancelKeyPressed()
+                        }
+                    } else if !released {
                         manager.handleHotkeyPressed(source: "key-combination")
                     }
                 }
                 return noErr
             },
-            1,
-            &eventType,
+            eventTypes.count,
+            &eventTypes,
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
@@ -319,21 +328,29 @@ class HotkeyManager: ObservableObject {
     /// Whether Esc should currently be armed. Persists across a hotkey
     /// re-registration so the cancel key can be restored mid-session.
     private var cancelKeyActive = false
+    private var cancelKeyDown = false
 
     /// Registers/unregisters Esc as a global hotkey for the duration of a
     /// dictation session. Registered, the key is consumed system-wide, so it
     /// cancels the recording without reaching the frontmost app.
-    func setCancelKeyActive(_ active: Bool, callback: (() -> Void)? = nil) {
+    func setCancelKeyActive(
+        _ active: Bool,
+        callback: (() -> Void)? = nil,
+        onRelease: (() -> Void)? = nil
+    ) {
         guard !UIPreviewMode.skipsConsentPrompts else { return }
 
         if let callback {
             cancelCallback = callback
         }
+        if let onRelease {
+            cancelReleaseCallback = onRelease
+        }
 
         cancelKeyActive = active
         if active {
             registerCancelKey()
-        } else {
+        } else if !cancelKeyDown {
             unregisterCancelKey()
         }
     }
@@ -355,6 +372,7 @@ class HotkeyManager: ObservableObject {
     }
 
     private func unregisterCancelKey() {
+        cancelKeyDown = false
         if let cancelHotkeyRef {
             UnregisterEventHotKey(cancelHotkeyRef)
             self.cancelHotkeyRef = nil
@@ -362,8 +380,22 @@ class HotkeyManager: ObservableObject {
     }
 
     private func handleCancelKeyPressed() {
+        cancelKeyDown = true
+        guard cancelKeyActive else { return }
         SapoLog.hotkey.info("Esc cancel key pressed")
         cancelCallback?()
+    }
+
+    /// A dictation cancelled by holding Esc ends while the key is still down.
+    /// The key stays registered until it is released: unregistering earlier
+    /// hands its autorepeat to the frontmost app, which beeps on every repeat.
+    private func handleCancelKeyReleased() {
+        cancelKeyDown = false
+        guard cancelKeyActive else {
+            unregisterCancelKey()
+            return
+        }
+        cancelReleaseCallback?()
     }
 
     private func registerDoubleModifierHotkey() {

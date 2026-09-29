@@ -61,11 +61,21 @@ nonisolated enum Constants {
     enum Animation {
         /// Main HUD morph: active-pill swaps inside the overlay and other
         /// state-driven layout springs.
-        static let morph: SwiftUI.Animation = .spring(duration: 0.35, bounce: 0.2)
+        static let morph: SwiftUI.Animation = .spring(duration: 0.3, bounce: 0.12)
 
-        /// Detach/absorb spring for the droplet pill separating from the dock
-        /// chip: slightly bouncier than `morph` so the drop reads as physical.
-        static let droplet: SwiftUI.Animation = .spring(duration: 0.42, bounce: 0.3)
+        /// The pill popping out of the screen edge. Opacity is full within
+        /// the first frames; the small overshoot is what reads as a pop.
+        static let present: SwiftUI.Animation = .spring(duration: 0.3, bounce: 0.32)
+
+        /// The pill sinking back into the screen edge: quick and fixed-length.
+        static let dismiss: SwiftUI.Animation = .easeOut(duration: 0.18)
+
+        /// Staggered pieces settling into a pill that just popped in.
+        static let settle: SwiftUI.Animation = .spring(duration: 0.34, bounce: 0.38)
+
+        /// In-place hand-off between dictation phases (recording, paused,
+        /// transcribing, polishing) inside the same pill.
+        static let phaseSwap: SwiftUI.Animation = .spring(duration: 0.3, bounce: 0.18)
 
         /// Conditional sections revealing/collapsing (settings cards, hints).
         static let reveal: SwiftUI.Animation = .smooth(duration: 0.2)
