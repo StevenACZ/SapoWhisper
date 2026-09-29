@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 /// The hallucination strings below are real engine outputs reproduced from
 /// history audio against faster-whisper large-v3-turbo (2026-07-11).
@@ -36,6 +35,23 @@ final class WhisperHallucinationFilterTests: XCTestCase {
         let result = WhisperHallucinationFilter.collapsingRepetitionLoops(loop)
         XCTAssertTrue(result.collapsed)
         XCTAssertEqual(result.text, "Sapo.md, Yellyfin, CLAUDE.md")
+    }
+
+    func testCollapsesSixWordPhraseLoop() {
+        let loop =
+            "No, pero dentro de las primeras, "
+            + Array(repeating: "ya a finales de las primeras,", count: 20).joined(separator: " ")
+            + " fue campeón."
+        let result = WhisperHallucinationFilter.collapsingRepetitionLoops(loop)
+        XCTAssertTrue(result.collapsed)
+        XCTAssertEqual(result.text, "Abre el proyecto y revisa, luego corre todos los tests otra vez, y listo.")
+    }
+
+    func testPhraseSaidTwiceIsNotCollapsed() {
+        let speech = "cierra la ventana de ajustes, cierra la ventana de ajustes, y sigue"
+        let result = WhisperHallucinationFilter.collapsingRepetitionLoops(speech)
+        XCTAssertFalse(result.collapsed)
+        XCTAssertEqual(result.text, speech)
     }
 
     func testThreeWordRepeatsAreNotCollapsed() {

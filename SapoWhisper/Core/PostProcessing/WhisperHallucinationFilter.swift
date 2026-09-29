@@ -35,7 +35,7 @@ nonisolated enum WhisperHallucinationFilter {
     /// Multi-token cycles are unnatural much earlier ("CLAUDE.md, Sapo.md" ×3).
     private static let minCycleRepeats = 3
     /// Longest token cycle the collapse scan looks for.
-    private static let maxCycleLength = 4
+    private static let maxCycleLength = 12
     /// Similarity floor for matching a distorted echo token to a vocabulary
     /// term ("Yellyfin" vs "Jellyfin" = 0.88).
     private static let echoSimilarityThreshold = 0.75
@@ -56,7 +56,7 @@ nonisolated enum WhisperHallucinationFilter {
     }
 
     /// Collapses consecutive repeats of the same token (≥4) or token cycle
-    /// (2-4 tokens, ≥3) down to a single occurrence. Comparison ignores case
+    /// (2-12 tokens, ≥3) down to a single occurrence. Comparison ignores case
     /// and surrounding punctuation, so ".tk214," and ".tk214." repeat-match.
     nonisolated static func collapsingRepetitionLoops(_ text: String) -> (text: String, collapsed: Bool) {
         let tokens = text.split(whereSeparator: \.isWhitespace).map(String.init)

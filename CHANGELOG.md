@@ -6,6 +6,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Long dictations no longer paste a phrase the engine got stuck repeating: loops of up to 12 words now collapse to a single occurrence, where before only loops of up to 4 words did.
+
 ## [2.21.0] - 2026-09-28
 
 ### Changed
