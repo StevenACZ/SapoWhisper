@@ -12,7 +12,6 @@ nonisolated enum OverlayPillChrome {
     static let cornerRadius: CGFloat = 26
     static let horizontalPadding: CGFloat = 20
     static let verticalPadding: CGFloat = 12
-    static let chipCornerRadius: CGFloat = 6
 
     /// Continuous rounded rect instead of a capsule: multi-line states
     /// (chips, expanded transcript) made the capsule's semicircular ends
@@ -21,14 +20,6 @@ nonisolated enum OverlayPillChrome {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     }
 
-    static var chipShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: chipCornerRadius, style: .continuous)
-    }
-
-    /// Which vertical side of the pill faces the dock chip.
-    @MainActor static var chipOnTop: Bool {
-        OverlayPosition.configured == .top
-    }
 }
 
 private struct OverlaySurface<Surface: Shape>: ViewModifier {
@@ -49,9 +40,5 @@ private struct OverlaySurface<Surface: Shape>: ViewModifier {
 extension View {
     func overlayPillChrome() -> some View {
         modifier(OverlaySurface(shape: OverlayPillChrome.pillShape))
-    }
-
-    func overlayChipChrome() -> some View {
-        modifier(OverlaySurface(shape: OverlayPillChrome.chipShape))
     }
 }

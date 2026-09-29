@@ -5,17 +5,19 @@
 
 import SwiftUI
 
-/// Contador de tiempo durante grabacion
+/// Contador de tiempo durante grabacion: each changed digit rolls in.
 struct OverlayTimer: View {
     let duration: TimeInterval
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Text(formattedDuration)
             .font(.system(size: 14, weight: .medium, design: .monospaced))
             .foregroundStyle(.secondary)
             .contentTransition(.numericText())
+            .animation(reduceMotion ? nil : Constants.Animation.tick, value: Int(duration))
             .drawingGroup()
-            .animation(Constants.Animation.tick, value: formattedDuration)
     }
 
     private var formattedDuration: String {

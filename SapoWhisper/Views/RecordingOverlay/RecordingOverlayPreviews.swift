@@ -28,20 +28,29 @@ private struct PillPreview<Content: View>: View {
 
 #Preview("Recording") {
     PillPreview {
-        RecordingPillView(
+        DictationPillView(
+            phase: .recording,
             duration: 15,
-            onPause: {},
             audioLevelPublisher: Just(Float(0.5)).eraseToAnyPublisher()
         )
     }
 }
 
 #Preview("Paused") {
-    PillPreview { PausedPillView(duration: 42, onResume: {}) }
+    PillPreview {
+        DictationPillView(phase: .paused, duration: 42, audioLevelPublisher: Just(Float(0)).eraseToAnyPublisher())
+    }
 }
 
 #Preview("Transcribing") {
-    PillPreview { TranscribingPillView() }
+    PillPreview {
+        DictationPillView(
+            phase: .transcribing,
+            duration: 42,
+            audioLevelPublisher: Just(Float(0)).eraseToAnyPublisher(),
+            onCancel: {}
+        )
+    }
 }
 
 #Preview("Copied") {
@@ -62,10 +71,6 @@ private struct PillPreview<Content: View>: View {
 
 #Preview("Cancelled") {
     PillPreview { CancelledPillView() }
-}
-
-#Preview("Docked") {
-    PillPreview { DockedChipView(isExpanded: false, onTap: {}) }
 }
 
 #Preview("Error") {
@@ -104,9 +109,9 @@ private struct PillPreview<Content: View>: View {
 
 #Preview("Recording Connecting") {
     PillPreview {
-        RecordingPillView(
+        DictationPillView(
+            phase: .recording,
             duration: 0,
-            onPause: {},
             audioLevelPublisher: Just(Float(0)).eraseToAnyPublisher(),
             connectingDeviceName: "AirPods Pro"
         )

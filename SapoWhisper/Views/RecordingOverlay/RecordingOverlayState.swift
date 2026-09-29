@@ -27,8 +27,7 @@ enum CopiedOutcome: Equatable {
 /// Estados posibles de la ventana de overlay durante grabacion/transcripcion
 enum RecordingOverlayState: Equatable {
     case hidden
-    /// Idle mini chip at the anchor position; clicking it opens the quick
-    /// history pill, and every dismissed state collapses back into it.
+    /// Idle: the transparent window stays on screen with nothing drawn.
     case docked
     case recording(duration: TimeInterval)
     case paused(duration: TimeInterval)
@@ -36,13 +35,9 @@ enum RecordingOverlayState: Equatable {
     case polishing(timeoutSeconds: UInt64, compact: Bool)
     /// Compact post-dictation toast: the text already landed at the caret
     /// (auto-paste) and on the clipboard, so the overlay only confirms and
-    /// collapses; the dock chip reopens it through quick history on demand.
+    /// collapses.
     case copied(outcome: CopiedOutcome)
     case completed(text: String)
-    /// In-pill compact history browser opened from the dock chip: recent
-    /// transcripts with copy, prev/next and re-transcribe — the fast path
-    /// that skips the full History window.
-    case quickHistory
     case cancelled
     case error(message: String, isRetryable: Bool)
     case deviceChange(DeviceChangeAnnouncement)
@@ -57,10 +52,18 @@ enum RecordingOverlayState: Equatable {
         case .polishing: return "polishing"
         case .copied: return "copied"
         case .completed: return "completed"
-        case .quickHistory: return "quickHistory"
         case .cancelled: return "cancelled"
         case .error: return "error"
         case .deviceChange: return "deviceChange"
+        }
+    }
+
+    /// States that render as the same pill: one dictation stays one view
+    /// from the first word until its text is ready.
+    var contentFamily: String {
+        switch self {
+        case .recording, .paused, .transcribing, .polishing: return "dictation"
+        default: return stateCategory
         }
     }
 
@@ -84,7 +87,7 @@ enum RecordingOverlayState: Equatable {
 
     var statusText: String {
         switch self {
-        case .hidden, .docked, .quickHistory:
+        case .hidden, .docked:
             return ""
         case .recording:
             return "overlay.recording".localized

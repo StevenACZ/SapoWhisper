@@ -221,8 +221,7 @@ class VocabularyManager {
     }
 
     private static func isMechanicallyStable(key: String, value: String) -> Bool {
-        let pattern = replacementPattern(for: key)
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+        guard let regex = caseInsensitiveRegex(replacementPattern(for: key)) else {
             return false
         }
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
@@ -235,13 +234,7 @@ class VocabularyManager {
         mechanicalReplacements
             .sorted { $0.key.count == $1.key.count ? $0.key < $1.key : $0.key.count > $1.key.count }
             .reduce(transcript) { current, replacement in
-                let pattern = Self.replacementPattern(for: replacement.key)
-                guard
-                    let regex = try? NSRegularExpression(
-                        pattern: pattern,
-                        options: [.caseInsensitive]
-                    )
-                else {
+                guard let regex = Self.caseInsensitiveRegex(Self.replacementPattern(for: replacement.key)) else {
                     return current
                 }
 
@@ -353,8 +346,7 @@ class VocabularyManager {
 
         let phraseCorrectedTranscript = applyingMultiTermCorrections(to: replacedTranscript)
         return correctionPairs.reduce(phraseCorrectedTranscript) { current, pair in
-            let pattern = Self.wholeTermPattern(for: pair.variant)
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            guard let regex = Self.caseInsensitiveRegex(Self.wholeTermPattern(for: pair.variant)) else {
                 return current
             }
 
@@ -471,8 +463,7 @@ class VocabularyManager {
         -> String
     {
         variants.reduce(transcript) { current, variant in
-            let pattern = wholeTermPattern(for: variant)
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            guard let regex = caseInsensitiveRegex(wholeTermPattern(for: variant)) else {
                 return current
             }
             let range = NSRange(current.startIndex..<current.endIndex, in: current)
@@ -484,6 +475,24 @@ class VocabularyManager {
                 withTemplate: replacementTemplate
             )
         }
+    }
+
+    private static var regexCache: [String: NSRegularExpression] = [:]
+
+    /// Corrections run every vocabulary variant on each dictation; compiling
+    /// every pattern again blocked the main thread 35-55 ms per dictation.
+    private static func caseInsensitiveRegex(_ pattern: String) -> NSRegularExpression? {
+        if let cached = regexCache[pattern] {
+            return cached
+        }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        if regexCache.count >= 4096 {
+            regexCache.removeAll(keepingCapacity: true)
+        }
+        regexCache[pattern] = regex
+        return regex
     }
 
     private static func replacementPattern(for term: String) -> String {

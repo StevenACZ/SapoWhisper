@@ -53,20 +53,17 @@ class OverlayWindowManager: ObservableObject {
     /// passes. The pulse is a trigger counter so every arm press beats again.
     @Published private(set) var isCancelWarningArmed = false
     @Published private(set) var cancelWarningPulse = 0
+    /// 0...1 fill while the arming Esc press is held toward the cancel.
+    @Published private(set) var cancelHoldProgress: CGFloat = 0
     private var cancelWarningTask: Task<Void, Never>?
 
-    /// True during the brief pre-collapse "inhale": the view puffs the active
-    /// pill up a touch, then the delayed collapse lets the chip swallow it.
-    @Published private(set) var hideAnticipation = false
-    /// Collapse scheduled by `hide()` after the anticipation beat; any newer
-    /// state change cancels it so a fresh dictation is never yanked into the
-    /// dock by a stale dismiss.
-    private var pendingHideTask: Task<Void, Never>?
+    /// Length of the take being transcribed, kept from the last capture
+    /// state so the timer stays in place instead of vanishing mid-hand-off.
+    private(set) var processedTakeDuration: TimeInterval?
 
-    /// True when the current pill was presented straight from the dock chip:
-    /// it entered through the Liquid Glass detach morph, whose glass shape
-    /// animates outside SwiftUI layout — glow flashes wait for it to settle
-    /// or the stroke floats visibly inside the real pill edge.
+    /// True when the current pill was presented from idle: its entrance
+    /// spring is still scaling, so glow flashes wait for it to settle or the
+    /// stroke floats visibly inside the real pill edge.
     private(set) var lastPresentationLeftDock = false
 
     /// The user toggled the resume chip (already reflected in `resumeOffer`).
@@ -96,13 +93,6 @@ class OverlayWindowManager: ObservableObject {
     /// just dictated.
     var onOpenHistoryRequested: (() -> Void)?
 
-    /// Quick history pill "open in History": jump to the browsed entry.
-    var onOpenHistoryEntryRequested: ((Int64) -> Void)?
-
-    /// Quick history pill re-transcribe: run the entry through the current
-    /// engine and return the error message, or nil on success.
-    var onQuickHistoryRetranscribe: ((HistoryEntry) async -> String?)?
-
     // MARK: - Private Properties
 
     private var overlayWindow: RecordingOverlayWindow?
@@ -110,9 +100,8 @@ class OverlayWindowManager: ObservableObject {
     private var presentationRevision: UInt = 0
     private var completedDismissTask: Task<Void, Never>?
     private var transientDismissTask: Task<Void, Never>?
-    /// Global+local mouse monitors active while the completed or quick
-    /// history pill is open, so a click anywhere outside collapses it back
-    /// into the dock chip.
+    /// Global+local mouse monitors active while the completed pill is open,
+    /// so a click anywhere outside dismisses it.
     private var outsideClickMonitors: [Any] = []
     private let audioLevelSubject = PassthroughSubject<Float, Never>()
     private var lastAudioLevelEmitTime: CFAbsoluteTime = 0
@@ -208,9 +197,9 @@ class OverlayWindowManager: ObservableObject {
         SapoSignpost.end(SapoSignpost.Name.hotkeyToOverlay, state: signpostState)
     }
 
-    /// Collapses whatever is showing back into the idle dock chip. The window
-    /// never disappears: the chip is the overlay's resting state, and hovering
-    /// it reopens the last transcription.
+    /// Dismisses whatever is showing. The transparent window stays on screen
+    /// with nothing drawn, so the next dictation appears without ordering it
+    /// front again.
     func hide() {
         transientDismissTask?.cancel()
         transientDismissTask = nil
@@ -219,80 +208,30 @@ class OverlayWindowManager: ObservableObject {
 
         completedDismissTask?.cancel()
         completedDismissTask = nil
-        pendingHideTask?.cancel()
-        pendingHideTask = nil
         finishMeterSession(reason: "docked")
         displayedRecordingSecond = nil
         publishAudioLevel(0, force: true)
         showsNoSpeechHint = false
         clearCancelWarning()
-        // Committed to collapsing: the completed pill's outside-click
-        // monitors must not fire again during the anticipation beat.
         removeOutsideClickMonitors()
+        processedTakeDuration = nil
 
-        guard !Constants.Animation.reduceMotion else {
-            hideAnticipation = false
+        withAnimation(motionAnimation(Constants.Animation.dismiss)) {
             state = .docked
             backupNotice = nil
-            SapoLog.overlay.info("Overlay collapsed to dock")
-            return
         }
-
-        // Two-beat absorb: a quick "inhale", then the chip swallows the
-        // droplet. The delayed collapse re-checks the state so a dictation
-        // starting mid-beat wins over the stale dismiss.
-        let category = state.stateCategory
-        withAnimation(.easeOut(duration: 0.1)) {
-            hideAnticipation = true
-        }
-        pendingHideTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.pendingHideTask = nil
-            guard self.state.stateCategory == category else {
-                withAnimation(.easeOut(duration: 0.12)) { self.hideAnticipation = false }
-                return
-            }
-            withAnimation(Constants.Animation.droplet) {
-                self.hideAnticipation = false
-                self.state = .docked
-                self.backupNotice = nil
-            }
-            SapoLog.overlay.info("Overlay collapsed to dock")
-        }
-    }
-
-    /// Dock chip click: toggle — open the quick history browser when idle,
-    /// collapse the open pill back into the chip otherwise.
-    func dockChipTapped() {
-        switch state {
-        case .docked:
-            showQuickHistory()
-        case .completed, .quickHistory:
-            hide()
-        default:
-            break
-        }
-    }
-
-    /// In-pill compact history from the dock chip. No auto-dismiss: the user
-    /// is browsing; outside clicks, the chip, or the close button collapse it.
-    func showQuickHistory() {
-        guard case .docked = state else { return }
-        updateState(.quickHistory)
+        SapoLog.overlay.info("Overlay collapsed to dock")
     }
 
     // MARK: - Outside-click collapse
 
-    /// While the completed or quick history pill is open, any click outside
-    /// the overlay window collapses it back into the dock chip — closing must
-    /// not require hunting the X button. Monitors exist only in those states
-    /// so recording and busy states are never dismissed by stray clicks.
+    /// While the completed pill is open, any click outside the overlay
+    /// window dismisses it — closing must not require hunting the X button.
+    /// Monitors exist only in that state so recording and busy states are
+    /// never dismissed by stray clicks.
     private var stateAllowsOutsideClickCollapse: Bool {
-        switch state {
-        case .completed, .quickHistory: return true
-        default: return false
-        }
+        if case .completed = state { return true }
+        return false
     }
 
     private func syncOutsideClickMonitors() {
@@ -446,11 +385,6 @@ class OverlayWindowManager: ObservableObject {
             return
         }
 
-        // A collapse waiting on its anticipation beat must not swallow this
-        // newer state.
-        pendingHideTask?.cancel()
-        pendingHideTask = nil
-
         if case .recording = state,
             case .recording = newState
         {
@@ -460,6 +394,7 @@ class OverlayWindowManager: ObservableObject {
         }
 
         updateDisplayedSecond(for: newState)
+        updateProcessedTakeDuration(for: newState)
         let previousCategory = state.stateCategory
         let leavingDock = previousCategory == "docked"
         lastPresentationLeftDock = leavingDock
@@ -482,17 +417,22 @@ class OverlayWindowManager: ObservableObject {
         }
 
         if state.isVisible {
-            // Leaving the dock plays the bouncier droplet detach; swaps
-            // between active pills morph with the calmer spring while the
-            // pill view sequences the content crossfade on top of it.
-            withAnimation(motionAnimation(leavingDock ? Constants.Animation.droplet : Constants.Animation.morph)) {
-                hideAnticipation = false
+            // Leaving idle pops the pill in; dictation phases hand off in
+            // place; other swaps morph while the view cross-fades the content.
+            let animation: Animation
+            if leavingDock {
+                animation = Constants.Animation.present
+            } else if state.contentFamily == newState.contentFamily {
+                animation = Constants.Animation.phaseSwap
+            } else {
+                animation = Constants.Animation.morph
+            }
+            withAnimation(motionAnimation(animation)) {
                 state = newState
             }
         } else {
             // Coming from hidden: lay out the pill at its final size with no
             // animation; the window fade covers the appearance.
-            hideAnticipation = false
             state = newState
         }
         syncOutsideClickMonitors()
@@ -534,7 +474,6 @@ class OverlayWindowManager: ObservableObject {
         case .recording: key = "overlay.a11y.recording_started"
         case .transcribing: key = "overlay.a11y.transcribing"
         case .copied: key = "overlay.a11y.pasted"
-        case .quickHistory: key = "overlay.a11y.quick_history"
         case .error: key = "overlay.a11y.error"
         default: key = nil
         }
@@ -675,6 +614,20 @@ class OverlayWindowManager: ObservableObject {
         SapoLog.overlay.info("Overlay cancel warning armed")
     }
 
+    func beginCancelHold(duration: TimeInterval) {
+        cancelHoldProgress = 0
+        withAnimation(.linear(duration: duration)) {
+            cancelHoldProgress = 1
+        }
+    }
+
+    func endCancelHold() {
+        guard cancelHoldProgress > 0 else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            cancelHoldProgress = 0
+        }
+    }
+
     func clearCancelWarning() {
         cancelWarningTask?.cancel()
         cancelWarningTask = nil
@@ -798,6 +751,17 @@ class OverlayWindowManager: ObservableObject {
             showsNoSpeechHint = shows
         }
         SapoLog.overlay.info("Overlay no-speech hint \(shows ? "shown" : "cleared", privacy: .public)")
+    }
+
+    private func updateProcessedTakeDuration(for newState: RecordingOverlayState) {
+        switch (state, newState) {
+        case (.recording(let duration), .transcribing), (.paused(let duration), .transcribing):
+            processedTakeDuration = duration
+        case (_, .transcribing), (_, .polishing):
+            break
+        default:
+            processedTakeDuration = nil
+        }
     }
 
     private func updateDisplayedSecond(for state: RecordingOverlayState) {

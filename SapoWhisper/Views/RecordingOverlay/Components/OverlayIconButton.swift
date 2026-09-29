@@ -21,6 +21,7 @@ struct OverlayIconButton: View {
             Image(systemName: systemName)
                 .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(.primary)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: diameter, height: diameter)
                 .background(Circle().fill(Color.primary.opacity(0.1)))
         }

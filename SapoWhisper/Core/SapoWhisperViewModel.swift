@@ -254,6 +254,10 @@ class SapoWhisperViewModel: ObservableObject {
     /// the window really cancels. Reset on every appState change and on
     /// pause/resume so an armed press never crosses a phase boundary.
     private var escapeCancelGate = EscapeCancelGate()
+    /// Holding the arming Esc press confirms the cancel once the pill's
+    /// fill completes; releasing earlier keeps the double-press path armed.
+    private var cancelHoldTask: Task<Void, Never>?
+    static let cancelHoldDuration: TimeInterval = 1
 
     private var canCancelActiveTranscription: Bool {
         guard let active = transcriptionOperations.active else { return false }
@@ -273,14 +277,48 @@ class SapoWhisperViewModel: ObservableObject {
         guard escCancelCanAct else { return }
         switch escapeCancelGate.registerPress() {
         case .armed:
-            SapoLog.hotkey.info("Esc cancel armed, waiting for confirm")
+            SapoLog.hotkey.info("Esc cancel armed, waiting for confirm or hold")
             overlayManager.warnCancelArmed()
+            beginCancelHold()
         case .confirmed:
-            if canCancelProcessing {
-                cancelProcessing()
-            } else {
-                cancelActiveDictation()
+            endCancelHold()
+            confirmEscapeCancel()
+        }
+    }
+
+    func handleCancelKeyRelease() {
+        endCancelHold()
+    }
+
+    private func beginCancelHold() {
+        cancelHoldTask?.cancel()
+        let heldState = appState
+        overlayManager.beginCancelHold(duration: Self.cancelHoldDuration)
+        cancelHoldTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.cancelHoldDuration))
+            guard let self, !Task.isCancelled else { return }
+            self.cancelHoldTask = nil
+            self.escapeCancelGate.reset()
+            guard self.appState == heldState, self.escCancelCanAct else {
+                self.overlayManager.endCancelHold()
+                return
             }
+            SapoLog.hotkey.info("Esc cancel confirmed by hold")
+            self.confirmEscapeCancel()
+        }
+    }
+
+    private func endCancelHold() {
+        cancelHoldTask?.cancel()
+        cancelHoldTask = nil
+        overlayManager.endCancelHold()
+    }
+
+    private func confirmEscapeCancel() {
+        if canCancelProcessing {
+            cancelProcessing()
+        } else {
+            cancelActiveDictation()
         }
     }
 
@@ -472,24 +510,6 @@ class SapoWhisperViewModel: ObservableObject {
                 self?.openHistoryForLastTranscription()
             }
         }
-        overlayManager.onOpenHistoryEntryRequested = { [weak self] entryId in
-            Task { @MainActor in
-                self?.openHistory(focusedOn: entryId)
-            }
-        }
-        overlayManager.onQuickHistoryRetranscribe = { [weak self] entry in
-            guard let self else { return nil }
-            let result = await self.retranscribeHistoryEntry(entry, using: self.currentEngine)
-            return result.errorMessage
-        }
-    }
-
-    /// Quick history pill → History window focused on the browsed entry.
-    private func openHistory(focusedOn entryId: Int64) {
-        HistoryFocusRequest.pendingEntryID = entryId
-        overlayManager.hide()
-        NotificationCenter.default.post(name: HistoryFocusRequest.notification, object: nil)
-        SapoLog.overlay.info("Open history from quick history pill entryId=\(entryId, privacy: .public)")
     }
 
     /// Result pill → History window focused on the entry that was just
@@ -602,10 +622,11 @@ class SapoWhisperViewModel: ObservableObject {
                 // Esc cancela el dictado mientras graba y también la
                 // transcripción en vuelo (la fila ya está pre-persistida);
                 // requiere doble pulsación vía EscapeCancelGate.
-                self?.hotkeyManager.setCancelKeyActive(state == .recording || state == .processing || state == .polishing) {
-                    [weak self] in
-                    self?.handleCancelKeyPress()
-                }
+                self?.hotkeyManager.setCancelKeyActive(
+                    state == .recording || state == .processing || state == .polishing,
+                    callback: { [weak self] in self?.handleCancelKeyPress() },
+                    onRelease: { [weak self] in self?.handleCancelKeyRelease() }
+                )
             }
             .store(in: &cancellables)
 
@@ -821,6 +842,7 @@ class SapoWhisperViewModel: ObservableObject {
         // there swallows the armed press mid double-Esc.
         if oldState != newState {
             escapeCancelGate.reset()
+            endCancelHold()
         }
         appState = newState
         if oldState == .recording, newState != .recording {
@@ -1057,6 +1079,7 @@ class SapoWhisperViewModel: ObservableObject {
     /// Toggle de pausa/resume (llamado por el botón del overlay)
     func togglePause() {
         escapeCancelGate.reset()
+        endCancelHold()
         if let context = activeStreamingContext {
             let session = context.session
             if session.isPaused {

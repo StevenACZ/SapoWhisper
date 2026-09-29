@@ -8,8 +8,7 @@ addresses, and machine-specific workflow details.
 
 - macOS menu bar speech-to-text app.
 - Main flow: press `Option + Space`, speak, stop, then paste with clipboard + `Cmd+V`.
-- `Esc` twice within 2.5 s cancels an active dictation (the first press only arms: the pill heartbeats and shows "Esc again to cancel" — `EscapeCancelGate`) without transcribing or pasting, preserving captured audio as a cancelled History entry; pending-start cancels create no row. The same double press cancels an in-flight batch or streaming transcription and AI polish (the pre-persisted row resolves to cancelled and is offered as continue-previous). Re-transcribing an entry clears its continue-previous offer.
-- The overlay dock chip opens an in-pill quick history (recent transcripts, copy, prev/next paging, current-engine re-transcribe, jump to the full History window). It is deliberately minimal — no pin, AI polish, audio download, or duration.
+- `Esc` twice within 2.5 s cancels an active dictation (the first press only arms: the pill heartbeats and shows "Hold Esc" — `EscapeCancelGate`; holding that press for 1 s also cancels) without transcribing or pasting, preserving captured audio as a cancelled History entry; pending-start cancels create no row. The same double press cancels an in-flight batch or streaming transcription and AI polish (the pre-persisted row resolves to cancelled and is offered as continue-previous). Re-transcribing an entry clears its continue-previous offer.
 - Minimum macOS: 14.0.
 - Release target: Apple Silicon only (`arm64`, M1 and newer).
 - Main target: `SapoWhisper` in `SapoWhisper.xcodeproj`.
@@ -53,7 +52,7 @@ addresses, and machine-specific workflow details.
 - Automatic retention must preserve failed/in-flight recordings, pins and active extensions. Determine the newest capture by timestamp, not insertion ID; an accepted continuation cannot expire while recording.
 - Credentials belong in Keychain; configuration checks use `KeychainStore.hasValue`, not credential reads.
 - Never show an action that cannot execute in the current state; derive visibility and execution from the same predicate.
-- The overlay window is permanently visible as the dock chip, so nothing may depend on `show()` or a new dictation to correct it: placement must follow every screen parameter change and every fresh presentation. Verify overlay changes by reading the window frame after a resolution switch, not only at launch.
+- The overlay window stays on screen between dictations (transparent while idle), so nothing may depend on `show()` or a new dictation to correct it: placement must follow every screen parameter change and every fresh presentation. Verify overlay changes by reading the window frame after a resolution switch, not only at launch.
 - Attach copied-confirmation glow to the complete padded overlay surface, including any supporting status text; inner rows must not draw a second pill outline.
 - Create popover content on opening and release it after closing. Isolate continuously animated bars and numeric text from shared drawing layers; verify hidden subscriptions and glyph work disappear from runtime profiles.
 - Keep Release artifacts `arm64` unless Intel support is explicitly re-approved.

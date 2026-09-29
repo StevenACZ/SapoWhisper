@@ -3,98 +3,7 @@
 //  SapoWhisper
 //
 
-import Combine
 import SwiftUI
-
-struct RecordingPillView: View {
-    let duration: TimeInterval
-    let onPause: () -> Void
-    let audioLevelPublisher: AnyPublisher<Float, Never>
-    var showsNoSpeechHint: Bool = false
-    /// Non-nil while the input still delivers dead air (Bluetooth handshake):
-    /// the pill explains the silence instead of showing a flat waveform.
-    var connectingDeviceName: String? = nil
-    /// First Esc landed: the status swaps for the "Esc again" hint.
-    var cancelWarningActive: Bool = false
-    /// "Continue previous dictation" chip: a recent cancelled/crashed take can
-    /// be prepended to this recording at stop time.
-    var resumeOffer: OverlayWindowManager.ResumeOffer? = nil
-    var onResumeToggle: (() -> Void)?
-    var onTranslationToggled: ((Bool) -> Void)?
-    /// Compact polish mode is active for this dictation: purple meter + chip.
-    var compactModeActive: Bool = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            FloatingSapoIcon(state: .recording, size: 32)
-            PillDivider()
-            MiniEqualizerView(
-                audioLevelPublisher: audioLevelPublisher,
-                barCount: 11,
-                isConnecting: connectingDeviceName != nil,
-                barColor: compactModeActive ? .compactMode : .recording
-            )
-
-            if cancelWarningActive {
-                CancelWarningHint()
-            } else if let connectingDeviceName {
-                Text("overlay.mic_connecting".localized(connectingDeviceName))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .transition(.opacity)
-            } else if showsNoSpeechHint {
-                HStack(spacing: 5) {
-                    Image(systemName: "mic.slash.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("overlay.no_speech".localized)
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundColor(.sapoError)
-                .transition(.opacity)
-            } else {
-                Text("overlay.recording".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .transition(.opacity)
-            }
-
-            Spacer(minLength: 6)
-
-            if let resumeOffer {
-                ResumePreviousChip(offer: resumeOffer, onTap: { onResumeToggle?() })
-            }
-
-            // Compact + language chips read as one tight control cluster; the
-            // default HStack spacing left them looking scattered.
-            HStack(spacing: 5) {
-                if compactModeActive {
-                    CompactModeChip()
-                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                }
-
-                OverlayTranslationChip(onTranslationToggled: onTranslationToggled)
-            }
-
-            OverlayIconButton(
-                systemName: "pause.fill",
-                label: "overlay.a11y.pause".localized,
-                diameter: 26,
-                iconSize: 11,
-                action: onPause
-            )
-
-            OverlayTimer(duration: duration)
-        }
-        .frame(minWidth: 250)
-        // No local animation for the connecting swap: the manager's spring
-        // transaction drives it (same pattern as `showsNoSpeechHint`).
-        // The chip appears mid-recording when the minimum-duration threshold
-        // is crossed (duration ticks swap state without animation), so its
-        // pop is driven locally.
-        .animation(.smooth(duration: 0.25), value: compactModeActive)
-    }
-}
 
 /// Opt-in chip to prepend the previous (cancelled or crash-recovered) take to
 /// the current recording. Shows the recoverable duration; active state fills
@@ -128,74 +37,8 @@ struct ResumePreviousChip: View {
     }
 }
 
-struct PausedPillView: View {
-    let duration: TimeInterval
-    var cancelWarningActive: Bool = false
-    let onResume: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            FloatingSapoIcon(state: .paused, size: 32)
-            PillDivider()
-
-            if cancelWarningActive {
-                CancelWarningHint()
-            } else {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.processing)
-                        .frame(width: 7, height: 7)
-
-                    Text("overlay.paused".localized)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                }
-                .transition(.opacity)
-            }
-
-            Spacer(minLength: 20)
-
-            OverlayIconButton(
-                systemName: "play.fill",
-                label: "overlay.a11y.resume".localized,
-                diameter: 26,
-                iconSize: 11,
-                action: onResume
-            )
-
-            OverlayTimer(duration: duration)
-        }
-        .frame(minWidth: 250)
-    }
-}
-
-struct TranscribingPillView: View {
-    var cancelWarningActive: Bool = false
-    var onCancel: (() -> Void)?
-
-    var body: some View {
-        HStack(spacing: 10) {
-            FloatingSapoIcon(state: .transcribing, size: 32)
-            PillDivider()
-            TranscribingIndicator()
-
-            if cancelWarningActive {
-                CancelWarningHint()
-            } else {
-                Text("overlay.transcribing".localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .transition(.opacity)
-            }
-            if let onCancel {
-                OverlayIconButton(systemName: "xmark", label: "overlay.cancel_processing".localized, action: onCancel)
-            }
-        }
-    }
-}
-
-/// "Esc again to cancel" — swapped in for the status text while the armed
-/// cancel warning is live; the pill heartbeat carries the urgency.
+/// "Hold Esc" — swapped in for the status text while the armed cancel
+/// warning is live; the pill heartbeat carries the urgency.
 struct CancelWarningHint: View {
     var body: some View {
         HStack(spacing: 5) {
@@ -204,11 +47,38 @@ struct CancelWarningHint: View {
             Text("overlay.cancel_hint".localized)
                 .font(.system(size: 13, weight: .medium))
         }
-        .foregroundColor(.sapoError)
+        .foregroundColor(.red)
         // Mid-morph widths below ideal wrap the hint; the pill's Spacer
         // absorbs pressure instead (same rule as the resume chip).
         .fixedSize()
-        .transition(.opacity)
+    }
+}
+
+/// Hold-to-cancel sweep behind the pill content. The leading edge is
+/// feathered, so the red reads as liquid filling the pill rather than a
+/// block sliding across it; it moves by offset, a cheap transform.
+struct CancelHoldFill: View {
+    let progress: CGFloat
+
+    private static let feather: CGFloat = 40
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width + Self.feather
+            LinearGradient(
+                stops: [
+                    .init(color: .red.opacity(0.1), location: 0),
+                    .init(color: .red.opacity(0.32), location: 1 - Self.feather / width),
+                    .init(color: .red.opacity(0), location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: width)
+            .offset(x: -width * (1 - progress))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -233,51 +103,9 @@ struct CompactModeChip: View {
     }
 }
 
-struct AIPolishingPillView: View {
-    let timeoutSeconds: UInt64
-    var compact: Bool = false
-    var cancelWarningActive: Bool = false
-    var onCancel: (() -> Void)?
-
-    @State private var startedAt = Date()
-
-    var body: some View {
-        HStack(spacing: 10) {
-            FloatingSapoIcon(state: .polishing, size: 32)
-            PillDivider()
-            TranscribingIndicator(color: compact ? .compactMode : .aiPolish)
-
-            if cancelWarningActive {
-                CancelWarningHint()
-            } else {
-                Text((compact ? "overlay.ai_compacting" : "overlay.ai_polishing").localized)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-            }
-
-            // L10: countdown to the polish timeout — the user sees the worst
-            // case shrinking instead of an open-ended spinner.
-            TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                let elapsed = Int(context.date.timeIntervalSince(startedAt))
-                let remaining = max(0, Int(timeoutSeconds) - elapsed)
-                Text("\(remaining)s")
-                    .font(.system(size: 12, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(Constants.Animation.tick, value: remaining)
-            }
-            if let onCancel {
-                OverlayIconButton(systemName: "xmark", label: "overlay.cancel_processing".localized, action: onCancel)
-            }
-        }
-        .onAppear { startedAt = Date() }
-    }
-}
-
 /// Compact post-dictation toast: the text already landed at the caret, so
 /// this only confirms the copy with the success icon pop + glow and then
-/// collapses into the dock chip, which reopens it via quick history.
+/// sinks away.
 struct CopiedPillView: View {
     var outcome: CopiedOutcome = .standard
 
@@ -326,17 +154,16 @@ struct CopiedPillView: View {
     }
 }
 
-struct CopiedPillGlow: View {
-    let outcome: CopiedOutcome
+/// One-shot outline flash that confirms a finished pill (copied, cancelled).
+struct PillGlowFlash: View {
+    let color: Color
     @State private var glowFlash = 0
-
-    private var color: Color { outcome == .aiSkipped ? .sapoError : .sapoGreen }
 
     var body: some View {
         Color.clear
             .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
-                [color, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
-                content.overlay(glowStroke(color: color, intensity: glow, chipOnTop: chipOnTop, expandsToChrome: false))
+                [color] content, glow in
+                content.overlay(glowStroke(color: color, intensity: glow, expandsToChrome: false))
             } keyframes: { _ in
                 PillGlowFlashKeyframes()
             }
@@ -493,8 +320,8 @@ struct CompletedPillView: View {
         }
         .frame(maxWidth: Self.contentWidth)
         .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
-            [accent = Color.sapoGreen, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
-            content.overlay(glowStroke(color: accent, intensity: glow, chipOnTop: chipOnTop))
+            [accent = Color.sapoGreen] content, glow in
+            content.overlay(glowStroke(color: accent, intensity: glow))
         } keyframes: { _ in
             PillGlowFlashKeyframes()
         }
@@ -513,68 +340,31 @@ struct CompletedPillView: View {
     }
 }
 
-/// Slim always-visible bar at the anchor position — the overlay's permanent
-/// resting fixture the droplet pill detaches from. Hover only highlights it
-/// as an affordance; a click toggles the quick history open/closed, so a
-/// stray mouse pass at the screen edge does nothing.
-struct DockedChipView: View {
-    /// True while a droplet pill floats detached above the chip.
-    var isExpanded: Bool = false
-    var onTap: () -> Void
-
-    @State private var isHovering = false
-    @State private var splashTrigger = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button(action: onTap) {
-            Capsule()
-                .fill(Color.sapoGreen.opacity(isExpanded ? 0.9 : (isHovering ? 0.95 : 0.65)))
-                .frame(width: 24, height: 4)
-                .frame(width: 34, height: 8)
-                // Same ~46×12 footprint the chip had when it shared the pill's
-                // background, now self-contained.
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .overlayChipChrome()
-                // Squash-and-stretch splash as the droplet detaches from or falls
-                // back into the chip — sells the "drop separating" read on both
-                // directions. Phase-driven so rapid open/close toggles can never
-                // strand the chip stretched.
-                .phaseAnimator([1.0, 1.75], trigger: splashTrigger) { content, stretch in
-                    content.scaleEffect(x: 1, y: stretch)
-                } animation: { stretch in
-                    stretch > 1 ? Constants.Animation.microBounce : .spring(duration: 0.3, bounce: 0.45)
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(Constants.Animation.hover) {
-                isHovering = hovering
-            }
-        }
-        .onChange(of: isExpanded) { _, _ in
-            guard !reduceMotion else { return }
-            splashTrigger += 1
-        }
-        .accessibilityLabel("overlay.dock_last".localized)
-        .help("overlay.dock_last".localized)
-    }
-}
-
+/// The cancel lands with the same icon pop as the copied toast: the ✕ spins
+/// in from a quarter turn so the confirmation reads as a decisive snap.
 struct CancelledPillView: View {
     var message: String? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var landed = false
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 16))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.red)
+                .scaleEffect(landed ? 1 : 0.2)
+                .rotationEffect(.degrees(landed ? 0 : -90))
+                .opacity(landed ? 1 : 0)
 
             Text(message ?? "overlay.cancelled_saved".localized)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+        }
+        .onAppear {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.5).delay(0.08)) {
+                landed = true
+            }
         }
     }
 }
@@ -622,8 +412,8 @@ struct ErrorPillView: View {
         }
         // Same one-shot outline flash as the completed pill, in error amber.
         .keyframeAnimator(initialValue: 0.0, trigger: glowFlash) {
-            [accent = Color.sapoError, chipOnTop = OverlayPillChrome.chipOnTop] content, glow in
-            content.overlay(glowStroke(color: accent, intensity: glow, chipOnTop: chipOnTop))
+            [accent = Color.sapoError] content, glow in
+            content.overlay(glowStroke(color: accent, intensity: glow))
         } keyframes: { _ in
             PillGlowFlashKeyframes()
         }
@@ -746,44 +536,28 @@ struct PillDivider: View {
     }
 }
 
-/// Pills presented straight from the dock enter through the Liquid Glass
-/// detach morph, whose glass shape animates outside SwiftUI layout — an
-/// outline flashed mid-morph floats visibly inside the real pill edge, so
-/// those flashes wait for the droplet spring to settle first.
+/// A pill that just popped in is still scaling: an outline flashed mid-entrance
+/// floats visibly inside the real pill edge, so those flashes wait for the
+/// entrance spring to settle first.
 @MainActor
 private func glowFlashDelay() -> Duration? {
     OverlayWindowManager.shared.lastPresentationLeftDock ? .milliseconds(400) : nil
 }
 
 /// `intensity` is the 0...1 keyframe value; full flash keeps the old 0.4 peak.
-/// The stroke dissolves toward the chip side: on macOS 26 the pill fuses with
-/// the dock chip through a glass neck, and a uniform outline crossing that
-/// neck read as a cut-off border.
 /// Negative padding pushes the stroke back out over the pill chrome that the
 /// hosting view applies around this content.
 nonisolated private func glowStroke(
-    color: Color, intensity: Double, chipOnTop: Bool, expandsToChrome: Bool = true
+    color: Color, intensity: Double, expandsToChrome: Bool = true
 ) -> some View {
-    let tint = color.opacity(0.4 * intensity)
-    return OverlayPillChrome.pillShape
-        .strokeBorder(
-            LinearGradient(
-                stops: [
-                    .init(color: tint, location: 0.0),
-                    .init(color: tint, location: 0.55),
-                    .init(color: tint.opacity(0), location: 1.0),
-                ],
-                startPoint: chipOnTop ? .bottom : .top,
-                endPoint: chipOnTop ? .top : .bottom
-            ),
-            lineWidth: 1.5
-        )
+    OverlayPillChrome.pillShape
+        .strokeBorder(color.opacity(0.4 * intensity), lineWidth: 1.5)
         .padding(.horizontal, expandsToChrome ? -OverlayPillChrome.horizontalPadding : 0)
         .padding(.vertical, expandsToChrome ? -OverlayPillChrome.verticalPadding : 0)
 }
 
-/// One-shot pill outline flash timeline: short delay, ~0.3 s flash in, hold,
-/// ~0.8 s fade out. One shared timeline replaces the old pair of delayed
+/// One-shot pill outline flash timeline: short delay, quick flash in, brief
+/// hold, fade out; about half a second, since every frame re-renders the pill. One shared timeline replaces the old pair of delayed
 /// withAnimation calls, which competed over one flag and could leave a stale
 /// glow when the pill changed under them. Call sites keep `keyframeAnimator`
 /// inline: hoisting it into a generic View extension makes the @Sendable
@@ -791,10 +565,10 @@ nonisolated private func glowStroke(
 private struct PillGlowFlashKeyframes: Keyframes {
     var body: some Keyframes<Double> {
         KeyframeTrack {
-            LinearKeyframe(0.0, duration: 0.15)
-            CubicKeyframe(1.0, duration: 0.3)
-            LinearKeyframe(1.0, duration: 0.75)
-            CubicKeyframe(0.0, duration: 0.8)
+            LinearKeyframe(0.0, duration: 0.04)
+            CubicKeyframe(1.0, duration: 0.12)
+            LinearKeyframe(1.0, duration: 0.14)
+            CubicKeyframe(0.0, duration: 0.24)
         }
     }
 }

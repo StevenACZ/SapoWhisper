@@ -3,8 +3,8 @@
 //  SapoWhisper
 import SwiftUI
 
-/// Window-relative frame of the pill + chip stack inside the fixed
-/// transparent surface (`.global` in a hosting view is window space).
+/// Window-relative frame of the pill inside the fixed transparent surface
+/// (`.global` in a hosting view is window space).
 struct OverlayContentFramePreferenceKey: PreferenceKey {
     static let defaultValue: CGRect = .zero
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
@@ -12,25 +12,28 @@ struct OverlayContentFramePreferenceKey: PreferenceKey {
     }
 }
 
-/// Vista principal del overlay de grabacion. Two-piece layout: the dock chip
-/// is a permanent fixture hugging the screen edge, and every active state
-/// (recording, transcribing, completed, ...) is a separate "droplet" pill that
-/// detaches from the chip when it appears and is absorbed back on dismiss.
-/// Because the droplet enters as one finished unit (background + content
-/// together), there is never an empty background morph or content sticking
-/// out of a half-grown pill.
+/// Vista principal del overlay de grabacion. Every active state (recording,
+/// transcribing, completed, ...) is one pill that pops out of the configured
+/// screen edge and sinks back into it; idle draws nothing. The pill enters as
+/// one finished unit (background + content together), so there is never an
+/// empty background morph or content sticking out of a half-grown pill.
 struct RecordingOverlayView: View {
 
     @ObservedObject var manager: OverlayWindowManager
 
-    @State private var pillBounceTrigger = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var stateCategory: String { manager.state.stateCategory }
+    private var contentFamily: String { manager.state.contentFamily }
     private var isActive: Bool { stateCategory != "hidden" && stateCategory != "docked" }
-    /// The chip hugs the configured screen edge; the droplet detaches toward
-    /// the screen center, so a top-anchored overlay flips the stack.
-    private var chipOnTop: Bool { OverlayPosition.configured == .top }
+    private var anchorsTop: Bool { OverlayPosition.configured == .top }
+    private var pressPhase: PressPhase {
+        switch manager.state {
+        case .transcribing, .polishing: .processing
+        case .cancelled: .cancelled
+        default: .none
+        }
+    }
 
     /// Where the content rests inside the fixed transparent surface.
     private var surfaceAlignment: Alignment {
@@ -42,7 +45,7 @@ struct RecordingOverlayView: View {
     }
 
     var body: some View {
-        pillAndChipStack
+        pillStack
             .fixedSize()
             // Publish where the real content sits inside the mostly-transparent
             // surface, so the outside-click collapse can compare against the
@@ -55,9 +58,7 @@ struct RecordingOverlayView: View {
                     )
                 }
             )
-            // Slim transparent inset on the chip side so its shadow still renders
-            // while the chip visually hugs the screen edge.
-            .padding(chipOnTop ? .top : .bottom, 4)
+            .padding(anchorsTop ? .top : .bottom, 20)
             // The hosting window is a fixed transparent surface that NEVER
             // resizes: window resizes during SwiftUI transaction animations made
             // NSHostingView animate the window frame from inside the display
@@ -71,57 +72,33 @@ struct RecordingOverlayView: View {
                     OverlayWindowManager.shared.setActiveContentFrame(frame)
                 }
             }
-            .onChange(of: stateCategory) { oldValue, _ in
-                // Micro-bounce only on active-to-active swaps; dock transitions
-                // are carried entirely by the droplet detach/absorb.
-                guard isActive, oldValue != "hidden", oldValue != "docked" else { return }
-                guard !reduceMotion else { return }
-                pillBounceTrigger += 1
-            }
     }
 
-    private var pillAndChipStack: some View {
-        VStack(spacing: 0) {
-            if chipOnTop {
-                chip
-            }
+    private var pillStack: some View {
+        ZStack {
             if isActive {
                 activePill
-                    // Small fixed gap to the chip: at the start of the detach
-                    // the tiny droplet reads as connected, and once grown it
-                    // reads as two separated parts with the chip peeking out.
-                    .padding(chipOnTop ? .top : .bottom, 8)
-                    .transition(dropletTransition)
-            }
-            if !chipOnTop {
-                chip
+                    .transition(pillTransition)
             }
         }
     }
 
-    private var chip: some View {
-        DockedChipView(
-            isExpanded: isActive,
-            onTap: { manager.dockChipTapped() }
-        )
-    }
-
-    /// The droplet grows out of the chip's edge and collapses back into it,
-    /// with scale anchored at the chip side. The enter stays fully opaque so
-    /// the detach reads as a drop separating from the resting chip; the exit
-    /// adds a fade as the pill returns to the chip.
-    private var dropletTransition: AnyTransition {
-        let anchor: UnitPoint = chipOnTop ? .top : .bottom
-        return .asymmetric(
-            insertion: .scale(scale: 0.04, anchor: anchor),
-            removal: .scale(scale: 0.04, anchor: anchor).combined(with: .opacity)
+    /// The pill pops out of the screen edge with a small overshoot and sinks
+    /// back into it. Opacity lands within the first frames of the spring, so
+    /// the pill reads as open at once while the scale settles.
+    private var pillTransition: AnyTransition {
+        let edge: UnitPoint = anchorsTop ? .top : .bottom
+        let lift: CGFloat = anchorsTop ? -16 : 16
+        return .presence(
+            in: OverlayPresence(scale: 0.55, anchor: edge, y: lift, blur: 10, opacity: 0),
+            out: OverlayPresence(scale: 0.8, anchor: edge, y: lift * 0.75, blur: 8, opacity: 0)
         )
     }
 
     private var contentSwapTransition: AnyTransition {
         .asymmetric(
-            insertion: .opacity.animation(.easeIn(duration: 0.16).delay(0.1)),
-            removal: .opacity.animation(.easeOut(duration: 0.1))
+            insertion: .opacity.animation(.easeOut(duration: 0.14).delay(0.05)),
+            removal: .opacity.animation(.easeOut(duration: 0.08))
         )
     }
 
@@ -150,25 +127,29 @@ struct RecordingOverlayView: View {
                     .transition(.opacity)
                 }
             }
-            .id(stateCategory)
+            .id(contentFamily)
             .transition(contentSwapTransition)
         }
         .padding(.horizontal, OverlayPillChrome.horizontalPadding)
         .padding(.vertical, OverlayPillChrome.verticalPadding)
+        .background {
+            // The fill belongs to the dictation it cancels: it dissolves with
+            // the outgoing content instead of draining inside the next pill.
+            CancelHoldFill(progress: manager.cancelHoldProgress)
+                .opacity(contentFamily == "dictation" ? 1 : 0)
+                .animation(.easeOut(duration: 0.08), value: contentFamily)
+        }
         .clipShape(OverlayPillChrome.pillShape)
         .overlayPillChrome()
         .overlay {
-            if case .copied(let outcome) = manager.state {
-                CopiedPillGlow(outcome: outcome)
+            switch manager.state {
+            case .copied(let outcome):
+                PillGlowFlash(color: outcome == .aiSkipped ? .sapoError : .sapoGreen)
+            case .cancelled:
+                PillGlowFlash(color: .red)
+            default:
+                EmptyView()
             }
-        }
-        // Micro-bounce on state swaps — subtle scale pop for tactile
-        // feedback. Phase-driven so a swap mid-bounce can never leave the
-        // pill stuck scaled up (the old detached asyncAfter could).
-        .phaseAnimator([1.0, 1.05], trigger: pillBounceTrigger) { content, bounceScale in
-            content.scaleEffect(bounceScale)
-        } animation: { bounceScale in
-            bounceScale > 1 ? Constants.Animation.microBounce : .spring(duration: 0.25, bounce: 0.3)
         }
         // Armed-cancel heartbeat: a double "lub-dub" each time Esc arms the
         // cancel, so the warning is felt even without reading the hint.
@@ -178,61 +159,46 @@ struct RecordingOverlayView: View {
         } keyframes: { _ in
             HeartbeatKeyframes()
         }
-        // Pre-collapse "inhale": the manager arms this for a beat before the
-        // absorb, so the pill puffs up a touch and is then swallowed by the
-        // chip instead of vanishing from a standstill.
-        .scaleEffect(
-            manager.hideAnticipation ? 1.04 : 1.0,
-            anchor: chipOnTop ? .top : .bottom
-        )
+        // Stopping the take or confirming a cancel presses the pill in and
+        // lets it spring back, so the hand-off is felt as well as read.
+        .keyframeAnimator(initialValue: 1.0, trigger: pressPhase) {
+            [reduceMotion] content, pressScale in
+            content.scaleEffect(reduceMotion ? 1.0 : pressScale)
+        } keyframes: { _ in
+            PressKeyframes()
+        }
     }
 
     // MARK: - Content Views
 
+    /// Every dictation phase renders through ONE branch: a switch case per
+    /// phase would give each its own identity and rebuild the pill on every
+    /// hand-off.
     @ViewBuilder
     private var contentForState: some View {
+        if let dictation = dictationPhase {
+            dictationPill(dictation.phase, duration: dictation.duration)
+        } else {
+            otherContent
+        }
+    }
+
+    private var dictationPhase: (phase: DictationPillView.Phase, duration: TimeInterval?)? {
         switch manager.state {
-        case .hidden, .docked:
-            EmptyView()
-
-        case .recording(let duration):
-            RecordingPillView(
-                duration: duration,
-                onPause: { manager.onPauseToggle?() },
-                audioLevelPublisher: manager.audioLevelPublisher,
-                showsNoSpeechHint: manager.showsNoSpeechHint,
-                connectingDeviceName: manager.micConnectingName,
-                cancelWarningActive: manager.isCancelWarningArmed,
-                resumeOffer: manager.resumeOffer,
-                onResumeToggle: { manager.toggleResumeOffer() },
-                onTranslationToggled: { manager.onQuickTranslationToggled?($0) },
-                // Purple meter + chip only once this dictation will REALLY
-                // compact: below the user's minimum-duration threshold the
-                // polish is skipped, so the accent appears live the moment
-                // the threshold is crossed.
-                compactModeActive: PolishMode.compactIsActive()
-                    && PolishMinimumDuration.allowsPolish(duration: duration)
-            )
-
-        case .paused(let duration):
-            PausedPillView(
-                duration: duration,
-                cancelWarningActive: manager.isCancelWarningArmed,
-                onResume: { manager.onPauseToggle?() }
-            )
-
-        case .transcribing:
-            TranscribingPillView(
-                cancelWarningActive: manager.isCancelWarningArmed,
-                onCancel: manager.canCancelProcessing?() == true ? manager.onCancelProcessing : nil
-            )
-
+        case .recording(let duration): (.recording, duration)
+        case .paused(let duration): (.paused, duration)
+        case .transcribing: (.transcribing, manager.processedTakeDuration)
         case .polishing(let timeoutSeconds, let compact):
-            AIPolishingPillView(
-                timeoutSeconds: timeoutSeconds, compact: compact,
-                cancelWarningActive: manager.isCancelWarningArmed,
-                onCancel: manager.canCancelProcessing?() == true ? manager.onCancelProcessing : nil
-            )
+            (.polishing(timeoutSeconds: timeoutSeconds, compact: compact), nil)
+        default: nil
+        }
+    }
+
+    @ViewBuilder
+    private var otherContent: some View {
+        switch manager.state {
+        case .hidden, .docked, .recording, .paused, .transcribing, .polishing:
+            EmptyView()
 
         case .copied(let outcome):
             CopiedPillView(outcome: outcome)
@@ -248,13 +214,6 @@ struct RecordingOverlayView: View {
                 manager.setCompletedHover(hovering)
             }
 
-        case .quickHistory:
-            QuickHistoryPillView(
-                onOpenHistory: { manager.onOpenHistoryEntryRequested?($0) },
-                onRetranscribe: { await manager.onQuickHistoryRetranscribe?($0) ?? nil },
-                onClose: { manager.hide() }
-            )
-
         case .cancelled:
             CancelledPillView(message: manager.cancellationMessage)
 
@@ -264,6 +223,45 @@ struct RecordingOverlayView: View {
 
         case .deviceChange(let announcement):
             DeviceChangePillView(announcement: announcement)
+        }
+    }
+}
+
+extension RecordingOverlayView {
+    fileprivate func dictationPill(_ phase: DictationPillView.Phase, duration: TimeInterval?) -> some View {
+        let capturing = phase == .recording || phase == .paused
+        return DictationPillView(
+            phase: phase,
+            duration: duration,
+            audioLevelPublisher: manager.audioLevelPublisher,
+            showsNoSpeechHint: manager.showsNoSpeechHint,
+            connectingDeviceName: manager.micConnectingName,
+            cancelWarningActive: manager.isCancelWarningArmed,
+            resumeOffer: manager.resumeOffer,
+            // Purple meter + chip only once this dictation will REALLY
+            // compact: below the minimum-duration threshold the polish is
+            // skipped, so the accent appears live when the threshold passes.
+            compactModeActive: capturing && PolishMode.compactIsActive()
+                && PolishMinimumDuration.allowsPolish(duration: duration ?? 0),
+            canCancel: !capturing && manager.canCancelProcessing?() == true,
+            onPauseToggle: { manager.onPauseToggle?() },
+            onCancel: manager.onCancelProcessing,
+            onResumeToggle: { manager.toggleResumeOffer() },
+            onTranslationToggled: { manager.onQuickTranslationToggled?($0) }
+        )
+    }
+}
+
+private enum PressPhase {
+    case none, processing, cancelled
+}
+
+/// Press-in and spring-back scale when the pill changes hands.
+private struct PressKeyframes: Keyframes {
+    var body: some Keyframes<Double> {
+        KeyframeTrack {
+            CubicKeyframe(0.94, duration: 0.09)
+            SpringKeyframe(1.0, duration: 0.4, spring: .init(duration: 0.4, bounce: 0.45))
         }
     }
 }

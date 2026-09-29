@@ -6,13 +6,26 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-09-28
+
+### Changed
+
+- A dictation keeps one pill from the first word to the transcript: recording, pause, transcribing and AI polish swap in place without blinking or jumping in width.
+- The pill pops out of the screen edge with a small bounce and sinks back when it closes, its pieces settle in one after another, stopping a take presses the pill in, the status text slides between phases, the frog springs into each new pose, and the timer digits roll again.
+- The empty gap before the recording controls is gone when the translation chip is off. While transcribing, the cancel button holds its place from the start and turns active as soon as the audio is saved.
+- Holding Esc for one second cancels the dictation while a soft red fill flows across the pill; letting go early keeps it going, and pressing Esc twice still cancels at once. The hint is a short "Hold Esc", the key no longer makes the frontmost app beep after the hold cancels, and the cancelled notice lands with a snap, a spinning ✕ and a brief red glow instead of a grey line.
+
 ### Removed
 
+- The slim bar that stayed at the bottom of the screen between dictations, and the quick history it opened. History stays one click away in the menu bar.
 - The hosted CI workflow that returned in 2.18.2; checks run locally with `make ci-check` on the supported Apple Silicon toolchain.
 
 ### Fixed
 
 - Stopping a dictation from a companion app no longer fails now and then: a command that arrived a few milliseconds after the connection was checked was dropped, so the stop had to be pressed twice.
+- Starting or stopping a dictation no longer freezes the pill for a moment while auto-ducking lowers the volume: the volume now fades right after each pill animation instead of during it, which made every frame of the open and the switch to transcribing wait, the menu bar icon changes after the volume settles, and the start sound no longer blocks the pill.
+- The overlay uses much less CPU while recording and transcribing: the progress dots run as a system animation and the frog no longer loops.
+- Finishing a dictation no longer rebuilds every vocabulary correction pattern or spoken-form pattern, which briefly froze the confirmation, and the copied flash is shorter and lighter.
 
 ## [2.20.0] - 2026-09-25
 
