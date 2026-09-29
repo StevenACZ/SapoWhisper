@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class AIPolishMemoryManagerTests: XCTestCase {
@@ -13,6 +12,7 @@ final class AIPolishMemoryManagerTests: XCTestCase {
     private func makeManager() -> AIPolishMemoryManager {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ai-polish-memory-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return AIPolishMemoryManager(fileURL: url, calendar: calendar)
