@@ -67,7 +67,7 @@ nonisolated enum SpeechConfusionCatalog {
     /// "SapoWhisper" -> "Sapo Whisper", "claude.md" -> "claude md": separators
     /// become spaces and camel-case humps split the way narrators speak them.
     static func spokenForm(for term: String) -> String {
-        let separated = term.replacingOccurrences(of: #"[-_.]+"#, with: " ", options: .regularExpression)
+        let separated = replacing(separatorRun, in: term, with: " ")
         let characters = Array(separated)
         guard characters.count > 1 else { return separated }
 
@@ -85,22 +85,40 @@ nonisolated enum SpeechConfusionCatalog {
             result.append(character)
         }
 
-        return result.replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+        return replacing(repeatedSpaces, in: result, with: " ")
     }
 
     /// ".env" -> "dot env" (or "period env" / "punto env" via `symbolWord`).
     static func spokenSymbolForm(for term: String, symbolWord: String) -> String {
-        term
+        let spaced =
+            term
             .replacingOccurrences(of: ".", with: " \(symbolWord) ")
             .replacingOccurrences(of: "-", with: " ")
             .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: #" {2,}"#, with: " ", options: .regularExpression)
+        return replacing(repeatedSpaces, in: spaced, with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let separatorRun = compiled(#"[-_.]+"#)
+    private static let repeatedSpaces = compiled(#" {2,}"#)
+    private static let condensableRun = compiled(#"[-_.\s]+"#)
+
+    /// Spoken forms are rebuilt for every vocabulary term on each dictation;
+    /// compiling these patterns per call cost ~9 ms of main thread per copy.
+    private static func compiled(_ pattern: String) -> NSRegularExpression {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            preconditionFailure("Invalid pattern \(pattern)")
+        }
+        return regex
+    }
+
+    private static func replacing(_ regex: NSRegularExpression, in text: String, with template: String) -> String {
+        regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
     }
 
     /// "git commit" -> "gitcommit": separators and spaces removed.
     static func condensedSymbolForm(for term: String) -> String {
-        term.replacingOccurrences(of: #"[-_.\s]+"#, with: "", options: .regularExpression)
+        replacing(condensableRun, in: term, with: "")
     }
 
     static func alphanumericTokens(in term: String) -> [String] {
