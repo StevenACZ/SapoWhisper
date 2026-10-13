@@ -6,6 +6,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-10-12
+
+### Changed
+
+- ElevenLabs Scribe now drops filler words, false starts and background sounds in both file and realtime transcription, and realtime dictation receives your vocabulary glossary as context from the first word.
+
 ## [2.21.1] - 2026-09-29
 
 ### Fixed
