@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import pathlib
@@ -9,6 +10,9 @@ import urllib.parse
 
 from stt_benchmark_vocabulary import (
     apply_recognition_corrections,
+    elevenlabs_realtime_chunk_messages,
+    elevenlabs_realtime_keyterms,
+    elevenlabs_realtime_query,
     initial_prompt_text,
     recognition_variants,
     sanitized_recognition_hint,
@@ -746,8 +750,94 @@ raise SystemExit(22)
             ]
 
             self.assertIn("keyterms=AlphaTerm", forms)
+            self.assertIn("no_verbatim=true", forms)
             self.assertFalse(any("BetaCLI" in value for value in forms))
             self.assertFalse(any("alpha term" in value.lower() for value in forms))
+
+            environment["NO_VERBATIM"] = "0"
+            subprocess.run(
+                [str(CLOUD_BENCHMARK_SCRIPT)],
+                cwd=temporary,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            arguments = json.loads(capture.read_text())
+            self.assertFalse(any(value.startswith("no_verbatim") for value in arguments))
+
+    def test_elevenlabs_realtime_query_matches_app_contract(self):
+        keyterms = ["AlphaTerm", "alphaterm", "AVeryLongKeytermBeyondTwenty"] + [f"Term{index}" for index in range(60)]
+        terms = elevenlabs_realtime_keyterms(keyterms, {"heard beta": "BetaCLI"})
+
+        self.assertEqual(len(terms), 50)
+        self.assertEqual(terms[0], "AlphaTerm")
+        self.assertNotIn("AVeryLongKeytermBeyondTwenty", terms)
+        self.assertTrue(all(swift_character_count(term) <= 20 for term in terms))
+
+        query = elevenlabs_realtime_query("spa", ["AlphaTerm"])
+        self.assertEqual(
+            query,
+            [
+                ("model_id", "scribe_v2_realtime"),
+                ("audio_format", "pcm_16000"),
+                ("commit_strategy", "vad"),
+                ("vad_silence_threshold_secs", "1.5"),
+                ("vad_threshold", "0.4"),
+                ("no_verbatim", "true"),
+                ("language_code", "spa"),
+                ("keyterms", "AlphaTerm"),
+            ],
+        )
+        auto_without_verbatim = dict(elevenlabs_realtime_query(None, [], no_verbatim=False))
+        self.assertNotIn("no_verbatim", auto_without_verbatim)
+        self.assertNotIn("language_code", auto_without_verbatim)
+
+    def test_elevenlabs_realtime_chunks_send_previous_text_only_first(self):
+        pcm = bytes(range(256)) * 60
+        messages = elevenlabs_realtime_chunk_messages(pcm, "Glossary: AlphaTerm.")
+        decoded = [base64.b64decode(message["audio_base_64"]) for message in messages]
+
+        self.assertEqual(len(messages), 3)
+        self.assertEqual(messages[0]["previous_text"], "Glossary: AlphaTerm.")
+        self.assertTrue(all("previous_text" not in message for message in messages[1:]))
+        self.assertEqual([message["commit"] for message in messages], [False, False, True])
+        self.assertTrue(all(message["sample_rate"] == 16000 for message in messages))
+        self.assertTrue(all(message["message_type"] == "input_audio_chunk" for message in messages))
+        self.assertEqual([len(chunk) for chunk in decoded], [6_400, 6_400, 2_560 + 6_400])
+        self.assertEqual(b"".join(decoded)[: len(pcm)], pcm)
+        self.assertEqual(decoded[-1][-6_400:], bytes(6_400))
+
+        without_glossary = elevenlabs_realtime_chunk_messages(pcm, "")
+        self.assertTrue(all("previous_text" not in message for message in without_glossary))
+
+    def test_cloud_elevenlabs_realtime_requires_api_key_before_network(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            audio = temporary / "sample.wav"
+            audio.write_bytes(b"RIFFsynthetic")
+            environment = os.environ.copy()
+            environment.pop("ELEVENLABS_API_KEY", None)
+            environment.update(
+                {
+                    "ENGINE": "elevenlabs_realtime",
+                    "AUDIO_PATH": str(audio),
+                    "ALLOW_EMPTY_VOCABULARY": "1",
+                }
+            )
+
+            result = subprocess.run(
+                [str(CLOUD_BENCHMARK_SCRIPT)],
+                cwd=temporary,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Set ELEVENLABS_API_KEY", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(result.stdout, "")
 
     def test_cloud_elevenlabs_rejects_invalid_vocabulary_before_curl(self):
         with tempfile.TemporaryDirectory() as directory:

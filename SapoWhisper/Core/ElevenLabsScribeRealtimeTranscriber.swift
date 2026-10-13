@@ -64,6 +64,20 @@ struct ElevenLabsRealtimeTranscriptAccumulator {
     }
 }
 
+/// The realtime API accepts `previous_text` only on the first audio chunk of a session.
+nonisolated struct ElevenLabsRealtimeFirstChunkContext {
+    private var previousText: String?
+
+    init(previousText: String) {
+        self.previousText = previousText.isEmpty ? nil : previousText
+    }
+
+    mutating func consume() -> String? {
+        defer { previousText = nil }
+        return previousText
+    }
+}
+
 /// Concurrency: nonisolated by design — audio batching runs on the serial
 /// send queue and every counter sits behind `statsLock`/`stateLock`.
 nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
@@ -84,6 +98,7 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private var isActive = false
     private var generation = 0
     private var hasUsedFirstSendBudget = false
+    private var firstChunkContext = ElevenLabsRealtimeFirstChunkContext(previousText: "")
     private var pendingAudio: [UInt8] = []
     private var enqueuedChunks = 0
     private var sentMessages = 0
@@ -94,12 +109,13 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
     private var maxSendWaitMs = 0
     private var timedOutSends = 0
 
-    func start(task: URLSessionWebSocketTask) {
+    func start(task: URLSessionWebSocketTask, previousText: String) {
         reset()
         stateLock.lock()
         self.task = task
         isActive = true
         generation &+= 1
+        firstChunkContext = ElevenLabsRealtimeFirstChunkContext(previousText: previousText)
         stateLock.unlock()
         SapoLog.recording.info("ElevenLabs realtime audio sender started")
     }
@@ -246,7 +262,11 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
 
         let message: String
         do {
-            message = try makeChunkMessage(audioData: data, commit: commit)
+            message = try Self.makeChunkMessage(
+                audioData: data,
+                commit: commit,
+                previousText: consumePreviousText(generation: generation)
+            )
         } catch {
             registerFailedMessage()
             SapoLog.recording.error("ElevenLabs realtime chunk encode failed")
@@ -290,13 +310,16 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
         )
     }
 
-    private func makeChunkMessage(audioData: Data, commit: Bool) throws -> String {
-        let payload: [String: Any] = [
+    static func makeChunkMessage(audioData: Data, commit: Bool, previousText: String?) throws -> String {
+        var payload: [String: Any] = [
             "message_type": "input_audio_chunk",
             "audio_base_64": audioData.base64EncodedString(),
             "sample_rate": Constants.sampleRate,
             "commit": commit,
         ]
+        if let previousText {
+            payload["previous_text"] = previousText
+        }
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let text = String(data: data, encoding: .utf8) else {
             throw TranscriptionFailure(
@@ -364,6 +387,13 @@ nonisolated final class ElevenLabsRealtimeAudioSender: @unchecked Sendable {
             timedOutSends += 1
         }
         statsLock.unlock()
+    }
+
+    private func consumePreviousText(generation expectedGeneration: Int) -> String? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard isActive, generation == expectedGeneration else { return nil }
+        return firstChunkContext.consume()
     }
 
     private func currentGenerationIfActive() -> Int? {
@@ -461,13 +491,14 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         requestedLanguage = language
         let keytermPayload = Self.recognitionKeytermPayload(from: .shared)
         let keyterms = keytermPayload.terms
+        let previousText = VocabularyManager.shared.initialPromptText()
         let task = Self.makeWebSocketTask(apiKey: apiKey, language: language, keyterms: keyterms)
         webSocketTask = task
-        audioSender.start(task: task)
+        audioSender.start(task: task, previousText: previousText)
         task.resume()
         isStreaming = true
         SapoLog.recording.info(
-            "ElevenLabs realtime stream opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public)"
+            "ElevenLabs realtime stream opened keyterms=\(keyterms.count, privacy: .public) keytermsDropped=\(keytermPayload.droppedCount, privacy: .public) previousTextChars=\(previousText.count, privacy: .public)"
         )
         PerformanceDiagnostics.logRuntimeSnapshot(
             reason: "elevenlabs-realtime-opened",
@@ -737,6 +768,13 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
     }
 
     private static func makeWebSocketTask(apiKey: String, language: String, keyterms: [String]) -> URLSessionWebSocketTask {
+        var request = URLRequest(url: realtimeURL(language: language, keyterms: keyterms))
+        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.timeoutInterval = 15
+        return URLSession.shared.webSocketTask(with: request)
+    }
+
+    static func realtimeURL(language: String, keyterms: [String]) -> URL {
         var components = URLComponents()
         components.scheme = "wss"
         components.host = "api.elevenlabs.io"
@@ -747,6 +785,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             URLQueryItem(name: "commit_strategy", value: "vad"),
             URLQueryItem(name: "vad_silence_threshold_secs", value: "1.5"),
             URLQueryItem(name: "vad_threshold", value: "0.4"),
+            URLQueryItem(name: "no_verbatim", value: "true"),
         ]
 
         if let languageCode = scribeLanguageCode(for: language) {
@@ -758,11 +797,7 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         guard let url = components.url else {
             preconditionFailure("Invalid ElevenLabs realtime URL")
         }
-
-        var request = URLRequest(url: url)
-        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-        request.timeoutInterval = 15
-        return URLSession.shared.webSocketTask(with: request)
+        return url
     }
 
     private static func scribeLanguageCode(for appLanguage: String) -> String? {
