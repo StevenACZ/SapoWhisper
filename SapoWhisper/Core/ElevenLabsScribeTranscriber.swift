@@ -161,6 +161,25 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     // MARK: - Multipart Body
 
+    nonisolated static func uploadFormFields(
+        languageCode: String?,
+        keyterms: [String]
+    ) -> [(name: String, value: String)] {
+        var fields: [(name: String, value: String)] = [
+            ("model_id", "scribe_v2"),
+            ("tag_audio_events", "false"),
+            ("timestamps_granularity", "none"),
+            // Deterministic decoding for dictation (the endpoint accepts 0-2).
+            ("temperature", "0"),
+            ("no_verbatim", "true"),
+        ]
+        if let languageCode {
+            fields.append(("language_code", languageCode))
+        }
+        fields.append(contentsOf: keyterms.map { ("keyterms", $0) })
+        return fields
+    }
+
     /// Reads the recorded WAV and assembles the multipart body off the main
     /// actor; only Sendable values (URL, strings, Data) cross the boundary.
     @concurrent
@@ -180,18 +199,8 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             body.append("\(value)\r\n")
         }
 
-        appendField("model_id", "scribe_v2")
-        appendField("tag_audio_events", "false")
-        appendField("timestamps_granularity", "none")
-        // Deterministic decoding for dictation (the endpoint accepts 0-2).
-        appendField("temperature", "0")
-
-        if let languageCode {
-            appendField("language_code", languageCode)
-        }
-
-        for keyterm in keyterms {
-            appendField("keyterms", keyterm)
+        for field in uploadFormFields(languageCode: languageCode, keyterms: keyterms) {
+            appendField(field.name, field.value)
         }
 
         body.append("--\(boundary)\r\n")

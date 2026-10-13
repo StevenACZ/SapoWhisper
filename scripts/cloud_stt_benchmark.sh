@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-: "${ENGINE:?Set ENGINE to deepgram or elevenlabs}"
+: "${ENGINE:?Set ENGINE to deepgram, elevenlabs, or elevenlabs_realtime}"
 : "${AUDIO_PATH:?Set AUDIO_PATH, for example TestAssets/LocalAITranscription/technical/en/short.wav}"
 
 if [[ ! -f "$AUDIO_PATH" ]]; then
@@ -51,7 +51,8 @@ response_file="$(mktemp)"
 curl_config="$(mktemp)"
 curl_error="$(mktemp)"
 scoring_error="$(mktemp)"
-trap 'rm -f "$response_file" "$curl_config" "$curl_error" "$scoring_error"' EXIT
+replay_audio="$(mktemp)"
+trap 'rm -f "$response_file" "$curl_config" "$curl_error" "$scoring_error" "$replay_audio"' EXIT
 chmod 600 "$curl_config"
 
 make_deepgram_endpoint() {
@@ -186,6 +187,9 @@ case "$engine" in
       --form "tag_audio_events=false"
       --form "timestamps_granularity=none"
     )
+    if [[ "${NO_VERBATIM:-1}" != "0" ]]; then
+      curl_args+=(--form "no_verbatim=true")
+    fi
 
     case "${LANGUAGE:-auto}" in
       en) curl_args+=(--form "language_code=eng") ;;
@@ -203,21 +207,64 @@ case "$engine" in
     curl_args+=(--form "file=@${AUDIO_PATH};type=audio/wav")
     model="scribe_v2"
     ;;
+  elevenlabs_realtime)
+    if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+      echo "Set ELEVENLABS_API_KEY to run the ElevenLabs realtime replay" >&2
+      exit 2
+    fi
+    case "${LANGUAGE:-auto}" in
+      en) realtime_language_code="eng" ;;
+      es) realtime_language_code="spa" ;;
+      auto|"") realtime_language_code="" ;;
+      *) echo "Unsupported ElevenLabs benchmark LANGUAGE=${LANGUAGE}; use auto, en, or es" >&2; exit 2 ;;
+    esac
+    command -v uv >/dev/null || { echo "The ElevenLabs realtime replay needs uv on PATH" >&2; exit 2; }
+    command -v afconvert >/dev/null || { echo "The ElevenLabs realtime replay needs afconvert (macOS)" >&2; exit 2; }
+    model="scribe_v2_realtime"
+    ;;
   *)
-    echo "Unsupported ENGINE=$ENGINE; use deepgram or elevenlabs" >&2
+    echo "Unsupported ENGINE=$ENGINE; use deepgram, elevenlabs, or elevenlabs_realtime" >&2
     exit 2
     ;;
 esac
 
-set +e
-elapsed="$(curl "${curl_args[@]}" 2>"$curl_error")"
-curl_status=$?
-set -e
+if [[ "$engine" == "elevenlabs_realtime" ]]; then
+  if ! afconvert -f WAVE -d LEI16@16000 -c 1 --src-complexity bats -r 127 "$AUDIO_PATH" "$replay_audio" 2>"$curl_error"; then
+    echo "Unable to convert audio to 16 kHz mono int16." >&2
+    exit 2
+  fi
+  set +e
+  elapsed="$(uv run --quiet --no-project --with websockets python "$script_dir/elevenlabs_realtime_replay.py" \
+    --audio "$replay_audio" \
+    --vocabulary "${VOCABULARY_PATH:-}" \
+    --language-code "$realtime_language_code" \
+    --no-verbatim "${NO_VERBATIM:-1}" \
+    --previous-text "${PREVIOUS_TEXT:-1}" \
+    --pace "${REALTIME_PACE:-0}" \
+    --output "$response_file" </dev/null 2>"$curl_error")"
+  replay_status=$?
+  set -e
+  if [[ "$replay_status" -ne 0 ]]; then
+    printf 'ElevenLabs realtime replay failed status=%s stderr_bytes=%s\n' \
+      "$replay_status" "$(wc -c <"$curl_error" | tr -d ' ')" >&2
+    if [[ "${PRINT_TEXT:-0}" == "1" ]]; then
+      cat "$curl_error" >&2
+    else
+      grep '^realtime_error=' "$curl_error" >&2 || true
+    fi
+    exit "$replay_status"
+  fi
+else
+  set +e
+  elapsed="$(curl "${curl_args[@]}" 2>"$curl_error")"
+  curl_status=$?
+  set -e
 
-if [[ "$curl_status" -ne 0 ]]; then
-  printf 'Cloud STT request failed curl_status=%s stderr_bytes=%s response_bytes=%s\n' \
-    "$curl_status" "$(wc -c <"$curl_error" | tr -d ' ')" "$(wc -c <"$response_file" | tr -d ' ')" >&2
-  exit "$curl_status"
+  if [[ "$curl_status" -ne 0 ]]; then
+    printf 'Cloud STT request failed curl_status=%s stderr_bytes=%s response_bytes=%s\n' \
+      "$curl_status" "$(wc -c <"$curl_error" | tr -d ' ')" "$(wc -c <"$response_file" | tr -d ' ')" >&2
+    exit "$curl_status"
+  fi
 fi
 
 if python3 - "$script_dir" "$response_file" "$elapsed" "$engine" "$model" "$AUDIO_PATH" "${TRANSCRIPT_PATH:-}" "${VOCABULARY_PATH:-}" "${CRITICAL_TERMS_PATH:-}" "${PRINT_TEXT:-0}" 2>"$scoring_error" <<'PY'
@@ -262,6 +309,9 @@ result = {
     "elapsed_seconds": round(elapsed, 3),
     "text_characters": len(text.strip()),
 }
+if engine == "elevenlabs_realtime":
+    result["final_commit_seconds"] = payload.get("final_commit_seconds")
+    result["chunks_sent"] = payload.get("chunks_sent")
 
 if transcript_path:
     reference = transcript_path.read_text(errors="replace")

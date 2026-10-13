@@ -1,3 +1,4 @@
+import base64
 import json
 import pathlib
 import re
@@ -174,6 +175,50 @@ def initial_prompt_text(keyterms, replacements, include_replacement_values=True,
         body = candidate
     return f"{prefix}{body}." if body else ""
 
+
+ELEVENLABS_REALTIME_CHUNK_BYTES = 6_400
+ELEVENLABS_REALTIME_SAMPLE_RATE = 16_000
+
+
+def elevenlabs_realtime_keyterms(keyterms, replacements, include_replacement_values=True, max_count=50, max_length=20):
+    terms = echo_detection_terms(keyterms, replacements, include_replacement_values)
+    return [term for term in terms if swift_character_count(term) <= max_length][:max_count]
+
+
+def elevenlabs_realtime_query(language_code, keyterms, no_verbatim=True):
+    query = [
+        ("model_id", "scribe_v2_realtime"),
+        ("audio_format", "pcm_16000"),
+        ("commit_strategy", "vad"),
+        ("vad_silence_threshold_secs", "1.5"),
+        ("vad_threshold", "0.4"),
+    ]
+    if no_verbatim:
+        query.append(("no_verbatim", "true"))
+    if language_code:
+        query.append(("language_code", language_code))
+    query.extend(("keyterms", term) for term in keyterms)
+    return query
+
+
+def elevenlabs_realtime_chunk_messages(pcm, previous_text=""):
+    def message(audio, commit):
+        return {
+            "message_type": "input_audio_chunk",
+            "audio_base_64": base64.b64encode(audio).decode("ascii"),
+            "sample_rate": ELEVENLABS_REALTIME_SAMPLE_RATE,
+            "commit": commit,
+        }
+
+    full_length = len(pcm) - len(pcm) % ELEVENLABS_REALTIME_CHUNK_BYTES
+    messages = [
+        message(pcm[offset:offset + ELEVENLABS_REALTIME_CHUNK_BYTES], False)
+        for offset in range(0, full_length, ELEVENLABS_REALTIME_CHUNK_BYTES)
+    ]
+    messages.append(message(pcm[full_length:] + bytes(ELEVENLABS_REALTIME_CHUNK_BYTES), True))
+    if previous_text:
+        messages[0]["previous_text"] = previous_text
+    return messages
 
 def spoken_form(keyterm):
     separated = re.sub(r"[-_.]+", " ", keyterm)
