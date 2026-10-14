@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-10-13
+
+### Changed
+
+- ElevenLabs Scribe transcribes word for word again and SapoWhisper removes filler words, cut-off words and stutters itself: Scribe's own filter also deleted real phrases from spontaneous dictations.
+- With a backup engine configured, a primary engine that stalls hands the dictation to the backup within seconds instead of waiting up to two minutes, and the backup's connection is opened beforehand so the handover starts at once.
+
+### Fixed
+
+- MLX Whisper and Local AI Server dictations no longer end with a "Gracias." that was never said.
+
 ## [2.22.0] - 2026-10-12
 
 ### Changed
