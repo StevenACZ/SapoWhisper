@@ -133,4 +133,36 @@ final class WhisperHallucinationFilterTests: XCTestCase {
             .speech("Thank you.")
         )
     }
+
+    // MARK: - Trailing thanks (Spanish outro)
+
+    func testStripsThanksAppendedAfterTheLastSentence() {
+        XCTAssertEqual(
+            WhisperHallucinationFilter.strippingTrailingThanks("Revisa los logs y avísame. Gracias."),
+            "Revisa los logs y avísame."
+        )
+        XCTAssertEqual(
+            WhisperHallucinationFilter.strippingTrailingThanks("Listo, súbelo. ¡Gracias! Gracias."),
+            "Listo, súbelo."
+        )
+        XCTAssertEqual(
+            WhisperHallucinationFilter.strippingTrailingThanks("Eso es todo. Gracias por ver el video."),
+            "Eso es todo."
+        )
+    }
+
+    func testKeepsThanksThatAreTheSpeech() {
+        for text in ["Gracias.", "Muchas gracias.", "Eso es todo, gracias.", "Gracias por la ayuda con esto."] {
+            XCTAssertEqual(WhisperHallucinationFilter.strippingTrailingThanks(text), text)
+        }
+    }
+
+    func testEvaluateStripsThanksOnlyWhenAsked() {
+        let text = "Revisa los logs. Gracias."
+        XCTAssertEqual(WhisperHallucinationFilter.evaluate(text, vocabularyTerms: vocabulary), .speech(text))
+        XCTAssertEqual(
+            WhisperHallucinationFilter.evaluate(text, vocabularyTerms: vocabulary, stripsTrailingThanks: true),
+            .speech("Revisa los logs.")
+        )
+    }
 }

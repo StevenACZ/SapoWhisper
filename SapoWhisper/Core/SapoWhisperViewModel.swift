@@ -1214,14 +1214,7 @@ class SapoWhisperViewModel: ObservableObject {
         // Cloud batch stops pay DNS+TLS inside stop→paste on a cold pool;
         // open the connection now, while the user is still dictating (the
         // streaming engines already amortize their handshake at start).
-        switch variant {
-        case .deepgramNova3:
-            Task { await deepgramTranscriber.warmUpConnection() }
-        case .elevenLabsScribeBatch:
-            Task { await elevenLabsTranscriber.warmUpConnection() }
-        default:
-            break
-        }
+        warmUpConnection(for: variant)
 
         // Primary-mic sync: a pinned explicit mic becomes the system default
         // input NOW. Opening a non-default device pays full route setup on
@@ -1909,6 +1902,10 @@ class SapoWhisperViewModel: ObservableObject {
             }
         }
 
+        // With a backup the primary runs on a short deadline (`requestTimeout`);
+        // a handover to a cold pool would spend that saving on DNS+TLS.
+        if let backup { warmUpConnection(for: backup) }
+
         let configurationRevision = localAIServerConfigurationRevision
         do {
             let transcript = try await TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(backup != nil) {
@@ -1936,6 +1933,17 @@ class SapoWhisperViewModel: ObservableObject {
                 guard !Task.isCancelled else { throw backupError }
                 throw TranscriptionFailure.backupFailed(primary: failure, backup: backupFailure)
             }
+        }
+    }
+
+    private func warmUpConnection(for variant: TranscriptionEngineVariant) {
+        switch variant {
+        case .deepgramNova3:
+            Task { await deepgramTranscriber.warmUpConnection() }
+        case .elevenLabsScribeBatch:
+            Task { await elevenLabsTranscriber.warmUpConnection() }
+        default:
+            break
         }
     }
 
@@ -2624,12 +2632,13 @@ class SapoWhisperViewModel: ObservableObject {
         // loops, and glossary echo from short/near-silent takes become the
         // no-speech flow instead of pasting garbage.
         switch WhisperHallucinationFilter.evaluate(
-            transcript, vocabularyTerms: VocabularyManager.shared.echoDetectionTerms())
+            transcript, vocabularyTerms: VocabularyManager.shared.echoDetectionTerms(),
+            stripsTrailingThanks: engine.isWhisperFamily)
         {
         case .speech(let cleaned):
             if cleaned != transcript {
                 SapoLog.recording.warning(
-                    "Hallucination filter collapsed repetition loop chars=\(transcript.count, privacy: .public)->\(cleaned.count, privacy: .public)"
+                    "Hallucination filter cleaned transcript chars=\(transcript.count, privacy: .public)->\(cleaned.count, privacy: .public)"
                 )
             }
             return cleaned

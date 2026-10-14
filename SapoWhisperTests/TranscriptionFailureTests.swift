@@ -3,9 +3,8 @@
 //  SapoWhisperTests
 //
 
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class TranscriptionFailureTests: XCTestCase {
@@ -215,5 +214,22 @@ final class TranscriptionFailureTests: XCTestCase {
 
         XCTAssertEqual(failure.technicalDetail, "NSCocoaErrorDomain/257")
         XCTAssertFalse(failure.logSummary.contains("/private/audio.wav"))
+    }
+
+    func testRequestTimeoutIsShortOnlyWhenABackupCanTakeOver() {
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 20, prefersBackup: true), 10, accuracy: 0.001)
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 120, prefersBackup: true), 20, accuracy: 0.001)
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 10_000, prefersBackup: true), 600)
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 20, prefersBackup: false), 120)
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 30, prefersBackup: false), 180)
+    }
+
+    func testRequestTimeoutFollowsTheAttemptContext() {
+        let twentySeconds = 32_000 * 20
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forAudioBytes: twentySeconds), 120)
+        let withBackup = TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(true) {
+            TranscriptionFailure.requestTimeout(forAudioBytes: twentySeconds)
+        }
+        XCTAssertEqual(withBackup, 10, accuracy: 0.001)
     }
 }

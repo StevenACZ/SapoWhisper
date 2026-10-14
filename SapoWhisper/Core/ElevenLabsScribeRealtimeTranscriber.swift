@@ -647,7 +647,8 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
         let finalWaitMs = Int((CFAbsoluteTimeGetCurrent() - finalWaitStartedAt) * 1000)
         let stopElapsedMs = Int((CFAbsoluteTimeGetCurrent() - stopStartedAt) * 1000)
 
-        let cleanedTranscript = salvagedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedTranscript = ScribeVerbatimCleanup.clean(salvagedTranscript)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         SapoLog.recording.info(
             "ElevenLabs realtime final transcript sessionID=\(self.transcriptAccumulator.sessionID ?? "n/a", privacy: .public) elapsed=\(stopElapsedMs, privacy: .public)ms finalWait=\(finalWaitMs, privacy: .public)ms committed=\(self.transcriptAccumulator.committedCount, privacy: .public) enqueuedChunks=\(senderStats.enqueuedChunks, privacy: .public) sentMessages=\(senderStats.sentMessages, privacy: .public) chars=\(cleanedTranscript.count, privacy: .public)"
@@ -785,7 +786,6 @@ final class ElevenLabsScribeRealtimeTranscriber: ObservableObject {
             URLQueryItem(name: "commit_strategy", value: "vad"),
             URLQueryItem(name: "vad_silence_threshold_secs", value: "1.5"),
             URLQueryItem(name: "vad_threshold", value: "0.4"),
-            URLQueryItem(name: "no_verbatim", value: "true"),
         ]
 
         if let languageCode = scribeLanguageCode(for: language) {

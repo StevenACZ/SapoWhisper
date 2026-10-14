@@ -305,15 +305,30 @@ extension TranscriptionFailure {
 // MARK: - Request timeout
 
 extension TranscriptionFailure {
-    /// Request timeout, in seconds, scaled to the audio length so long recordings
-    /// are not aborted early. A 30 s clip yields ~180 s; clamped to [120, 600].
-    static func requestTimeout(forEstimatedSeconds estimatedSeconds: Double) -> TimeInterval {
-        min(600, max(120, estimatedSeconds * 6))
+    /// Request timeout, in seconds, scaled to the audio length. URLSession applies
+    /// it as an idle timeout, so it bounds a stalled upload or a server sitting on
+    /// a finished one, never a transfer that is still moving bytes.
+    ///
+    /// With a usable backup the primary gets a short deadline (8 s plus 0.1 s per
+    /// audio second) so the backup takes over instead of the user waiting out a
+    /// stall: on 107 real dictations (2026-10-13) the slowest healthy answers were
+    /// 4.8 s for Local AI Server turbo, 15.3 s for Scribe batch on a 117 s take and
+    /// 1.8 s for Nova-3. Without a backup, waiting still beats failing: a 30 s
+    /// clip yields ~180 s, clamped to [120, 600].
+    static func requestTimeout(
+        forEstimatedSeconds estimatedSeconds: Double,
+        prefersBackup: Bool = TranscriptionAttemptContext.prefersConfiguredBackup
+    ) -> TimeInterval {
+        if prefersBackup { return min(600, 8 + estimatedSeconds * 0.1) }
+        return min(600, max(120, estimatedSeconds * 6))
     }
 
     /// Convenience overload from a raw 16 kHz mono int16 byte count (32 KB per second).
-    static func requestTimeout(forAudioBytes byteCount: Int) -> TimeInterval {
-        requestTimeout(forEstimatedSeconds: Double(byteCount) / 32_000.0)
+    static func requestTimeout(
+        forAudioBytes byteCount: Int,
+        prefersBackup: Bool = TranscriptionAttemptContext.prefersConfiguredBackup
+    ) -> TimeInterval {
+        requestTimeout(forEstimatedSeconds: Double(byteCount) / 32_000.0, prefersBackup: prefersBackup)
     }
 }
 
