@@ -18,7 +18,9 @@ import Foundation
 ///
 /// Free-phrase hallucinations ("Thank you.") are NOT handled here — they are
 /// indistinguishable from real speech in text form. The server-side VAD filter
-/// (`vad_filter=true`) is the layer that kills those before decoding.
+/// (`vad_filter=true`) is the layer that kills those before decoding. The one
+/// exception is Whisper's Spanish outro (`strippingTrailingThanks`): it only
+/// ever shows up as a separate last sentence, so its position gives it away.
 nonisolated enum WhisperHallucinationFilter {
 
     enum Outcome: Equatable {
@@ -40,8 +42,11 @@ nonisolated enum WhisperHallucinationFilter {
     /// term ("Yellyfin" vs "Jellyfin" = 0.88).
     private static let echoSimilarityThreshold = 0.75
 
-    nonisolated static func evaluate(_ transcript: String, vocabularyTerms: [String]) -> Outcome {
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    nonisolated static func evaluate(
+        _ transcript: String, vocabularyTerms: [String], stripsTrailingThanks: Bool = false
+    ) -> Outcome {
+        let trimmed = (stripsTrailingThanks ? strippingTrailingThanks(transcript) : transcript)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.rangeOfCharacter(from: .alphanumerics) != nil else {
             return .nonSpeech(reason: "no alphanumeric content chars=\(trimmed.count)")
         }
@@ -53,6 +58,21 @@ nonisolated enum WhisperHallucinationFilter {
             return .nonSpeech(reason: "vocabulary echo after loop collapse")
         }
         return .speech(collapse.text)
+    }
+
+    /// Removes a «Gracias.» appended as its own sentence after the last real
+    /// one, and a trailing «Gracias por ver el video». On 249 Spanish takes
+    /// (2026-10-13) Whisper added it to 15, all longer than 30 s, while the
+    /// rule matched none of 89 transcripts from other engines. A take that is
+    /// only «Gracias», or ends in «Muchas gracias.», is left alone.
+    nonisolated static func strippingTrailingThanks(_ text: String) -> String {
+        text
+            .replacingOccurrences(
+                of: #"(?i)[,;]?\s*¡?gracias por ver el v[ií]deo[.!]?\s*$"#, with: "", options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"(?i)([.!?…])\s*(?:¡?gracias[.!]?\s*){1,4}$"#, with: "$1", options: .regularExpression
+            )
     }
 
     /// Collapses consecutive repeats of the same token (≥4) or token cycle

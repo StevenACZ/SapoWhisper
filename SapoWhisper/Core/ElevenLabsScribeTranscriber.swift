@@ -123,7 +123,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
                 technicalDetail: "could not parse 200 response bytes=\(data.count)")
         }
 
-        let finalText = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = ScribeVerbatimCleanup.clean(transcript).trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !finalText.isEmpty else {
             throw TranscriptionFailure(
@@ -171,7 +171,6 @@ class ElevenLabsScribeTranscriber: ObservableObject {
             ("timestamps_granularity", "none"),
             // Deterministic decoding for dictation (the endpoint accepts 0-2).
             ("temperature", "0"),
-            ("no_verbatim", "true"),
         ]
         if let languageCode {
             fields.append(("language_code", languageCode))

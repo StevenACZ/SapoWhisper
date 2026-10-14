@@ -2,9 +2,10 @@
 //  ElevenLabsRequestPayloadTests.swift
 //  SapoWhisperTests
 //
-//  Scribe request contract: both endpoints ask for non-verbatim text, and the
-//  realtime glossary rides only on the first audio chunk of a session (the API
-//  rejects `previous_text` on any later chunk).
+//  Scribe request contract: both endpoints ask for verbatim text (`no_verbatim`
+//  also dropped real phrases; `ScribeVerbatimCleanup` removes the fillers), and
+//  the realtime glossary rides only on the first audio chunk of a session (the
+//  API rejects `previous_text` on any later chunk).
 //
 
 @testable import SapoWhisper
@@ -13,10 +14,10 @@ import XCTest
 @MainActor
 final class ElevenLabsRequestPayloadTests: XCTestCase {
 
-    func testBatchFormRequestsNoVerbatim() {
+    func testBatchFormRequestsVerbatimText() {
         let fields = ElevenLabsScribeTranscriber.uploadFormFields(languageCode: "spa", keyterms: ["SapoWhisper"])
 
-        XCTAssertTrue(fields.contains { $0.name == "no_verbatim" && $0.value == "true" })
+        XCTAssertFalse(fields.contains { $0.name == "no_verbatim" })
         XCTAssertTrue(fields.contains { $0.name == "model_id" && $0.value == "scribe_v2" })
         XCTAssertTrue(fields.contains { $0.name == "language_code" && $0.value == "spa" })
         XCTAssertTrue(fields.contains { $0.name == "keyterms" && $0.value == "SapoWhisper" })
@@ -29,11 +30,11 @@ final class ElevenLabsRequestPayloadTests: XCTestCase {
         XCTAssertFalse(fields.contains { $0.name == "keyterms" })
     }
 
-    func testRealtimeURLRequestsNoVerbatim() throws {
+    func testRealtimeURLRequestsVerbatimText() throws {
         let url = ElevenLabsScribeRealtimeTranscriber.realtimeURL(language: "es", keyterms: ["SapoWhisper"])
         let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
 
-        XCTAssertTrue(items.contains(URLQueryItem(name: "no_verbatim", value: "true")))
+        XCTAssertFalse(items.contains { $0.name == "no_verbatim" })
         XCTAssertTrue(items.contains(URLQueryItem(name: "model_id", value: "scribe_v2_realtime")))
         XCTAssertTrue(items.contains(URLQueryItem(name: "language_code", value: "spa")))
         XCTAssertTrue(items.contains(URLQueryItem(name: "keyterms", value: "SapoWhisper")))
