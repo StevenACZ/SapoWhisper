@@ -8,8 +8,10 @@
 //  replaced by the app-driven `WhisperModelDownloader` (progress reporting
 //  instead of prints), the STTGenerationModel protocol dropped (Whisper is
 //  the only vendored model), quantized-checkpoint loading (`quantization`
-//  in config.json), and Task-cancellation checks between decode steps
-//  (`generateCancellable`).
+//  in config.json), Task-cancellation checks between decode steps
+//  (`generateCancellable`), windows that end at the quietest pause between
+//  20 s and 30 s instead of fixed 30 s cuts, and temperature-0 beam search
+//  (`beamSize`).
 //
 
 import Foundation
@@ -85,7 +87,7 @@ public final class WhisperModel: Module {
     ) throws -> STTOutput {
         let startTime = Date()
         let mono = audio.ndim > 1 ? audio.mean(axis: -1) : audio
-        var windows = WhisperDecodingWindow.initial(sampleCount: mono.dim(0))
+        var windows = WhisperDecodingWindow.initial(samples: mono.asType(.float32).asArray(Float.self))
         let initialPromptTokens = encodeInitialPrompt(generationParameters.initialPrompt)
         var allText: [String] = []
         var allSegments: [[String: Any]] = []
@@ -234,19 +236,27 @@ public final class WhisperModel: Module {
         )
 
         let promptArray = MLXArray(promptIds.map(Int32.init)).expandedDimensions(axis: 0)
-        var hidden = model.decoder(
+        let hidden = model.decoder(
             tokens: promptArray,
             startPosition: 0,
             encoderHidden: encoderHidden,
             caches: &caches
         )
-        var logits = projectToVocab(hidden[0, -1])
+        let logits = projectToVocab(hidden[0, -1])
         eval(logits)
 
-        var generated: [Int] = []
-        var finished = false
-        let beginSuppress = generationConfig?.beginSuppressTokens ?? [tokenizer.endOfTextId]
-        let suppress = generationConfig?.suppressTokens ?? []
+        let vocabSize = logits.dim(-1)
+        let stepMask = suppressionMask(
+            length: vocabSize,
+            ids: generationConfig?.suppressTokens ?? [],
+            fromIndex: tokenizer.timestampBeginId
+        )
+        let firstStepMask = suppressionMask(
+            length: vocabSize,
+            ids: (generationConfig?.beginSuppressTokens ?? [tokenizer.endOfTextId])
+                + (generationConfig?.suppressTokens ?? []),
+            fromIndex: tokenizer.timestampBeginId
+        )
 
         let maxTokens = max(
             1,
@@ -256,40 +266,34 @@ public final class WhisperModel: Module {
             )
         )
 
-        for step in 0..<maxTokens {
-            // Between GPU evals — the only spot a cancel can interrupt a
-            // window without cutting a blocking eval in half.
-            try Task.checkCancellation()
-            var stepLogits = logits
-            if step == 0, !beginSuppress.isEmpty {
-                stepLogits = suppressLogits(stepLogits, ids: beginSuppress)
-            }
-            if !suppress.isEmpty {
-                stepLogits = suppressLogits(stepLogits, ids: suppress)
-            }
-            stepLogits = suppressFromIndex(stepLogits, fromIndex: tokenizer.timestampBeginId)
-
-            let nextToken = sample(stepLogits, temperature: generationParameters.temperature)
-            if nextToken == tokenizer.endOfTextId {
-                finished = true
-                break
-            }
-            generated.append(nextToken)
-
-            let position = promptIds.count + step
-            let tokenArray = MLXArray([Int32(nextToken)]).expandedDimensions(axis: 0)
-            hidden = model.decoder(
-                tokens: tokenArray,
-                startPosition: position,
+        let decoded: (tokens: [Int], finished: Bool)
+        if generationParameters.beamSize > 1, generationParameters.temperature <= 0 {
+            decoded = try beamDecode(
+                firstLogits: logits,
+                caches: &caches,
                 encoderHidden: encoderHidden,
-                caches: &caches
+                promptCount: promptIds.count,
+                maxTokens: maxTokens,
+                beamSize: generationParameters.beamSize,
+                stepMask: stepMask,
+                firstStepMask: firstStepMask,
+                endOfText: tokenizer.endOfTextId
             )
-            logits = projectToVocab(hidden[0, -1])
-            eval(logits)
-            if generated.count % 256 == 0 {
-                Memory.clearCache()
-            }
+        } else {
+            decoded = try greedyDecode(
+                firstLogits: logits,
+                caches: &caches,
+                encoderHidden: encoderHidden,
+                promptCount: promptIds.count,
+                maxTokens: maxTokens,
+                temperature: generationParameters.temperature,
+                stepMask: stepMask.asType(logits.dtype),
+                firstStepMask: firstStepMask.asType(logits.dtype),
+                endOfText: tokenizer.endOfTextId
+            )
         }
+        let generated = decoded.tokens
+        let finished = decoded.finished
 
         let text = tokenizer.decode(tokens: generated)
         // The language token sits right after `<|startoftranscript|>` for
@@ -318,22 +322,145 @@ public final class WhisperModel: Module {
         return categorical(scaled).item(Int.self)
     }
 
-    private func suppressLogits(_ logits: MLXArray, ids: [Int]) -> MLXArray {
-        if ids.isEmpty { return logits }
-        let length = logits.dim(-1)
+    /// Additive float32 mask: -1e9 on `ids` and on every id from `fromIndex`.
+    private func suppressionMask(length: Int, ids: [Int], fromIndex: Int) -> MLXArray {
         var mask = [Float](repeating: 0, count: length)
         for id in ids where id >= 0 && id < length {
             mask[id] = -1e9
         }
-        return logits + MLXArray(mask).asType(logits.dtype)
+        for id in max(0, fromIndex)..<max(max(0, fromIndex), length) {
+            mask[id] = -1e9
+        }
+        return MLXArray(mask)
     }
 
-    private func suppressFromIndex(_ logits: MLXArray, fromIndex: Int) -> MLXArray {
-        let length = logits.dim(-1)
-        if fromIndex >= length { return logits }
-        var mask = [Float](repeating: 0, count: length)
-        for i in fromIndex..<length { mask[i] = -1e9 }
-        return logits + MLXArray(mask).asType(logits.dtype)
+    private func greedyDecode(
+        firstLogits: MLXArray,
+        caches: inout [WhisperLayerCache],
+        encoderHidden: MLXArray,
+        promptCount: Int,
+        maxTokens: Int,
+        temperature: Float,
+        stepMask: MLXArray,
+        firstStepMask: MLXArray,
+        endOfText: Int
+    ) throws -> (tokens: [Int], finished: Bool) {
+        var logits = firstLogits
+        var generated: [Int] = []
+        for step in 0..<maxTokens {
+            // Between GPU evals — the only spot a cancel can interrupt a
+            // window without cutting a blocking eval in half.
+            try Task.checkCancellation()
+            let nextToken = sample(logits + (step == 0 ? firstStepMask : stepMask), temperature: temperature)
+            if nextToken == endOfText {
+                return (generated, true)
+            }
+            generated.append(nextToken)
+
+            let tokenArray = MLXArray([Int32(nextToken)]).expandedDimensions(axis: 0)
+            let hidden = model.decoder(
+                tokens: tokenArray,
+                startPosition: promptCount + step,
+                encoderHidden: encoderHidden,
+                caches: &caches
+            )
+            logits = projectToVocab(hidden[0, -1])
+            eval(logits)
+            if generated.count % 256 == 0 {
+                Memory.clearCache()
+            }
+        }
+        return (generated, false)
+    }
+
+    /// Beam search as in OpenAI Whisper (patience 1): keep `beamSize`
+    /// hypotheses ranked by summed log-probability, collect the ones that
+    /// emit end-of-text, and pick the best by log-probability per token.
+    private func beamDecode(
+        firstLogits: MLXArray,
+        caches: inout [WhisperLayerCache],
+        encoderHidden: MLXArray,
+        promptCount: Int,
+        maxTokens: Int,
+        beamSize: Int,
+        stepMask: MLXArray,
+        firstStepMask: MLXArray,
+        endOfText: Int
+    ) throws -> (tokens: [Int], finished: Bool) {
+        var beams: [[Int]] = [[]]
+        var scores: [Float] = [0]
+        var completed: [(tokens: [Int], score: Float)] = []
+        var logits = (firstLogits.asType(.float32) + firstStepMask).expandedDimensions(axis: 0)
+
+        for step in 0..<maxTokens {
+            try Task.checkCancellation()
+            let vocab = logits.dim(-1)
+            let totals = (logSoftmax(logits, axis: -1) + MLXArray(scores).expandedDimensions(axis: 1)).reshaped([-1])
+            let candidateCount = min(totals.dim(0), 2 * beamSize)
+            let top = argPartition(-totals, kth: candidateCount - 1)[0..<candidateCount]
+            let topScores = totals.take(top)
+            eval(top, topScores)
+            let ids = top.asArray(Int32.self)
+            let values = topScores.asArray(Float.self)
+
+            var nextBeams: [[Int]] = []
+            var nextScores: [Float] = []
+            var sources: [Int32] = []
+            for index in values.indices.sorted(by: { values[$0] > values[$1] }) {
+                let source = Int(ids[index]) / vocab
+                let token = Int(ids[index]) % vocab
+                if token == endOfText {
+                    completed.append((beams[source], values[index]))
+                } else {
+                    nextBeams.append(beams[source] + [token])
+                    nextScores.append(values[index])
+                    sources.append(Int32(source))
+                }
+                if nextBeams.count == beamSize { break }
+            }
+            if completed.count >= beamSize || nextBeams.count < beamSize {
+                break
+            }
+            beams = nextBeams
+            scores = nextScores
+            if step == maxTokens - 1 { break }
+
+            let sourceIndices = MLXArray(sources)
+            for layer in caches.indices {
+                caches[layer].selfKeys = caches[layer].selfKeys?.take(sourceIndices, axis: 0)
+                caches[layer].selfValues = caches[layer].selfValues?.take(sourceIndices, axis: 0)
+                if step == 0 {
+                    caches[layer].crossKeys = caches[layer].crossKeys?.take(sourceIndices, axis: 0)
+                    caches[layer].crossValues = caches[layer].crossValues?.take(sourceIndices, axis: 0)
+                }
+            }
+            let tokenArray = MLXArray(beams.map { Int32($0[$0.count - 1]) }).reshaped([beams.count, 1])
+            let hidden = model.decoder(
+                tokens: tokenArray,
+                startPosition: promptCount + step,
+                encoderHidden: encoderHidden,
+                caches: &caches
+            )
+            logits = projectToVocab(hidden.squeezed(axis: 1)).asType(.float32) + stepMask
+            eval(logits)
+            if step % 256 == 255 {
+                Memory.clearCache()
+            }
+        }
+
+        func normalized(_ score: Float, _ count: Int) -> Float { score / Float(max(1, count)) }
+        var candidates = completed.map { (tokens: $0.tokens, score: $0.score, finished: true) }
+        if completed.count < beamSize {
+            candidates += zip(beams, scores).map { (tokens: $0, score: $1, finished: false) }
+        }
+        guard
+            let best = candidates.max(by: {
+                normalized($0.score, $0.tokens.count) < normalized($1.score, $1.tokens.count)
+            })
+        else {
+            return ([], false)
+        }
+        return (best.tokens, best.finished)
     }
 
     // MARK: - Loading

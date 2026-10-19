@@ -100,15 +100,13 @@ struct LocalModelRow: View {
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
 
-                if let badgeText = model.badgeText {
-                    Text(badgeText)
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(model.badgeColor)
-                        .cornerRadius(3)
-                }
+                Text(model.badgeText)
+                    .font(.caption2)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(model.badgeColor)
+                    .cornerRadius(3)
 
                 if isDownloaded {
                     Image(systemName: "checkmark.circle.fill")
@@ -140,18 +138,12 @@ struct LocalModelRow: View {
 
                 Text("•").foregroundColor(.secondary)
 
-                if let accuracy = model.accuracy {
-                    HStack(spacing: 1) {
-                        ForEach(0..<5) { index in
-                            Image(systemName: index < accuracy ? "star.fill" : "star")
-                                .font(.system(size: 8))
-                                .foregroundColor(index < accuracy ? .yellow : .secondary.opacity(0.3))
-                        }
+                HStack(spacing: 1) {
+                    ForEach(0..<5) { index in
+                        Image(systemName: index < model.accuracy ? "star.fill" : "star")
+                            .font(.system(size: 8))
+                            .foregroundColor(index < model.accuracy ? .yellow : .secondary.opacity(0.3))
                     }
-                } else {
-                    Text("model.quality_unmeasured".localized)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -266,17 +258,17 @@ struct DownloadProgressRing: View {
             onSelect: {}, onDownload: {}, onPause: {}, onResume: {}, onCancel: {}, onDelete: {}
         )
         LocalModelRow(
-            model: .small, isSelected: false, isActiveLoading: false,
+            model: .largeV3TurboQ8, isSelected: false, isActiveLoading: false,
             isDownloaded: false, downloadedSize: nil, phase: .downloading(0.42),
             onSelect: {}, onDownload: {}, onPause: {}, onResume: {}, onCancel: {}, onDelete: {}
         )
         LocalModelRow(
-            model: .base, isSelected: false, isActiveLoading: false,
+            model: .largeV3TurboQ8, isSelected: false, isActiveLoading: false,
             isDownloaded: false, downloadedSize: nil, phase: .paused(0.67),
             onSelect: {}, onDownload: {}, onPause: {}, onResume: {}, onCancel: {}, onDelete: {}
         )
         LocalModelRow(
-            model: .largeV3, isSelected: false, isActiveLoading: false,
+            model: .largeV3Turbo, isSelected: false, isActiveLoading: false,
             isDownloaded: false, downloadedSize: nil, phase: .failed("The network connection was lost."),
             onSelect: {}, onDownload: {}, onPause: {}, onResume: {}, onCancel: {}, onDelete: {}
         )

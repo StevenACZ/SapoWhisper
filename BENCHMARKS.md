@@ -14,7 +14,7 @@ The repository contains benchmark scripts and public fixture definitions, but no
 |---|---|---|
 | Best overall accuracy STT | Not published | The historical Nova-3 comparison lacks a manifest and aggregate error/word totals; the current replacement Spanish fixture has no published score yet. |
 | Best real-time STT | Selected for responsiveness: Deepgram Flux Live | Untested for WER; falls back to the retained WAV via Nova-3 when post-close finalization is unproven or the final result is empty. |
-| Best offline on Mac | Selected offline default: MLX Large V3 Turbo | No cloud round trip. The 4-bit tier is a lower-resource alternative, not a measured quality claim. |
+| Best offline on Mac | Selected offline default: MLX Large V3 Turbo (8-bit) | No cloud round trip. The full-precision Large V3 Turbo is the 16 GB+ alternative; neither tier carries a published quality claim. |
 | Best for technical Spanish | Not published | The historical comparison used a retired natural-voice fixture and lacks a manifest; no score from the replacement fixture is published yet. |
 | Best AI-polish quality and translation | Not published | Historical short and private acceptance screens lack a reproducible manifest; no model is promoted from their missing counters. |
 | Best quality per price for Compact | Not published | The private Compact screen lacks provider usage-token totals and a reproducible manifest; long-input gates are still pending. |
@@ -108,8 +108,8 @@ No Deepgram campaign USD total is published: the repository has no billed-minute
 
 ## Local Transcription Tiers
 
-- **MLX Large V3 Turbo:** quality default for offline Apple Silicon transcription.
-- **MLX Large V3 Turbo 4-bit:** lower disk and memory use; transcription quality is not measured in this scorecard.
+- **MLX Large V3 Turbo 8-bit:** default offline tier for every Apple Silicon Mac with 8 GB or more; transcription quality is not published in this scorecard.
+- **MLX Large V3 Turbo:** full-precision tier for Macs with 16 GB or more; transcription quality is not published in this scorecard.
 - **faster-whisper Large V3 Turbo:** recommended OpenAI-compatible NVIDIA STT server baseline.
 
 AI polish and speech-to-text are different jobs. A recommended local transcription model is not automatically suitable for rewriting or translation.

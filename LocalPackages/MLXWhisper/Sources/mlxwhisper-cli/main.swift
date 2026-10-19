@@ -7,7 +7,7 @@
 //  (latency, fidelity, initial-prompt effect) comes from real runs here.
 //
 //  Usage:
-//    mlxwhisper-cli <model-dir> <audio.wav> [--language es] [--prompt "term1, term2"] [--stream]
+//    mlxwhisper-cli <model-dir> <audio.wav> [--language es] [--prompt "term1, term2"] [--beam 5] [--stream]
 //
 
 @preconcurrency import AVFoundation
@@ -111,7 +111,7 @@ if arguments.first == "download" {
     }
 }
 guard arguments.count >= 2 else {
-    fail("Usage: mlxwhisper-cli <model-dir> <audio.wav> [--language es] [--prompt \"...\"] [--stream]")
+    fail("Usage: mlxwhisper-cli <model-dir> <audio.wav> [--language es] [--prompt \"...\"] [--beam 5] [--stream]")
 }
 let modelDir = URL(fileURLWithPath: arguments.removeFirst())
 let audioURL = URL(fileURLWithPath: arguments.removeFirst())
@@ -119,6 +119,7 @@ let audioURL = URL(fileURLWithPath: arguments.removeFirst())
 var language: String? = nil
 var initialPrompt: String? = nil
 var stream = false
+var beamSize = 1
 while !arguments.isEmpty {
     let flag = arguments.removeFirst()
     switch flag {
@@ -128,6 +129,10 @@ while !arguments.isEmpty {
     case "--prompt":
         guard !arguments.isEmpty else { fail("--prompt needs a value") }
         initialPrompt = arguments.removeFirst()
+    case "--beam":
+        guard let value = arguments.first.flatMap(Int.init), value >= 1 else { fail("--beam needs a positive integer") }
+        arguments.removeFirst()
+        beamSize = value
     case "--stream":
         stream = true
     default:
@@ -158,7 +163,8 @@ do {
         maxTokens: model.config.maxTargetPositions - 16,
         temperature: 0.0,
         language: language,
-        initialPrompt: initialPrompt
+        initialPrompt: initialPrompt,
+        beamSize: beamSize
     )
 
     let audio = MLXArray(samples)

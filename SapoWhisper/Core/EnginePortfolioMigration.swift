@@ -4,12 +4,14 @@
 //
 
 import Foundation
+import MLXWhisper
 import os
 
 /// One-shot migration for the engine portfolio reduction: Apple Speech,
 /// Google Cloud STT, Gemini Audio, and WhisperKit were removed, so stored
 /// selections move to the closest remaining engine and every removed-engine
-/// credential, preference, or on-disk model is purged. Safe to run on every
+/// credential, preference, or on-disk model is purged. Retired MLX tiers move
+/// to a current tier and their snapshots are deleted. Safe to run on every
 /// launch — it only acts when a removed value is present.
 enum EnginePortfolioMigration {
     static let removedEngineRawValues: Set<String> = ["apple", "google", "gemini_audio", "whisper"]
@@ -29,8 +31,11 @@ enum EnginePortfolioMigration {
     ]
 
     static func run(defaults: UserDefaults = AppPreferences.defaults, fileManager: FileManager = .default) {
+        let modelsRoot = MLXWhisperTranscriber.modelsRootDirectory
         migrateSelectedEngineIfNeeded(defaults: defaults)
+        migrateRetiredMLXModelIfNeeded(defaults: defaults, root: modelsRoot)
         purgeRemovedArtifacts(defaults: defaults, fileManager: fileManager)
+        deleteRetiredMLXSnapshots(root: modelsRoot, fileManager: fileManager)
     }
 
     /// Pure mapping used by the launch migration and by settings import:
@@ -72,6 +77,51 @@ enum EnginePortfolioMigration {
         SapoLog.lifecycle.info(
             "Engine migrated from removed value old=\(stored, privacy: .public) new=\(migrated, privacy: .public)"
         )
+    }
+
+    /// Runs before the retired snapshots are deleted. A Mac whose retired tier
+    /// was on disk moves to a downloaded current tier when it has one, else it
+    /// queues one download of the replacement so offline dictation comes back
+    /// without a manual step.
+    static func migrateRetiredMLXModelIfNeeded(defaults: UserDefaults, root: URL) {
+        let key = Constants.StorageKeys.mlxWhisperModel
+        let downloadedTier = MLXWhisperModel.allCases.first {
+            WhisperModelDownloader.isDownloaded(repo: $0.rawValue, root: root)
+        }
+        guard let stored = defaults.string(forKey: key) else {
+            // Builds before the 8-bit default resolved an unset key to the
+            // full Turbo, so a Mac that downloaded it without a pick keeps it.
+            if downloadedTier == .largeV3Turbo {
+                defaults.set(MLXWhisperModel.largeV3Turbo.rawValue, forKey: key)
+            }
+            return
+        }
+        guard let replacement = MLXWhisperModel.retiredReplacements[stored] else { return }
+        let migrated = downloadedTier ?? replacement
+        defaults.set(migrated.rawValue, forKey: key)
+        if downloadedTier == nil, WhisperModelDownloader.isDownloaded(repo: stored, root: root) {
+            defaults.set(migrated.rawValue, forKey: Constants.StorageKeys.mlxWhisperReplacementDownload)
+        }
+        SapoLog.lifecycle.info(
+            "MLX model migrated from retired tier old=\(stored, privacy: .public) new=\(migrated.rawValue, privacy: .public)"
+        )
+    }
+
+    /// The replacement queued by the retired-tier migration, handed out once.
+    static func takeReplacementDownload(defaults: UserDefaults = AppPreferences.defaults) -> MLXWhisperModel? {
+        let key = Constants.StorageKeys.mlxWhisperReplacementDownload
+        guard let stored = defaults.string(forKey: key) else { return nil }
+        defaults.removeObject(forKey: key)
+        return MLXWhisperModel(rawValue: stored)
+    }
+
+    static func deleteRetiredMLXSnapshots(root: URL, fileManager: FileManager = .default) {
+        for repo in MLXWhisperModel.retiredReplacements.keys {
+            let directory = WhisperModelDownloader.modelDirectory(repo: repo, root: root)
+            guard fileManager.fileExists(atPath: directory.path) else { continue }
+            try? fileManager.removeItem(at: directory)
+            SapoLog.lifecycle.info("Deleted retired MLX model snapshot repo=\(repo, privacy: .public)")
+        }
     }
 
     private static func purgeRemovedArtifacts(defaults: UserDefaults, fileManager: FileManager) {

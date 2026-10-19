@@ -147,7 +147,7 @@ class SapoWhisperViewModel: ObservableObject {
     @AppStorage(Constants.StorageKeys.transcriptionEngine, store: AppPreferences.defaults) var selectedEngine: String = TranscriptionEngine
         .mlxWhisper.rawValue
     @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) var selectedMLXWhisperModel: String =
-        MLXWhisperModel.largeV3Turbo.rawValue
+        MLXWhisperModel.defaultModel.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) var selectedDeepgramMode: String =
         DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode, store: AppPreferences.defaults) var selectedElevenLabsMode: String =
@@ -465,9 +465,11 @@ class SapoWhisperViewModel: ObservableObject {
         }
 
         // Cargar modelo automaticamente si el motor es local y el modelo ya
-        // esta en disco — una descarga solo la inicia una accion explicita.
+        // esta en disco — una descarga solo la inicia una accion explicita o
+        // el reemplazo de un modelo retirado que estaba descargado.
+        let replacementDownload = EnginePortfolioMigration.takeReplacementDownload()
         if currentEngine == .mlxWhisper, let model = currentMLXWhisperModel,
-            mlxWhisperTranscriber.isModelDownloaded(model)
+            mlxWhisperTranscriber.isModelDownloaded(model) || replacementDownload == model
         {
             scheduleSelectedMLXModelLoad()
         }

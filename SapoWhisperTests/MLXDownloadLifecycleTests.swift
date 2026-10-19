@@ -1,7 +1,6 @@
 import Foundation
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 @MainActor
 final class MLXDownloadLifecycleTests: XCTestCase {
@@ -35,40 +34,40 @@ final class MLXDownloadLifecycleTests: XCTestCase {
         let transcriber = MLXWhisperTranscriber(rootDirectory: root, download: downloads.run)
         var completions = 0
         transcriber.onDownloadCompleted = { _ in completions += 1 }
-        transcriber.startDownload(.largeV3)
+        transcriber.startDownload(.largeV3Turbo)
         try await waitUntil { downloads.continuations.count == 1 }
         downloads.progress[0](0.25)
-        transcriber.pauseDownload(.largeV3)
-        transcriber.startDownload(.largeV3)
+        transcriber.pauseDownload(.largeV3Turbo)
+        transcriber.startDownload(.largeV3Turbo)
         downloads.progress[0](0.8)
-        XCTAssertEqual(transcriber.downloadPhase(.largeV3), .downloading(0.25))
+        XCTAssertEqual(transcriber.downloadPhase(.largeV3Turbo), .downloading(0.25))
         for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(downloads.continuations.count, 1)
         downloads.continuations[0].resume(returning: root)
         try await waitUntil { downloads.continuations.count == 2 }
         XCTAssertEqual(completions, 0)
-        XCTAssertFalse(transcriber.downloadedModels.contains(.largeV3))
+        XCTAssertFalse(transcriber.downloadedModels.contains(.largeV3Turbo))
         downloads.progress[1](0.4)
         downloads.progress[0](0.95)
-        XCTAssertEqual(transcriber.downloadPhase(.largeV3), .downloading(0.4))
+        XCTAssertEqual(transcriber.downloadPhase(.largeV3Turbo), .downloading(0.4))
         downloads.continuations[1].resume(returning: root)
         try await waitUntil { completions == 1 }
-        XCTAssertTrue(transcriber.downloadedModels.contains(.largeV3))
+        XCTAssertTrue(transcriber.downloadedModels.contains(.largeV3Turbo))
     }
 
     func testOldFailureDoesNotReplaceResumedPhase() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let downloads = Downloads()
         let transcriber = MLXWhisperTranscriber(rootDirectory: root, download: downloads.run)
-        transcriber.startDownload(.base)
+        transcriber.startDownload(.largeV3TurboQ8)
         try await waitUntil { downloads.continuations.count == 1 }
-        transcriber.pauseDownload(.base)
-        transcriber.startDownload(.base)
+        transcriber.pauseDownload(.largeV3TurboQ8)
+        transcriber.startDownload(.largeV3TurboQ8)
         downloads.continuations[0].resume(throwing: FixtureError.failed)
         try await waitUntil { downloads.continuations.count == 2 }
-        XCTAssertEqual(transcriber.downloadPhase(.base), .downloading(0))
+        XCTAssertEqual(transcriber.downloadPhase(.largeV3TurboQ8), .downloading(0))
         downloads.continuations[1].resume(returning: root)
-        try await waitUntil { transcriber.downloadedModels.contains(.base) }
+        try await waitUntil { transcriber.downloadedModels.contains(.largeV3TurboQ8) }
     }
 
     func testCancelDeleteRedownloadWaitsForOldWriter() async throws {
@@ -78,30 +77,30 @@ final class MLXDownloadLifecycleTests: XCTestCase {
             rootDirectory: root, download: downloads.run,
             delete: { _, _ in downloads.events.append("delete") }
         )
-        transcriber.startDownload(.small)
+        transcriber.startDownload(.largeV3Turbo)
         try await waitUntil { downloads.continuations.count == 1 }
-        transcriber.cancelDownload(.small)
-        transcriber.startDownload(.small)
+        transcriber.cancelDownload(.largeV3Turbo)
+        transcriber.startDownload(.largeV3Turbo)
         for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(downloads.events, ["download"])
         downloads.continuations[0].resume(returning: root)
         try await waitUntil { downloads.continuations.count == 2 }
         XCTAssertEqual(downloads.events, ["download", "delete", "download"])
-        XCTAssertFalse(transcriber.downloadedModels.contains(.small))
+        XCTAssertFalse(transcriber.downloadedModels.contains(.largeV3Turbo))
         downloads.continuations[1].resume(returning: root)
-        try await waitUntil { transcriber.downloadedModels.contains(.small) }
+        try await waitUntil { transcriber.downloadedModels.contains(.largeV3Turbo) }
     }
 
     func testSelectingStandaloneDownloadThenPausingDoesNotRestartIt() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let downloads = Downloads()
         let transcriber = MLXWhisperTranscriber(rootDirectory: root, download: downloads.run)
-        transcriber.startDownload(.base)
+        transcriber.startDownload(.largeV3TurboQ8)
         try await waitUntil { downloads.continuations.count == 1 }
         downloads.progress[0](0.3)
-        let load = Task { try await transcriber.loadModel(.base) }
+        let load = Task { try await transcriber.loadModel(.largeV3TurboQ8) }
         try await waitUntil { transcriber.loadingState == .downloading }
-        transcriber.pauseDownload(.base)
+        transcriber.pauseDownload(.largeV3TurboQ8)
         downloads.continuations[0].resume(returning: root)
         try await waitUntil { !transcriber.isLoading || downloads.continuations.count > 1 }
         if downloads.continuations.count > 1 {
@@ -115,9 +114,9 @@ final class MLXDownloadLifecycleTests: XCTestCase {
             XCTFail("Unexpected load error: \(error)")
         }
         XCTAssertEqual(downloads.continuations.count, 1)
-        XCTAssertEqual(transcriber.downloadPhase(.base), .paused(0.3))
+        XCTAssertEqual(transcriber.downloadPhase(.largeV3TurboQ8), .paused(0.3))
         XCTAssertFalse(transcriber.isModelLoaded)
-        XCTAssertFalse(transcriber.downloadedModels.contains(.base))
+        XCTAssertFalse(transcriber.downloadedModels.contains(.largeV3TurboQ8))
     }
 
     func testDeletionFailureRemainsVisibleAndPreservesDownloadedState() async throws {
@@ -145,22 +144,22 @@ final class MLXDownloadLifecycleTests: XCTestCase {
             viewModel.selectedEngine = previousEngine
             viewModel.selectedMLXWhisperModel = previousModel
         }
-        viewModel.selectedMLXWhisperModel = MLXWhisperModel.base.rawValue
+        viewModel.selectedMLXWhisperModel = MLXWhisperModel.largeV3TurboQ8.rawValue
         viewModel.setEngine(.mlxWhisper)
-        transcriber.startDownload(.base)
+        transcriber.startDownload(.largeV3TurboQ8)
         try await waitUntil { downloads.continuations.count == 1 }
         downloads.progress[0](0.3)
         transcriber.isLoading = true
         viewModel.deferMLXWhisperModelSetup()
-        XCTAssertEqual(transcriber.downloadPhase(.base), .paused(0.3))
-        XCTAssertEqual(viewModel.currentMLXWhisperModel, .base)
+        XCTAssertEqual(transcriber.downloadPhase(.largeV3TurboQ8), .paused(0.3))
+        XCTAssertEqual(viewModel.currentMLXWhisperModel, .largeV3TurboQ8)
         XCTAssertFalse(transcriber.isLoading)
         XCTAssertFalse(viewModel.isEngineReady(.mlxWhisper))
         downloads.continuations[0].resume(returning: root)
         for _ in 0..<20 { await Task.yield() }
         XCTAssertFalse(transcriber.isModelLoaded)
-        XCTAssertFalse(transcriber.downloadedModels.contains(.base))
-        XCTAssertEqual(transcriber.downloadPhase(.base), .paused(0.3))
+        XCTAssertFalse(transcriber.downloadedModels.contains(.largeV3TurboQ8))
+        XCTAssertEqual(transcriber.downloadPhase(.largeV3TurboQ8), .paused(0.3))
     }
 
 }

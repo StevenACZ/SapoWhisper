@@ -6,6 +6,26 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-10-19
+
+### Added
+
+- Large V3 Turbo (8-bit) for MLX Whisper: as accurate as the full model on Spanish dictations, faster and lighter. It is the new default and suits any Mac with 8 GB or more.
+
+### Changed
+
+- MLX Whisper decodes with beam search, like faster-whisper and whisper.cpp, so dictations come out more accurate for a fraction of a second more. Macs with 8 GB keep the faster single-pass decoding.
+- Two local models remain, picked by memory: Large V3 Turbo (8-bit) for every Mac with 8 GB or more, and the full Large V3 Turbo for Macs with 16 GB or more.
+
+### Removed
+
+- The Base, Small, Large V3 and Large V3 Turbo (4-bit) local models. They missed far more words or ran far slower than Large V3 Turbo. A Mac that used one moves to a Large V3 Turbo model it already has, or downloads Large V3 Turbo (8-bit) once on its own (the full Large V3 Turbo after Large V3), and the old download is deleted.
+
+### Fixed
+
+- MLX Whisper no longer drops the words spoken across each 30-second mark of a long dictation: every window now ends at a pause.
+- MLX Whisper no longer keeps gigabytes of memory after a few dictations: the buffers it holds for reuse are capped.
+
 ## [2.23.0] - 2026-10-13
 
 ### Changed

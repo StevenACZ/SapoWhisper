@@ -10,7 +10,7 @@ struct EngineSettingsTab: View {
     @AppStorage(Constants.StorageKeys.fallbackTranscriptionEngine, store: AppPreferences.defaults) private var fallbackEngineRawValue = ""
     @AppStorage(Constants.StorageKeys.language, store: AppPreferences.defaults) private var selectedLanguage = "auto"
     @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) private var selectedMLXModel = MLXWhisperModel
-        .largeV3Turbo.rawValue
+        .defaultModel.rawValue
     @AppStorage(Constants.StorageKeys.deepgramTranscriptionMode, store: AppPreferences.defaults) private var selectedDeepgramMode =
         DeepgramTranscriptionMode.nova3.rawValue
     @AppStorage(Constants.StorageKeys.elevenLabsTranscriptionMode, store: AppPreferences.defaults) private var selectedElevenLabsMode =

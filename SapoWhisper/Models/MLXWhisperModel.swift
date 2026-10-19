@@ -6,100 +6,95 @@
 import SwiftUI
 
 /// Curated MLX Whisper tiers (mlx-community checkpoints; the vendored loader
-/// reads fp16 and 4/8-bit quantized safetensors). Raw value = Hugging Face
+/// reads fp16 and 8-bit quantized safetensors). Raw value = Hugging Face
 /// repo ID.
 nonisolated enum MLXWhisperModel: String, CaseIterable, Identifiable {
-    case base = "mlx-community/whisper-base-fp16"
-    case small = "mlx-community/whisper-small-fp16"
-    case largeV3TurboQ4 = "mlx-community/whisper-large-v3-turbo-4bit"
+    case largeV3TurboQ8 = "mlx-community/whisper-large-v3-turbo-8bit"
     case largeV3Turbo = "mlx-community/whisper-large-v3-turbo"
-    case largeV3 = "mlx-community/whisper-large-v3-fp16"
 
     var id: String { rawValue }
 
-    /// Pinned Hugging Face revision (commit shas resolved 2026-07-09) so a
-    /// moved or compromised `main` can never change what the app downloads.
+    static let defaultModel: MLXWhisperModel = .largeV3TurboQ8
+
+    /// Retired tiers and the tier that replaces each one: Base and Small missed
+    /// far more words than Turbo, the 4-bit Turbo lost technical terms without
+    /// being faster than the 8-bit tier, and Large V3 ran several times slower.
+    static let retiredReplacements: [String: MLXWhisperModel] = [
+        "mlx-community/whisper-base-fp16": .largeV3TurboQ8,
+        "mlx-community/whisper-small-fp16": .largeV3TurboQ8,
+        "mlx-community/whisper-large-v3-turbo-4bit": .largeV3TurboQ8,
+        "mlx-community/whisper-large-v3-fp16": .largeV3Turbo,
+    ]
+
+    /// A stored or imported selection, following a retired tier to its
+    /// replacement.
+    init?(storedValue: String) {
+        guard let model = MLXWhisperModel(rawValue: storedValue) ?? Self.retiredReplacements[storedValue] else {
+            return nil
+        }
+        self = model
+    }
+
+    /// Pinned Hugging Face revision (commit shas resolved 2026-07-09; 8-bit tier
+    /// 2026-10-18) so a moved or compromised `main` can never change what the
+    /// app downloads.
     var revision: String {
         switch self {
-        case .base: return "3623ea5c2566e1320ba8eef401ec6c9cf58c6a2f"
-        case .small: return "fa19eb05939653a9334d81bec7e053db81970170"
-        case .largeV3TurboQ4: return "0f058d38170d183f9fdee07908f5b515d91793a8"
+        case .largeV3TurboQ8: return "62103fc276a35fdc76e318f314d8ff47987fba89"
         case .largeV3Turbo: return "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
-        case .largeV3: return "5467ef1f82cf0e110f521092acb434d9c82b5d5a"
         }
     }
 
     var displayName: String {
         switch self {
-        case .base: return "Base"
-        case .small: return "Small"
-        case .largeV3TurboQ4: return "Large V3 Turbo (4-bit)"
+        case .largeV3TurboQ8: return "Large V3 Turbo (8-bit)"
         case .largeV3Turbo: return "Large V3 Turbo"
-        case .largeV3: return "Large V3"
         }
     }
 
     /// Download size (weights + config + tokenizer assets), measured on the
-    /// Hugging Face repos 2026-07-05 (4-bit tier 2026-07-09). Shown until the
+    /// Hugging Face repos 2026-07-05 (8-bit tier 2026-10-18). Shown until the
     /// real on-disk size exists.
     var fileSize: String {
         switch self {
-        case .base: return "141 MB"
-        case .small: return "463 MB"
-        case .largeV3TurboQ4: return "464 MB"
+        case .largeV3TurboQ8: return "828 MB"
         case .largeV3Turbo: return "1.54 GB"
-        case .largeV3: return "2.95 GB"
         }
     }
 
     var sizeInBytes: Int64 {
         switch self {
-        case .base: return Int64(141 * 1024 * 1024)
-        case .small: return Int64(463 * 1024 * 1024)
-        case .largeV3TurboQ4: return Int64(464 * 1024 * 1024)
+        case .largeV3TurboQ8: return Int64(828 * 1024 * 1024)
         case .largeV3Turbo: return Int64(1.54 * 1024 * 1024 * 1024)
-        case .largeV3: return Int64(2.95 * 1024 * 1024 * 1024)
         }
     }
 
-    var accuracy: Int? {
-        switch self {
-        case .base: return 3
-        case .small: return 4
-        case .largeV3TurboQ4: return nil
-        case .largeV3Turbo: return 5
-        case .largeV3: return 5
-        }
-    }
+    var accuracy: Int { 5 }
 
     var isRecommended: Bool {
-        self == .largeV3Turbo
+        self == Self.defaultModel
     }
 }
 
 extension MLXWhisperModel {
     @MainActor var speed: String {
         switch self {
-        case .base: return "model.speed.very_fast".localized
-        case .small: return "model.speed.fast".localized
-        case .largeV3TurboQ4: return "model.speed.fast".localized
+        case .largeV3TurboQ8: return "model.speed.very_fast".localized
         case .largeV3Turbo: return "model.speed.fast".localized
-        case .largeV3: return "model.speed.moderate".localized
         }
     }
 
-    @MainActor var badgeText: String? {
+    @MainActor var badgeText: String {
         switch self {
-        case .largeV3Turbo:
-            return "model.tier_quality_default".localized
-        case .largeV3TurboQ4:
-            return "model.tier_lower_memory".localized
-        case .base, .small, .largeV3:
-            return nil
+        case .largeV3TurboQ8: return "model.tier_recommended".localized
+        case .largeV3Turbo: return "model.tier_max_precision".localized
         }
     }
 
     var badgeColor: Color {
-        self == .largeV3TurboQ4 ? .blue : .sapoGreen
+        switch self {
+        case .largeV3TurboQ8: return .sapoGreen
+        case .largeV3Turbo: return .teal
+        }
     }
 }

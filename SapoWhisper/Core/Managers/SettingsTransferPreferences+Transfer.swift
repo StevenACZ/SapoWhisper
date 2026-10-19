@@ -14,7 +14,7 @@ extension SettingsTransferManager {
             transcriptionEngine: defaults.string(forKey: Constants.StorageKeys.transcriptionEngine)
                 ?? TranscriptionEngine.mlxWhisper.rawValue,
             mlxWhisperModel: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel)
-                ?? MLXWhisperModel.largeV3Turbo.rawValue,
+                ?? MLXWhisperModel.defaultModel.rawValue,
             deepgramTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.deepgramTranscriptionMode)
                 ?? DeepgramTranscriptionMode.nova3.rawValue,
             elevenLabsTranscriptionMode: defaults.string(forKey: Constants.StorageKeys.elevenLabsTranscriptionMode)
@@ -107,8 +107,8 @@ extension SettingsTransferManager {
                 hasElevenLabsKey: !(readEngineKey(.elevenLabsAPIKey) ?? "").isEmpty
             )
             defaults.set(importedEngine, forKey: Constants.StorageKeys.transcriptionEngine)
-            if let mlxModel = preferences.mlxWhisperModel, MLXWhisperModel(rawValue: mlxModel) != nil {
-                defaults.set(mlxModel, forKey: Constants.StorageKeys.mlxWhisperModel)
+            if let mlxModel = preferences.mlxWhisperModel.flatMap(MLXWhisperModel.init(storedValue:)) {
+                defaults.set(mlxModel.rawValue, forKey: Constants.StorageKeys.mlxWhisperModel)
             }
             defaults.set(preferences.deepgramTranscriptionMode, forKey: Constants.StorageKeys.deepgramTranscriptionMode)
             defaults.set(

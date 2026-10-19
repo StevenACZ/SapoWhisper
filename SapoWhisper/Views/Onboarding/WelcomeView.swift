@@ -464,9 +464,7 @@ private struct WelcomeWhisperCard: View {
     let selectionNamespace: Namespace.ID
     let onSelect: () -> Void
 
-    /// Onboarding shortlist: the balanced tier and the recommended turbo.
-    /// The full four-tier catalog lives in Settings.
-    private let offeredModels: [MLXWhisperModel] = [.small, .largeV3Turbo]
+    private let offeredModels = MLXWhisperModel.allCases
 
     private var isReady: Bool {
         viewModel.isEngineReady(.mlxWhisper)

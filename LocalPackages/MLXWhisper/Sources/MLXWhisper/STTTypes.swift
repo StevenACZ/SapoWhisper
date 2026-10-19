@@ -3,9 +3,10 @@
 //  MLXWhisper
 //
 //  Vendored from mlx-audio-swift (MIT, see LICENSE-mlx-audio-swift) at commit
-//  580e952, trimmed to the types the Whisper model uses. Local change:
+//  580e952, trimmed to the types the Whisper model uses. Local changes:
 //  `STTGenerateParameters.initialPrompt` feeds the decoder a
-//  `<|startofprev|>` prefix (vocabulary / domain hint).
+//  `<|startofprev|>` prefix (vocabulary / domain hint), and `beamSize`
+//  selects beam search for temperature-0 decoding.
 //
 
 import Foundation
@@ -25,6 +26,8 @@ public struct STTGenerateParameters: Sendable {
     /// Whisper's initial prompt. Biases spelling toward the supplied terms
     /// without being part of the transcription output.
     public let initialPrompt: String?
+    /// Beam width for temperature-0 decoding; 1 keeps greedy argmax.
+    public let beamSize: Int
 
     public init(
         maxTokens: Int = 8192,
@@ -37,7 +40,8 @@ public struct STTGenerateParameters: Sendable {
         minChunkDuration: Float = 1.0,
         repetitionPenalty: Float = 1.0,
         repetitionContextSize: Int = 32,
-        initialPrompt: String? = nil
+        initialPrompt: String? = nil,
+        beamSize: Int = 1
     ) {
         self.maxTokens = maxTokens
         self.temperature = temperature
@@ -50,6 +54,7 @@ public struct STTGenerateParameters: Sendable {
         self.repetitionPenalty = repetitionPenalty
         self.repetitionContextSize = repetitionContextSize
         self.initialPrompt = initialPrompt
+        self.beamSize = beamSize
     }
 }
 

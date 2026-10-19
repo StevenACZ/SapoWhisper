@@ -3,6 +3,7 @@
 //  SapoWhisperTests
 //
 
+import MLXWhisper
 @testable import SapoWhisper
 import XCTest
 
@@ -863,6 +864,181 @@ final class EngineMigrationAndTransferTests: XCTestCase {
             XCTAssertTrue(defaults.bool(forKey: Constants.StorageKeys.autoPaste))
             XCTAssertFalse(FileManager.default.fileExists(atPath: backups.path))
         }
+    }
+
+    // MARK: - Retired MLX tiers
+
+    func testStoredValueMapsRetiredTiersToTheirReplacements() {
+        XCTAssertEqual(MLXWhisperModel(storedValue: "mlx-community/whisper-base-fp16"), .largeV3TurboQ8)
+        XCTAssertEqual(MLXWhisperModel(storedValue: "mlx-community/whisper-small-fp16"), .largeV3TurboQ8)
+        XCTAssertEqual(MLXWhisperModel(storedValue: "mlx-community/whisper-large-v3-turbo-4bit"), .largeV3TurboQ8)
+        XCTAssertEqual(MLXWhisperModel(storedValue: "mlx-community/whisper-large-v3-fp16"), .largeV3Turbo)
+        XCTAssertEqual(MLXWhisperModel(storedValue: MLXWhisperModel.largeV3TurboQ8.rawValue), .largeV3TurboQ8)
+        XCTAssertEqual(MLXWhisperModel(storedValue: MLXWhisperModel.largeV3Turbo.rawValue), .largeV3Turbo)
+        XCTAssertNil(MLXWhisperModel(storedValue: "mlx-community/whisper-tiny"))
+    }
+
+    private func makeDownloadedSnapshot(repo: String, root: URL) throws {
+        let directory = WhisperModelDownloader.modelDirectory(repo: repo, root: root)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 64).write(to: directory.appendingPathComponent("weights.safetensors"))
+        try Data(#"{"vocab_size":51866}"#.utf8).write(to: directory.appendingPathComponent("config.json"))
+        for asset in WhisperModelDownloader.tokenizerAssetFiles {
+            try Data(#"{"model":{}}"#.utf8).write(to: directory.appendingPathComponent(asset))
+        }
+    }
+
+    private func migrateRetiredMLXModel(
+        stored: String?,
+        downloaded: [String]
+    ) throws -> (selection: String?, replacementDownload: MLXWhisperModel?) {
+        let suiteName = temporaryDefaultsSuite()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RetiredMLXMigration-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for repo in downloaded {
+            try makeDownloadedSnapshot(repo: repo, root: root)
+        }
+        if let stored {
+            defaults.set(stored, forKey: Constants.StorageKeys.mlxWhisperModel)
+        }
+
+        EnginePortfolioMigration.migrateRetiredMLXModelIfNeeded(defaults: defaults, root: root)
+
+        return (
+            defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel),
+            EnginePortfolioMigration.takeReplacementDownload(defaults: defaults)
+        )
+    }
+
+    func testRetiredStoredMLXModelMigratesToItsReplacement() throws {
+        let fourBit = "mlx-community/whisper-large-v3-turbo-4bit"
+        let largeV3 = "mlx-community/whisper-large-v3-fp16"
+        let cases: [(stored: String?, expected: String?)] = [
+            (fourBit, MLXWhisperModel.largeV3TurboQ8.rawValue),
+            (largeV3, MLXWhisperModel.largeV3Turbo.rawValue),
+            (MLXWhisperModel.largeV3Turbo.rawValue, MLXWhisperModel.largeV3Turbo.rawValue),
+            (nil, nil),
+        ]
+        for testCase in cases {
+            let result = try migrateRetiredMLXModel(stored: testCase.stored, downloaded: [])
+            XCTAssertEqual(result.selection, testCase.expected, "stored=\(testCase.stored ?? "nil")")
+            XCTAssertNil(result.replacementDownload, "stored=\(testCase.stored ?? "nil")")
+        }
+    }
+
+    func testDownloadedRetiredTierQueuesItsReplacementOnce() throws {
+        let suiteName = temporaryDefaultsSuite()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RetiredMLXMigration-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let small = "mlx-community/whisper-small-fp16"
+        try makeDownloadedSnapshot(repo: small, root: root)
+        defaults.set(small, forKey: Constants.StorageKeys.mlxWhisperModel)
+
+        EnginePortfolioMigration.migrateRetiredMLXModelIfNeeded(defaults: defaults, root: root)
+
+        XCTAssertEqual(defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel), MLXWhisperModel.largeV3TurboQ8.rawValue)
+        XCTAssertEqual(EnginePortfolioMigration.takeReplacementDownload(defaults: defaults), .largeV3TurboQ8)
+        XCTAssertNil(EnginePortfolioMigration.takeReplacementDownload(defaults: defaults))
+    }
+
+    func testRetiredTierMovesToADownloadedCurrentTierWithoutDownloading() throws {
+        let result = try migrateRetiredMLXModel(
+            stored: "mlx-community/whisper-base-fp16",
+            downloaded: ["mlx-community/whisper-base-fp16", MLXWhisperModel.largeV3Turbo.rawValue]
+        )
+
+        XCTAssertEqual(result.selection, MLXWhisperModel.largeV3Turbo.rawValue)
+        XCTAssertNil(result.replacementDownload)
+    }
+
+    func testUnsetSelectionKeepsAFullTurboAlreadyOnDisk() throws {
+        let withTurbo = try migrateRetiredMLXModel(stored: nil, downloaded: [MLXWhisperModel.largeV3Turbo.rawValue])
+        XCTAssertEqual(withTurbo.selection, MLXWhisperModel.largeV3Turbo.rawValue)
+        XCTAssertNil(withTurbo.replacementDownload)
+
+        let withEightBit = try migrateRetiredMLXModel(stored: nil, downloaded: [MLXWhisperModel.largeV3TurboQ8.rawValue])
+        XCTAssertNil(withEightBit.selection)
+    }
+
+    func testDeleteRetiredMLXSnapshotsKeepsCurrentTiers() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RetiredMLXSnapshots-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let retired = ["mlx-community/whisper-small-fp16", "mlx-community/whisper-large-v3-turbo-4bit"]
+        let current = MLXWhisperModel.allCases.map(\.rawValue)
+        for repo in retired + current {
+            try FileManager.default.createDirectory(
+                at: WhisperModelDownloader.modelDirectory(repo: repo, root: root),
+                withIntermediateDirectories: true
+            )
+        }
+
+        EnginePortfolioMigration.deleteRetiredMLXSnapshots(root: root)
+
+        for repo in retired {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: WhisperModelDownloader.modelDirectory(repo: repo, root: root).path),
+                "\(repo) survived"
+            )
+        }
+        for repo in current {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: WhisperModelDownloader.modelDirectory(repo: repo, root: root).path),
+                "\(repo) was deleted"
+            )
+        }
+    }
+
+    func testOldExportWithRetiredMLXModelImportsItsReplacement() throws {
+        let legacyExport = """
+            {
+              "schemaVersion": 1,
+              "appVersion": "2.1.0",
+              "exportedAt": "2025-11-02T10:00:00Z",
+              "preferences": {
+                "appLanguage": "es",
+                "transcriptionLanguage": "es",
+                "autoPaste": true,
+                "playSound": true,
+                "soundVolume": 1,
+                "autoDuckingEnabled": false,
+                "autoDuckingAmount": 0.8,
+                "transcriptionEngine": "mlx_whisper",
+                "mlxWhisperModel": "mlx-community/whisper-small-fp16",
+                "deepgramTranscriptionMode": "nova3",
+                "hotkeyKeyCode": 49,
+                "hotkeyModifiers": 2048,
+                "audioGain": 1,
+                "aiPolishEnabled": false,
+                "aiPolishMode": "automatic",
+                "aiPolishOutputLanguage": "same_as_input"
+              },
+              "apiKeys": {}
+            }
+            """
+
+        let suiteName = temporaryDefaultsSuite()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = SettingsTransferManager(
+            defaults: defaults,
+            readEngineKey: { _ in nil },
+            writeEngineKey: { _, _ in true }
+        )
+        let document = try manager.decodedDocument(from: Data(legacyExport.utf8))
+        try manager.importDocument(document, sections: [.engine])
+
+        XCTAssertEqual(
+            defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel),
+            MLXWhisperModel.largeV3TurboQ8.rawValue
+        )
     }
 
     // MARK: - History filter buckets

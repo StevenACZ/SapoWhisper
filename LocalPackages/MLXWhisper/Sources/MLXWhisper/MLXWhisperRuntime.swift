@@ -14,6 +14,13 @@ public enum MLXWhisperRuntime {
     public static func clearMemoryCache() {
         Memory.clearCache()
     }
+
+    /// Caps the freed buffers MLX keeps for reuse. Beam search grows its KV
+    /// caches every step, so each step frees a new size and the unbounded
+    /// pool reached 12 GB resident after a day of dictation.
+    public static func limitMemoryCache(bytes: Int) {
+        Memory.cacheLimit = bytes
+    }
 }
 
 extension WhisperModel {

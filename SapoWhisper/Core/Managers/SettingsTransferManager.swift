@@ -424,7 +424,7 @@ extension SettingsTransferManager {
             preferences.aiPolishEndpoint.map({ PolishEndpoint(rawValue: $0) != nil }) ?? true,
             DeepgramTranscriptionMode(rawValue: preferences.deepgramTranscriptionMode) != nil,
             preferences.elevenLabsTranscriptionMode.map({ ElevenLabsTranscriptionMode(rawValue: $0) != nil }) ?? true,
-            preferences.mlxWhisperModel.map({ MLXWhisperModel(rawValue: $0) != nil }) ?? true,
+            preferences.mlxWhisperModel.map({ MLXWhisperModel(storedValue: $0) != nil }) ?? true,
             preferences.audioUploadQuality.map({ AudioUploadQuality(rawValue: $0) != nil }) ?? true,
             preferences.polishProviderModels.map({ $0.keys.allSatisfy { PolishEndpoint(rawValue: $0) != nil } }) ?? true,
             preferences.polishProviderBaseURLs.map({ $0.keys.allSatisfy { PolishEndpoint(rawValue: $0) != nil } }) ?? true

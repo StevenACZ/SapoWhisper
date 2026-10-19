@@ -4,9 +4,8 @@
 //
 
 import MLXWhisper
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 /// Pins the dictation state machine's legality table: every edge the real
 /// flows take must be legal, and the clobber patterns the ViewModel's guards
@@ -67,9 +66,9 @@ final class DictationSessionGuardTests: XCTestCase {
     private let defaults = AppPreferences.defaults
     private var restore: [String: String?] = [:]
 
-    private static var largeV3SnapshotDirectory: URL {
+    private static var largeV3TurboSnapshotDirectory: URL {
         WhisperModelDownloader.modelDirectory(
-            repo: MLXWhisperModel.largeV3.rawValue,
+            repo: MLXWhisperModel.largeV3Turbo.rawValue,
             root: MLXWhisperTranscriber.modelsRootDirectory
         )
     }
@@ -92,7 +91,7 @@ final class DictationSessionGuardTests: XCTestCase {
             ElevenLabsTranscriptionMode.defaultMode.rawValue,
             forKey: Constants.StorageKeys.elevenLabsTranscriptionMode
         )
-        set(MLXWhisperModel.largeV3.rawValue, forKey: Constants.StorageKeys.mlxWhisperModel)
+        set(MLXWhisperModel.largeV3Turbo.rawValue, forKey: Constants.StorageKeys.mlxWhisperModel)
     }
 
     override func tearDown() async throws {
@@ -153,13 +152,13 @@ final class DictationSessionGuardTests: XCTestCase {
         // Application Support root, and an incomplete snapshot does not count
         // as downloaded, so absence on disk is the only safe precondition.
         try XCTSkipIf(
-            FileManager.default.fileExists(atPath: Self.largeV3SnapshotDirectory.path),
-            "a largeV3 snapshot exists on this machine; skipping to avoid deleting real files"
+            FileManager.default.fileExists(atPath: Self.largeV3TurboSnapshotDirectory.path),
+            "a largeV3Turbo snapshot exists on this machine; skipping to avoid deleting real files"
         )
         viewModel.activeRecordingSessionID = nil
         viewModel.activeTranscriptionSessionID = 1
 
-        viewModel.deleteMLXWhisperModel(.largeV3)
+        viewModel.deleteMLXWhisperModel(.largeV3Turbo)
 
         XCTAssertEqual(viewModel.appState, .recording, "the delete clobbered the transcription session")
         XCTAssertNil(viewModel.currentMLXWhisperModel)
