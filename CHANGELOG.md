@@ -6,6 +6,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-10-19
+
 ### Added
 
 - Large V3 Turbo (8-bit) for MLX Whisper: as accurate as the full model on Spanish dictations, faster and lighter. It is the new default and suits any Mac with 8 GB or more.
