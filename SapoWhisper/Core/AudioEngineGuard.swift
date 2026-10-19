@@ -207,6 +207,7 @@ nonisolated final class AudioDeadlineAttempt<Value: Sendable>: @unchecked Sendab
     private let work: @Sendable () throws -> Value
     private let cleanup: @Sendable (Value) -> Void
     private let onQuarantine: @Sendable (Bool) -> Void
+    private let onRecovered: @Sendable () -> Void
     private let completion: @Sendable (Result<Value, Error>) -> Void
     private var started = false
     private var workStarted = false
@@ -222,6 +223,7 @@ nonisolated final class AudioDeadlineAttempt<Value: Sendable>: @unchecked Sendab
         work: @escaping @Sendable () throws -> Value,
         cleanup: @escaping @Sendable (Value) -> Void,
         onQuarantine: @escaping @Sendable (Bool) -> Void = { _ in },
+        onRecovered: @escaping @Sendable () -> Void = {},
         completion: @escaping @Sendable (Result<Value, Error>) -> Void
     ) {
         self.timeout = timeout
@@ -231,6 +233,7 @@ nonisolated final class AudioDeadlineAttempt<Value: Sendable>: @unchecked Sendab
         self.work = work
         self.cleanup = cleanup
         self.onQuarantine = onQuarantine
+        self.onRecovered = onRecovered
         self.completion = completion
     }
 
@@ -265,8 +268,13 @@ nonisolated final class AudioDeadlineAttempt<Value: Sendable>: @unchecked Sendab
             if shouldComplete {
                 completionDelivered = true
             }
+            let recovered = quarantineDelivered
             lock.unlock()
 
+            if recovered {
+                onRecovered()
+                SapoLog.recording.info("Audio input setup recovered operation=\(self.operation, privacy: .public)")
+            }
             if shouldComplete {
                 completion(result)
             } else if case .success(let value) = result {
@@ -301,11 +309,11 @@ nonisolated final class AudioDeadlineAttempt<Value: Sendable>: @unchecked Sendab
         let shouldQuarantine = workStarted && !quarantineDelivered
         if shouldQuarantine {
             quarantineDelivered = true
-        }
-        lock.unlock()
-        if shouldQuarantine {
+            // Under the lock, so a worker that finishes now releases only
+            // after the quarantine is in place.
             onQuarantine(true)
         }
+        lock.unlock()
         SapoLog.recording.error("Audio input setup timed out operation=\(self.operation, privacy: .public)")
         if shouldComplete {
             completion(.failure(RecordingError.inputSetupTimedOut))
@@ -347,6 +355,14 @@ nonisolated final class AudioInputSetupQuarantine: @unchecked Sendable {
         lock.withLock {
             guard self.epoch == epoch else { return }
             quarantinedEpoch = epoch
+        }
+    }
+
+    /// A slow setup call that finally returns frees its route again; only the
+    /// epoch it quarantined is lifted.
+    func release(epoch: UInt64) {
+        lock.withLock {
+            if quarantinedEpoch == epoch { quarantinedEpoch = nil }
         }
     }
 

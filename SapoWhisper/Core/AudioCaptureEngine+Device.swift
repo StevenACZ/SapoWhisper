@@ -30,6 +30,7 @@ nonisolated extension AudioCaptureEngine {
                     work: { [self] in try makeInputSession(deviceUID: deviceUID, generation: generation, failures: failures) },
                     cleanup: { $0.close() },
                     onQuarantine: { _ in quarantine.quarantine(epoch: preparation.epoch) },
+                    onRecovered: { quarantine.release(epoch: preparation.epoch) },
                     completion: { continuation.resume(with: $0) }
                 )
                 request.install(attempt)

@@ -151,6 +151,7 @@ nonisolated private enum AudioInputPreflightWorker {
                         cancelled.withLock { $0 = true }
                         AudioInputSetupQuarantine.shared.quarantine(epoch: snapshot.routeEpoch)
                     },
+                    onRecovered: { AudioInputSetupQuarantine.shared.release(epoch: snapshot.routeEpoch) },
                     completion: { continuation.resume(with: $0) }
                 )
                 request.install(attempt)
