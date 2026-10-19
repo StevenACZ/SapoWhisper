@@ -13,7 +13,7 @@ struct LocalModelsCard: View {
     let isEmbedded: Bool
 
     @AppStorage(Constants.StorageKeys.mlxWhisperModel, store: AppPreferences.defaults) private var selectedModel =
-        MLXWhisperModel.largeV3Turbo.rawValue
+        MLXWhisperModel.defaultModel.rawValue
     @AppStorage(Constants.StorageKeys.mlxWhisperUnloadAfterMinutes, store: AppPreferences.defaults) private var unloadAfterMinutes = 0
 
     /// R4: 0 keeps the model in RAM; other values unload it after idle.

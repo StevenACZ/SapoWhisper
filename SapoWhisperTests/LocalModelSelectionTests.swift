@@ -1,6 +1,5 @@
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 /// Regression tests for the local-model selection lifecycle: deleting the
 /// selected model clears the selection, and switching engines never starts a
@@ -58,35 +57,36 @@ final class LocalModelSelectionTests: XCTestCase {
     }
 
     func testDeletingSelectedModelClearsSelection() throws {
-        let viewModel = try makeViewModel(selecting: .largeV3)
+        let viewModel = try makeViewModel(selecting: .largeV3Turbo)
         viewModel.mlxWhisperTranscriber.isLoading = true
 
-        viewModel.deleteMLXWhisperModel(.largeV3)
+        viewModel.deleteMLXWhisperModel(.largeV3Turbo)
 
         XCTAssertNil(viewModel.currentMLXWhisperModel)
         XCTAssertFalse(viewModel.mlxWhisperTranscriber.isLoading)
     }
 
-    func testLocalModelBadgesSeparateQualityFromLowerMemory() {
-        XCTAssertTrue(MLXWhisperModel.largeV3Turbo.isRecommended)
-        XCTAssertEqual(MLXWhisperModel.largeV3Turbo.badgeText, "model.tier_quality_default".localized)
-        XCTAssertEqual(MLXWhisperModel.largeV3TurboQ4.badgeText, "model.tier_lower_memory".localized)
+    func testLocalModelBadgesRecommendEightBitAndMarkTurboAsMaxPrecision() {
+        XCTAssertEqual(MLXWhisperModel.defaultModel, .largeV3TurboQ8)
+        XCTAssertTrue(MLXWhisperModel.largeV3TurboQ8.isRecommended)
+        XCTAssertFalse(MLXWhisperModel.largeV3Turbo.isRecommended)
+        XCTAssertEqual(MLXWhisperModel.largeV3TurboQ8.badgeText, "model.tier_recommended".localized)
+        XCTAssertEqual(MLXWhisperModel.largeV3Turbo.badgeText, "model.tier_max_precision".localized)
+        XCTAssertEqual(MLXWhisperModel.largeV3TurboQ8.accuracy, 5)
         XCTAssertEqual(MLXWhisperModel.largeV3Turbo.accuracy, 5)
-        XCTAssertNil(MLXWhisperModel.largeV3TurboQ4.accuracy)
-        XCTAssertNil(MLXWhisperModel.small.badgeText)
     }
 
     func testDeletingUnselectedModelKeepsSelection() throws {
-        let viewModel = try makeViewModel(selecting: .largeV3)
-        try skipIfReallyDownloaded(.small, in: viewModel)
+        let viewModel = try makeViewModel(selecting: .largeV3Turbo)
+        try skipIfReallyDownloaded(.largeV3TurboQ8, in: viewModel)
 
-        viewModel.deleteMLXWhisperModel(.small)
+        viewModel.deleteMLXWhisperModel(.largeV3TurboQ8)
 
-        XCTAssertEqual(viewModel.currentMLXWhisperModel, .largeV3)
+        XCTAssertEqual(viewModel.currentMLXWhisperModel, .largeV3Turbo)
     }
 
     func testSwitchingToLocalEngineDoesNotAutoDownload() throws {
-        let viewModel = try makeViewModel(selecting: .largeV3)
+        let viewModel = try makeViewModel(selecting: .largeV3Turbo)
 
         viewModel.setEngine(.mlxWhisper)
 
@@ -101,9 +101,9 @@ final class LocalModelSelectionTests: XCTestCase {
     /// The reported bug end to end: delete the selected model, hop to a cloud
     /// engine, come back to local — nothing may re-download by itself.
     func testDeletedSelectionSurvivesEngineRoundTripWithoutDownload() throws {
-        let viewModel = try makeViewModel(selecting: .largeV3)
+        let viewModel = try makeViewModel(selecting: .largeV3Turbo)
 
-        viewModel.deleteMLXWhisperModel(.largeV3)
+        viewModel.deleteMLXWhisperModel(.largeV3Turbo)
         viewModel.setEngine(.deepgram)
         viewModel.setEngine(.mlxWhisper)
 
@@ -123,7 +123,7 @@ final class LocalModelSelectionTests: XCTestCase {
     }
 
     func testRapidLocalEngineRoundTripDoesNotStartLateMLXLoad() async throws {
-        let model = MLXWhisperModel.largeV3
+        let model = MLXWhisperModel.largeV3Turbo
         let viewModel = try makeViewModel(selecting: model)
         viewModel.mlxWhisperTranscriber.downloadedModels.insert(model)
         defer {

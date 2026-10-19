@@ -183,6 +183,8 @@ nonisolated enum Constants {
         /// connectivity-class error ("" = none).
         static let fallbackTranscriptionEngine = "fallbackTranscriptionEngine"
         static let mlxWhisperModel = "mlxWhisperModel"
+        /// One-shot download queued when a retired MLX tier is replaced.
+        static let mlxWhisperReplacementDownload = "mlxWhisperReplacementDownload"
         /// R4: minutes of idle before the local model is unloaded (0 = keep loaded).
         static let mlxWhisperUnloadAfterMinutes = "mlxWhisperUnloadAfterMinutes"
         static let localAIServerBaseURL = "localAIServerBaseURL"

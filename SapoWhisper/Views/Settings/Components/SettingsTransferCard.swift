@@ -132,7 +132,7 @@ struct SettingsTransferCard: View {
 
         if sections.contains(.engine) {
             if let model = MLXWhisperModel(
-                rawValue: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel) ?? MLXWhisperModel.largeV3Turbo.rawValue)
+                rawValue: defaults.string(forKey: Constants.StorageKeys.mlxWhisperModel) ?? MLXWhisperModel.defaultModel.rawValue)
             {
                 viewModel.setMLXWhisperModel(model)
             }

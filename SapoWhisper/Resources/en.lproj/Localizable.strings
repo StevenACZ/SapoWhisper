@@ -139,8 +139,7 @@
 "config.space_used" = "Space used: %@";
 "config.models_download_auto" = "Models are downloaded automatically the first time";
 "config.mlx_vocabulary_hint" = "Your vocabulary guides the local model while it transcribes, so your terms come out spelled right.";
-"config.mlx_tiers_hint" = "Large V3 Turbo is the quality default. Its 4-bit tier uses much less disk and memory, but its transcription quality has not been measured.";
-"model.quality_unmeasured" = "Quality unmeasured";
+"config.mlx_tiers_hint" = "Large V3 Turbo (8-bit) suits every Mac with 8 GB or more: as accurate as the full model and faster. The full Large V3 Turbo is for Macs with 16 GB or more and catches slightly more technical terms.";
 "config.unload_after_idle" = "Unload model after idle";
 "config.unload_never" = "Keep loaded";
 "config.unload_minutes" = "%@ min";
@@ -285,9 +284,8 @@
 /* Model Speeds */
 "model.speed.very_fast" = "Very fast";
 "model.speed.fast" = "Fast";
-"model.speed.moderate" = "Moderate";
-"model.tier_quality_default" = "Quality default";
-"model.tier_lower_memory" = "Lower memory";
+"model.tier_recommended" = "Recommended · 8 GB+";
+"model.tier_max_precision" = "Max precision · 16 GB+";
 "model.delete_tooltip" = "Delete model to free up space";
 "model.download_tooltip" = "Download model";
 "model.pause_tooltip" = "Pause download";

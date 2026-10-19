@@ -9,9 +9,8 @@
 
 import Foundation
 import MLXWhisper
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
 
 final class MLXModelFolderIsolationTests: XCTestCase {
 
@@ -80,9 +79,9 @@ final class MLXModelFolderIsolationTests: XCTestCase {
         }
     }
 
-    // MARK: - Deletion isolation (5 × 4 cross-product)
+    // MARK: - Deletion isolation
 
-    func testDeletingOneTierNeverTouchesTheOtherFour() throws {
+    func testDeletingOneTierNeverTouchesTheOthers() throws {
         for deleted in MLXWhisperModel.allCases {
             let tierRoot = try subRoot("delete-\(deleted.rawValue.replacingOccurrences(of: "/", with: "_"))")
             for model in MLXWhisperModel.allCases {
@@ -114,52 +113,52 @@ final class MLXModelFolderIsolationTests: XCTestCase {
     }
 
     /// Regression (lesson sapowhisper-model-variant-substring-crossmatch):
-    /// "…whisper-large-v3-turbo" is an exact prefix of "…-turbo-4bit", so any
+    /// "…whisper-large-v3-turbo" is an exact prefix of "…-turbo-8bit", so any
     /// substring/prefix matching cross-hits them — assert both directions.
-    func testTurboAndTurbo4BitNeverCrossMatch() throws {
+    func testTurboAndTurbo8BitNeverCrossMatch() throws {
         let turbo = MLXWhisperModel.largeV3Turbo.rawValue
-        let turbo4Bit = MLXWhisperModel.largeV3TurboQ4.rawValue
+        let turbo8Bit = MLXWhisperModel.largeV3TurboQ8.rawValue
 
         let onlyTurbo = try subRoot("prefix-only-turbo")
         try makeFakeSnapshot(repo: turbo, root: onlyTurbo)
         XCTAssertTrue(WhisperModelDownloader.isDownloaded(repo: turbo, root: onlyTurbo))
         XCTAssertFalse(
-            WhisperModelDownloader.isDownloaded(repo: turbo4Bit, root: onlyTurbo),
-            "turbo snapshot must not satisfy the 4-bit tier"
+            WhisperModelDownloader.isDownloaded(repo: turbo8Bit, root: onlyTurbo),
+            "turbo snapshot must not satisfy the 8-bit tier"
         )
 
-        let onlyTurbo4Bit = try subRoot("prefix-only-4bit")
-        try makeFakeSnapshot(repo: turbo4Bit, root: onlyTurbo4Bit)
-        XCTAssertTrue(WhisperModelDownloader.isDownloaded(repo: turbo4Bit, root: onlyTurbo4Bit))
+        let onlyTurbo8Bit = try subRoot("prefix-only-8bit")
+        try makeFakeSnapshot(repo: turbo8Bit, root: onlyTurbo8Bit)
+        XCTAssertTrue(WhisperModelDownloader.isDownloaded(repo: turbo8Bit, root: onlyTurbo8Bit))
         XCTAssertFalse(
-            WhisperModelDownloader.isDownloaded(repo: turbo, root: onlyTurbo4Bit),
-            "4-bit snapshot must not satisfy the turbo tier"
+            WhisperModelDownloader.isDownloaded(repo: turbo, root: onlyTurbo8Bit),
+            "8-bit snapshot must not satisfy the turbo tier"
         )
 
         let both = try subRoot("prefix-both")
         try makeFakeSnapshot(repo: turbo, root: both)
-        try makeFakeSnapshot(repo: turbo4Bit, root: both)
+        try makeFakeSnapshot(repo: turbo8Bit, root: both)
 
         try WhisperModelDownloader.delete(repo: turbo, root: both)
         XCTAssertFalse(WhisperModelDownloader.isDownloaded(repo: turbo, root: both))
         XCTAssertTrue(
-            WhisperModelDownloader.isDownloaded(repo: turbo4Bit, root: both),
-            "deleting turbo must leave the 4-bit snapshot intact"
+            WhisperModelDownloader.isDownloaded(repo: turbo8Bit, root: both),
+            "deleting turbo must leave the 8-bit snapshot intact"
         )
 
         try makeFakeSnapshot(repo: turbo, root: both)
-        try WhisperModelDownloader.delete(repo: turbo4Bit, root: both)
-        XCTAssertFalse(WhisperModelDownloader.isDownloaded(repo: turbo4Bit, root: both))
+        try WhisperModelDownloader.delete(repo: turbo8Bit, root: both)
+        XCTAssertFalse(WhisperModelDownloader.isDownloaded(repo: turbo8Bit, root: both))
         XCTAssertTrue(
             WhisperModelDownloader.isDownloaded(repo: turbo, root: both),
-            "deleting the 4-bit tier must leave the turbo snapshot intact"
+            "deleting the 8-bit tier must leave the turbo snapshot intact"
         )
     }
 
     // MARK: - Incomplete snapshots
 
     func testZeroByteWeightsAreNotDownloaded() throws {
-        let model = MLXWhisperModel.base
+        let model = MLXWhisperModel.largeV3TurboQ8
         let dir = WhisperModelDownloader.modelDirectory(repo: model.rawValue, root: root)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data().write(to: dir.appendingPathComponent("weights.safetensors"))
@@ -170,7 +169,7 @@ final class MLXModelFolderIsolationTests: XCTestCase {
     }
 
     func testMissingTokenizerIsNotDownloaded() throws {
-        let model = MLXWhisperModel.small
+        let model = MLXWhisperModel.largeV3Turbo
         try makeFakeSnapshot(repo: model.rawValue, root: root)
         let dir = WhisperModelDownloader.modelDirectory(repo: model.rawValue, root: root)
         try FileManager.default.removeItem(at: dir.appendingPathComponent("tokenizer.json"))
@@ -183,7 +182,7 @@ final class MLXModelFolderIsolationTests: XCTestCase {
     /// prefetch leaves the tier reporting "downloaded" forever while the
     /// loader dies, and retrying is a no-op.
     func testAnyMissingTokenizerAssetIsNotDownloaded() throws {
-        let model = MLXWhisperModel.small
+        let model = MLXWhisperModel.largeV3Turbo
         for asset in WhisperModelDownloader.tokenizerAssetFiles {
             let tierRoot = try subRoot("partial-missing-\(asset)")
             try makeFakeSnapshot(repo: model.rawValue, root: tierRoot)
@@ -198,7 +197,7 @@ final class MLXModelFolderIsolationTests: XCTestCase {
     }
 
     func testZeroByteTokenizerAssetIsNotDownloaded() throws {
-        let model = MLXWhisperModel.small
+        let model = MLXWhisperModel.largeV3Turbo
         for asset in WhisperModelDownloader.tokenizerAssetFiles {
             let tierRoot = try subRoot("partial-empty-\(asset)")
             try makeFakeSnapshot(repo: model.rawValue, root: tierRoot)
