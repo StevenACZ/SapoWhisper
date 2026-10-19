@@ -66,6 +66,20 @@ final class LocalModelSelectionTests: XCTestCase {
         XCTAssertFalse(viewModel.mlxWhisperTranscriber.isLoading)
     }
 
+    func testNoModelStatusShowsLocalModelProgressWhileItLoads() throws {
+        AppPreferences.defaults.set(TranscriptionEngine.mlxWhisper.rawValue, forKey: Constants.StorageKeys.transcriptionEngine)
+        let viewModel = try makeViewModel(selecting: .largeV3TurboQ8)
+        try XCTSkipUnless(viewModel.appState == .noModel, "a backup engine is usable on this machine")
+        let transcriber = viewModel.mlxWhisperTranscriber
+        transcriber.loadingMessage = "mlx.state.downloading".localized(MLXWhisperModel.largeV3TurboQ8.displayName)
+
+        transcriber.isLoading = true
+        XCTAssertEqual(viewModel.statusText, transcriber.loadingMessage)
+
+        transcriber.isLoading = false
+        XCTAssertEqual(viewModel.statusText, "status.no_model".localized)
+    }
+
     func testLocalModelBadgesRecommendEightBitAndMarkTurboAsMaxPrecision() {
         XCTAssertEqual(MLXWhisperModel.defaultModel, .largeV3TurboQ8)
         XCTAssertTrue(MLXWhisperModel.largeV3TurboQ8.isRecommended)
