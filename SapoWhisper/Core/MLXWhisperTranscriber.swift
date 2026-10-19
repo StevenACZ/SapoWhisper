@@ -22,9 +22,7 @@ actor MLXWhisperEngine {
 
     var isLoaded: Bool { model != nil }
 
-    /// Beam search on an 8 GB M1 pushed macOS into swap: a 20-40 s dictation
-    /// took 8 s instead of 3 s greedy, so 8 GB Macs decode greedily.
-    static let beamSize = ProcessInfo.processInfo.physicalMemory > 8 << 30 ? 5 : 1
+    static let beamSize = 5
 
     static let memoryCacheLimit = 256 << 20
 
