@@ -22,8 +22,15 @@ actor MLXWhisperEngine {
 
     var isLoaded: Bool { model != nil }
 
+    /// Beam search on an 8 GB M1 pushed macOS into swap: a 20-40 s dictation
+    /// took 8 s instead of 3 s greedy, so 8 GB Macs decode greedily.
+    static let beamSize = ProcessInfo.processInfo.physicalMemory > 8 << 30 ? 5 : 1
+
+    static let memoryCacheLimit = 256 << 20
+
     @discardableResult
     func load(directory: URL) async throws -> Int {
+        MLXWhisperRuntime.limitMemoryCache(bytes: Self.memoryCacheLimit)
         if model != nil {
             // Direct load-over-load: drop the resident weights and their
             // buffer pool before the new ones allocate, or peak RAM briefly
@@ -56,7 +63,8 @@ actor MLXWhisperEngine {
             maxTokens: model.config.maxTargetPositions - 16,
             temperature: 0.0,
             language: language,
-            initialPrompt: initialPrompt
+            initialPrompt: initialPrompt,
+            beamSize: Self.beamSize
         )
         // Throws CancellationError when the caller's task is cancelled — the
         // decode loop checks between windows and steps, so a retranscribe of

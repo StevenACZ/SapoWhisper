@@ -9,8 +9,9 @@ import PackageDescription
 // top of upstream: initial-prompt (`<|startofprev|>`) support so the user
 // vocabulary reaches the decoder, a downloader with real progress reporting
 // instead of prints, 4/8-bit quantized-checkpoint loading (`quantization` in
-// config.json), and a Task-cancellation hook between decode steps so long
-// transcriptions can be aborted.
+// config.json), a Task-cancellation hook between decode steps so long
+// transcriptions can be aborted, pause-aware decoding windows, and
+// temperature-0 beam search.
 let package = Package(
     name: "MLXWhisper",
     platforms: [.macOS(.v14)],

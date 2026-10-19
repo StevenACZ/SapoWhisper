@@ -9,11 +9,49 @@ struct WhisperDecodingWindow: Equatable {
     var retryDepth: Int = 0
     var usesInitialPrompt: Bool = true
 
-    static func initial(sampleCount: Int) -> [Self] {
-        guard sampleCount > 0 else { return [] }
-        return stride(from: 0, to: sampleCount, by: WhisperAudioConfig.chunkLengthSamples).map { start in
-            Self(range: start..<(start + min(WhisperAudioConfig.chunkLengthSamples, sampleCount - start)))
+    static let frameSamples = WhisperAudioConfig.sampleRate / 50
+    static let pauseFrames = 10
+    static let minimumWindowSamples = 20 * WhisperAudioConfig.sampleRate
+
+    /// Windows of at most 30 s that end at the quietest 200 ms between 20 s
+    /// and 30 s, so a word is never cut by a fixed 30 s boundary.
+    static func initial(samples: [Float]) -> [Self] {
+        guard !samples.isEmpty else { return [] }
+        let chunk = WhisperAudioConfig.chunkLengthSamples
+        let frame = frameSamples
+        let frameCount = samples.count / frame
+        var energyPrefix = [Double](repeating: 0, count: frameCount + 1)
+        samples.withUnsafeBufferPointer { buffer in
+            for index in 0..<frameCount {
+                var energy: Double = 0
+                for sample in buffer[(index * frame)..<((index + 1) * frame)] {
+                    energy += Double(sample * sample)
+                }
+                energyPrefix[index + 1] = energyPrefix[index] + energy
+            }
         }
+
+        var windows: [Self] = []
+        var start = 0
+        while samples.count - start > chunk {
+            let firstFrame = (start + minimumWindowSamples + frame - 1) / frame
+            let lastFrame = (start + chunk) / frame - pauseFrames
+            var cut = start + chunk
+            if firstFrame <= lastFrame {
+                var quietest = Double.greatestFiniteMagnitude
+                for candidate in firstFrame...lastFrame {
+                    let energy = energyPrefix[candidate + pauseFrames] - energyPrefix[candidate]
+                    if energy <= quietest {
+                        quietest = energy
+                        cut = (candidate + pauseFrames / 2) * frame
+                    }
+                }
+            }
+            windows.append(Self(range: start..<cut))
+            start = cut
+        }
+        windows.append(Self(range: start..<samples.count))
+        return windows
     }
 
     func splitAfterOutputLimit() throws -> [Self] {
