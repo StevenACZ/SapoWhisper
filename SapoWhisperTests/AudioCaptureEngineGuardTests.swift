@@ -10,9 +10,9 @@
 
 @preconcurrency import Combine
 import Foundation
-import XCTest
-
 @testable import SapoWhisper
+import XCTest
+import os
 
 nonisolated final class AudioCaptureEngineGuardTests: XCTestCase {
 
@@ -444,6 +444,70 @@ nonisolated final class AudioCaptureEngineGuardTests: XCTestCase {
         XCTAssertFalse(quarantine.canAttempt(epoch: epoch))
         quarantine.advanceRouteEpoch()
         XCTAssertTrue(quarantine.canAttempt(epoch: quarantine.currentEpoch))
+    }
+
+    func testSlowSetupThatFinallyReturnsLiftsItsQuarantine() {
+        let workStarted = DispatchSemaphore(value: 0)
+        let releaseWork = DispatchSemaphore(value: 0)
+        let completed = DispatchSemaphore(value: 0)
+        let recovered = DispatchSemaphore(value: 0)
+        let quarantine = AudioInputSetupQuarantine()
+        let epoch = quarantine.currentEpoch
+        let attempt = AudioDeadlineAttempt<Int>(
+            timeout: 0.03,
+            operation: "test-slow-setup-recovers",
+            work: {
+                workStarted.signal()
+                releaseWork.wait()
+                return 31
+            },
+            cleanup: { _ in },
+            onQuarantine: { _ in quarantine.quarantine(epoch: epoch) },
+            onRecovered: {
+                quarantine.release(epoch: epoch)
+                recovered.signal()
+            },
+            completion: { _ in completed.signal() }
+        )
+
+        attempt.start()
+        XCTAssertEqual(workStarted.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(completed.wait(timeout: .now() + 1), .success)
+        XCTAssertFalse(quarantine.canAttempt(epoch: epoch))
+
+        releaseWork.signal()
+        XCTAssertEqual(recovered.wait(timeout: .now() + 1), .success)
+        XCTAssertTrue(quarantine.canAttempt(epoch: epoch))
+    }
+
+    func testFastSetupNeverReportsRecovery() {
+        let completed = DispatchSemaphore(value: 0)
+        let recovered = OSAllocatedUnfairLock(initialState: false)
+        let attempt = AudioDeadlineAttempt<Int>(
+            timeout: 1,
+            operation: "test-fast-setup",
+            work: { 7 },
+            cleanup: { _ in },
+            onRecovered: { recovered.withLock { $0 = true } },
+            completion: { _ in completed.signal() }
+        )
+
+        attempt.start()
+        XCTAssertEqual(completed.wait(timeout: .now() + 1), .success)
+        XCTAssertFalse(recovered.withLock { $0 })
+    }
+
+    func testReleaseLeavesANewerRouteQuarantined() {
+        let quarantine = AudioInputSetupQuarantine()
+        let old = quarantine.currentEpoch
+        quarantine.quarantine(epoch: old)
+        quarantine.advanceRouteEpoch()
+        let current = quarantine.currentEpoch
+        quarantine.quarantine(epoch: current)
+
+        quarantine.release(epoch: old)
+
+        XCTAssertFalse(quarantine.canAttempt(epoch: current))
     }
 
     func testTimeoutQuarantinesRouteThatIsCurrentWhenDeadlineExpires() {

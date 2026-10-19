@@ -2988,6 +2988,8 @@ class SapoWhisperViewModel: ObservableObject {
         case .recording:
             let duration = Int(recordingDuration)
             return "menu.recording".localized(String(duration))
+        case .noModel where currentEngine == .mlxWhisper && isLoadingLocalModel:
+            return mlxWhisperTranscriber.loadingMessage
         default:
             return appState.statusText
         }

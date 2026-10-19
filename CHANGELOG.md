@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.24.1] - 2026-10-19
+
+### Changed
+
+- Macs with 8 GB now decode with beam search too, for more accurate dictations: with the memory cap from 2.24.0 it costs about half a second on a typical dictation instead of several.
+
+### Fixed
+
+- While a local model downloads or loads, the menu shows its progress instead of asking you to download a model.
+- Dictation no longer stays on “Microphone unavailable” after the microphone took more than a few seconds to open on a busy Mac: it works again as soon as the microphone answers.
+
 ## [2.24.0] - 2026-10-19
 
 ### Added
