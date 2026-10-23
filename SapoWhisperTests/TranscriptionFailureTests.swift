@@ -217,8 +217,8 @@ final class TranscriptionFailureTests: XCTestCase {
     }
 
     func testRequestTimeoutIsShortOnlyWhenABackupCanTakeOver() {
-        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 20, prefersBackup: true), 10, accuracy: 0.001)
-        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 120, prefersBackup: true), 20, accuracy: 0.001)
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 20, prefersBackup: true), 12, accuracy: 0.001)
+        XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 120, prefersBackup: true), 32, accuracy: 0.001)
         XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 10_000, prefersBackup: true), 600)
         XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 20, prefersBackup: false), 120)
         XCTAssertEqual(TranscriptionFailure.requestTimeout(forEstimatedSeconds: 30, prefersBackup: false), 180)
@@ -230,6 +230,6 @@ final class TranscriptionFailureTests: XCTestCase {
         let withBackup = TranscriptionAttemptContext.$prefersConfiguredBackup.withValue(true) {
             TranscriptionFailure.requestTimeout(forAudioBytes: twentySeconds)
         }
-        XCTAssertEqual(withBackup, 10, accuracy: 0.001)
+        XCTAssertEqual(withBackup, 12, accuracy: 0.001)
     }
 }

@@ -6,6 +6,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Long dictations no longer jump to the backup engine when the main engine is merely slow: it now gets twice as much time to answer before the backup takes over.
+
 ## [2.24.1] - 2026-10-19
 
 ### Changed
