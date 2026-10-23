@@ -309,17 +309,18 @@ extension TranscriptionFailure {
     /// it as an idle timeout, so it bounds a stalled upload or a server sitting on
     /// a finished one, never a transfer that is still moving bytes.
     ///
-    /// With a usable backup the primary gets a short deadline (8 s plus 0.1 s per
+    /// With a usable backup the primary gets a short deadline (8 s plus 0.2 s per
     /// audio second) so the backup takes over instead of the user waiting out a
     /// stall: on 107 real dictations (2026-10-13) the slowest healthy answers were
     /// 4.8 s for Local AI Server turbo, 15.3 s for Scribe batch on a 117 s take and
-    /// 1.8 s for Nova-3. Without a backup, waiting still beats failing: a 30 s
-    /// clip yields ~180 s, clamped to [120, 600].
+    /// 1.8 s for Nova-3, and on 2026-10-23 Scribe batch passed 16 s on an 81 s take
+    /// and 19 s on a 106 s one. Without a backup, waiting still beats failing: a
+    /// 30 s clip yields ~180 s, clamped to [120, 600].
     static func requestTimeout(
         forEstimatedSeconds estimatedSeconds: Double,
         prefersBackup: Bool = TranscriptionAttemptContext.prefersConfiguredBackup
     ) -> TimeInterval {
-        if prefersBackup { return min(600, 8 + estimatedSeconds * 0.1) }
+        if prefersBackup { return min(600, 8 + estimatedSeconds * 0.2) }
         return min(600, max(120, estimatedSeconds * 6))
     }
 
