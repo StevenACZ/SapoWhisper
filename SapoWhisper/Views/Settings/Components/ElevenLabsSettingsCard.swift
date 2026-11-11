@@ -28,7 +28,7 @@ struct ElevenLabsSettingsCard: View {
             if isEmbedded {
                 cardContent
             } else {
-                SettingsCard(icon: "waveform.badge.magnifyingglass", title: "ElevenLabs Scribe v2") {
+                SettingsCard(icon: "waveform.badge.magnifyingglass", title: "ElevenLabs Scribe v3") {
                     cardContent
                 }
             }

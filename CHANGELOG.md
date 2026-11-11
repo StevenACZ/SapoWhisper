@@ -6,6 +6,13 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.25.0] - 2026-11-10
+
+### Changed
+
+- ElevenLabs batch dictation now uses Scribe v3, the newest ElevenLabs speech-to-text model. Realtime mode stays on Scribe v2 Realtime.
+- With Scribe v3, transcripts write more numbers as digits and may put quotation marks around words spoken in another language.
+
 ## [2.24.2] - 2026-10-23
 
 ### Fixed

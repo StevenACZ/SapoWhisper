@@ -183,7 +183,7 @@ case "$engine" in
       --output "$response_file"
       --write-out "%{time_total}"
       --request POST "https://api.elevenlabs.io/v1/speech-to-text"
-      --form "model_id=scribe_v2"
+      --form "model_id=scribe_v3"
       --form "tag_audio_events=false"
       --form "timestamps_granularity=none"
     )
@@ -205,7 +205,7 @@ case "$engine" in
     done <<<"$elevenlabs_keyterms"
 
     curl_args+=(--form "file=@${AUDIO_PATH};type=audio/wav")
-    model="scribe_v2"
+    model="scribe_v3"
     ;;
   elevenlabs_realtime)
     if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then

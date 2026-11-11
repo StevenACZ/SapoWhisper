@@ -43,7 +43,7 @@ enum ElevenLabsTranscriptionMode: String, CaseIterable, Identifiable {
     nonisolated var historyName: String {
         switch self {
         case .scribeV2Batch:
-            return "ElevenLabs Scribe v2"
+            return "ElevenLabs Scribe v3"
         case .scribeV2Realtime:
             return "ElevenLabs Scribe Realtime v2"
         }

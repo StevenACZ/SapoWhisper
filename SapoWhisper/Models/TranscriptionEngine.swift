@@ -24,7 +24,7 @@ nonisolated enum TranscriptionEngine: String, CaseIterable, Identifiable {
         case .deepgram:
             return "Deepgram"
         case .elevenLabsScribe:
-            return "ElevenLabs Scribe v2"
+            return "ElevenLabs Scribe v3"
         }
     }
 
