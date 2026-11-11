@@ -422,9 +422,9 @@
 "local_ai_server.error_http" = "El servidor devolvió HTTP %@: %@";
 
 /* ElevenLabs Engine */
-"engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v2. Maxima precision, requiere internet y una API key.";
+"engine.elevenlabs_scribe.description" = "ElevenLabs Scribe v3. Maxima precision, requiere internet y una API key.";
 "config.elevenlabs_mode" = "Modo de transcripcion";
-"elevenlabs.mode_batch" = "Scribe v2";
+"elevenlabs.mode_batch" = "Scribe v3";
 "elevenlabs.mode_batch_desc" = "Modo clasico por lote. Maxima precision al terminar de grabar.";
 "elevenlabs.mode_realtime" = "Realtime v2";
 "elevenlabs.mode_realtime_desc" = "Streaming de baja latencia. Pega solo al terminar de grabar.";
@@ -581,7 +581,7 @@
 "welcome.whisper_tagline" = "Gratis · Privado · Sin internet";
 "welcome.local_ai_tagline" = "LAN · NVIDIA GPU · STT estilo OpenAI";
 "welcome.deepgram_tagline" = "El más rápido · nova-3 / Flux live";
-"welcome.elevenlabs_tagline" = "Scribe v2 · batch / realtime";
+"welcome.elevenlabs_tagline" = "Scribe v3 · batch / realtime v2";
 "welcome.whisper_pick_model" = "Elige un modelo para descargar:";
 "welcome.whisper_downloading" = "Descargando modelo…";
 "welcome.local_ai_use_server" = "Usar servidor";

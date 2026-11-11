@@ -18,7 +18,7 @@ final class ElevenLabsRequestPayloadTests: XCTestCase {
         let fields = ElevenLabsScribeTranscriber.uploadFormFields(languageCode: "spa", keyterms: ["SapoWhisper"])
 
         XCTAssertFalse(fields.contains { $0.name == "no_verbatim" })
-        XCTAssertTrue(fields.contains { $0.name == "model_id" && $0.value == "scribe_v2" })
+        XCTAssertTrue(fields.contains { $0.name == "model_id" && $0.value == "scribe_v3" })
         XCTAssertTrue(fields.contains { $0.name == "language_code" && $0.value == "spa" })
         XCTAssertTrue(fields.contains { $0.name == "keyterms" && $0.value == "SapoWhisper" })
     }

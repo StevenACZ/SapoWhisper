@@ -7,7 +7,7 @@ import Combine
 import Foundation
 import os
 
-/// Batch transcription via ElevenLabs Scribe v2 REST API.
+/// Batch transcription via ElevenLabs Scribe v3 REST API.
 /// Push-to-talk flow: uploads the recorded WAV and returns the final transcript.
 class ElevenLabsScribeTranscriber: ObservableObject {
 
@@ -16,7 +16,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
     /// Brand name surfaced in user-facing failures and logs.
     nonisolated private static let engineName = "ElevenLabs"
 
-    /// ElevenLabs Scribe v2 batch keyterm biasing limits: up to 1000 terms,
+    /// ElevenLabs Scribe v3 batch keyterm biasing limits: up to 1000 terms,
     /// each ≤50 characters and ≤5 words.
     private static let maxKeyterms = ElevenLabsKeytermLimits.batchMaxCount
     private static let maxKeytermLength = ElevenLabsKeytermLimits.batchMaxLength
@@ -39,7 +39,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
 
     // MARK: - Transcription
 
-    /// Transcribe an audio file using the ElevenLabs Scribe v2 batch endpoint.
+    /// Transcribe an audio file using the ElevenLabs Scribe v3 batch endpoint.
     func transcribe(audioURL: URL, language: String) async throws -> String {
         guard let apiKey = KeychainStore.string(for: .elevenLabsAPIKey),
             !apiKey.isEmpty
@@ -166,7 +166,7 @@ class ElevenLabsScribeTranscriber: ObservableObject {
         keyterms: [String]
     ) -> [(name: String, value: String)] {
         var fields: [(name: String, value: String)] = [
-            ("model_id", "scribe_v2"),
+            ("model_id", "scribe_v3"),
             ("tag_audio_events", "false"),
             ("timestamps_granularity", "none"),
             // Deterministic decoding for dictation (the endpoint accepts 0-2).
